@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "vibebook",
+  "description": "Vibebook Claude Code plugin — digest sessions into chronicles + topics, recall past notes before work. Standalone, no extra CLI required. For cross-device sync, see the vibebook npm CLI (separate package).",
+  "owner": {
+    "name": "june9593"
+  },
+  "plugins": [
+    {
+      "name": "vibebook",
+      "description": "Run /vibebook to digest your sessions into chronicle + topic. Run /vibebook-recall before starting work to surface past notes that bear on the current task. Atomic cards delegated to memex when installed.",
+      "version": "0.1.0",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
