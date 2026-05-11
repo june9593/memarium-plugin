@@ -1,0 +1,49 @@
+{
+  "name": "vibebook-plugin",
+  "version": "0.1.0",
+  "description": "Vibebook Claude Code plugin: digest your AI coding sessions into chronicles + topics, recall past notes before new work. Standalone — works without the vibebook npm CLI.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/june9593/vibebook-plugin.git"
+  },
+  "homepage": "https://github.com/june9593/vibebook-plugin",
+  "bugs": "https://github.com/june9593/vibebook-plugin/issues",
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "session",
+    "memory",
+    "knowledge-base",
+    "vibebook"
+  ],
+  "files": [
+    "bin/",
+    "skills/",
+    "commands/",
+    "hooks/",
+    ".claude-plugin/",
+    "site-template/"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist bin/vibebook-plugin.js",
+    "build": "npm run clean && tsc && cp dist/src/plugin-cli.js bin/vibebook-plugin.js && chmod +x bin/vibebook-plugin.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "tsx src/plugin-cli.ts"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+bin/vibebook-plugin.js
+.DS_Store
+*.swp
+.vscode/
+.idea/
+.env*
+docs/
