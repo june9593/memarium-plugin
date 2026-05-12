@@ -28,8 +28,8 @@
     "site-template/"
   ],
   "scripts": {
-    "clean": "rm -rf dist bin/vibebook-plugin.js",
-    "build": "npm run clean && tsc && cp dist/src/plugin-cli.js bin/vibebook-plugin.js && chmod +x bin/vibebook-plugin.js",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc && esbuild src/plugin-cli.ts --bundle --platform=node --format=esm --outfile=bin/vibebook-plugin.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\" && chmod +x bin/vibebook-plugin.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "tsx src/plugin-cli.ts"
@@ -41,10 +41,11 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.21.0",
     "typescript": "^5.5.0",
     "tsx": "^4.19.0",
-    "vitest": "^2.1.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^2.1.0"
   },
   "engines": {
     "node": ">=20"
