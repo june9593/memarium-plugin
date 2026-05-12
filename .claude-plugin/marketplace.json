@@ -9,7 +9,7 @@
     {
       "name": "vibebook",
       "description": "Run /vibebook to digest your sessions into chronicle + topic. Run /vibebook-recall before starting work to surface past notes that bear on the current task. Atomic cards delegated to memex when installed.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "source": "./",
       "category": "productivity"
     }

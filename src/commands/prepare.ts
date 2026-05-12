@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { readConfig } from "../_shared/config.js";
+import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadIndex } from "../_shared/index-store.js";
 import { loadBookIndexV2 } from "../digest/book-index-v2.js";
 import { extractSessionSignals, isVibebookMetaSession } from "../_shared/digest/session-signal.js";
@@ -79,7 +79,7 @@ export interface PrepareOptions {
  * The skill's "Step 1 — Plan" calls this and prints the count + summary.
  */
 export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
-  const cfg = readConfig();
+  const cfg = readPluginConfig();
   const indexFile = loadIndex(cfg.repoPath);
   const bookIndex = loadBookIndexV2(cfg.repoPath);
 

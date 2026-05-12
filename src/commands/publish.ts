@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import chalk from "chalk";
-import { readConfig } from "../_shared/config.js";
+import { readPluginConfig } from "../spool/plugin-config.js";
 import {
   loadBookIndexV2, saveBookIndexV2,
   insertChronicle, upsertTopic, upsertCard,
@@ -87,7 +87,7 @@ export interface PublishReport {
  * the new content so a partial failure leaves both old + new for inspection.
  */
 export async function publishCmd(opts: PublishOptions): Promise<PublishReport> {
-  const cfg = readConfig();
+  const cfg = readPluginConfig();
   const bookIndex = loadBookIndexV2(cfg.repoPath);
   const report: PublishReport = {
     chroniclesInserted: 0,

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.1 — 2026-05-13
+
+Plugin autonomy patch. v0.1.0 inherited a hard `readConfig()` requirement
+from `_shared/config.ts` — every plugin command threw "vibebook not
+initialized" if `~/.vibebook/config.json` was missing. That contradicted
+spec §4 ("plugin works on a plain spool directory, no config needed").
+
+### Fixed
+
+- New `src/spool/plugin-config.ts` exports `readPluginConfig()`, a
+  tolerant wrapper that returns a sensible default Config (repoPath =
+  `~/.vibebook/session-repo`) when no config file is present.
+- All 6 plugin commands (`prepare`, `publish`, `recall`, `catalog-regen`,
+  `list-projects`, `site`) switched from `readConfig` → `readPluginConfig`.
+- Plugin still does NOT write `~/.vibebook/config.json` — that stays a
+  npm `vibebook init` job. If you later install npm vibebook and run
+  `vibebook init`, your config will be created cleanly without prompts.
+- Tests: `tests/spool/plugin-config.test.ts` (3 cases). Suite now 19/19.
+
 ## 0.1.0 — 2026-05-12
 
 Initial release. Spun out from `vibebook` npm package

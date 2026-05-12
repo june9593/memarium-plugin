@@ -4,7 +4,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import chalk from "chalk";
-import { readConfig } from "../_shared/config.js";
+import { readPluginConfig } from "../spool/plugin-config.js";
 
 /**
  * `vibebook serve` and `vibebook build-site` are thin wrappers around
@@ -41,7 +41,7 @@ interface SiteContext {
 }
 
 function siteContext(opts: SiteOptions): SiteContext {
-  const cfg = readConfig();
+  const cfg = readPluginConfig();
   const repoPath = opts.repoPath ?? cfg.repoPath;
   // Locate the bundled template. Two layouts to support:
   //   dev (running .ts directly): src/commands/site.ts → ../../site-template

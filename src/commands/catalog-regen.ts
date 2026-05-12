@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { readConfig } from "../_shared/config.js";
+import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadBookIndexV2 } from "../digest/book-index-v2.js";
 import { generateBookCatalog } from "../digest/book-catalog.js";
 import { ensureRepo, ensureDeviceBranch, fastForwardBranch, commitAndPush } from "../_shared/git-ops.js";
@@ -26,7 +26,7 @@ export interface CatalogRegenReport {
  * source of truth.
  */
 export async function catalogRegenCmd(opts: CatalogRegenOptions): Promise<CatalogRegenReport> {
-  const cfg = readConfig();
+  const cfg = readPluginConfig();
   const bookIndex = loadBookIndexV2(cfg.repoPath);
   const catalog = generateBookCatalog(cfg.repoPath, bookIndex);
 

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { readConfig } from "../_shared/config.js";
+import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadBookIndexV2 } from "../digest/book-index-v2.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { projectSlugFromPath } from "../_shared/slug.js";
@@ -107,7 +107,7 @@ export interface RecallOptions {
 }
 
 export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
-  const cfg = readConfig();
+  const cfg = readPluginConfig();
   const bookIndex = loadBookIndexV2(cfg.repoPath);
 
   let projectFilter: string | null = opts.project?.trim() || null;

@@ -1,4 +1,4 @@
-import { readConfig } from "../_shared/config.js";
+import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadIndex } from "../_shared/index-store.js";
 import { loadBookIndexV2 } from "../digest/book-index-v2.js";
 import { isRealProjectPath } from "../_shared/digest/project-filter.js";
@@ -51,7 +51,7 @@ export interface ListProjectsPayload {
  *   3. avoid re-digesting projects the user already handled in project-mode.
  */
 export function buildListProjectsPayload(cwd: string = process.cwd()): ListProjectsPayload {
-  const cfg = readConfig();
+  const cfg = readPluginConfig();
   const indexFile = loadIndex(cfg.repoPath);
   const bookIndex = loadBookIndexV2(cfg.repoPath);
 
