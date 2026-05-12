@@ -6,8 +6,8 @@ description: Three-stage progressive recall of past notes from the user's vibebo
 # /vibebook-recall — read your own notes before doing the work
 
 You (in-session Claude) just landed in a project repo. The user has been
-working in this repo (and others) for weeks/months, and `vibebook sync`
-has captured every Claude Code + Copilot session into
+working in this repo (and others) for weeks/months, and the vibebook
+plugin has captured every Claude Code + Copilot session into
 `~/.vibebook/session-repo/`. The `/vibebook` skill has digested those
 sessions into per-project **chronicles** (one per work thread,
 4-section AI-first body) and **topics** (one per subsystem). When

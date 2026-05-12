@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.6 — 2026-05-13
+
+`SKILL.md` text still carried npm-CLI-era assumptions ("User has
+already run vibebook sync...") that pushed in-session Claude into
+checking PATH for the `vibebook` binary and reporting "vibebook CLI
+isn't installed" before the plugin's own `orchestrate` step could
+even run. The actual CLI invocations were correct (already used
+`${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js`); the bug was in
+the natural-language framing.
+
+### Fixed (skills/vibebook/SKILL.md + skills/vibebook-recall/SKILL.md)
+
+- Removed "User has already run `vibebook sync`" prerequisite. Plugin
+  is self-contained — `orchestrate` scans local jsonl on every run.
+- Removed `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js --version`
+  "is on PATH" line — implementation detail, not a precondition.
+- Reworded prepare's "no synced sessions" error guidance: don't tell
+  the user to "run `vibebook sync`" (npm CLI command they may not
+  have); instead help them check cwd or use `--project`.
+- Recall skill prologue: "the vibebook plugin has captured every..."
+  instead of "`vibebook sync` has captured every...".
+- Dropped a stray "Wizard already covered that path in `vibebook init`"
+  parenthetical — npm-init wizard is not part of plugin install flow.
+
+No code changes. Bundle byte-identical except for embedded version.
+
 ## 0.1.5 — 2026-05-13
 
 Test-only patch. The autonomy gate now also covers VS Code Copilot Chat.

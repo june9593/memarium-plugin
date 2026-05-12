@@ -13,11 +13,17 @@ segmentation + writing — is yours, in this conversation, with full context.
 
 ## Inputs you assume
 
-- User has already run `vibebook sync` so `~/.vibebook/session-repo/` exists
-  with `raw_sessions/` + `.vibebook/index.json` populated. (If you can't
-  read that path, ask user to run `vibebook sync` first and stop.)
-- `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js --version` is on PATH; user's config at `~/.vibebook/config.json`
-  pins `repoPath = ~/.vibebook/session-repo`.
+- The plugin's `orchestrate` step (run as Pre-step + Step 0 below) will
+  scan the user's local `~/.claude/projects/` and Copilot Chat session
+  jsonl, then write rendered `.md` + `.raw.json` into the spool at
+  `~/.vibebook/session-repo/raw_sessions/...` and update
+  `~/.vibebook/session-repo/.vibebook/index.json`. **You do not need to
+  check whether sync ran first** — the plugin is self-contained and
+  scans sessions itself on every invocation.
+- If the user has ALSO installed the optional `vibebook` npm CLI for
+  cross-device sync, that's fine — both write to the same spool with
+  sessionId-keyed entries. Don't gate plugin work on the npm CLI being
+  present; it is not required.
 
 ---
 
@@ -87,8 +93,7 @@ If memex IS available, ask the user **once** at the very start:
 > reusable atomic insights from these sessions? (y/n)
 
 Remember the answer for Step P8. If memex is NOT available, skip this
-question entirely — don't suggest installing it here. (Wizard already
-covered that path in `vibebook init`.)
+question entirely — don't suggest installing it here.
 
 ### Step P1 — Prepare for cwd's project
 
@@ -96,11 +101,14 @@ covered that path in `vibebook init`.)
 ${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js prepare --cwd "$(pwd)"
 ```
 
-If this errors with `no synced sessions found for cwd '...'`, the user is in
-a directory whose work has never been synced. Tell them which `project` slug
-you tried, and either:
-- ask them to `vibebook sync` first (most common), or
-- ask them to pass `--project <slug>` if they meant a different project.
+If this errors with `no synced sessions found for cwd '...'`, the spool
+has no sessions matching the current cwd's project. Tell them which
+`project` slug you tried (`projectSlugFromPath(cwd)`), then either:
+- ask them whether `$(pwd)` is correct (the plugin scans local
+  `~/.claude/projects/` automatically — if they really worked here in
+  Claude Code or Copilot, sessions should be there), or
+- ask them to pass `--project <slug>` if they meant a different project
+  (e.g. they cd'd into a subdir but want the parent project's sessions).
 
 The payload shape:
 
