@@ -188,7 +188,7 @@ function buildStage1(
       ...(memexQueried ? { memexQueried, memexCards: memexCount } : {}),
       ...(cwdUnresolved ? { cwdUnresolved: true } : {}),
       nextStep: topicCount > 0
-        ? `Pick a relevant topic, then run: vibebook recall --project <slug> --topic <topicSlug>`
+        ? `Pick a relevant topic, then run: \${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js recall --project <slug> --topic <topicSlug>`
         : "No topics yet for this project.",
     },
   };
