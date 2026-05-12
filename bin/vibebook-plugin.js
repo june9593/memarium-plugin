@@ -11617,11 +11617,23 @@ var orchestrator_exports = {};
 __export(orchestrator_exports, {
   orchestrateCmd: () => orchestrateCmd
 });
+import { execFileSync as execFileSync2 } from "node:child_process";
+function isMemexOnPath() {
+  try {
+    execFileSync2("/bin/sh", ["-c", "command -v memex >/dev/null 2>&1"], {
+      stdio: "ignore"
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
 async function orchestrateCmd(opts) {
   if (opts.mode !== "project" && opts.mode !== "global") {
     throw new Error(`Invalid mode '${opts.mode}'. Expected 'project' or 'global'.`);
   }
   ensureSpoolDir();
+  const memexInstalled = isMemexOnPath();
   let result;
   if (opts.mode === "project") {
     const cwd = opts.cwd ?? process.cwd();
@@ -11632,7 +11644,8 @@ async function orchestrateCmd(opts) {
       project,
       cwd,
       scan,
-      nextStep: "run-prepare-then-digest"
+      nextStep: "run-prepare-then-digest",
+      memexInstalled
     };
   } else {
     const scan = await scanAndImport({ projectFilter: null });
@@ -11641,7 +11654,8 @@ async function orchestrateCmd(opts) {
       project: null,
       cwd: null,
       scan,
-      nextStep: "run-fanout-then-catalog"
+      nextStep: "run-fanout-then-catalog",
+      memexInstalled
     };
   }
   process.stdout.write(JSON.stringify(result, null, 2) + "\n");

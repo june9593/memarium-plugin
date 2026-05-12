@@ -8,6 +8,7 @@
 // stays in the skill, where in-session Claude has the full conversation
 // context and can write naturally. This file is "warmup only".
 
+import { execFileSync } from "node:child_process";
 import { ensureSpoolDir } from "../spool/ensure-dir.js";
 import { scanAndImport, type ScanResult } from "../spool/scan-and-import.js";
 import { projectSlugFromPath } from "../_shared/slug.js";
@@ -23,6 +24,22 @@ export interface OrchestrateOutput {
   cwd: string | null;
   scan: ScanResult;
   nextStep: "run-prepare-then-digest" | "run-fanout-then-catalog";
+  /** True iff `memex` is on PATH at orchestrate time. Skill reads this
+   *  to decide whether to prompt the user about /memex-retro hand-off,
+   *  and avoids issuing its own `command -v memex` Bash (which AI tends
+   *  to over-generalize into also checking other binaries). */
+  memexInstalled: boolean;
+}
+
+function isMemexOnPath(): boolean {
+  try {
+    execFileSync("/bin/sh", ["-c", "command -v memex >/dev/null 2>&1"], {
+      stdio: "ignore",
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function orchestrateCmd(opts: OrchestrateOptions): Promise<void> {
@@ -31,6 +48,7 @@ export async function orchestrateCmd(opts: OrchestrateOptions): Promise<void> {
   }
 
   ensureSpoolDir();
+  const memexInstalled = isMemexOnPath();
 
   let result: OrchestrateOutput;
   if (opts.mode === "project") {
@@ -43,6 +61,7 @@ export async function orchestrateCmd(opts: OrchestrateOptions): Promise<void> {
       cwd,
       scan,
       nextStep: "run-prepare-then-digest",
+      memexInstalled,
     };
   } else {
     const scan = await scanAndImport({ projectFilter: null });
@@ -52,6 +71,7 @@ export async function orchestrateCmd(opts: OrchestrateOptions): Promise<void> {
       cwd: null,
       scan,
       nextStep: "run-fanout-then-catalog",
+      memexInstalled,
     };
   }
 

@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.1.8 — 2026-05-13
+
+Three quality-of-life fixes targeting AI dogfood friction:
+
+### `${CLAUDE_PLUGIN_ROOT}` is not in in-session Bash
+
+In-session Bash never has `${CLAUDE_PLUGIN_ROOT}` set — it's only
+populated for hook subprocesses. AI was tripping on zsh quoting like
+`CLAUDE_PLUGIN_ROOT=... $CLAUDE_PLUGIN_ROOT/bin/...` (zsh expands
+the var BEFORE the assignment, so it resolves to empty + `/bin/...`).
+
+**Fixed:** SKILL.md now starts with "Step −1": discover plugin path via
+`VBP=$(ls -td ~/.claude/plugins/cache/vibebook/vibebook/*/bin/vibebook-plugin.js | head -1)`
+and use `"$VBP" <subcommand>` everywhere. All 30+ `${CLAUDE_PLUGIN_ROOT}/bin/...`
+occurrences in skills/ replaced with `"$VBP"`.
+
+### Memex detection moved into `orchestrate` JSON
+
+SKILL.md had `command -v memex` lines that AI generalized into
+also checking `command -v vibebook` (a binary that doesn't and
+shouldn't exist for plugin-only users — it's the npm-CLI sibling
+product). Each false-positive PATH check produced a confusing red
+exit-1 in the user's transcript.
+
+**Fixed:** `orchestrate` now runs `command -v memex` itself and emits
+`"memexInstalled": <bool>` in its JSON output. SKILL.md tells AI to
+read the field and explicitly NOT to issue its own PATH checks.
+
+### Subagent fan-out can silently degrade
+
+If user's Claude Code config gives subagents zero Bash/Write
+capability (not just missing path approval), the existing warm-up
+doesn't help — agents silently complete without doing the work, AI
+waits 5 minutes, then has to restart everything inline.
+
+**Fixed:** SKILL.md P3 (fan-out section) now requires a single-agent
+**probe** before dispatching N agents: write a literal string to
+`/tmp/vb-<project>/probe.txt` and verify from main session. If the
+probe fails, fall back to inline writing immediately and tell the
+user once. Costs ~20 sec; saves 5+ min of confused fallback.
+
+No code changes to the data model or spool layout; bin and tests
+unchanged in behavior beyond the new `memexInstalled` field.
+
 ## 0.1.7 — 2026-05-13
 
 `publish` and `catalog-regen` were silent on success. AI calling them

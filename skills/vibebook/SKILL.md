@@ -7,8 +7,8 @@ description: Digest already-synced raw_sessions into per-project book artifacts 
 
 This skill walks the **in-session Claude** (you) through digesting the user's
 already-synced AI coding sessions into three per-project book artifacts. Pure
-mechanical CLI handles I/O (`${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js prepare` / `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js publish` /
-`${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js list-projects` / `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js catalog-regen`); the LLM work —
+mechanical CLI handles I/O (`"$VBP" prepare` / `"$VBP" publish` /
+`"$VBP" list-projects` / `"$VBP" catalog-regen`); the LLM work —
 segmentation + writing — is yours, in this conversation, with full context.
 
 ## Inputs you assume
@@ -27,12 +27,42 @@ segmentation + writing — is yours, in this conversation, with full context.
 
 ---
 
+## Step −1 — Locate the plugin binary (DO THIS FIRST OF ALL)
+
+`${CLAUDE_PLUGIN_ROOT}` is **not** populated in your in-session Bash
+environment — it's only available inside Claude Code's hook subprocess.
+So before any subcommand, discover the plugin's bin path and stash it
+in a shell variable. Run:
+
+```bash
+VBP=$(ls -td ~/.claude/plugins/cache/vibebook/vibebook/*/bin/vibebook-plugin.js 2>/dev/null | head -1) && echo "VBP=$VBP"
+```
+
+Confirm `$VBP` resolves to an existing file:
+
+```bash
+[ -x "$VBP" ] && "$VBP" --version
+```
+
+You should see `0.1.x` print. **If `$VBP` is empty or the version doesn't
+print**, the plugin is not installed correctly — STOP and tell the user
+they need to install via `/plugin install vibebook` (after adding the
+marketplace `june9593/vibebook-plugin`). Do not fall back to checking
+PATH for `vibebook` — that's a different (npm) product, not this plugin.
+
+Every command in this skill below uses `$VBP` directly, e.g.
+`"$VBP" prepare --cwd "$(pwd)"`. You must run all subcommands as
+**`$VBP <subcommand>`** in the same shell where you set `$VBP`. If you
+re-set `$VBP` in a later Bash call, that's also fine.
+
+---
+
 ## Pre-step — First-run nudge (silent if already shown)
 
 Before anything else, run:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js first-run
+"$VBP" first-run
 ```
 
 This prints a one-time nudge if the user hasn't installed the optional
@@ -44,7 +74,7 @@ invocation. Don't summarize the output to the user — just let it print.
 Before reading any session data, prime the spool:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js orchestrate project --cwd "$(pwd)"
+"$VBP" orchestrate project --cwd "$(pwd)"
 ```
 
 (If you're in `~/.vibebook/session-repo/` or in a non-project dir, use
@@ -57,11 +87,14 @@ into the spool. Idempotent. Read the JSON output:
 - `project`: the project slug (project mode only)
 - `scan.imported` / `scan.skipped`: how many sessions were copied this run
 - `nextStep`: hint for what to do next
+- `memexInstalled`: boolean — whether `memex` is on PATH (used in P0
+  below; **do NOT issue your own `command -v memex` Bash — read this
+  field instead**)
 
 Then run `list-projects` for the mode-detection table:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js list-projects
+"$VBP" list-projects
 ```
 
 Read `meta.isInSessionRepo` and `meta.sessionRepoPath` in the output.
@@ -80,25 +113,23 @@ matching section below. Do not try to guess; trust `list-projects`.
 
 ### Step P0 — Memex hand-off prompt (if memex is installed)
 
-Before doing any chronicle/topic work, check if `memex` is on PATH:
+Look at the `memexInstalled` field from the Step 0 `orchestrate` output
+above. **Do NOT issue your own `command -v memex` Bash** — that pattern
+generalizes badly and AI tends to also check unrelated binaries.
 
-```bash
-command -v memex >/dev/null && memex --version
-```
-
-If memex IS available, ask the user **once** at the very start:
+If `memexInstalled` is `true`, ask the user **once** at the very start:
 
 > Memex (atomic-card system) is installed. After I finish chronicles +
 > topics, do you want me to also kick off `/memex-retro` to capture any
 > reusable atomic insights from these sessions? (y/n)
 
-Remember the answer for Step P8. If memex is NOT available, skip this
+Remember the answer for Step P8. If `memexInstalled` is `false`, skip this
 question entirely — don't suggest installing it here.
 
 ### Step P1 — Prepare for cwd's project
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js prepare --cwd "$(pwd)"
+"$VBP" prepare --cwd "$(pwd)"
 ```
 
 If this errors with `no synced sessions found for cwd '...'`, the spool
@@ -166,8 +197,8 @@ chronicle value — it's the user *running* the digest pipeline, not doing
 real work. Detect via any of:
 
 - The first user message is exactly `/vibebook` (or `/vibebook ...`).
-- The transcript is dominated by `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js prepare` / `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js publish` /
-  `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js list-projects` / `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js catalog-regen` tool calls.
+- The transcript is dominated by `"$VBP" prepare` / `"$VBP" publish` /
+  `"$VBP" list-projects` / `"$VBP" catalog-regen` tool calls.
 - The assistant's output is mostly chronicle/topic/card markdown bodies
   being written to `/tmp/vibebook-*.json` or directly into `book/`.
 - Project slug is `home` or any other pseudo project (already filtered by
@@ -228,7 +259,7 @@ Subagents in Claude Code **cannot interactively prompt the user for
 Bash / Write permission** — that ability is exclusive to the main
 session. If your fan-out fires before the user has approved the
 patterns subagents need (writing JSON to `/tmp/vb-<project>/`,
-running `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js publish`, etc.), each subagent will silently
+running `"$VBP" publish`, etc.), each subagent will silently
 stall, fall back to a different MCP tool, or return "permission
 denied" without doing the work.
 
@@ -241,9 +272,9 @@ user can accept once:
 mkdir -p /tmp/vb-<project>/_warmup && rmdir /tmp/vb-<project>/_warmup
 # triggers Bash(mkdir -p /tmp/vb-<project>/*) approval
 
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js prepare --help >/dev/null
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js publish --help >/dev/null
-# triggers Bash(${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js prepare *) and Bash(${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js publish *) approval
+"$VBP" prepare --help >/dev/null
+"$VBP" publish --help >/dev/null
+# triggers Bash("$VBP" prepare *) and Bash("$VBP" publish *) approval
 
 echo warmup > /tmp/vb-<project>/_warmup.json && rm /tmp/vb-<project>/_warmup.json
 # triggers Write to /tmp/vb-<project>/* approval
@@ -261,6 +292,40 @@ session, or the user has the patterns pre-approved in
 If a subagent comes back with "permission denied", do NOT have the
 subagent retry — it can't escalate. Run the warm-up from the main
 session, then re-dispatch (or SendMessage to the same agent).
+
+#### Probe BEFORE big fan-out — catch tool-access gaps early
+
+Some users have Claude Code configured so subagents have NO Bash/Write
+capability at all (not just path-specific permissions). In that case,
+warm-up doesn't help — subagents will silently complete with no output.
+Dispatching 13 of them and waiting 5 minutes is wasted token spend.
+
+**Before fan-out of N agents, run ONE probe agent first:**
+
+```
+Agent(
+  description: "Probe write access",
+  subagent_type: "general-purpose",
+  prompt: "Write the literal string 'probe-ok' to /tmp/vb-<project>/probe.txt then read it back and report what you read. Do not do anything else."
+)
+```
+
+Then verify from main session:
+
+```bash
+cat /tmp/vb-<project>/probe.txt 2>&1 | head -1
+```
+
+- If you see `probe-ok` → subagents work; proceed with full fan-out.
+- If file is missing OR the agent reported "I cannot use Write/Bash" /
+  silently completed without writing → **fall back to inline writing
+  in the main session**. Don't fight it. Tell the user once:
+  > "Your Claude Code config doesn't allow subagents to write files,
+  > so I'll do all chronicle writing inline. This may take longer for
+  > large session sets."
+
+This probe wastes ~20 sec but saves the 5-min "13 agents stop after
+the first reports" failure mode that costs much more token + time.
 
 ### Step P4 — Write chronicles (AI-first format, agent-reuse body)
 
@@ -344,7 +409,7 @@ For each affected topic:
   every chronicle needs a topic.
 
 **Wikilinks** — write `[[chronicle/<threadId>]]` directly in topic +
-chronicle bodies as human-friendly placeholders. `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js publish`
+chronicle bodies as human-friendly placeholders. `"$VBP" publish`
 mechanically rewrites them to real relative-path markdown links. Use
 bare `threadId`, NOT a date-prefixed filename. (If memex is installed
 and you want to link to a memex card, write `[[memex:<cardSlug>]]` —
@@ -394,7 +459,7 @@ If user wants to tweak something, do it now (you can rewrite any artifact —
 just re-emit the JSON). Then publish:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js publish \
+"$VBP" publish \
   --chronicles /tmp/vibebook-chronicles.json \
   --topics /tmp/vibebook-topics.json \
   --no-catalog
@@ -414,7 +479,7 @@ publish does:
 5. Commits + pushes the device branch.
 
 If unresolved wikilinks remain, publish prints them at the end. Read the
-warning, fix in a follow-up batch (`${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js publish` is idempotent — already-
+warning, fix in a follow-up batch (`"$VBP" publish` is idempotent — already-
 inserted chronicles refuse via threadId collision, so you can re-run with
 just the new artifacts).
 
@@ -465,8 +530,8 @@ work using the same project-mode flow.
 
 ### Step G0 — Memex hand-off prompt (if memex is installed)
 
-Same as project-mode Step P0: check `command -v memex`. If installed,
-ask once at the start:
+Read `memexInstalled` from the Step 0 `orchestrate global` JSON output.
+If `true`, ask once at the start:
 
 > Memex is installed. After the global sweep finishes, want me to also
 > run /memex-retro on the most insight-dense chronicles? (y/n)
@@ -475,7 +540,7 @@ Remember the answer for Step G4. If memex isn't installed, skip.
 
 ### Step G1 — Triage
 
-`${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js list-projects` already ran in Step 0. Show the user the table:
+`"$VBP" list-projects` already ran in Step 0. Show the user the table:
 
 ```
 project              total  pending  chronicles  topics  cards  lastTouched
@@ -501,8 +566,8 @@ for permission). Before the first `Agent(...)` call, run inline:
 
 ```bash
 mkdir -p /tmp/vibebook/_warmup && rmdir /tmp/vibebook/_warmup
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js prepare --help >/dev/null
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js publish --help >/dev/null
+"$VBP" prepare --help >/dev/null
+"$VBP" publish --help >/dev/null
 echo warmup > /tmp/vibebook/_warmup.json && rm /tmp/vibebook/_warmup.json
 ```
 
@@ -520,7 +585,7 @@ For each project to process, dispatch a `general-purpose` Agent in parallel
 You are running project-mode /vibebook for project '<slug>'. Steps to follow,
 verbatim from skills/vibebook/SKILL.md sections P1–P7:
 
-  1. Run: ${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js prepare --project <slug>
+  1. Run: "$VBP" prepare --project <slug>
   2. For every newSession, Read its mdPath. Apply SKIP rules conservatively
      (read the SKIP rules in SKILL.md project-mode Step P2 — only ping/greeting/
      pure-error sessions get skipped; everything else gets a chronicle).
@@ -531,7 +596,7 @@ verbatim from skills/vibebook/SKILL.md sections P1–P7:
      voice; preserve commit hashes / file paths / code blocks verbatim).
   5. Update or insert topic pages (mid-grain subsystem level). Read existing
      topic pages and preserve historical facts when rewriting.
-  6. Run: ${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js publish --chronicles ... --topics ... --no-catalog
+  6. Run: "$VBP" publish --chronicles ... --topics ... --no-catalog
 
 Write your three input JSON files under /tmp/vibebook/<slug>/ so we don't
 collide with sibling subagents.
@@ -557,7 +622,7 @@ needed patterns.
 After all subagents return:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js catalog-regen
+"$VBP" catalog-regen
 ```
 
 This regenerates `book/index.md`, `book/_meta/timeline.md`, and
@@ -591,7 +656,7 @@ sequential — never parallel.)
 ## Things you should NEVER do
 
 - ❌ `Write` directly into `book/<project>/{chronicle,topics}/*.md` —
-  always go through `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js publish` so wikilinks resolve and the index
+  always go through `"$VBP" publish` so wikilinks resolve and the index
   stays in sync.
 - ❌ Write a chronicle for a SKIP'd session.
 - ❌ Force-merge unrelated sessions to make a "bigger thread".
@@ -609,8 +674,8 @@ sequential — never parallel.)
 
 ## Things you should always do
 
-- ✅ Run `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js list-projects` FIRST to detect mode.
-- ✅ In project-mode, derive project from cwd (`${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js prepare --cwd`).
+- ✅ Run `"$VBP" list-projects` FIRST to detect mode.
+- ✅ In project-mode, derive project from cwd (`"$VBP" prepare --cwd`).
 - ✅ Default to one-thread-per-session; merge only when continuous.
 - ✅ Be conservative with SKIP — write the chronicle if in any doubt.
 - ✅ Use Read / Glob / Grep to inspect existing book/ before writing topics.

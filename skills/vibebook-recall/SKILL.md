@@ -35,7 +35,7 @@ work. So we walk from coarse to fine:
 Run this **first**, in the user's current cwd:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js recall --cwd "$(pwd)"
+"$VBP" recall --cwd "$(pwd)"
 ```
 
 The output is a JSON payload like:
@@ -72,7 +72,7 @@ The output is a JSON payload like:
     "chronicles": 0,
     "memexQueried": true,
     "memexCards": 12,
-    "nextStep": "Pick a relevant topic, then run: ${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js recall --project <slug> --topic <topicSlug>"
+    "nextStep": "Pick a relevant topic, then run: "$VBP" recall --project <slug> --topic <topicSlug>"
   }
 }
 ```
@@ -101,7 +101,7 @@ it now — those are atomic and quick.
 For each picked topic, fetch its chronicles:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js recall --cwd "$(pwd)" --topic <topic-slug>
+"$VBP" recall --cwd "$(pwd)" --topic <topic-slug>
 ```
 
 Output:
@@ -177,7 +177,7 @@ When you reply to the user:
 - The user's request has nothing to do with code in this repo (e.g.
   asking you to format JSON, write an essay, debug a config).
 - The user explicitly says "ignore my notes" or "fresh start".
-- `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js recall` errors with "no synced sessions for cwd" — the user
+- `"$VBP" recall` errors with "no synced sessions for cwd" — the user
   hasn't synced this project. Fall back to normal exploration; don't
   pester them to sync.
 - You're being asked the same question for the second time in one
