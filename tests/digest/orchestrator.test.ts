@@ -40,8 +40,8 @@ describe("orchestrateCmd", () => {
     expect(parsed.mode).toBe("project");
     expect(parsed.project).toBe("edge-src");
     expect(parsed.scan.imported).toBe(1);
-    // Only edge-src made it into spool
-    const spoolProjects = readdirSync(join(fakeHome, ".vibebook/session-repo/raw_sessions"));
+    // Only edge-src made it into spool. New layout: raw_sessions/<tool>/<project>/<date>/
+    const spoolProjects = readdirSync(join(fakeHome, ".vibebook/session-repo/raw_sessions/claude"));
     expect(spoolProjects).toEqual(["edge-src"]);
   });
 
@@ -55,7 +55,7 @@ describe("orchestrateCmd", () => {
     const parsed = JSON.parse(out);
     expect(parsed.mode).toBe("global");
     expect(parsed.scan.imported).toBe(2);
-    const spoolProjects = readdirSync(join(fakeHome, ".vibebook/session-repo/raw_sessions"));
+    const spoolProjects = readdirSync(join(fakeHome, ".vibebook/session-repo/raw_sessions/claude"));
     // projectSlugFromPath("/Users/test/foo") → "test-foo" (parent-basename rule)
     expect(new Set(spoolProjects)).toEqual(new Set(["edge-src", "test-foo"]));
   });

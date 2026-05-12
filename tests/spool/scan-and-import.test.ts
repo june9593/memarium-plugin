@@ -29,22 +29,49 @@ describe("scanAndImport", () => {
     writeFileSync(join(projectDir, `${sessionId}.jsonl`), lines.join("\n") + "\n");
   }
 
-  it("imports new sessions into spool/raw_sessions/<project>/", async () => {
+  it("imports new sessions: writes .md + .raw.json under raw_sessions/<tool>/<project>/<date>/", async () => {
     const projDir = join(claudeProjectsDir, "-Users-test-edge-src");
     writeFakeJsonl(projDir, "abc-123", "/Users/test/edge/src");
 
     const result = await scanAndImport({ projectFilter: null });
     expect(result.imported).toBe(1);
     expect(result.skipped).toBe(0);
-    const spoolDir = join(fakeHome, ".vibebook/session-repo/raw_sessions");
-    expect(existsSync(spoolDir)).toBe(true);
-    const subdirs = readdirSync(spoolDir);
-    expect(subdirs.length).toBe(1);
-    const subdirJsonls = readdirSync(join(spoolDir, subdirs[0]));
-    expect(subdirJsonls).toContain("abc-123.jsonl");
+
+    const spoolRoot = join(fakeHome, ".vibebook/session-repo");
+    // raw_sessions/claude/<project-slug>/<YYYY-MM-DD>/ should now contain
+    // exactly one .md and one .raw.json.
+    const claudeDir = join(spoolRoot, "raw_sessions/claude");
+    expect(existsSync(claudeDir)).toBe(true);
+    const projectSlugs = readdirSync(claudeDir);
+    expect(projectSlugs.length).toBe(1);
+    const dates = readdirSync(join(claudeDir, projectSlugs[0]));
+    expect(dates.length).toBe(1);
+    const files = readdirSync(join(claudeDir, projectSlugs[0], dates[0]));
+    const md = files.find((f) => f.endsWith(".md"));
+    const raw = files.find((f) => f.endsWith(".raw.json"));
+    expect(md).toBeTruthy();
+    expect(raw).toBeTruthy();
   });
 
-  it("is idempotent — running twice imports 1 then 0", async () => {
+  it("writes ~/.vibebook/session-repo/.vibebook/index.json with the imported session entry", async () => {
+    const projDir = join(claudeProjectsDir, "-Users-test-edge-src");
+    writeFakeJsonl(projDir, "abc-123", "/Users/test/edge/src");
+
+    await scanAndImport({ projectFilter: null });
+
+    const indexPath = join(fakeHome, ".vibebook/session-repo/.vibebook/index.json");
+    expect(existsSync(indexPath)).toBe(true);
+    const idx = JSON.parse(readFileSync(indexPath, "utf8"));
+    expect(idx.version).toBe(1);
+    expect(Object.keys(idx.entries).length).toBe(1);
+    const entry = Object.values(idx.entries)[0] as { sessionId: string; tool: string; project: string };
+    expect(entry.sessionId).toBe("abc-123");
+    expect(entry.tool).toBe("claude");
+    // edge-src is the parent-basename slug for /Users/test/edge/src
+    expect(entry.project).toBe("edge-src");
+  });
+
+  it("is idempotent — running twice imports 1 then 0 (mtime unchanged)", async () => {
     const projDir = join(claudeProjectsDir, "-Users-test-edge-src");
     writeFakeJsonl(projDir, "abc-123", "/Users/test/edge/src");
 
@@ -58,13 +85,14 @@ describe("scanAndImport", () => {
 
   it("with projectFilter, imports only sessions matching that project slug", async () => {
     writeFakeJsonl(join(claudeProjectsDir, "-Users-test-edge-src"), "s1", "/Users/test/edge/src");
-    writeFakeJsonl(join(claudeProjectsDir, "-Users-test-foo-bar"), "s2", "/Users/test/foo/bar");
+    writeFakeJsonl(join(claudeProjectsDir, "-Users-test-foo"), "s2", "/Users/test/foo");
 
     const result = await scanAndImport({ projectFilter: "edge-src" });
     expect(result.imported).toBe(1);
-    const spoolDir = join(fakeHome, ".vibebook/session-repo/raw_sessions");
-    const subdirs = readdirSync(spoolDir);
-    expect(subdirs).toEqual(["edge-src"]);
+
+    const spoolRoot = join(fakeHome, ".vibebook/session-repo");
+    const projectSlugs = readdirSync(join(spoolRoot, "raw_sessions/claude"));
+    expect(projectSlugs).toEqual(["edge-src"]);
   });
 
   it("skips meta-project paths (.worktrees-, *-workspacestorage)", async () => {
@@ -75,5 +103,6 @@ describe("scanAndImport", () => {
     );
     const result = await scanAndImport({ projectFilter: null });
     expect(result.imported).toBe(0);
+    expect(result.filteredAsPseudoProject).toBeGreaterThanOrEqual(1);
   });
 });

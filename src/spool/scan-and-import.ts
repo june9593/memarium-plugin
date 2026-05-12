@@ -1,19 +1,22 @@
-// Plugin scan: walk ~/.claude/projects/, copy each session's jsonl into
-// ~/.vibebook/session-repo/raw_sessions/<project>/<sessionId>.jsonl.
+// Plugin scan: walk ~/.claude/projects/, render each session into the spool
+// as .md + .raw.json (matching npm sync's writer output byte-for-byte), and
+// upsert per-session entries into ~/.vibebook/session-repo/.vibebook/index.json.
 //
-// Idempotent: a sessionId already present in the spool is skipped (no
-// re-copy, no overwrite). This is what makes the orchestrator safe to
-// re-run.
+// This is the plugin equivalent of npm sync.ts's main loop (sync.ts:80-125),
+// minus git/encrypt/migration. Plugin and sync are co-owners of raw_sessions/
+// and index.json; both write via the same upsertEntry path keyed by
+// {tool}:{sessionId}, so concurrent writes are conflict-free.
 //
-// We DELIBERATELY do not write any index file — sync CLI owns
-// ~/.vibebook/session-repo/.vibebook/index.json. Plugin operates "directly
-// on the filesystem" and trusts the file presence as the source of truth.
+// Idempotent: hasUnchanged() check on the existing index entry skips sessions
+// whose source jsonl mtime + sha256 are unchanged. First call on a fresh spool
+// imports everything; subsequent calls only import what's new or changed.
 
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
 import { ClaudeCodeAdapter } from "../_shared/sources/claude-code.js";
 import { isRealProjectPath } from "../_shared/digest/project-filter.js";
+import { loadIndex, saveIndex, upsertEntry, hasUnchanged } from "../_shared/index-store.js";
+import type { IndexEntry } from "../_shared/types.js";
 import { ensureSpoolDir } from "./ensure-dir.js";
+import { writeSession } from "./writer.js";
 
 export interface ScanOptions {
   /** If non-null, only import sessions belonging to this project slug. */
@@ -28,9 +31,11 @@ export interface ScanResult {
 }
 
 export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
-  const { rawSessionsDir } = ensureSpoolDir();
+  const { spoolRoot } = ensureSpoolDir();
 
   const adapter = new ClaudeCodeAdapter();
+  const idx = loadIndex(spoolRoot);
+
   const result: ScanResult = {
     imported: 0,
     skipped: 0,
@@ -39,35 +44,56 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
   };
 
   for await (const discovered of adapter.discover()) {
-    // DiscoveredSession only carries sourcePath/mtime/sha. We need to load() to
-    // get the parsed NormalizedSession (sessionId + project slug).
-    let normalized;
+    let session;
     try {
-      normalized = await discovered.load();
+      session = await discovered.load();
     } catch {
-      // Malformed jsonl — skip silently. Sync CLI tracks parse errors
-      // properly; the plugin's job is just "import what's parseable".
+      // Malformed jsonl — sync CLI tracks parse errors; plugin best-effort skips.
       continue;
     }
 
-    if (!isRealProjectPath(normalized.project)) {
+    if (!isRealProjectPath(session.project)) {
       result.filteredAsPseudoProject++;
       continue;
     }
-    if (opts.projectFilter && normalized.project !== opts.projectFilter) {
+    if (opts.projectFilter && session.project !== opts.projectFilter) {
       result.filteredByProject++;
       continue;
     }
 
-    const projectSpoolDir = join(rawSessionsDir, normalized.project);
-    const dest = join(projectSpoolDir, `${normalized.sessionId}.jsonl`);
-    if (existsSync(dest)) {
+    if (hasUnchanged(idx, session.tool, session.sessionId, discovered.sourceMtimeMs, discovered.sourceSha256)) {
       result.skipped++;
       continue;
     }
-    mkdirSync(projectSpoolDir, { recursive: true });
-    copyFileSync(discovered.sourcePath, dest);
+
+    // Write rendered .md + .raw.json. includeReasoning=true matches npm
+    // sync's default; we don't read config here (plugin must work without
+    // ~/.vibebook/config.json).
+    const written = writeSession(spoolRoot, session, { includeReasoning: true });
+
+    const entry: IndexEntry = {
+      sessionId: session.sessionId,
+      shortId: session.shortId,
+      tool: session.tool,
+      project: session.project,
+      projectRaw: session.projectRaw,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      nameSlug: session.nameSlug,
+      displayName: session.displayName,
+      relativePath: written.raw,
+      sourcePath: session.sourcePath,
+      sourceMtimeMs: discovered.sourceMtimeMs,
+      sourceSha256: discovered.sourceSha256,
+    };
+    upsertEntry(idx, entry);
     result.imported++;
   }
+
+  // Persist the index in the same format npm sync uses, so a later
+  // `vibebook sync` (if user installs npm CLI later) sees plugin-written
+  // entries as already-known and doesn't re-render them.
+  saveIndex(spoolRoot, idx);
+
   return result;
 }
