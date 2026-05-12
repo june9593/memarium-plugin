@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.5 — 2026-05-13
+
+Test-only patch. The autonomy gate now also covers VS Code Copilot Chat.
+0.1.4's missing-Copilot-adapter regression slipped past tests because
+the autonomy fixture only planted Claude Code jsonl. Catch that class
+of bug going forward.
+
+### Tests added
+
+- `tests/integration/plugin-autonomy.test.ts` — new case: plant 1 Claude
+  Code session + 1 Copilot Chat session (legacy `chatSessions/<id>.json`
+  format under `~/Library/Application Support/Code/User/workspaceStorage/<hash>/`),
+  run orchestrate, assert both end up in spool with correct `tool` tags
+  in `index.json`.
+- Total: 22 tests pass (was 21).
+
+No code change. Bundle byte-identical except for embedded version string.
+
 ## 0.1.4 — 2026-05-13
 
 `scanAndImport` only walked Claude Code's `~/.claude/projects/`, silently

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { orchestrateCmd } from "../../src/digest/orchestrator.js";
@@ -96,5 +96,62 @@ describe("plugin autonomy (no npm CLI, no ~/.vibebook/ at start)", () => {
     expect(prepareOut.newSessions.length).toBe(2);
     const sessionIds = prepareOut.newSessions.map((s: { sessionId: string }) => s.sessionId).sort();
     expect(sessionIds).toEqual(["ses-1", "ses-2"]);
+  });
+
+  it("scans VS Code Copilot Chat sessions too (regression guard for 0.1.4 bug)", async () => {
+    // Plant 1 Claude Code session AND 1 Copilot Chat session.
+    // Copilot's defaultStorageRoot() on macOS is:
+    //   <HOME>/Library/Application Support/Code/User/workspaceStorage/
+    // Use the legacy `chatSessions/<id>.json` format — minimal valid input.
+    writeFakeJsonl(join(claudeProjectsDir, "-Users-test-edge-src"), "claude-ses", "/Users/test/edge/src");
+
+    const wsHash = "abc123def456"; // workspace hash; arbitrary
+    const wsDir = join(
+      fakeHome,
+      "Library/Application Support/Code/User/workspaceStorage",
+      wsHash,
+    );
+    mkdirSync(join(wsDir, "chatSessions"), { recursive: true });
+    // workspace.json points the Copilot session at our project cwd, so the
+    // adapter's project slugification matches the Claude session's project.
+    writeFileSync(
+      join(wsDir, "workspace.json"),
+      JSON.stringify({ folder: "file:///Users/test/edge/src" }),
+    );
+    // Minimal Copilot legacy session file. parseCopilotJson reads
+    // obj.requests[]; each request has message.text + response[].
+    const copilotSessionId = "copilot-ses-xyz";
+    writeFileSync(
+      join(wsDir, "chatSessions", `${copilotSessionId}.json`),
+      JSON.stringify({
+        version: 3,
+        requests: [
+          {
+            timestamp: Date.parse("2026-05-13T10:00:00Z"),
+            message: { text: "How do I add a new flag?" },
+            response: [{ value: "Add it in src/cli.ts." }],
+          },
+        ],
+      }),
+    );
+
+    // Run the FULL autonomy pipeline.
+    await orchestrateCmd({ mode: "project", cwd: "/Users/test/edge/src" });
+    const orchestrateOut = JSON.parse(stdoutChunks.join(""));
+    // Both adapters fired. Imports = Claude (1) + Copilot (1).
+    expect(orchestrateOut.scan.imported).toBe(2);
+
+    // Verify both ended up in the spool, under separate tool subdirs.
+    const claudeSpool = join(fakeHome, ".vibebook/session-repo/raw_sessions/claude");
+    const copilotSpool = join(fakeHome, ".vibebook/session-repo/raw_sessions/copilot");
+    expect(existsSync(claudeSpool)).toBe(true);
+    expect(existsSync(copilotSpool)).toBe(true);
+
+    // Verify the index has 2 entries with correct tool tags.
+    const idx = JSON.parse(
+      readFileSync(join(fakeHome, ".vibebook/session-repo/.vibebook/index.json"), "utf8"),
+    );
+    const tools = (Object.values(idx.entries) as Array<{ tool: string }>).map((e) => e.tool).sort();
+    expect(tools).toEqual(["claude", "copilot"]);
   });
 });
