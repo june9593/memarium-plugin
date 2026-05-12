@@ -11230,19 +11230,280 @@ var init_claude_code = __esm({
   }
 });
 
+// src/_shared/sources/vscode-copilot.ts
+import { createHash as createHash2 } from "node:crypto";
+import { readdirSync as readdirSync5, readFileSync as readFileSync10, statSync as statSync3, existsSync as existsSync12 } from "node:fs";
+import { homedir as homedir8 } from "node:os";
+import { join as join15, basename as basename2 } from "node:path";
+function defaultStorageRoot() {
+  if (process.platform === "darwin")
+    return join15(homedir8(), "Library", "Application Support", "Code", "User", "workspaceStorage");
+  if (process.platform === "win32")
+    return join15(homedir8(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
+  return join15(homedir8(), ".config", "Code", "User", "workspaceStorage");
+}
+function readWorkspacePath(workspaceJsonPath) {
+  if (!existsSync12(workspaceJsonPath)) return "";
+  try {
+    const obj = JSON.parse(readFileSync10(workspaceJsonPath, "utf8"));
+    const u = obj.folder ?? obj.workspace ?? "";
+    if (!u) return "";
+    return u.startsWith("file://") ? decodeURIComponent(u.slice("file://".length)) : u;
+  } catch {
+    return "";
+  }
+}
+function parseCopilotJson(sourcePath, content, workspacePath) {
+  const obj = JSON.parse(content);
+  const fileBase = basename2(sourcePath, ".json");
+  const sessionId = fileBase;
+  const requests = Array.isArray(obj.requests) ? obj.requests : [];
+  return buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath);
+}
+function parseCopilotChatSessionsJsonl(sourcePath, content, workspacePath) {
+  const fileBase = basename2(sourcePath, ".jsonl");
+  let sessionId = fileBase;
+  let requests = [];
+  const lines = content.split("\n");
+  for (const line of lines) {
+    const s = line.trim();
+    if (!s) continue;
+    let obj;
+    try {
+      obj = JSON.parse(s);
+    } catch {
+      continue;
+    }
+    if (obj?.kind === 0 && obj?.v) {
+      if (typeof obj.v.sessionId === "string" && obj.v.sessionId) sessionId = obj.v.sessionId;
+      if (Array.isArray(obj.v.requests)) requests = obj.v.requests;
+    } else if (obj?.kind === 2 && Array.isArray(obj.k) && obj.k[0] === "requests" && obj.k.length === 1 && Array.isArray(obj.v)) {
+      requests = obj.v;
+    } else if (obj?.kind === 2 && Array.isArray(obj.k) && obj.k[0] === "requests" && obj.k.length >= 2 && typeof obj.k[1] === "number") {
+      const idx = obj.k[1];
+      if (obj.k.length === 2) {
+        requests[idx] = obj.v;
+      } else {
+        let cur = requests[idx];
+        if (cur === void 0) {
+          cur = {};
+          requests[idx] = cur;
+        }
+        for (let i2 = 2; i2 < obj.k.length - 1; i2++) {
+          const seg = obj.k[i2];
+          if (cur[seg] === void 0) cur[seg] = typeof obj.k[i2 + 1] === "number" ? [] : {};
+          cur = cur[seg];
+        }
+        cur[obj.k[obj.k.length - 1]] = obj.v;
+      }
+    }
+  }
+  return buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath);
+}
+function buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath) {
+  const messages = [];
+  let startedAt = "";
+  let endedAt = "";
+  for (const r2 of requests) {
+    if (!r2) continue;
+    const ts = typeof r2.timestamp === "number" ? new Date(r2.timestamp).toISOString() : void 0;
+    if (ts) {
+      if (!startedAt) startedAt = ts;
+      endedAt = ts;
+    }
+    const userTextRaw = r2?.message?.text;
+    if (typeof userTextRaw === "string" && userTextRaw) {
+      const userText = sanitizeMessageText(userTextRaw);
+      if (userText) messages.push({ role: "user", text: userText, timestamp: ts, raw: r2.message });
+    }
+    const respParts = Array.isArray(r2.response) ? r2.response : [];
+    const assistantTextRaw = respParts.map((p2) => {
+      if (p2?.kind === "markdownContent") return p2?.content?.value ?? "";
+      if (p2?.kind === "textEditGroup") return "";
+      if (typeof p2?.value === "string") return p2.value;
+      return "";
+    }).filter(Boolean).join("\n");
+    if (assistantTextRaw) {
+      const assistantText = sanitizeMessageText(assistantTextRaw);
+      if (assistantText) {
+        messages.push({ role: "assistant", text: assistantText, timestamp: ts, raw: respParts });
+      }
+    }
+  }
+  const firstUser = messages.find((m) => m.role === "user")?.text ?? "";
+  const { slug, display } = deriveSlug(firstUser);
+  const shortId = sessionId.slice(0, 8);
+  return {
+    tool: "copilot",
+    sessionId,
+    shortId,
+    project: projectSlugFromPath(workspacePath),
+    projectRaw: workspacePath,
+    startedAt: startedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
+    endedAt: endedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
+    nameSlug: slug,
+    displayName: display,
+    messages,
+    sourcePath
+  };
+}
+function parseCopilotTranscript(sourcePath, content, workspacePath) {
+  const fileBase = basename2(sourcePath, ".jsonl");
+  let sessionId = fileBase;
+  const messages = [];
+  let startedAt = "";
+  let endedAt = "";
+  const lines = content.split("\n");
+  for (const line of lines) {
+    const s = line.trim();
+    if (!s) continue;
+    let obj;
+    try {
+      obj = JSON.parse(s);
+    } catch {
+      continue;
+    }
+    const t2 = obj?.type;
+    const ts = typeof obj?.timestamp === "string" ? obj.timestamp : void 0;
+    if (ts) {
+      if (!startedAt) startedAt = ts;
+      endedAt = ts;
+    }
+    if (t2 === "session.start") {
+      const sid = obj?.data?.sessionId;
+      if (typeof sid === "string" && sid) sessionId = sid;
+      continue;
+    }
+    if (t2 === "user.message") {
+      const raw = typeof obj?.data?.content === "string" ? obj.data.content : "";
+      const text = sanitizeMessageText(raw);
+      if (text) messages.push({ role: "user", text, timestamp: ts, raw: obj });
+      continue;
+    }
+    if (t2 === "assistant.message") {
+      const rawText = typeof obj?.data?.content === "string" ? obj.data.content : "";
+      const rawReasoning = typeof obj?.data?.reasoningText === "string" ? obj.data.reasoningText : "";
+      const text = sanitizeMessageText(rawText);
+      const reasoning = sanitizeMessageText(rawReasoning);
+      if (text || reasoning) {
+        const msg = { role: "assistant", text, timestamp: ts, raw: obj };
+        if (reasoning) msg.reasoning = reasoning;
+        messages.push(msg);
+      }
+      continue;
+    }
+    if (t2 === "tool.execution_start" || t2 === "tool.execution_complete") {
+      continue;
+    }
+  }
+  const firstUser = messages.find((m) => m.role === "user")?.text ?? "";
+  const { slug, display } = deriveSlug(firstUser);
+  const shortId = sessionId.slice(0, 8);
+  return {
+    tool: "copilot",
+    sessionId,
+    shortId,
+    project: projectSlugFromPath(workspacePath),
+    projectRaw: workspacePath,
+    startedAt: startedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
+    endedAt: endedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
+    nameSlug: slug,
+    displayName: display,
+    messages,
+    sourcePath
+  };
+}
+var VSCodeCopilotAdapter;
+var init_vscode_copilot = __esm({
+  "src/_shared/sources/vscode-copilot.ts"() {
+    "use strict";
+    init_slug();
+    init_claude_code();
+    VSCodeCopilotAdapter = class {
+      constructor(root = defaultStorageRoot()) {
+        this.root = root;
+      }
+      name = "copilot";
+      async *discover() {
+        if (!existsSync12(this.root)) return;
+        let workspaces;
+        try {
+          workspaces = readdirSync5(this.root, { withFileTypes: true });
+        } catch {
+          return;
+        }
+        for (const w of workspaces) {
+          if (!w.isDirectory()) continue;
+          const wsDir = join15(this.root, w.name);
+          const wsPath = readWorkspacePath(join15(wsDir, "workspace.json"));
+          const chatDir = join15(wsDir, "chatSessions");
+          if (existsSync12(chatDir)) {
+            let files = [];
+            try {
+              files = readdirSync5(chatDir, { withFileTypes: true });
+            } catch {
+              files = [];
+            }
+            for (const f of files) {
+              if (!f.isFile()) continue;
+              const isJson = f.name.endsWith(".json");
+              const isJsonl = f.name.endsWith(".jsonl");
+              if (!isJson && !isJsonl) continue;
+              const p2 = join15(chatDir, f.name);
+              const st = statSync3(p2);
+              if (st.size === 0) continue;
+              const buf = readFileSync10(p2);
+              const sha = createHash2("sha256").update(buf).digest("hex");
+              yield {
+                sourcePath: p2,
+                sourceMtimeMs: st.mtimeMs,
+                sourceSha256: sha,
+                load: async () => isJsonl ? parseCopilotChatSessionsJsonl(p2, buf.toString("utf8"), wsPath) : parseCopilotJson(p2, buf.toString("utf8"), wsPath)
+              };
+            }
+          }
+          const transcriptsDir = join15(wsDir, "GitHub.copilot-chat", "transcripts");
+          if (existsSync12(transcriptsDir)) {
+            let tfiles = [];
+            try {
+              tfiles = readdirSync5(transcriptsDir, { withFileTypes: true });
+            } catch {
+              tfiles = [];
+            }
+            for (const f of tfiles) {
+              if (!f.isFile() || !f.name.endsWith(".jsonl")) continue;
+              const p2 = join15(transcriptsDir, f.name);
+              const st = statSync3(p2);
+              if (st.size === 0) continue;
+              const buf = readFileSync10(p2);
+              const sha = createHash2("sha256").update(buf).digest("hex");
+              yield {
+                sourcePath: p2,
+                sourceMtimeMs: st.mtimeMs,
+                sourceSha256: sha,
+                load: async () => parseCopilotTranscript(p2, buf.toString("utf8"), wsPath)
+              };
+            }
+          }
+        }
+      }
+    };
+  }
+});
+
 // src/spool/writer.ts
 import { mkdirSync as mkdirSync9, writeFileSync as writeFileSync7 } from "node:fs";
-import { join as join15 } from "node:path";
+import { join as join16 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
-  const dirRel = join15("raw_sessions", s.tool, s.project, date);
-  const absDir = join15(repoRoot, dirRel);
+  const dirRel = join16("raw_sessions", s.tool, s.project, date);
+  const absDir = join16(repoRoot, dirRel);
   mkdirSync9(absDir, { recursive: true });
   const base = `${s.nameSlug}__${s.shortId}`;
-  const rawRel = join15(dirRel, `${base}.raw.json`);
-  const mdRel = join15(dirRel, `${base}.md`);
-  writeFileSync7(join15(repoRoot, rawRel), JSON.stringify(s, null, 2) + "\n");
-  writeFileSync7(join15(repoRoot, mdRel), renderMarkdown(s, opts.includeReasoning ?? true));
+  const rawRel = join16(dirRel, `${base}.raw.json`);
+  const mdRel = join16(dirRel, `${base}.md`);
+  writeFileSync7(join16(repoRoot, rawRel), JSON.stringify(s, null, 2) + "\n");
+  writeFileSync7(join16(repoRoot, mdRel), renderMarkdown(s, opts.includeReasoning ?? true));
   return { raw: rawRel, md: mdRel };
 }
 function renderMarkdown(s, includeReasoning) {
@@ -11285,7 +11546,10 @@ var init_writer = __esm({
 // src/spool/scan-and-import.ts
 async function scanAndImport(opts) {
   const { spoolRoot } = ensureSpoolDir();
-  const adapter = new ClaudeCodeAdapter();
+  const adapters = [
+    new ClaudeCodeAdapter(),
+    new VSCodeCopilotAdapter()
+  ];
   const idx = loadIndex(spoolRoot);
   const result = {
     imported: 0,
@@ -11293,43 +11557,45 @@ async function scanAndImport(opts) {
     filteredAsPseudoProject: 0,
     filteredByProject: 0
   };
-  for await (const discovered of adapter.discover()) {
-    let session;
-    try {
-      session = await discovered.load();
-    } catch {
-      continue;
+  for (const adapter of adapters) {
+    for await (const discovered of adapter.discover()) {
+      let session;
+      try {
+        session = await discovered.load();
+      } catch {
+        continue;
+      }
+      if (!isRealProjectPath(session.project)) {
+        result.filteredAsPseudoProject++;
+        continue;
+      }
+      if (opts.projectFilter && session.project !== opts.projectFilter) {
+        result.filteredByProject++;
+        continue;
+      }
+      if (hasUnchanged(idx, session.tool, session.sessionId, discovered.sourceMtimeMs, discovered.sourceSha256)) {
+        result.skipped++;
+        continue;
+      }
+      const written = writeSession(spoolRoot, session, { includeReasoning: true });
+      const entry = {
+        sessionId: session.sessionId,
+        shortId: session.shortId,
+        tool: session.tool,
+        project: session.project,
+        projectRaw: session.projectRaw,
+        startedAt: session.startedAt,
+        endedAt: session.endedAt,
+        nameSlug: session.nameSlug,
+        displayName: session.displayName,
+        relativePath: written.raw,
+        sourcePath: session.sourcePath,
+        sourceMtimeMs: discovered.sourceMtimeMs,
+        sourceSha256: discovered.sourceSha256
+      };
+      upsertEntry(idx, entry);
+      result.imported++;
     }
-    if (!isRealProjectPath(session.project)) {
-      result.filteredAsPseudoProject++;
-      continue;
-    }
-    if (opts.projectFilter && session.project !== opts.projectFilter) {
-      result.filteredByProject++;
-      continue;
-    }
-    if (hasUnchanged(idx, session.tool, session.sessionId, discovered.sourceMtimeMs, discovered.sourceSha256)) {
-      result.skipped++;
-      continue;
-    }
-    const written = writeSession(spoolRoot, session, { includeReasoning: true });
-    const entry = {
-      sessionId: session.sessionId,
-      shortId: session.shortId,
-      tool: session.tool,
-      project: session.project,
-      projectRaw: session.projectRaw,
-      startedAt: session.startedAt,
-      endedAt: session.endedAt,
-      nameSlug: session.nameSlug,
-      displayName: session.displayName,
-      relativePath: written.raw,
-      sourcePath: session.sourcePath,
-      sourceMtimeMs: discovered.sourceMtimeMs,
-      sourceSha256: discovered.sourceSha256
-    };
-    upsertEntry(idx, entry);
-    result.imported++;
   }
   saveIndex(spoolRoot, idx);
   return result;
@@ -11338,6 +11604,7 @@ var init_scan_and_import = __esm({
   "src/spool/scan-and-import.ts"() {
     "use strict";
     init_claude_code();
+    init_vscode_copilot();
     init_project_filter();
     init_index_store();
     init_ensure_dir();
@@ -11406,14 +11673,14 @@ var {
 } = import_index.default;
 
 // src/plugin-cli.ts
-import { readFileSync as readFileSync10 } from "node:fs";
+import { readFileSync as readFileSync11 } from "node:fs";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 import { dirname as dirname5, resolve as resolve3 } from "node:path";
 function readPackageVersion() {
   const here = dirname5(fileURLToPath2(import.meta.url));
   for (const rel of ["../package.json", "../../package.json", "../../../package.json"]) {
     try {
-      return JSON.parse(readFileSync10(resolve3(here, rel), "utf8")).version;
+      return JSON.parse(readFileSync11(resolve3(here, rel), "utf8")).version;
     } catch {
     }
   }

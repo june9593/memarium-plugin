@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.1.4 — 2026-05-13
+
+`scanAndImport` only walked Claude Code's `~/.claude/projects/`, silently
+ignoring VS Code Copilot Chat. The README and the npm sync CLI both
+support both sources; the plugin's autonomy refactor in 0.1.2 dropped
+Copilot by accident (single-adapter loop).
+
+### Fixed
+
+- `src/spool/scan-and-import.ts` now scans both `ClaudeCodeAdapter` and
+  `VSCodeCopilotAdapter` in sequence, mirroring npm `sync.ts:75-78`.
+- Users on machines with mostly Copilot session history (and few /no
+  Claude Code sessions) will now see those sessions imported into the
+  spool and digestible by `/vibebook`.
+
+### Note for plan/spec
+
+The original 0.1.2 plan T5 only mentioned `ClaudeCodeAdapter`; the spec
+patch correctly listed `vscode-copilot.ts` under shared infra (T3) but
+didn't enforce that scan-and-import use it. The autonomy integration
+test (T7) only planted Claude Code jsonl, so the gap wasn't caught.
+0.1.5+ should add a Copilot fixture to the autonomy test.
+
 ## 0.1.3 — 2026-05-13
 
 Marketplace name change to avoid collision with the npm `vibebook` repo
