@@ -54,11 +54,15 @@ export async function run(argv: string[]) {
     .option("--no-catalog", "skip book/index.md regen (caller will batch)")
     .action(async (opts: { chronicles?: string; topics?: string; catalog?: boolean }) => {
       const { publishCmd } = await import("./commands/publish.js");
-      await publishCmd({
+      const report = await publishCmd({
         chroniclesPath: opts.chronicles,
         topicsPath: opts.topics,
         noCatalog: opts.catalog === false,
       });
+      // Print a JSON summary so the calling skill (or CI) can confirm what
+      // landed without resorting to "rerun and check for already-exists
+      // errors". Always written to stdout, even on zero-insert runs.
+      process.stdout.write(JSON.stringify(report, null, 2) + "\n");
     });
 
   program
@@ -78,7 +82,10 @@ export async function run(argv: string[]) {
     .option("--no-commit", "skip git commit + push of the regenerated catalog")
     .action(async (opts: { commit?: boolean }) => {
       const { catalogRegenCmd } = await import("./commands/catalog-regen.js");
-      await catalogRegenCmd({ noCommit: opts.commit === false });
+      const report = await catalogRegenCmd({ noCommit: opts.commit === false });
+      // Print JSON summary so callers don't have to parse stderr noise from
+      // git's progress output to figure out what happened.
+      process.stdout.write(JSON.stringify(report, null, 2) + "\n");
     });
 
   program

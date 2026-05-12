@@ -11699,11 +11699,12 @@ async function run(argv) {
   });
   program2.command("publish").description("Write chronicle/topic md files emitted by the /vibebook skill into the book.").option("--chronicles <path>", "path to chronicles JSON").option("--topics <path>", "path to topics JSON").option("--no-catalog", "skip book/index.md regen (caller will batch)").action(async (opts) => {
     const { publishCmd: publishCmd2 } = await Promise.resolve().then(() => (init_publish(), publish_exports));
-    await publishCmd2({
+    const report = await publishCmd2({
       chroniclesPath: opts.chronicles,
       topicsPath: opts.topics,
       noCatalog: opts.catalog === false
     });
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
   });
   program2.command("recall").description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.").option("--cwd <path>", "infer project from this cwd").option("--project <slug>", "force a specific project slug").option("--topic <slug>", "stage 2: list chronicles in this topic").action(async (opts) => {
     const { recallCmd: recallCmd2 } = await Promise.resolve().then(() => (init_recall(), recall_exports));
@@ -11711,7 +11712,8 @@ async function run(argv) {
   });
   program2.command("catalog-regen").description("Rebuild book/index.md after a global sweep.").option("--no-commit", "skip git commit + push of the regenerated catalog").action(async (opts) => {
     const { catalogRegenCmd: catalogRegenCmd2 } = await Promise.resolve().then(() => (init_catalog_regen(), catalog_regen_exports));
-    await catalogRegenCmd2({ noCommit: opts.commit === false });
+    const report = await catalogRegenCmd2({ noCommit: opts.commit === false });
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
   });
   program2.command("site <action>").description("Render the book as a static site. Actions: serve | build").action(async (action) => {
     if (action === "serve") {

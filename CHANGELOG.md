@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.7 — 2026-05-13
+
+`publish` and `catalog-regen` were silent on success. AI calling them
+had no positive signal that work landed; one transcript showed AI
+deducing success only by reissuing publish and seeing "already exists"
+errors on the second call — fragile, and breaks if the first call
+partially failed.
+
+### Fixed
+
+- `publish` now prints its `PublishReport` JSON to stdout on completion.
+  Includes `chroniclesInserted`, `topicsInserted/Updated`, `committed`,
+  `pushed`. Previously: empty stdout, AI inferred state from rerun behavior.
+- `catalog-regen` now prints its `CatalogRegenReport` JSON the same way.
+  Includes `written` (paths regenerated), `committed`, `pushed`.
+
+Both changes are pure addition — same code paths, just emit a structured
+success signal at the end. No CLI flag needed; output is always present.
+
 ## 0.1.6 — 2026-05-13
 
 `SKILL.md` text still carried npm-CLI-era assumptions ("User has
