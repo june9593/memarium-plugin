@@ -21,9 +21,38 @@ segmentation + writing — is yours, in this conversation, with full context.
 
 ---
 
-## Step 0 — Detect the mode (DO THIS FIRST)
+## Pre-step — First-run nudge (silent if already shown)
 
 Before anything else, run:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js first-run
+```
+
+This prints a one-time nudge if the user hasn't installed the optional
+`vibebook` npm CLI for cross-device sync. Silent on every subsequent
+invocation. Don't summarize the output to the user — just let it print.
+
+## Step 0 — Spool warmup + mode detection (DO THIS FIRST)
+
+Before reading any session data, prime the spool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js orchestrate project --cwd "$(pwd)"
+```
+
+(If you're in `~/.vibebook/session-repo/` or in a non-project dir, use
+`orchestrate global` instead — see decision tree below.)
+
+This (a) creates `~/.vibebook/session-repo/raw_sessions/` and `book/`
+if absent, and (b) imports any new local `~/.claude/projects/` jsonl
+into the spool. Idempotent. Read the JSON output:
+- `mode`: "project" or "global"
+- `project`: the project slug (project mode only)
+- `scan.imported` / `scan.skipped`: how many sessions were copied this run
+- `nextStep`: hint for what to do next
+
+Then run `list-projects` for the mode-detection table:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js list-projects
