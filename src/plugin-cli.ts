@@ -100,7 +100,6 @@ export async function run(argv: string[]) {
     .command("first-run")
     .description("Show one-time onboarding tip if not shown before. Used by skill at start.")
     .action(async () => {
-      // @ts-expect-error — T9 has not landed yet; remove this line when ./commands/first-run.ts exists.
       const { firstRunCmd } = await import("./commands/first-run.js");
       await firstRunCmd();
     });
@@ -110,7 +109,6 @@ export async function run(argv: string[]) {
     .description("Plugin's autonomy entry: scan local jsonl into spool, then yield to caller. Modes: project | global")
     .option("--cwd <path>", "user cwd (project mode)")
     .action(async (mode: string, opts: { cwd?: string }) => {
-      // @ts-expect-error — T11 has not landed yet; remove this line when ./digest/orchestrator.ts exists.
       const { orchestrateCmd } = await import("./digest/orchestrator.js");
       await orchestrateCmd({ mode, cwd: opts.cwd });
     });
