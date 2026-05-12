@@ -1,7 +1,7 @@
 {
   "name": "vibebook",
   "description": "Digest your Claude Code + VS Code Copilot Chat sessions into per-project chronicles + topics, then recall past notes before new work. Standalone Claude Code plugin (no extra CLI needed). For cross-device sync, optionally install the vibebook npm CLI.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "MIT",
   "keywords": [
     "claude-code",

@@ -3095,6 +3095,21 @@ function loadIndex(repoRoot) {
   if (parsed.version !== 1) throw new Error(`unsupported index version: ${parsed.version}`);
   return parsed;
 }
+function saveIndex(repoRoot, idx) {
+  const p2 = join3(repoRoot, INDEX_REL);
+  mkdirSync(dataDirAbs(repoRoot), { recursive: true });
+  writeFileSync(p2, JSON.stringify(idx, null, 2) + "\n");
+}
+function keyFor(tool, sessionId) {
+  return `${tool}:${sessionId}`;
+}
+function upsertEntry(idx, entry) {
+  idx.entries[keyFor(entry.tool, entry.sessionId)] = entry;
+}
+function hasUnchanged(idx, tool, sessionId, mtimeMs, sha256) {
+  const e = idx.entries[keyFor(tool, sessionId)];
+  return !!e && e.sourceMtimeMs === mtimeMs && e.sourceSha256 === sha256;
+}
 var init_index_store = __esm({
   "src/_shared/index-store.ts"() {
     "use strict";
@@ -11215,12 +11230,63 @@ var init_claude_code = __esm({
   }
 });
 
-// src/spool/scan-and-import.ts
-import { copyFileSync as copyFileSync3, existsSync as existsSync12, mkdirSync as mkdirSync9 } from "node:fs";
+// src/spool/writer.ts
+import { mkdirSync as mkdirSync9, writeFileSync as writeFileSync7 } from "node:fs";
 import { join as join15 } from "node:path";
+function writeSession(repoRoot, s, opts = {}) {
+  const date = s.startedAt.slice(0, 10);
+  const dirRel = join15("raw_sessions", s.tool, s.project, date);
+  const absDir = join15(repoRoot, dirRel);
+  mkdirSync9(absDir, { recursive: true });
+  const base = `${s.nameSlug}__${s.shortId}`;
+  const rawRel = join15(dirRel, `${base}.raw.json`);
+  const mdRel = join15(dirRel, `${base}.md`);
+  writeFileSync7(join15(repoRoot, rawRel), JSON.stringify(s, null, 2) + "\n");
+  writeFileSync7(join15(repoRoot, mdRel), renderMarkdown(s, opts.includeReasoning ?? true));
+  return { raw: rawRel, md: mdRel };
+}
+function renderMarkdown(s, includeReasoning) {
+  const header = [
+    `# ${s.displayName}`,
+    "",
+    `**Tool:** ${s.tool}  `,
+    `**Project:** ${s.project} (\`${s.projectRaw}\`)  `,
+    `**Session ID:** \`${s.sessionId}\`  `,
+    `**Started:** ${s.startedAt}  `,
+    `**Ended:** ${s.endedAt}  `,
+    "",
+    "---",
+    ""
+  ].join("\n");
+  const body = s.messages.map((m) => {
+    const heading = m.role === "user" ? "## User" : m.role === "assistant" ? "## Assistant" : `## ${m.role}`;
+    const ts = m.timestamp ? ` _(${m.timestamp})_` : "";
+    const parts = [];
+    if (includeReasoning && m.reasoning) {
+      const quoted = m.reasoning.split("\n").map((l) => `> ${l}`).join("\n");
+      parts.push(`> \u{1F4AD} _reasoning_
+${quoted}`);
+    }
+    if (m.text) parts.push(m.text);
+    if (parts.length === 0) return "";
+    return `${heading}${ts}
+
+${parts.join("\n\n")}
+`;
+  }).filter(Boolean).join("\n");
+  return header + body;
+}
+var init_writer = __esm({
+  "src/spool/writer.ts"() {
+    "use strict";
+  }
+});
+
+// src/spool/scan-and-import.ts
 async function scanAndImport(opts) {
-  const { rawSessionsDir } = ensureSpoolDir();
+  const { spoolRoot } = ensureSpoolDir();
   const adapter = new ClaudeCodeAdapter();
+  const idx = loadIndex(spoolRoot);
   const result = {
     imported: 0,
     skipped: 0,
@@ -11228,30 +11294,44 @@ async function scanAndImport(opts) {
     filteredByProject: 0
   };
   for await (const discovered of adapter.discover()) {
-    let normalized;
+    let session;
     try {
-      normalized = await discovered.load();
+      session = await discovered.load();
     } catch {
       continue;
     }
-    if (!isRealProjectPath(normalized.project)) {
+    if (!isRealProjectPath(session.project)) {
       result.filteredAsPseudoProject++;
       continue;
     }
-    if (opts.projectFilter && normalized.project !== opts.projectFilter) {
+    if (opts.projectFilter && session.project !== opts.projectFilter) {
       result.filteredByProject++;
       continue;
     }
-    const projectSpoolDir = join15(rawSessionsDir, normalized.project);
-    const dest = join15(projectSpoolDir, `${normalized.sessionId}.jsonl`);
-    if (existsSync12(dest)) {
+    if (hasUnchanged(idx, session.tool, session.sessionId, discovered.sourceMtimeMs, discovered.sourceSha256)) {
       result.skipped++;
       continue;
     }
-    mkdirSync9(projectSpoolDir, { recursive: true });
-    copyFileSync3(discovered.sourcePath, dest);
+    const written = writeSession(spoolRoot, session, { includeReasoning: true });
+    const entry = {
+      sessionId: session.sessionId,
+      shortId: session.shortId,
+      tool: session.tool,
+      project: session.project,
+      projectRaw: session.projectRaw,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      nameSlug: session.nameSlug,
+      displayName: session.displayName,
+      relativePath: written.raw,
+      sourcePath: session.sourcePath,
+      sourceMtimeMs: discovered.sourceMtimeMs,
+      sourceSha256: discovered.sourceSha256
+    };
+    upsertEntry(idx, entry);
     result.imported++;
   }
+  saveIndex(spoolRoot, idx);
   return result;
 }
 var init_scan_and_import = __esm({
@@ -11259,7 +11339,9 @@ var init_scan_and_import = __esm({
     "use strict";
     init_claude_code();
     init_project_filter();
+    init_index_store();
     init_ensure_dir();
+    init_writer();
   }
 });
 
