@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.1.3 — 2026-05-13
+
+Marketplace name change to avoid collision with the npm `vibebook` repo
+(`june9593/vibebook`), which historically also registered itself as a
+Claude Code marketplace named `vibebook`.
+
+### Changed
+
+- `marketplace.json` top-level `name`: `vibebook` → `vibebook-plugin`.
+- `plugin.json` `name` stays `vibebook` (so users still type `/vibebook`
+  and `/vibebook-recall`; no command-name change).
+
+### Migration (if you already installed v0.1.0–v0.1.2 from this repo)
+
+The marketplace name change means Claude Code will treat this as a new
+marketplace registration. Cleanest path:
+
+```text
+/plugin marketplace remove vibebook
+/plugin marketplace add june9593/vibebook-plugin
+/plugin install vibebook
+```
+
+If you ALSO have the legacy `june9593/vibebook` (npm CLI's plugin
+descriptor) registered, remove that too:
+
+```sh
+rm -rf ~/.claude/plugins/marketplaces/vibebook ~/.claude/plugins/cache/vibebook
+```
+
+Then re-add only the new repo.
+
 ## 0.1.2 — 2026-05-13
 
 True plugin autonomy. v0.1.0/v0.1.1 shipped with two ship-blocking gaps:
