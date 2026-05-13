@@ -4,6 +4,8 @@ Claude Code plugin that turns your past AI coding sessions into a
 searchable book of decisions, dead ends, and fixes — so future-you
 doesn't re-derive what past-you already figured out.
 
+**📖 Project page:** https://june9593.github.io/vibebook-plugin/
+
 Want to know what you tried last time you debugged a particular crash?
 Why you picked one library over another? Whether you've already explored
 some idea? Run `/vibebook` once a week to digest your sessions; run
