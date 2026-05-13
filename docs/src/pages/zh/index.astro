@@ -1,0 +1,215 @@
+---
+import Base from "../../layouts/Base.astro";
+---
+<Base
+  lang="zh"
+  title="vibebook plugin — 让 AI 编程会话变成可检索的笔记本"
+  description="Claude Code 插件，把过往的 AI 编程会话沉淀成 chronicles + topics，下一次开始工作前自动 recall。无需额外 CLI，独立运行。"
+>
+  <section class="hero container">
+    <h1>不要再让 AI 重新发明你已经摸索过的轮子。</h1>
+    <p class="lede">
+      <strong>vibebook plugin</strong> 把你过去的 Claude Code 与
+      VS Code Copilot Chat 会话整理成一本可检索的笔记，记录决定、
+      死胡同与修复方案。每周跑一次 <code>/vibebook</code> 整理素材，
+      做任何不平凡的任务前跑一次 <code>/vibebook-recall</code> 把
+      相关的过去工作翻出来。
+    </p>
+    <div class="badges">
+      <span class="badge">Claude Code 插件</span>
+      <span class="badge">独立运行 · 无外部服务</span>
+      <span class="badge">MIT</span>
+    </div>
+    <div class="cta-row">
+      <a class="btn-primary" href="#install">安装</a>
+      <a class="btn-secondary" href="https://github.com/june9593/vibebook-plugin">在 GitHub 上查看</a>
+    </div>
+  </section>
+
+  <section class="container">
+    <h2>它解决的痛点</h2>
+    <p class="lede">
+      你每一次 AI 编程会话都是一次性的。下一次会话、下一个 agent、
+      明天早上 — 没人记得你昨天调过什么 bug。它们重新推导每一个
+      架构决策、重新踩每一个 macOS 怪坑、重新读你已经解释过两遍的
+      代码。
+    </p>
+    <p class="lede" style="margin-top: var(--space-5);">
+      你的 Claude Code 会话历史就在 <code>~/.claude/projects/</code>。
+      vibebook 读它、整理它，让未来的会话可以站在这些素材之上。
+    </p>
+  </section>
+
+  <section class="container">
+    <h2>两个 slash 命令</h2>
+    <div class="three-col" style="grid-template-columns: 1fr 1fr;">
+      <div class="feature-card">
+        <h3><code>/vibebook</code></h3>
+        <p>
+          扫描 <code>~/.claude/projects/</code> 与 Copilot Chat
+          历史,把每个会话整理成两类按项目分组的产物:
+        </p>
+        <ul style="color: var(--olive-gray); padding-left: var(--space-6);">
+          <li><strong>chronicles</strong> — 一个工作线一份,带 AI 优先的
+            frontmatter（<code>files_touched</code>、<code>commits</code>、
+            <code>decisions</code>、<code>blockers</code>、<code>status</code>）
+            加四段式正文（Context / What worked / Dead ends / Open questions）。</li>
+          <li><strong>topics</strong> — 一个子系统一份,反向链接到贡献的
+            chronicle。</li>
+        </ul>
+        <p>
+          根据 cwd 自动判断项目;在非项目目录里会问你要不要做全量整理。
+        </p>
+      </div>
+      <div class="feature-card">
+        <h3><code>/vibebook-recall</code></h3>
+        <p>
+          开始新工作之前的三阶段渐进式 recall。专门为 AI agent
+          廉价消费而设计:
+        </p>
+        <ul style="color: var(--olive-gray); padding-left: var(--space-6);">
+          <li><strong>第一阶段</strong> — 项目的 topic 列表（约 5 KB）。</li>
+          <li><strong>第二阶段</strong> — 单个 topic 下的 chronicle
+            frontmatter（不含正文）。</li>
+          <li><strong>第三阶段</strong> — 真正需要的那几篇 chronicle
+            读全文。</li>
+        </ul>
+        <p>
+          调用代价很低,Claude 可以在每个"我们好像之前做过……"的
+          瞬间不假思索地触发第一阶段。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="dark-section">
+    <div class="container">
+      <h2>recall 究竟做什么 — 一个说明性场景</h2>
+      <p>
+        Recall 不是你需要记着主动调用的功能。是 Claude 在感觉
+        "这事儿好像和过去的工作有重叠" 时自己伸手去翻的工具。
+        想象你对 Claude 说:
+      </p>
+      <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md);">&gt; 这个集成测试已经 flaky 一周了,帮我修一下</pre>
+      <p>
+        你没问"我们以前遇到过吗"。你只是要一个修复。但 Claude
+        把"flaky 测试"识别成 recall 的触发词,先跑一次
+        <code>/vibebook-recall</code> 第一阶段 — 5 KB 的 topic
+        列表,几乎免费。第一阶段返回里有一个 <code>flaky-tests</code>
+        topic,关联两篇 chronicle。Claude 钻进相关那篇,拿到一份
+        结构化摘要:
+      </p>
+      <ul style="color: var(--ivory); padding-left: var(--space-6);">
+        <li><strong>上次的真实根因</strong> — 测试假设 UTC;CI runner
+          时区是 America/Los_Angeles。下午 4 点到午夜之间才 fail,
+          看起来像随机。</li>
+        <li><strong>当时 ship 的修复</strong> — 把日期断言包进固定
+          时区的 helper;commit <code>a1b2c3d</code>。</li>
+        <li><strong>已经走过的死胡同</strong> — 给共享 fixture 加
+          <code>mutex</code>(无效,不是竞态);把网络超时调到 30 秒
+          (无效,根本没网络);二分依赖找回归点(无效,问题早于可疑
+          升级)。</li>
+        <li><strong>留下的开放问题</strong> — 同文件还有三个测试用
+          <code>new Date()</code>,迟早会踩同一个坑。</li>
+      </ul>
+      <p>
+        于是 Claude 直接告诉你:
+      </p>
+      <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md); font-size: 0.95rem;">据 chronicle <code style="color: inherit;">flaky-test-investigation</code>:这个 suite 在三月份也 flaky,根因是
+时区假设。mutex / 超时 / 二分依赖三条路当时已经试过排除掉了。
+要不要我直接套用同款固定时区修复,顺手把 chronicle 里标记的另外
+三处可疑调用也提前修了?</pre>
+      <p>
+        最后这段才是 recall 值得自动调用的理由。如果没有它,
+        Claude 会重新走同样的死胡同 — <code>git log</code>
+        会显示"修了 flaky 测试"的 commit,但 commit message
+        不会记你排除掉了什么。Chronicle 把两半都保留下来,
+        recall 在 Claude 烧上下文重新探索之前就把它们摆出来。
+      </p>
+    </div>
+  </section>
+
+  <section class="container" id="install">
+    <h2>安装</h2>
+    <p>
+      在 Claude Code 里两条命令:
+    </p>
+    <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md); font-size: 1rem;">/plugin marketplace add june9593/vibebook-plugin
+/plugin install vibebook</pre>
+    <p>
+      就这样。开任何一个 Claude Code 会话,跑 <code>/vibebook</code>
+      整理本机会话,或者 <code>/vibebook-recall</code> 翻过去的笔记。
+      不需要 npm install,不需要外部服务,数据全部留在
+      <code>~/.vibebook/</code>。
+    </p>
+  </section>
+
+  <section class="container">
+    <h2>写到哪里</h2>
+    <p>
+      所有产物都在 <code>~/.vibebook/session-repo/</code> 下:
+    </p>
+    <ul style="color: var(--olive-gray); padding-left: var(--space-6); font-family: var(--font-mono); font-size: 0.95rem;">
+      <li><code>raw_sessions/&lt;tool&gt;/&lt;project&gt;/&lt;date&gt;/*.&#123;md,raw.json&#125;</code> — 渲染过的会话副本</li>
+      <li><code>book/&lt;project&gt;/&#123;chronicle,topics&#125;/*.md</code> — 整理出来的笔记本</li>
+      <li><code>.vibebook/index.json</code> — 单个会话条目索引</li>
+      <li><code>.vibebook/index.book.json</code> — chronicle / topic 目录</li>
+    </ul>
+    <p style="margin-top: var(--space-4);">
+      插件<strong>不会</strong>创建或修改 <code>.git/</code> 或可选
+      npm CLI 的任何配置文件 — 那些是跨设备同步工具的领地,装了 npm
+      CLI 才有。
+    </p>
+  </section>
+
+  <section class="container">
+    <h2>跨设备同步(可选)</h2>
+    <p>
+      要把会话带到多台机器之间,装可选的 <strong>vibebook</strong>
+      npm CLI:
+    </p>
+    <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md);">npm i -g vibebook
+vibebook init</pre>
+    <p>
+      它把 <code>~/.vibebook/session-repo/</code> 同步到一个私有的
+      GitHub repo。插件和 npm CLI 在同一个 spool 路径上协作,条目
+      用 sessionId 做 key — 装其中一个、两个都装、或者都不装,
+      按你需要选。
+    </p>
+    <p>
+      <a href="https://github.com/june9593/vibebook">vibebook npm CLI →</a>
+    </p>
+  </section>
+
+  <section class="container">
+    <h2>Memex 接力(可选)</h2>
+    <p>
+      如果你想要原子化的 Zettelkasten 卡片(一张卡一个 insight,
+      带反向链接、自动整理、孤儿检测),vibebook 把这部分交给
+      <a href="https://github.com/iamtouchskyer/memex">memex</a>。
+      装上之后,<code>/vibebook</code> 会主动问你"chronicles 写完
+      之后要不要顺手跑一次 <code>/memex-retro</code>"。
+      <code>/vibebook-recall</code> 也会把 memex 的目录折叠进
+      第一阶段,让 agent 一次 triage 看到两层。
+    </p>
+    <p>
+      memex 是可选的 — vibebook 没它也能正常运转,只是少了原子卡
+      这一层。
+    </p>
+  </section>
+
+  <section class="container" style="padding-bottom: var(--space-24);">
+    <h2>项目链接</h2>
+    <ul style="color: var(--olive-gray); padding-left: var(--space-6);">
+      <li><a href="https://github.com/june9593/vibebook-plugin">GitHub 源代码</a></li>
+      <li><a href="https://github.com/june9593/vibebook-plugin/blob/main/CHANGELOG.md">更新日志</a></li>
+      <li><a href="https://github.com/june9593/vibebook-plugin/issues">Issues / 反馈</a></li>
+      <li><a href="https://github.com/june9593/vibebook">兄弟项目: vibebook npm CLI(用于跨设备同步)</a></li>
+    </ul>
+    <p class="muted small" style="margin-top: var(--space-6);">
+      MIT 许可证 · 22 个测试用例覆盖 autonomy、scan、orchestrator、
+      config 容错 · 自包含的 386 KB esbuild bundle,运行时不需要
+      <code>npm install</code>。
+    </p>
+  </section>
+</Base>

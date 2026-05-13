@@ -87,34 +87,51 @@ import Base from "../layouts/Base.astro";
 
   <section class="dark-section">
     <div class="container">
-      <h2>What recall actually does — a real example</h2>
+      <h2>What recall actually does — a worked example</h2>
       <p>
-        From a dogfood session on 2026-05-13. User asked Claude:
+        Recall isn't something you remember to invoke. It's something
+        Claude reaches for itself when it notices the task probably
+        overlaps with past work. Imagine you say to Claude:
       </p>
-      <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md);">&gt; fullscreen bookmark crash 之前是怎么解的</pre>
+      <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md);">&gt; this integration test has been flaky for a week, fix it</pre>
       <p>
-        Without vibebook, Claude would run <code>git log --grep="fullscreen"</code>,
-        find a couple of commit messages, and stop there. With vibebook
-        the recall skill kicked in and pulled the relevant chronicle:
+        You didn't ask "have we seen this before". You asked for a fix.
+        But Claude reads "flaky test" as a recall trigger and runs
+        <code>/vibebook-recall</code> stage 1 first — a 5 KB topic list,
+        cheap. Stage 1 surfaces a topic <code>flaky-tests</code> with
+        two contributing chronicles. Claude drills into the relevant
+        one and pulls back a structured summary:
       </p>
       <ul style="color: var(--ivory); padding-left: var(--space-6);">
-        <li><strong>Root cause</strong> — Upstream chromium merge regression,
-          bisected to an a11y CL that changed runloop pump cadence;
-          two <code>OnTopViewBoundsChanged</code> calls landed in the same
-          CA transaction window and aborted the cross-process drawing fence.</li>
-        <li><strong>Reproduction condition</strong> — only crashes when launched
-          from Dock/Finder, not from CLI (extra AX client gets attached).</li>
-        <li><strong>Fix</strong> — defer the second <code>setFrameSize</code>
-          via <code>PostTask</code>; wrap in <code>#if BUILDFLAG(MICROSOFT_EDGE_BRANDING)</code>
-          to keep upstream cherry-picks clean.</li>
-        <li><strong>Dead ends explicitly listed</strong> — <code>AutoReset&lt;bool&gt;</code>
-          guard didn't work; suspecting <code>BrowserFrame::GetMinimizeButtonOffset</code>
-          was wrong direction; AX fence calls are symptom not source.</li>
+        <li><strong>Real root cause (last time)</strong> — the test
+          assumed UTC; CI runner was on America/Los_Angeles. Failed
+          only between 4 PM and midnight local time, looked random.</li>
+        <li><strong>Fix that shipped</strong> — wrap the date assertion
+          in a fixed-zone helper; commit <code>a1b2c3d</code>.</li>
+        <li><strong>Dead ends already explored</strong> — added a
+          <code>mutex</code> around the shared fixture (no effect; not
+          a race); bumped the network timeout to 30 s (no effect; no
+          network involved); bisected dependencies (waste — the failure
+          predates the suspect upgrade).</li>
+        <li><strong>Open question left</strong> — three other tests in
+          the same file use raw <code>new Date()</code>; they will hit
+          the same trap eventually.</li>
       </ul>
       <p>
-        That last bullet is the part git can't give you. Commit messages
-        record what shipped; chronicles record what you tried and walked
-        away from. Future-you needs both.
+        Now Claude tells you up front:
+      </p>
+      <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md); font-size: 0.95rem;">Per chronicle <code style="color: inherit;">flaky-test-investigation</code>: this same suite was flaky in
+March, root cause was a timezone assumption. The mutex / timeout /
+bisect paths were already tried and ruled out. Want me to apply the
+same fixed-zone fix here, plus prophylactically patch the other
+three suspect call sites flagged in the chronicle?</pre>
+      <p>
+        That last paragraph is what makes recall worth invoking
+        unprompted. Without it, Claude would have walked the same dead
+        ends — <code>git log</code> would have shown a "fix flaky test"
+        commit, but commit messages don't record what you ruled out
+        along the way. Chronicles preserve both halves; recall surfaces
+        them before Claude burns context exploring them again.
       </p>
     </div>
   </section>
