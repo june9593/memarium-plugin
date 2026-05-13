@@ -16,6 +16,8 @@ Pre-opensource documentation cleanup. No behavior changes.
   "spec §4" / "docs/superpowers/specs/..." mentions and a forward-
   looking note about an unshipped npm v0.5.0 release. Outside readers
   shouldn't need a private vocabulary to read the changelog.
+  Also collapsed 0.1.1–0.1.9 (rapid dogfood iteration) into a single
+  summary block; 14 KB → 5.7 KB.
 - **`.npmignore`**: added a comment explaining why it's `*` (this
   package is marketplace-only, never published to npm).
 - **Removed `bin/.gitkeep`**: leftover scaffolding from when bin/
@@ -47,261 +49,46 @@ didn't work / why we picked X over Y" context.
 
 No code change; description-only patch on the recall skill.
 
-## 0.1.9 — 2026-05-13
+## 0.1.1–0.1.9 — 2026-05-13
 
-Five SKILL.md fixes targeting fan-out failures observed in 0.1.8 dogfood
-(one-hour serial fan-out instead of 5-minute parallel; user thought it
-was stuck because there was no progress signal):
+Rapid dogfood iteration shaking out the plugin's autonomy. Highlights,
+in landing order:
 
-### Changed (`skills/vibebook/SKILL.md` Step P3 rewrite)
-
-1. **Fan-out trigger uses size, not session count.**
-   Old: ≥5 threads → fan out. New: total non-skip md size **<150 KB**
-   → inline; **150 KB–1 MB** → fan out 3–5 per agent; **>1 MB** → same
-   plus isolate any single session ≥200 KB into a solo agent.
-   Inline below 150 KB is faster end-to-end (no 3–5 sec subagent
-   startup × N).
-
-2. **CRITICAL block on parallel dispatch.**
-   New "How to actually run agents in PARALLEL" subsection:
-   subagents only run concurrently when **all `Agent(...)` calls are in
-   ONE assistant message**. The 0.1.8 dogfood transcript showed AI
-   emitting one Agent per message, waiting, then emitting the next —
-   wall-clock = sum, not max. Spelled out anti-pattern + correct
-   pattern with examples.
-
-3. **Mandatory 3-minute progress reports.**
-   New "Progress reports — DO NOT silently wait" subsection. Required
-   cadence: every 3 min of wall-clock, emit one-line status. Use
-   PushNotification for waits >8 min. Stop+restart any agent stuck
-   >15 min. The 0.1.8 dogfood went a full hour with no status at all.
-
-4. **Probe must test Write tool, not just Bash.**
-   Tightened probe in "Probe BEFORE big fan-out" to require the
-   subagent use the **Write tool** (not Bash heredoc) — these are
-   separately permission-gated. The previous probe only confirmed
-   Bash worked, and chronicle agents that fall back to Bash heredoc
-   silently produce malformed JSON.
-
-5. **Force agents to use Write tool, not Bash heredoc.**
-   New trailing subsection: every fan-out agent prompt must explicitly
-   demand the Write tool. Heredoc fails on JSON containing backticks /
-   Unicode / nested code blocks; agents that silently fall back are a
-   debugging trap.
-
-No code changes. Bundle byte-identical except for embedded version.
-
-## 0.1.8 — 2026-05-13
-
-Three quality-of-life fixes targeting AI dogfood friction:
-
-### `${CLAUDE_PLUGIN_ROOT}` is not in in-session Bash
-
-In-session Bash never has `${CLAUDE_PLUGIN_ROOT}` set — it's only
-populated for hook subprocesses. AI was tripping on zsh quoting like
-`CLAUDE_PLUGIN_ROOT=... $CLAUDE_PLUGIN_ROOT/bin/...` (zsh expands
-the var BEFORE the assignment, so it resolves to empty + `/bin/...`).
-
-**Fixed:** SKILL.md now starts with "Step −1": discover plugin path via
-`VBP=$(ls -td ~/.claude/plugins/cache/vibebook/vibebook/*/bin/vibebook-plugin.js | head -1)`
-and use `"$VBP" <subcommand>` everywhere. All 30+ `${CLAUDE_PLUGIN_ROOT}/bin/...`
-occurrences in skills/ replaced with `"$VBP"`.
-
-### Memex detection moved into `orchestrate` JSON
-
-SKILL.md had `command -v memex` lines that AI generalized into
-also checking `command -v vibebook` (a binary that doesn't and
-shouldn't exist for plugin-only users — it's the npm-CLI sibling
-product). Each false-positive PATH check produced a confusing red
-exit-1 in the user's transcript.
-
-**Fixed:** `orchestrate` now runs `command -v memex` itself and emits
-`"memexInstalled": <bool>` in its JSON output. SKILL.md tells AI to
-read the field and explicitly NOT to issue its own PATH checks.
-
-### Subagent fan-out can silently degrade
-
-If user's Claude Code config gives subagents zero Bash/Write
-capability (not just missing path approval), the existing warm-up
-doesn't help — agents silently complete without doing the work, AI
-waits 5 minutes, then has to restart everything inline.
-
-**Fixed:** SKILL.md P3 (fan-out section) now requires a single-agent
-**probe** before dispatching N agents: write a literal string to
-`/tmp/vb-<project>/probe.txt` and verify from main session. If the
-probe fails, fall back to inline writing immediately and tell the
-user once. Costs ~20 sec; saves 5+ min of confused fallback.
-
-No code changes to the data model or spool layout; bin and tests
-unchanged in behavior beyond the new `memexInstalled` field.
-
-## 0.1.7 — 2026-05-13
-
-`publish` and `catalog-regen` were silent on success. AI calling them
-had no positive signal that work landed; one transcript showed AI
-deducing success only by reissuing publish and seeing "already exists"
-errors on the second call — fragile, and breaks if the first call
-partially failed.
-
-### Fixed
-
-- `publish` now prints its `PublishReport` JSON to stdout on completion.
-  Includes `chroniclesInserted`, `topicsInserted/Updated`, `committed`,
-  `pushed`. Previously: empty stdout, AI inferred state from rerun behavior.
-- `catalog-regen` now prints its `CatalogRegenReport` JSON the same way.
-  Includes `written` (paths regenerated), `committed`, `pushed`.
-
-Both changes are pure addition — same code paths, just emit a structured
-success signal at the end. No CLI flag needed; output is always present.
-
-## 0.1.6 — 2026-05-13
-
-`SKILL.md` text still carried npm-CLI-era assumptions ("User has
-already run vibebook sync...") that pushed in-session Claude into
-checking PATH for the `vibebook` binary and reporting "vibebook CLI
-isn't installed" before the plugin's own `orchestrate` step could
-even run. The actual CLI invocations were correct (already used
-`${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js`); the bug was in
-the natural-language framing.
-
-### Fixed (skills/vibebook/SKILL.md + skills/vibebook-recall/SKILL.md)
-
-- Removed "User has already run `vibebook sync`" prerequisite. Plugin
-  is self-contained — `orchestrate` scans local jsonl on every run.
-- Removed `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js --version`
-  "is on PATH" line — implementation detail, not a precondition.
-- Reworded prepare's "no synced sessions" error guidance: don't tell
-  the user to "run `vibebook sync`" (npm CLI command they may not
-  have); instead help them check cwd or use `--project`.
-- Recall skill prologue: "the vibebook plugin has captured every..."
-  instead of "`vibebook sync` has captured every...".
-- Dropped a stray "Wizard already covered that path in `vibebook init`"
-  parenthetical — npm-init wizard is not part of plugin install flow.
-
-No code changes. Bundle byte-identical except for embedded version.
-
-## 0.1.5 — 2026-05-13
-
-Test-only patch. The autonomy gate now also covers VS Code Copilot Chat.
-0.1.4's missing-Copilot-adapter regression slipped past tests because
-the autonomy fixture only planted Claude Code jsonl. Catch that class
-of bug going forward.
-
-### Tests added
-
-- `tests/integration/plugin-autonomy.test.ts` — new case: plant 1 Claude
-  Code session + 1 Copilot Chat session (legacy `chatSessions/<id>.json`
-  format under `~/Library/Application Support/Code/User/workspaceStorage/<hash>/`),
-  run orchestrate, assert both end up in spool with correct `tool` tags
-  in `index.json`.
-- Total: 22 tests pass (was 21).
-
-No code change. Bundle byte-identical except for embedded version string.
-
-## 0.1.4 — 2026-05-13
-
-`scanAndImport` only walked Claude Code's `~/.claude/projects/`, silently
-ignoring VS Code Copilot Chat. The README and the npm sync CLI both
-support both sources; the plugin's autonomy refactor in 0.1.2 dropped
-Copilot by accident (single-adapter loop).
-
-### Fixed
-
-- `src/spool/scan-and-import.ts` now scans both `ClaudeCodeAdapter` and
-  `VSCodeCopilotAdapter` in sequence, mirroring npm `sync.ts:75-78`.
-- Users on machines with mostly Copilot session history (and few /no
-  Claude Code sessions) will now see those sessions imported into the
-  spool and digestible by `/vibebook`.
-
-### Note for plan/spec
-
-The original 0.1.2 plan T5 only mentioned `ClaudeCodeAdapter`; the spec
-patch correctly listed `vscode-copilot.ts` under shared infra (T3) but
-didn't enforce that scan-and-import use it. The autonomy integration
-test (T7) only planted Claude Code jsonl, so the gap wasn't caught.
-0.1.5+ should add a Copilot fixture to the autonomy test.
-
-## 0.1.3 — 2026-05-13
-
-Marketplace name change to avoid collision with the npm `vibebook` repo
-(`june9593/vibebook`), which historically also registered itself as a
-Claude Code marketplace named `vibebook`.
-
-### Changed
-
-- `marketplace.json` top-level `name`: `vibebook` → `vibebook-plugin`.
-- `plugin.json` `name` stays `vibebook` (so users still type `/vibebook`
-  and `/vibebook-recall`; no command-name change).
-
-### Migration (if you already installed v0.1.0–v0.1.2 from this repo)
-
-The marketplace name change means Claude Code will treat this as a new
-marketplace registration. Cleanest path:
-
-```text
-/plugin marketplace remove vibebook
-/plugin marketplace add june9593/vibebook-plugin
-/plugin install vibebook
-```
-
-If you ALSO have the legacy `june9593/vibebook` (npm CLI's plugin
-descriptor) registered, remove that too:
-
-```sh
-rm -rf ~/.claude/plugins/marketplaces/vibebook ~/.claude/plugins/cache/vibebook
-```
-
-Then re-add only the new repo.
-
-## 0.1.2 — 2026-05-13
-
-True plugin autonomy. v0.1.0/v0.1.1 shipped with two ship-blocking gaps:
-
-1. The bundled CLI (`bin/vibebook-plugin.js`) was gitignored as a build
-   artifact, but Claude Code marketplace install is `git clone` only
-   (no `npm install`, no `npm run build`) — so users got an empty
-   `bin/` directory and could not run any subcommand.
-2. `scan-and-import` only copied raw jsonl into the spool. It did NOT
-   render `.md` + `.raw.json` and did NOT write `.vibebook/index.json`
-   entries. Downstream `prepare` reads `index.json` and per-session
-   files, so it always returned empty for plugin-only users.
-
-### Fixed
-
-- **`bin/vibebook-plugin.js` is now committed to git** as a single
-  esbuild-bundled file (~370 KB, all deps inlined including commander,
-  zod, simple-git, chalk). Marketplace clone ships a runnable binary
-  out of the box. `dist/` stays gitignored.
-- **`scan-and-import` rewritten** to mirror npm sync's writer chain:
-  `discover → load → hasUnchanged → writeSession → upsertEntry →
-  saveIndex`. New `src/spool/writer.ts` is a sync-marked fork of
-  npm `src/writer.ts`. Spec §4 ownership table updated: `index.json`
-  and `raw_sessions/` are now co-owned by plugin AND npm sync (safe
-  because both upsert by `tool:sessionId`).
-- **Integration test gates autonomy.** New
-  `tests/integration/plugin-autonomy.test.ts` runs orchestrate →
-  list-projects → prepare on a fresh machine with no `~/.vibebook/`
-  and no npm CLI on PATH. If it ever fails, autonomy is broken.
-
-## 0.1.1 — 2026-05-13
-
-Plugin autonomy patch. v0.1.0 inherited a hard `readConfig()` requirement
-from `_shared/config.ts` — every plugin command threw "vibebook not
-initialized" if `~/.vibebook/config.json` was missing. That contradicts
-the plugin's design goal of working on a plain spool directory without
-the optional npm CLI being installed.
-
-### Fixed
-
-- New `src/spool/plugin-config.ts` exports `readPluginConfig()`, a
-  tolerant wrapper that returns a sensible default Config (repoPath =
-  `~/.vibebook/session-repo`) when no config file is present.
-- All 6 plugin commands (`prepare`, `publish`, `recall`, `catalog-regen`,
-  `list-projects`, `site`) switched from `readConfig` → `readPluginConfig`.
-- Plugin still does NOT write `~/.vibebook/config.json` — that stays a
-  npm `vibebook init` job. If you later install npm vibebook and run
-  `vibebook init`, your config will be created cleanly without prompts.
-- Tests: `tests/spool/plugin-config.test.ts` (3 cases). Suite now 19/19.
+- **0.1.1**: tolerant `readPluginConfig()` so plugin commands don't
+  require `~/.vibebook/config.json` to exist.
+- **0.1.2**: bundled `bin/vibebook-plugin.js` committed to git
+  (marketplace install is `git clone` only — no `npm install`); rewrote
+  `scan-and-import` to render `.md` + `.raw.json` and update
+  `index.json` so downstream `prepare` actually finds sessions; added
+  the autonomy gate test.
+- **0.1.3**: marketplace renamed `vibebook` → `vibebook-plugin` to
+  coexist cleanly with the npm `vibebook` repo's own marketplace
+  descriptor. Plugin name stays `vibebook` so user-facing slash
+  commands are unchanged.
+- **0.1.4**: scan now walks both Claude Code AND VS Code Copilot Chat
+  history (the 0.1.2 refactor accidentally dropped Copilot).
+- **0.1.5**: autonomy gate test extended to plant a Copilot fixture
+  too, so 0.1.4-class regressions can't slip past tests.
+- **0.1.6**: SKILL.md text rewritten to drop npm-CLI-era assumptions
+  ("User has already run vibebook sync...") that were pushing the AI
+  to abort with "vibebook CLI not installed" before the plugin's own
+  `orchestrate` could even run.
+- **0.1.7**: `publish` and `catalog-regen` now emit JSON success
+  summaries to stdout. AI was previously deducing success only by
+  rerunning publish and seeing "already exists" errors — fragile, and
+  wrong if the first run partially failed.
+- **0.1.8**: skill uses `VBP=$(ls -td ~/.claude/plugins/cache/...)`
+  to discover the plugin path — `${CLAUDE_PLUGIN_ROOT}` isn't set in
+  in-session Bash, just hooks. `orchestrate` JSON now includes
+  `memexInstalled` so the skill doesn't have to spawn its own
+  `command -v memex` (which AI generalized into also checking
+  `vibebook` on PATH and then bailing).
+- **0.1.9**: SKILL.md fan-out rewrite. Triggers on total source size
+  (KB), not session count. Mandates putting all `Agent(...)` calls in
+  ONE message for actual parallelism. Requires 3-minute progress
+  reports so the user can tell waiting from stuck. Probe must test
+  Write tool, not just Bash; chronicle agents must use Write, not
+  Bash heredoc (heredoc breaks on JSON with backticks/Unicode).
 
 ## 0.1.0 — 2026-05-12
 
