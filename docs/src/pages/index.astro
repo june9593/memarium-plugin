@@ -1,0 +1,205 @@
+---
+import Base from "../layouts/Base.astro";
+---
+<Base
+  title="vibebook plugin — searchable book of your AI coding sessions"
+  description="Claude Code plugin that turns past AI sessions into chronicles + topics, then recalls them before new work. Standalone — no extra CLI required."
+>
+  <section class="hero container">
+    <h1>Don't re-derive what past-you already figured out.</h1>
+    <p class="lede">
+      <strong>vibebook plugin</strong> turns your past Claude Code and
+      VS Code Copilot Chat sessions into a searchable book of decisions,
+      dead ends, and fixes. Run <code>/vibebook</code> once a week to
+      digest; run <code>/vibebook-recall</code> before any non-trivial
+      task to surface what's relevant.
+    </p>
+    <div class="badges">
+      <span class="badge">Claude Code plugin</span>
+      <span class="badge">Self-contained · No external service</span>
+      <span class="badge">MIT</span>
+    </div>
+    <div class="cta-row">
+      <a class="btn-primary" href="#install">Install</a>
+      <a class="btn-secondary" href="https://github.com/june9593/vibebook-plugin">View on GitHub</a>
+    </div>
+  </section>
+
+  <section class="container">
+    <h2>The friction this removes</h2>
+    <p class="lede">
+      Every coding session your AI agent runs is a one-shot. The next
+      session, the next agent, the next morning — none of them remember
+      what you debugged yesterday. They re-derive every architecture
+      decision, re-discover every Mac quirk, re-read code you've already
+      explained twice.
+    </p>
+    <p class="lede" style="margin-top: var(--space-5);">
+      Your Claude Code session-history is right there in
+      <code>~/.claude/projects/</code>. vibebook reads it, structures
+      it, and lets future sessions stand on it.
+    </p>
+  </section>
+
+  <section class="container">
+    <h2>Two slash commands</h2>
+    <div class="three-col" style="grid-template-columns: 1fr 1fr;">
+      <div class="feature-card">
+        <h3><code>/vibebook</code></h3>
+        <p>
+          Walks <code>~/.claude/projects/</code> and your Copilot Chat
+          history, then digests each session into per-project artifacts:
+        </p>
+        <ul style="color: var(--olive-gray); padding-left: var(--space-6);">
+          <li><strong>chronicles</strong> — one per work thread, with
+            AI-first frontmatter (<code>files_touched</code>,
+            <code>commits</code>, <code>decisions</code>,
+            <code>blockers</code>, <code>status</code>) plus a 4-section
+            body (Context / What worked / Dead ends / Open questions).</li>
+          <li><strong>topics</strong> — one per subsystem, cross-references
+            the chronicles that contributed.</li>
+        </ul>
+        <p>
+          Auto-detects project from cwd; in non-project dirs it asks before
+          doing a full sweep.
+        </p>
+      </div>
+      <div class="feature-card">
+        <h3><code>/vibebook-recall</code></h3>
+        <p>
+          Three-stage progressive recall before new work. Designed for AI
+          agents to consume cheaply:
+        </p>
+        <ul style="color: var(--olive-gray); padding-left: var(--space-6);">
+          <li><strong>Stage 1</strong> — project's topic list (~5 KB).</li>
+          <li><strong>Stage 2</strong> — chronicles in one topic, frontmatter
+            only (no bodies).</li>
+          <li><strong>Stage 3</strong> — Read the chronicles you actually
+            need, full body.</li>
+        </ul>
+        <p>
+          Cheap to invoke; you can fire stage 1 on every "how did we…"
+          question without thinking about token cost.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="dark-section">
+    <div class="container">
+      <h2>What recall actually does — a real example</h2>
+      <p>
+        From a dogfood session on 2026-05-13. User asked Claude:
+      </p>
+      <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md);">&gt; fullscreen bookmark crash 之前是怎么解的</pre>
+      <p>
+        Without vibebook, Claude would run <code>git log --grep="fullscreen"</code>,
+        find a couple of commit messages, and stop there. With vibebook
+        the recall skill kicked in and pulled the relevant chronicle:
+      </p>
+      <ul style="color: var(--ivory); padding-left: var(--space-6);">
+        <li><strong>Root cause</strong> — Upstream chromium merge regression,
+          bisected to an a11y CL that changed runloop pump cadence;
+          two <code>OnTopViewBoundsChanged</code> calls landed in the same
+          CA transaction window and aborted the cross-process drawing fence.</li>
+        <li><strong>Reproduction condition</strong> — only crashes when launched
+          from Dock/Finder, not from CLI (extra AX client gets attached).</li>
+        <li><strong>Fix</strong> — defer the second <code>setFrameSize</code>
+          via <code>PostTask</code>; wrap in <code>#if BUILDFLAG(MICROSOFT_EDGE_BRANDING)</code>
+          to keep upstream cherry-picks clean.</li>
+        <li><strong>Dead ends explicitly listed</strong> — <code>AutoReset&lt;bool&gt;</code>
+          guard didn't work; suspecting <code>BrowserFrame::GetMinimizeButtonOffset</code>
+          was wrong direction; AX fence calls are symptom not source.</li>
+      </ul>
+      <p>
+        That last bullet is the part git can't give you. Commit messages
+        record what shipped; chronicles record what you tried and walked
+        away from. Future-you needs both.
+      </p>
+    </div>
+  </section>
+
+  <section class="container" id="install">
+    <h2>Install</h2>
+    <p>
+      Two commands inside Claude Code:
+    </p>
+    <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md); font-size: 1rem;">/plugin marketplace add june9593/vibebook-plugin
+/plugin install vibebook</pre>
+    <p>
+      That's it. Open any Claude Code session and run <code>/vibebook</code>
+      to digest your local sessions, or <code>/vibebook-recall</code> to
+      surface past notes. No npm install, no external service, your data
+      stays in <code>~/.vibebook/</code>.
+    </p>
+  </section>
+
+  <section class="container">
+    <h2>Files written</h2>
+    <p>
+      Everything stays under <code>~/.vibebook/session-repo/</code>:
+    </p>
+    <ul style="color: var(--olive-gray); padding-left: var(--space-6); font-family: var(--font-mono); font-size: 0.95rem;">
+      <li><code>raw_sessions/&lt;tool&gt;/&lt;project&gt;/&lt;date&gt;/*.&#123;md,raw.json&#125;</code> — rendered copies of your sessions</li>
+      <li><code>book/&lt;project&gt;/&#123;chronicle,topics&#125;/*.md</code> — digested book</li>
+      <li><code>.vibebook/index.json</code> — per-session entry index</li>
+      <li><code>.vibebook/index.book.json</code> — chronicle / topic catalog</li>
+    </ul>
+    <p style="margin-top: var(--space-4);">
+      The plugin <strong>does not</strong> create or modify <code>.git/</code>
+      or any of the optional npm CLI's config files — those are owned by
+      the cross-device sync tool when present.
+    </p>
+  </section>
+
+  <section class="container">
+    <h2>Cross-device sync (optional)</h2>
+    <p>
+      To carry your sessions across multiple machines, install the
+      optional <strong>vibebook</strong> npm CLI:
+    </p>
+    <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md);">npm i -g vibebook
+vibebook init</pre>
+    <p>
+      It syncs <code>~/.vibebook/session-repo/</code> to a private GitHub
+      repo across your devices. The plugin and the npm CLI cooperate on
+      the same spool path with sessionId-keyed entries — install one,
+      both, or neither based on what you need.
+    </p>
+    <p>
+      <a href="https://github.com/june9593/vibebook">vibebook npm CLI →</a>
+    </p>
+  </section>
+
+  <section class="container">
+    <h2>Memex hand-off (optional)</h2>
+    <p>
+      For atomic Zettelkasten cards (one insight per card with backlinks,
+      organize, orphan detection), vibebook delegates to
+      <a href="https://github.com/iamtouchskyer/memex">memex</a>. Install
+      it and the <code>/vibebook</code> skill will offer to chain
+      <code>/memex-retro</code> after writing chronicles. <code>/vibebook-recall</code>
+      folds memex's catalog into stage 1 so agents see both layers in
+      one triage pass.
+    </p>
+    <p>
+      Memex is optional — vibebook works fine without it; you just won't
+      have an atomic-card layer.
+    </p>
+  </section>
+
+  <section class="container" style="padding-bottom: var(--space-24);">
+    <h2>Project</h2>
+    <ul style="color: var(--olive-gray); padding-left: var(--space-6);">
+      <li><a href="https://github.com/june9593/vibebook-plugin">Source on GitHub</a></li>
+      <li><a href="https://github.com/june9593/vibebook-plugin/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="https://github.com/june9593/vibebook-plugin/issues">Issues / feedback</a></li>
+      <li><a href="https://github.com/june9593/vibebook">Sibling: vibebook npm CLI for cross-device sync</a></li>
+    </ul>
+    <p class="muted small" style="margin-top: var(--space-6);">
+      MIT licensed · 22-test suite covering autonomy, scan, orchestrator
+      and config tolerance · Self-contained 386 KB esbuild bundle, no
+      runtime <code>npm install</code> required.
+    </p>
+  </section>
+</Base>

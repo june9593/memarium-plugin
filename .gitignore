@@ -5,4 +5,7 @@ dist/
 .vscode/
 .idea/
 .env*
-docs/
+# docs/ contains the GitHub Pages site (Astro). Tracked in git.
+docs/node_modules/
+docs/dist/
+docs/.astro/

@@ -1,0 +1,15 @@
+{
+  "name": "vibebook-plugin-docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "GitHub Pages site for the vibebook Claude Code plugin. Built with Astro; deployed by .github/workflows/pages.yml to june9593.github.io/vibebook-plugin/.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "^4.16.0"
+  }
+}
