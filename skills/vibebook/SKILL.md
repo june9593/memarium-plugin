@@ -240,18 +240,79 @@ Write the segmentation to `/tmp/vibebook-groups.json`:
 Show user the table (one row per non-skip thread) + the skip count + skip
 reasons in one block. Ask to proceed.
 
-### Step P3 — Read in parallel via subagents (when ≥ 5 threads)
+### Step P3 — Read in parallel via subagents (when total source size warrants it)
 
-For 5 or more non-skip threads, dispatch one general-purpose Agent per
-thread (or per ~3 grouped sessions). Each agent reads its `mdPath` files
-and returns a chronicle body — JSON-serializable, ~500–2000 tokens. This
-keeps your context lean and parallelizes I/O.
+**When to fan out (NEW heuristic, 0.1.9):**
 
-Below 5 threads, do it inline.
+Don't trigger on session count alone. Trigger on **total source markdown
+size** of non-skip threads:
+
+| Total non-skip md size | Strategy |
+|---|---|
+| **< 150 KB** | Inline. One Read tool call per thread, write chronicle in main session. Don't pay subagent overhead for small inputs. |
+| **150 KB – 1 MB** | Fan out, batch ~3–5 threads per agent, **all in one message**. |
+| **> 1 MB** | Same as above BUT **isolate each session ≥ 200 KB into its own dedicated agent** — large mds dominate latency, mixing them with small ones blocks the small ones. |
+
+Inline below 150 KB is faster end-to-end because:
+- 5+ threads at 5 KB each = 25 KB total = main session reads them in <10 seconds
+- Each subagent has 3–5 second startup overhead
+- Subagents can't share parsed context across chronicles
+- You won't hit a context window for 25 KB
+
+Below the threshold, **just open the files and write**. Don't fan out.
 
 **Anti-pattern:** looping `vibebook show <id>` in the main session for 50
 threads — eats your context window and produces lower-quality writing
 because you start cargo-culting your own previous chronicles.
+
+#### CRITICAL — How to actually run agents in PARALLEL
+
+Subagents only run in parallel when you put **multiple `Agent(...)` tool
+calls in a single assistant message**. If you write one `Agent(...)`,
+wait for it to complete, then write another, those run **serially** —
+6 agents at 5 minutes each = 30 minutes wall-clock.
+
+**Correct pattern (parallel):**
+
+In ONE assistant message, emit ALL of:
+```
+Agent(description: "Chronicle batch 1", prompt: "...")
+Agent(description: "Chronicle batch 2", prompt: "...")
+Agent(description: "Chronicle batch 3", prompt: "...")
+```
+
+The harness fires all three concurrently. Total wall = max(individual),
+not sum.
+
+**Wrong pattern (serial, what was happening before this rewrite):**
+
+Message 1: `Agent("...batch 1...")` → wait for completion
+Message 2: `Agent("...batch 2...")` → wait for completion
+
+If you find yourself writing one Agent call, then waiting, then writing
+another, **STOP** and put them all in the next single message.
+
+#### Progress reports — DO NOT silently wait
+
+When you've fanned out N agents, the user will see "Running…" and not
+much else. Subagents writing chronicle bodies routinely take 2–10
+minutes per agent (LLM-bound: read source md → reason → write JSON).
+**The user has no way to tell waiting apart from stuck.**
+
+Required cadence: every **3 minutes of wall-clock**, emit a one-line
+status to the user, e.g.:
+
+> "3 of 6 chronicle agents finished (batch sizes: ✓2 ✓3 ✓2 / ⏳3 ⏳4 ⏳5).
+> Largest pending: 3db31cbd (342 KB md). Estimated 5–8 more minutes."
+
+Use the **PushNotification tool** (when available) for any wait that
+exceeds 8 minutes; the user may have switched away from the terminal.
+The notification body can be one short line — "vibebook fan-out: 4/6
+chronicle agents done, 2 still running".
+
+If a single agent has been running > 15 minutes, suspect it's stuck on
+a malformed Read or oversized output. Use Stop Task on it and re-
+dispatch with that one session split off solo.
 
 #### Permission warm-up — DO THIS BEFORE FAN-OUT, ONCE PER SESSION
 
@@ -295,18 +356,20 @@ session, then re-dispatch (or SendMessage to the same agent).
 
 #### Probe BEFORE big fan-out — catch tool-access gaps early
 
-Some users have Claude Code configured so subagents have NO Bash/Write
+Some users have Claude Code configured so subagents have NO Write
 capability at all (not just path-specific permissions). In that case,
-warm-up doesn't help — subagents will silently complete with no output.
-Dispatching 13 of them and waiting 5 minutes is wasted token spend.
+warm-up doesn't help — subagents will silently complete with no
+output. Dispatching 13 of them and waiting 5 minutes is wasted.
 
-**Before fan-out of N agents, run ONE probe agent first:**
+**Before fan-out of N agents, run ONE probe agent first.** The probe
+must exercise the SAME tool the chronicle agents will use (Write,
+not Bash heredoc — see "Force agents to use Write" below):
 
 ```
 Agent(
   description: "Probe write access",
   subagent_type: "general-purpose",
-  prompt: "Write the literal string 'probe-ok' to /tmp/vb-<project>/probe.txt then read it back and report what you read. Do not do anything else."
+  prompt: "Use the Write tool (NOT Bash with heredoc) to create /tmp/vb-<project>/probe.txt with the literal contents 'probe-ok'. Then read it back via the Read tool and report what you read. If Write tool is unavailable, say so explicitly."
 )
 ```
 
@@ -316,16 +379,38 @@ Then verify from main session:
 cat /tmp/vb-<project>/probe.txt 2>&1 | head -1
 ```
 
-- If you see `probe-ok` → subagents work; proceed with full fan-out.
-- If file is missing OR the agent reported "I cannot use Write/Bash" /
-  silently completed without writing → **fall back to inline writing
-  in the main session**. Don't fight it. Tell the user once:
-  > "Your Claude Code config doesn't allow subagents to write files,
-  > so I'll do all chronicle writing inline. This may take longer for
+- If you see `probe-ok` AND the agent confirmed using Write tool →
+  subagents work; proceed with full fan-out.
+- If file missing OR agent reported "Write tool unavailable" → **fall
+  back to inline writing in the main session**. Don't fight it. Tell
+  the user once:
+  > "Your Claude Code config doesn't allow subagents the Write tool, so
+  > I'll do all chronicle writing inline. This may take longer for
   > large session sets."
 
-This probe wastes ~20 sec but saves the 5-min "13 agents stop after
-the first reports" failure mode that costs much more token + time.
+The probe wastes ~20 sec but saves the 30+ min of unattended-serial-
+agent failure that costs much more token + time.
+
+#### Force agents to use Write tool, not Bash heredoc
+
+In your fan-out agent prompt, **explicitly require the agent to use
+the Write tool** for the JSON output, not Bash with `cat <<EOF` or
+`>` redirection. Reasons:
+
+- Bash heredoc fails on JSON containing single backticks, certain
+  Unicode, or shell expansions in nested code blocks.
+- Write tool is faster (no shell process).
+- Probe (above) only confirmed Bash works — Write tool may be
+  separately gated; chronicle agents that fall back to Bash silently
+  succeed at writing junk.
+
+Add this line to every fan-out agent prompt:
+
+> "Output JSON via the Write tool (path: /tmp/vb-<project>/agent<N>.json).
+> Do NOT use Bash heredoc or shell redirection. If Write tool is
+> unavailable, stop and report 'no write tool' — do not fall back."
+
+
 
 ### Step P4 — Write chronicles (AI-first format, agent-reuse body)
 

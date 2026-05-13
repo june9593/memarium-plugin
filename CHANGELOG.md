@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.1.9 — 2026-05-13
+
+Five SKILL.md fixes targeting fan-out failures observed in 0.1.8 dogfood
+(one-hour serial fan-out instead of 5-minute parallel; user thought it
+was stuck because there was no progress signal):
+
+### Changed (`skills/vibebook/SKILL.md` Step P3 rewrite)
+
+1. **Fan-out trigger uses size, not session count.**
+   Old: ≥5 threads → fan out. New: total non-skip md size **<150 KB**
+   → inline; **150 KB–1 MB** → fan out 3–5 per agent; **>1 MB** → same
+   plus isolate any single session ≥200 KB into a solo agent.
+   Inline below 150 KB is faster end-to-end (no 3–5 sec subagent
+   startup × N).
+
+2. **CRITICAL block on parallel dispatch.**
+   New "How to actually run agents in PARALLEL" subsection:
+   subagents only run concurrently when **all `Agent(...)` calls are in
+   ONE assistant message**. The 0.1.8 dogfood transcript showed AI
+   emitting one Agent per message, waiting, then emitting the next —
+   wall-clock = sum, not max. Spelled out anti-pattern + correct
+   pattern with examples.
+
+3. **Mandatory 3-minute progress reports.**
+   New "Progress reports — DO NOT silently wait" subsection. Required
+   cadence: every 3 min of wall-clock, emit one-line status. Use
+   PushNotification for waits >8 min. Stop+restart any agent stuck
+   >15 min. The 0.1.8 dogfood went a full hour with no status at all.
+
+4. **Probe must test Write tool, not just Bash.**
+   Tightened probe in "Probe BEFORE big fan-out" to require the
+   subagent use the **Write tool** (not Bash heredoc) — these are
+   separately permission-gated. The previous probe only confirmed
+   Bash worked, and chronicle agents that fall back to Bash heredoc
+   silently produce malformed JSON.
+
+5. **Force agents to use Write tool, not Bash heredoc.**
+   New trailing subsection: every fan-out agent prompt must explicitly
+   demand the Write tool. Heredoc fails on JSON containing backticks /
+   Unicode / nested code blocks; agents that silently fall back are a
+   debugging trap.
+
+No code changes. Bundle byte-identical except for embedded version.
+
 ## 0.1.8 — 2026-05-13
 
 Three quality-of-life fixes targeting AI dogfood friction:
