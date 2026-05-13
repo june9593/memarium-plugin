@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.10 — 2026-05-13
+
+`vibebook-recall` skill description rewritten to defeat the
+"I'll just `git log --grep`" reflex AI falls into for retrospective
+questions like "之前是怎么解的". Real dogfood case (2026-05-13):
+user asked "fullscreen bookmark crash 之前是怎么解的", AI ran
+`git log --grep="fullscreen" --grep="bookmark"` and never invoked
+recall — finding commit messages but missing the chronicle's "what
+didn't work / why we picked X over Y" context.
+
+### Changed (`skills/vibebook-recall/SKILL.md` description)
+
+- "Use this EVEN when you can grep" → "**Use this BEFORE
+  `git log --grep`**" (specific reflex to override).
+- Added Chinese trigger phrases: "之前是怎么解的", "上次怎么处理的",
+  "以前遇到过吗" — equivalent English phrases were already there
+  but cross-language matching is unreliable.
+- Added explicit anti-pattern callout: jumping to git log for
+  "how was X solved" finds commit messages but drops the conversation
+  context where the user explained what didn't work.
+- Sequenced: "Run stage 1 FIRST; if no topic matches, *then* fall
+  back to git" — earlier description left ordering ambiguous so AI
+  read "git is faster" subtext.
+
+No code change; description-only patch on the recall skill.
+
 ## 0.1.9 — 2026-05-13
 
 Five SKILL.md fixes targeting fan-out failures observed in 0.1.8 dogfood
