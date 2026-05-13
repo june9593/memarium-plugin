@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.11 — 2026-05-13
+
+Pre-opensource documentation cleanup. No behavior changes.
+
+### Changed
+
+- **README.md**: rewritten to lead with the user-facing problem
+  ("don't re-derive what past-you figured out") instead of jumping
+  to "digests sessions into chronicles". Added a `## Repo layout`
+  section describing what each top-level dir is for, including
+  `site-template/` (Astro template for `site serve / build`) and
+  `tests/` (vitest suite for contributors).
+- **CHANGELOG**: dropped private references — internal "Phase 2" /
+  "spec §4" / "docs/superpowers/specs/..." mentions and a forward-
+  looking note about an unshipped npm v0.5.0 release. Outside readers
+  shouldn't need a private vocabulary to read the changelog.
+- **`.npmignore`**: added a comment explaining why it's `*` (this
+  package is marketplace-only, never published to npm).
+- **Removed `bin/.gitkeep`**: leftover scaffolding from when bin/
+  was empty; obsolete since `bin/vibebook-plugin.js` is committed.
+
 ## 0.1.10 — 2026-05-13
 
 `vibebook-recall` skill description rewritten to defeat the
@@ -262,17 +283,13 @@ True plugin autonomy. v0.1.0/v0.1.1 shipped with two ship-blocking gaps:
   list-projects → prepare on a fresh machine with no `~/.vibebook/`
   and no npm CLI on PATH. If it ever fails, autonomy is broken.
 
-### Spec changes
-
-- New: `docs/superpowers/specs/2026-05-13-vibebook-split-design-patch1.md`
-  (supersedes specific paragraphs of the original design spec).
-
 ## 0.1.1 — 2026-05-13
 
 Plugin autonomy patch. v0.1.0 inherited a hard `readConfig()` requirement
 from `_shared/config.ts` — every plugin command threw "vibebook not
-initialized" if `~/.vibebook/config.json` was missing. That contradicted
-spec §4 ("plugin works on a plain spool directory, no config needed").
+initialized" if `~/.vibebook/config.json` was missing. That contradicts
+the plugin's design goal of working on a plain spool directory without
+the optional npm CLI being installed.
 
 ### Fixed
 
@@ -302,13 +319,14 @@ plugin is independently installable from the Claude Code marketplace.
 
 ### Compatibility
 
-- `~/.vibebook/session-repo/` schema unchanged from `vibebook` 0.4.x
-- Both this plugin and `vibebook` npm 0.4.x can coexist on one machine; they read/write disjoint subpaths
-- When `vibebook` npm 0.5.0 ships (Phase 2), it will drop the digest/recall commands; users will use this plugin instead
+- `~/.vibebook/session-repo/` schema is the same one used by the
+  optional `vibebook` npm CLI — both can coexist on one machine and
+  write to the same spool with sessionId-keyed entries.
+- The plugin itself does not require the npm CLI to be installed.
 
-### Notes for `vibebook` 0.4.x users
+### Notes for users with the `vibebook` npm CLI installed
 
-If you have the npm `vibebook` CLI installed, your existing data
-keeps working. You can install this plugin alongside it. Once `vibebook`
-0.5.0 ships, the plugin will be your only path to digest + recall;
-the npm CLI will be sync-only.
+Existing data keeps working. The plugin and the npm CLI cooperate
+on the spool path: the plugin owns digest + recall; the npm CLI owns
+cross-device sync (push/pull/resume). Install one, both, or neither
+based on what you need.
