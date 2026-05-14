@@ -75,11 +75,26 @@ It syncs `~/.vibebook/session-repo/` to a private GitHub repo across
 your devices. Plugin and CLI share the same spool path with
 sessionId-keyed entries — install one, both, or neither.
 
+The CLI also lets you **resume a session on another machine**:
+
+```sh
+vibebook list-sessions --since 1d   # find the sessionId you want
+vibebook resume <sessionId>         # copies jsonl into ~/.claude/projects/
+                                    # and prints `claude --resume <id>`
+```
+
+For cross-user-home machines (e.g. `/Users/alice` on laptop A vs
+`/Users/bob` on laptop B), configure a one-time path map:
+
+```sh
+vibebook config --map-path /Users/alice=/Users/bob
+```
+
 See https://github.com/june9593/vibebook for the npm CLI.
 
 ### Files written
 
-- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.{md,raw.json}` — rendered copies of your sessions
+- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.{md,raw.json,jsonl}` — rendered copies of your sessions plus the original `.jsonl` (preserved so the optional npm CLI can `vibebook resume` them on another machine)
 - `~/.vibebook/session-repo/book/<project>/{chronicle,topics}/*.md` — digested book
 - `~/.vibebook/session-repo/.vibebook/index.json` — per-session entry index
 - `~/.vibebook/session-repo/.vibebook/index.book.json` — chronicle/topic catalog
@@ -182,11 +197,26 @@ vibebook init
 插件和 CLI 在同一个 spool 路径上协作,条目用 sessionId 做 key —
 装其中一个、两个都装、或者都不装,按你需要选。
 
+CLI 还可以**在另一台机器上 resume 某个会话**:
+
+```sh
+vibebook list-sessions --since 1d   # 找到要 resume 的 sessionId
+vibebook resume <sessionId>         # 把 jsonl 复制到 ~/.claude/projects/
+                                    # 并打印 `claude --resume <id>`
+```
+
+如果两台机器 home 目录不一样(比如 A 笔记本是 `/Users/alice`,
+B 笔记本是 `/Users/bob`),配置一次 path map:
+
+```sh
+vibebook config --map-path /Users/alice=/Users/bob
+```
+
 npm CLI 在 https://github.com/june9593/vibebook。
 
 ### 写到哪里
 
-- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.{md,raw.json}` — 渲染过的会话副本
+- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.{md,raw.json,jsonl}` — 渲染过的会话副本加上原始 `.jsonl`(保留原始 jsonl 是为了让可选的 npm CLI 能在另一台机器上 `vibebook resume`)
 - `~/.vibebook/session-repo/book/<project>/{chronicle,topics}/*.md` — 整理出来的笔记本
 - `~/.vibebook/session-repo/.vibebook/index.json` — 单会话条目索引
 - `~/.vibebook/session-repo/.vibebook/index.book.json` — chronicle / topic 目录
