@@ -181,6 +181,45 @@ need to research" but turn into a 6KB debugging session).
 > see `MEMVC1` at the top of any md file, the git filter wasn't installed
 > here — tell the user to run `vibebook crypt init` and stop.
 
+#### Reading a 0.7+ `manifest_version: 1` md (chunked navigation)
+
+vibebook 0.7+ writes a per-session manifest + Table of Contents at the top
+of each raw_sessions md, so you can navigate huge sessions (9MB+, 10000+
+turns) without loading the whole body. **Always check for this first:**
+
+```
+Read offset:0 limit:80 <mdPath>
+```
+
+If the frontmatter contains `manifest_version: 1`, the file is navigable:
+
+- The frontmatter carries `user_turns`, `assistant_turns`, `tools_used`
+  (histogram), `commits`, `files_touched` (deduped, up to 200), and
+  `candidate_decisions` (heuristic — keyword matches like 我决定 / decided to /
+  ok merged — useful hints, not authoritative).
+- A `# Table of Contents` table follows the frontmatter. Each row has a
+  `→L<number>` column = absolute line number of that turn's heading.
+  Marker legend: 🧑 real user turn, ✏️ file edit, 💾 commit/tag, 🤖
+  substantive assistant reply.
+
+**Navigation pattern:**
+
+1. The first Read (lines 0–80) gave you the frontmatter + start of TOC.
+   Continue reading the TOC region as far as needed (TOC is usually 200–500
+   rows for a long session, plan for a second Read of ~500 lines).
+2. From the manifest, you already know files_touched + commits — that's
+   80% of what most chronicles need.
+3. Pick the 3–10 TOC rows most relevant to the work thread (e.g., commits
+   near a thread's end, decisions, last user turns). Pull each with
+   `Read offset:<L> limit:200`.
+4. Only fall back to whole-file Read if the manifest is missing key
+   context the TOC can't surface (rare — usually the session is genuinely
+   pre-0.7 and lacks manifest_version).
+
+If the frontmatter does NOT have `manifest_version: 1` (older 0.6 md),
+read the whole file the old way. Existing 0.6 sessions will stay
+pre-manifest until their source jsonl changes and triggers a re-sync.
+
 #### SKIP rules — be conservative
 
 A session may be marked `skip: true` ONLY when ALL of these hold:
@@ -242,16 +281,22 @@ reasons in one block. Ask to proceed.
 
 ### Step P3 — Read in parallel via subagents (when total source size warrants it)
 
-**When to fan out (NEW heuristic, 0.1.9):**
+**When to fan out (NEW heuristic, 0.1.9; refined for 0.7+ chunked reads):**
 
-Don't trigger on session count alone. Trigger on **total source markdown
-size** of non-skip threads:
+Don't trigger on session count alone. Trigger on **effective read size** of
+non-skip threads. With 0.7+ `manifest_version: 1` md, the effective read
+size is the manifest + TOC + ~5 targeted segments (~100KB total), NOT the
+full file size. For pre-0.7 md (no manifest), it's the full file size.
 
-| Total non-skip md size | Strategy |
+| Total effective read size | Strategy |
 |---|---|
-| **< 150 KB** | Inline. One Read tool call per thread, write chronicle in main session. Don't pay subagent overhead for small inputs. |
+| **< 150 KB** | Inline. One Read per thread, write chronicle in main session. Don't pay subagent overhead for small inputs. |
 | **150 KB – 1 MB** | Fan out, batch ~3–5 threads per agent, **all in one message**. |
-| **> 1 MB** | Same as above BUT **isolate each session ≥ 200 KB into its own dedicated agent** — large mds dominate latency, mixing them with small ones blocks the small ones. |
+| **> 1 MB** | Same as above BUT **isolate each session whose effective size ≥ 200 KB into its own dedicated agent** — large reads dominate latency, mixing them with small ones blocks the small ones. |
+
+For 0.7+ navigable md, a 9MB file's effective read size is only ~100KB
+(header + TOC + selective body reads), so most sessions will land in
+the inline tier even if the on-disk md is huge.
 
 Inline below 150 KB is faster end-to-end because:
 - 5+ threads at 5 KB each = 25 KB total = main session reads them in <10 seconds
