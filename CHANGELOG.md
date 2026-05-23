@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.2.0 — 2026-05-23
+
+**Full sync of the spool extractor with vibebook (npm) 0.7.1.** Before
+this, plugin's standalone scan was stuck on 0.6.x extractor logic — so
+users with only the plugin installed (no npm `vibebook`) hit five
+classes of bugs that npm vibebook had already fixed. This release
+brings the plugin to parity.
+
+### Fixes inherited from npm vibebook
+
+- **Copilot `chatSessions/<id>.jsonl` chronological reconstruction**
+  (npm 0.6.2). VS Code stores Copilot as a rolling-window state log;
+  pre-0.2.0 the plugin captured only the latest visible turn (~5–8% of
+  multi-turn agent sessions). Now walks events chronologically and
+  appends snapshot elements to a growing `turns[]` array.
+- **Copilot agent-mode response extraction** (npm 0.6.2). Agent
+  sessions rarely emit `markdownContent`; they emit `thinking` +
+  `toolInvocationSerialized`. Both are now extracted as ContentBlocks.
+- **Claude `isMeta=true` entries filtered** (npm 0.6.3). System-injected
+  slash-command skill bodies no longer leak into displayName derivation
+  (the `Step-0-—-Detect-the-mode-DO-THIS-FIRST…` artifact is gone).
+- **Per-session manifest + Table of Contents in md frontmatter** (npm
+  0.7.0). Every rendered md now has `manifest_version: 1` +
+  `tools_used` histogram + `commits` + `files_touched` +
+  `candidate_decisions` + a `# Table of Contents` block with
+  `→L<line>` jump offsets. Skill consumers can navigate huge sessions
+  without loading the whole body.
+- **Copilot `chatSessions/` vs `transcripts/` dedupe** (npm 0.7.1).
+  When the same sessionId exists in both source formats within one
+  workspace, only `chatSessions/` is yielded. Stops the duplicate-.md
+  problem (~83 orphan files on Yue's machine before fix).
+- **Empty-shell session skip** (npm 0.7.1). VS Code creates a chat
+  session file for every tab opened (even ones immediately closed);
+  these have no `requests` and fell through to `1970-01-01/untitled__*.md`
+  files. Now skipped at scan time.
+
+### Breaking
+
+- **Dropped `.raw.json` sibling files.** Each session now writes a
+  single `.md`. The .md carries all session data (rich content
+  blocks, manifest, TOC). `index.json` `relativePath` points at the
+  .md directly. `prepare.ts`'s existing `.raw.json` → `.md` regex swap
+  becomes a no-op (preserved for back-compat with old indices).
+
+### Files synced from `june9593/vibebook@v0.7.1`
+
+- `src/_shared/types.ts` — added `ContentBlock`, `SessionManifest`,
+  `TocEntry`, `contentBlocks` field, `originSessionId` field
+- `src/_shared/sources/claude-code.ts` — verbatim
+- `src/_shared/sources/vscode-copilot.ts` — verbatim
+- `src/_shared/digest/manifest.ts` — new
+- `src/_shared/digest/toc.ts` — new
+- `src/spool/writer.ts` — 2-pass renderer with manifest + TOC, drops
+  `.raw.json` output
+- `src/spool/scan-and-import.ts` — empty-shell skip, `.md`-only output
+
+22/22 vitest passing (was 22 in 0.1.11 too — same test count, all
+adapted to the longer fixture content the 10-char sanitizer requires).
+
 ## 0.1.11 — 2026-05-13
 
 Pre-opensource documentation cleanup. No behavior changes.
