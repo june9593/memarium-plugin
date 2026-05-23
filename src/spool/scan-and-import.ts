@@ -75,8 +75,20 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
         continue;
       }
 
-      // Write rendered .md + .raw.json. includeReasoning=true matches npm
-      // sync's default; we don't read config here (plugin must work without
+      // Skip empty-shell sessions — VS Code creates a chatSessions/<id>.jsonl
+      // for every chat tab opened (even ones immediately closed). Without
+      // this guard we'd write one 1970-01-01/untitled__<id>.md per shell
+      // (epoch fallback because startedAt stays empty). Matches the
+      // empty-skip behavior of vibebook (npm) >=0.7.1.
+      if (session.messages.length === 0) {
+        result.skipped++;
+        continue;
+      }
+
+      // Write rendered .md. 0.2.0 dropped .raw.json (npm vibebook >=0.6
+      // dropped it too); the .md carries everything via manifest +
+      // content blocks. includeReasoning=true matches npm sync's default;
+      // we don't read config here (plugin must work without
       // ~/.vibebook/config.json).
       const written = writeSession(spoolRoot, session, { includeReasoning: true });
 
@@ -90,7 +102,7 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
         endedAt: session.endedAt,
         nameSlug: session.nameSlug,
         displayName: session.displayName,
-        relativePath: written.raw,
+        relativePath: written.md,
         sourcePath: session.sourcePath,
         sourceMtimeMs: discovered.sourceMtimeMs,
         sourceSha256: discovered.sourceSha256,

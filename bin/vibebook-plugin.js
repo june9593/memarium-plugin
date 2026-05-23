@@ -11101,20 +11101,25 @@ function parseClaudeJsonl(sourcePath, content) {
     if (obj.sessionId && !sessionId) sessionId = obj.sessionId;
     if (obj.cwd && !cwd) cwd = obj.cwd;
     if (obj.type === "user" || obj.type === "assistant") {
+      if (obj.isMeta === true) continue;
       const ts = typeof obj.timestamp === "string" ? obj.timestamp : void 0;
       if (ts) {
         if (!startedAt) startedAt = ts;
         endedAt = ts;
       }
-      const { text: rawText, reasoning: rawReasoning } = extractParts(obj.message);
+      const { text: rawText, reasoning: rawReasoning, contentBlocks } = extractParts(obj.message);
       const text = sanitizeMessageText(rawText);
       const reasoning = sanitizeMessageText(rawReasoning);
-      if (text || reasoning) {
+      const hasToolBlocks = contentBlocks.some(
+        (b2) => b2.type === "tool_use" || b2.type === "tool_result"
+      );
+      if (text || reasoning || hasToolBlocks) {
         const msg = {
           role: obj.type === "user" ? "user" : "assistant",
           text,
           timestamp: ts,
-          raw: obj
+          raw: obj,
+          contentBlocks
         };
         if (reasoning) msg.reasoning = reasoning;
         messages.push(msg);
@@ -11150,21 +11155,47 @@ function parseClaudeJsonl(sourcePath, content) {
   return out;
 }
 function extractParts(message) {
-  if (!message) return { text: "", reasoning: "" };
+  if (!message) return { text: "", reasoning: "", contentBlocks: [] };
   const c3 = message.content;
-  if (typeof c3 === "string") return { text: c3, reasoning: "" };
-  if (!Array.isArray(c3)) return { text: "", reasoning: "" };
+  if (typeof c3 === "string") {
+    return {
+      text: c3,
+      reasoning: "",
+      contentBlocks: [{ type: "text", text: c3 }]
+    };
+  }
+  if (!Array.isArray(c3)) return { text: "", reasoning: "", contentBlocks: [] };
   const texts = [];
   const reasonings = [];
+  const blocks = [];
   for (const p2 of c3) {
     if (!p2 || typeof p2 !== "object") continue;
     if (p2.type === "text" && typeof p2.text === "string") {
       texts.push(p2.text);
+      blocks.push({ type: "text", text: p2.text });
     } else if (p2.type === "thinking" && typeof p2.thinking === "string" && p2.thinking.length > 0) {
       reasonings.push(p2.thinking);
+      blocks.push({ type: "thinking", thinking: p2.thinking });
+    } else if (p2.type === "tool_use" && typeof p2.name === "string") {
+      const block = { type: "tool_use", name: p2.name, input: p2.input ?? {} };
+      if (typeof p2.id === "string") block.id = p2.id;
+      blocks.push(block);
+    } else if (p2.type === "tool_result") {
+      let content = "";
+      if (typeof p2.content === "string") content = p2.content;
+      else if (Array.isArray(p2.content)) {
+        content = p2.content.map((part) => typeof part?.text === "string" ? part.text : "").join("");
+      }
+      const block = { type: "tool_result", content };
+      if (typeof p2.tool_use_id === "string") block.toolUseId = p2.tool_use_id;
+      blocks.push(block);
     }
   }
-  return { text: texts.join("\n"), reasoning: reasonings.join("\n") };
+  return {
+    text: texts.join("\n"),
+    reasoning: reasonings.join("\n"),
+    contentBlocks: blocks
+  };
 }
 function sanitizeMessageText(text) {
   if (!text) return "";
@@ -11263,7 +11294,7 @@ function parseCopilotJson(sourcePath, content, workspacePath) {
 function parseCopilotChatSessionsJsonl(sourcePath, content, workspacePath) {
   const fileBase = basename2(sourcePath, ".jsonl");
   let sessionId = fileBase;
-  let requests = [];
+  const turns = [];
   const lines = content.split("\n");
   for (const line of lines) {
     const s = line.trim();
@@ -11276,18 +11307,24 @@ function parseCopilotChatSessionsJsonl(sourcePath, content, workspacePath) {
     }
     if (obj?.kind === 0 && obj?.v) {
       if (typeof obj.v.sessionId === "string" && obj.v.sessionId) sessionId = obj.v.sessionId;
-      if (Array.isArray(obj.v.requests)) requests = obj.v.requests;
-    } else if (obj?.kind === 2 && Array.isArray(obj.k) && obj.k[0] === "requests" && obj.k.length === 1 && Array.isArray(obj.v)) {
-      requests = obj.v;
-    } else if (obj?.kind === 2 && Array.isArray(obj.k) && obj.k[0] === "requests" && obj.k.length >= 2 && typeof obj.k[1] === "number") {
+      if (Array.isArray(obj.v.requests)) {
+        for (const r2 of obj.v.requests) turns.push(r2);
+      }
+      continue;
+    }
+    if (obj?.kind !== 2 || !Array.isArray(obj.k) || obj.k[0] !== "requests") continue;
+    if (obj.k.length === 1 && Array.isArray(obj.v)) {
+      for (const r2 of obj.v) turns.push(r2);
+    } else if (obj.k.length >= 2 && typeof obj.k[1] === "number") {
       const idx = obj.k[1];
+      while (turns.length <= idx) turns.push({});
       if (obj.k.length === 2) {
-        requests[idx] = obj.v;
+        turns[idx] = obj.v;
       } else {
-        let cur = requests[idx];
-        if (cur === void 0) {
+        let cur = turns[idx];
+        if (cur === void 0 || cur === null) {
           cur = {};
-          requests[idx] = cur;
+          turns[idx] = cur;
         }
         for (let i2 = 2; i2 < obj.k.length - 1; i2++) {
           const seg = obj.k[i2];
@@ -11298,7 +11335,7 @@ function parseCopilotChatSessionsJsonl(sourcePath, content, workspacePath) {
       }
     }
   }
-  return buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath);
+  return buildSessionFromRequests(sourcePath, sessionId, turns, workspacePath);
 }
 function buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath) {
   const messages = [];
@@ -11317,17 +11354,14 @@ function buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath
       if (userText) messages.push({ role: "user", text: userText, timestamp: ts, raw: r2.message });
     }
     const respParts = Array.isArray(r2.response) ? r2.response : [];
-    const assistantTextRaw = respParts.map((p2) => {
-      if (p2?.kind === "markdownContent") return p2?.content?.value ?? "";
-      if (p2?.kind === "textEditGroup") return "";
-      if (typeof p2?.value === "string") return p2.value;
-      return "";
-    }).filter(Boolean).join("\n");
-    if (assistantTextRaw) {
-      const assistantText = sanitizeMessageText(assistantTextRaw);
-      if (assistantText) {
-        messages.push({ role: "assistant", text: assistantText, timestamp: ts, raw: respParts });
-      }
+    const { text: rawText, reasoning: rawReasoning, contentBlocks } = extractCopilotResponseParts(respParts);
+    const text = sanitizeMessageText(rawText);
+    const reasoning = sanitizeMessageText(rawReasoning);
+    if (text || reasoning || contentBlocks.length > 0) {
+      const msg = { role: "assistant", text, timestamp: ts, raw: respParts };
+      if (reasoning) msg.reasoning = reasoning;
+      if (contentBlocks.length > 0) msg.contentBlocks = contentBlocks;
+      messages.push(msg);
     }
   }
   const firstUser = messages.find((m) => m.role === "user")?.text ?? "";
@@ -11345,6 +11379,43 @@ function buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath
     displayName: display,
     messages,
     sourcePath
+  };
+}
+function extractCopilotResponseParts(parts) {
+  const texts = [];
+  const reasonings = [];
+  const blocks = [];
+  for (const p2 of parts) {
+    if (!p2 || typeof p2 !== "object") continue;
+    const k2 = p2.kind;
+    if (k2 === "markdownContent") {
+      const v = typeof p2?.content?.value === "string" ? p2.content.value : "";
+      if (v) {
+        texts.push(v);
+        blocks.push({ type: "text", text: v });
+      }
+    } else if (k2 === "thinking") {
+      const v = typeof p2?.value === "string" ? p2.value : "";
+      if (v) {
+        reasonings.push(v);
+        blocks.push({ type: "thinking", thinking: v });
+      }
+    } else if (k2 === "toolInvocationSerialized") {
+      const toolId = typeof p2?.toolId === "string" ? p2.toolId : "tool";
+      const past = p2?.pastTenseMessage?.value;
+      const cur = p2?.invocationMessage?.value;
+      const label = typeof past === "string" && past || typeof cur === "string" && cur || "";
+      const input = p2?.toolSpecificData ?? {};
+      const block = { type: "tool_use", name: toolId, input };
+      if (typeof p2?.toolCallId === "string") block.id = p2.toolCallId;
+      blocks.push(block);
+      if (label) blocks.push({ type: "tool_result", content: label });
+    }
+  }
+  return {
+    text: texts.join("\n"),
+    reasoning: reasonings.join("\n"),
+    contentBlocks: blocks
   };
 }
 function parseCopilotTranscript(sourcePath, content, workspacePath) {
@@ -11437,6 +11508,7 @@ var init_vscode_copilot = __esm({
           const wsDir = join15(this.root, w.name);
           const wsPath = readWorkspacePath(join15(wsDir, "workspace.json"));
           const chatDir = join15(wsDir, "chatSessions");
+          const chatSessionIds = /* @__PURE__ */ new Set();
           if (existsSync12(chatDir)) {
             let files = [];
             try {
@@ -11452,6 +11524,7 @@ var init_vscode_copilot = __esm({
               const p2 = join15(chatDir, f.name);
               const st = statSync3(p2);
               if (st.size === 0) continue;
+              chatSessionIds.add(basename2(f.name, isJsonl ? ".jsonl" : ".json"));
               const buf = readFileSync10(p2);
               const sha = createHash2("sha256").update(buf).digest("hex");
               yield {
@@ -11472,6 +11545,8 @@ var init_vscode_copilot = __esm({
             }
             for (const f of tfiles) {
               if (!f.isFile() || !f.name.endsWith(".jsonl")) continue;
+              const id = basename2(f.name, ".jsonl");
+              if (chatSessionIds.has(id)) continue;
               const p2 = join15(transcriptsDir, f.name);
               const st = statSync3(p2);
               if (st.size === 0) continue;
@@ -11491,6 +11566,202 @@ var init_vscode_copilot = __esm({
   }
 });
 
+// src/_shared/digest/manifest.ts
+function extractManifest(messages, messageLineOffsets) {
+  const tools_used = {};
+  const commits = [];
+  const filesSeen = /* @__PURE__ */ new Set();
+  const files_touched = [];
+  const candidate_decisions = [];
+  let user_turns = 0;
+  let assistant_turns = 0;
+  for (let i2 = 0; i2 < messages.length; i2++) {
+    const m = messages[i2];
+    const line = messageLineOffsets[i2] ?? 0;
+    if (m.role === "user") user_turns++;
+    else if (m.role === "assistant") assistant_turns++;
+    if (m.role === "user" && m.text && DECISION_RE.test(m.text) && candidate_decisions.length < DECISIONS_CAP) {
+      candidate_decisions.push({ line, preview: previewOf(m.text, 100) });
+    }
+    for (const b2 of m.contentBlocks ?? []) {
+      if (b2.type !== "tool_use") continue;
+      tools_used[b2.name] = (tools_used[b2.name] ?? 0) + 1;
+      if (FILE_TOOLS.has(b2.name)) {
+        const fp = readFilePath(b2);
+        if (fp && !filesSeen.has(fp) && files_touched.length < FILES_CAP) {
+          filesSeen.add(fp);
+          files_touched.push(fp);
+        }
+      }
+      if (b2.name === "Bash" && commits.length < COMMITS_CAP) {
+        const cmd = readBashCommand(b2);
+        if (cmd) {
+          const c3 = parseCommit(cmd);
+          if (c3) commits.push({ ...c3, line });
+          else {
+            const t2 = parseTag(cmd);
+            if (t2) commits.push({ ...t2, line });
+          }
+        }
+      }
+    }
+  }
+  return {
+    user_turns,
+    assistant_turns,
+    tools_used,
+    commits,
+    files_touched,
+    candidate_decisions
+  };
+}
+function readFilePath(b2) {
+  const input = b2.input;
+  if (!input || typeof input !== "object") return null;
+  return typeof input.file_path === "string" ? input.file_path : null;
+}
+function readBashCommand(b2) {
+  const input = b2.input;
+  if (!input || typeof input !== "object") return null;
+  return typeof input.command === "string" ? input.command : null;
+}
+function parseCommit(cmd) {
+  const h2 = cmd.match(GIT_COMMIT_HEREDOC_RE);
+  if (h2) {
+    const body = (h2[2] ?? "").trim();
+    const firstLine = body.split("\n", 1)[0].trim();
+    return firstLine ? { sha: "", msg: firstLine } : null;
+  }
+  const m = cmd.match(GIT_COMMIT_RE);
+  if (!m) return null;
+  const msg = (m[1] ?? m[2] ?? m[3] ?? "").trim();
+  return msg ? { sha: "", msg } : null;
+}
+function parseTag(cmd) {
+  const m = cmd.match(GIT_TAG_RE);
+  if (!m) return null;
+  const tag = m[1];
+  const msg = (m[2] ?? m[3] ?? "").trim();
+  return { sha: tag, msg: msg || `tag ${tag}` };
+}
+function previewOf(text, max) {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  return collapsed.length > max ? collapsed.slice(0, max - 1) + "\u2026" : collapsed;
+}
+var FILES_CAP, COMMITS_CAP, DECISIONS_CAP, DECISION_RE, GIT_COMMIT_RE, GIT_COMMIT_HEREDOC_RE, GIT_TAG_RE, FILE_TOOLS;
+var init_manifest = __esm({
+  "src/_shared/digest/manifest.ts"() {
+    "use strict";
+    FILES_CAP = 200;
+    COMMITS_CAP = 100;
+    DECISIONS_CAP = 20;
+    DECISION_RE = /(我决定|我们决定|最后采用|最后用|let'?s go with|decided to|going with|ok merged|merged it|ship it as)/i;
+    GIT_COMMIT_RE = /\bgit\s+commit\b[^\n]*?-m\s+(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|(\S+))/;
+    GIT_COMMIT_HEREDOC_RE = /\bgit\s+commit\b[^\n]*?-m\s+"\$\(cat\s+<<\s*'?(\w+)'?[\r\n]+([\s\S]*?)[\r\n]+\1\s*\)"/;
+    GIT_TAG_RE = /\bgit\s+tag\b(?:[^\n]*?-(?:a|s)\s+)?\s*(v[\w.\-+]+)(?:[^\n]*?-m\s+(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'))?/;
+    FILE_TOOLS = /* @__PURE__ */ new Set(["Read", "Edit", "Write", "MultiEdit", "NotebookEdit"]);
+  }
+});
+
+// src/_shared/digest/toc.ts
+function buildTocEntries(messages, messageLineOffsets) {
+  const out = [];
+  for (let i2 = 0; i2 < messages.length; i2++) {
+    const m = messages[i2];
+    const markers = computeMarkers(m);
+    if (!markers) continue;
+    out.push({
+      turn: i2 + 1,
+      timestamp: m.timestamp ?? "",
+      markers,
+      preview: computePreview(m),
+      line: messageLineOffsets[i2] ?? 0
+    });
+  }
+  return out;
+}
+function computeMarkers(m) {
+  const marks = [];
+  if (m.role === "user" && m.text && m.text.length >= USER_TEXT_MIN) {
+    marks.push("\u{1F9D1}");
+  }
+  if (m.role === "assistant") {
+    let hasEdit = false;
+    let hasCommit = false;
+    for (const b2 of m.contentBlocks ?? []) {
+      if (b2.type !== "tool_use") continue;
+      if (EDIT_TOOLS.has(b2.name)) hasEdit = true;
+      if (b2.name === "Bash") {
+        const cmd = readCommand(b2);
+        if (cmd && GIT_NOTEWORTHY_RE.test(cmd)) hasCommit = true;
+      }
+    }
+    if (hasCommit) marks.push("\u{1F4BE}");
+    if (hasEdit) marks.push("\u270F\uFE0F");
+    if (m.text && m.text.length >= ASSISTANT_TEXT_MIN && !hasEdit && !hasCommit) {
+      marks.push("\u{1F916}");
+    }
+  }
+  return marks.join("");
+}
+function computePreview(m) {
+  if (m.text) return previewOf2(m.text, 100);
+  const actions = [];
+  for (const b2 of m.contentBlocks ?? []) {
+    if (b2.type !== "tool_use") continue;
+    if (EDIT_TOOLS.has(b2.name)) {
+      const fp = b2.input?.file_path;
+      if (typeof fp === "string") actions.push(`${b2.name} ${fp}`);
+      else actions.push(b2.name);
+    } else if (b2.name === "Bash") {
+      const cmd = readCommand(b2);
+      if (cmd) {
+        const firstLine = cmd.split("\n", 1)[0].trim();
+        actions.push(firstLine);
+      }
+    }
+    if (actions.length >= 2) break;
+  }
+  return previewOf2(actions.join(" \xB7 "), 100);
+}
+function readCommand(b2) {
+  const input = b2.input;
+  if (!input || typeof input !== "object") return null;
+  return typeof input.command === "string" ? input.command : null;
+}
+function previewOf2(text, max) {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  return collapsed.length > max ? collapsed.slice(0, max - 1) + "\u2026" : collapsed;
+}
+function renderTocMarkdown(entries) {
+  if (entries.length === 0) return "";
+  const header = `# Table of Contents
+
+Importance-based \u2014 real user turns (\u2265${USER_TEXT_MIN} chars), file edits, commits, and substantive assistant replies. Tool-result-only turns omitted.
+
+| # | Time | Marker | Preview | Line |
+|---|------|--------|---------|------|`;
+  const rows = entries.map((e) => {
+    const time = e.timestamp ? e.timestamp.slice(5, 16).replace("T", " ") : "\u2014";
+    const preview = escapeTableCell(e.preview);
+    return `| ${e.turn} | ${time} | ${e.markers} | ${preview} | \u2192L${e.line} |`;
+  });
+  return [header, ...rows].join("\n");
+}
+function escapeTableCell(s) {
+  return s.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+var USER_TEXT_MIN, ASSISTANT_TEXT_MIN, GIT_NOTEWORTHY_RE, EDIT_TOOLS;
+var init_toc = __esm({
+  "src/_shared/digest/toc.ts"() {
+    "use strict";
+    USER_TEXT_MIN = 50;
+    ASSISTANT_TEXT_MIN = 200;
+    GIT_NOTEWORTHY_RE = /\bgit\s+(commit|tag)\b/;
+    EDIT_TOOLS = /* @__PURE__ */ new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+  }
+});
+
 // src/spool/writer.ts
 import { mkdirSync as mkdirSync9, writeFileSync as writeFileSync7 } from "node:fs";
 import { join as join16 } from "node:path";
@@ -11500,46 +11771,197 @@ function writeSession(repoRoot, s, opts = {}) {
   const absDir = join16(repoRoot, dirRel);
   mkdirSync9(absDir, { recursive: true });
   const base = `${s.nameSlug}__${s.shortId}`;
-  const rawRel = join16(dirRel, `${base}.raw.json`);
   const mdRel = join16(dirRel, `${base}.md`);
-  writeFileSync7(join16(repoRoot, rawRel), JSON.stringify(s, null, 2) + "\n");
-  writeFileSync7(join16(repoRoot, mdRel), renderMarkdown(s, opts.includeReasoning ?? true));
-  return { raw: rawRel, md: mdRel };
+  const includeReasoning = opts.includeReasoning ?? true;
+  const fullToolResults = opts.fullToolResults ?? process.env.VIBEBOOK_FULL_TOOL_RESULTS === "1";
+  writeFileSync7(
+    join16(repoRoot, mdRel),
+    renderMarkdown(s, { includeReasoning, fullToolResults })
+  );
+  return { md: mdRel };
 }
-function renderMarkdown(s, includeReasoning) {
-  const header = [
-    `# ${s.displayName}`,
-    "",
-    `**Tool:** ${s.tool}  `,
-    `**Project:** ${s.project} (\`${s.projectRaw}\`)  `,
-    `**Session ID:** \`${s.sessionId}\`  `,
-    `**Started:** ${s.startedAt}  `,
-    `**Ended:** ${s.endedAt}  `,
-    "",
-    "---",
-    ""
-  ].join("\n");
-  const body = s.messages.map((m) => {
-    const heading = m.role === "user" ? "## User" : m.role === "assistant" ? "## Assistant" : `## ${m.role}`;
-    const ts = m.timestamp ? ` _(${m.timestamp})_` : "";
-    const parts = [];
-    if (includeReasoning && m.reasoning) {
-      const quoted = m.reasoning.split("\n").map((l) => `> ${l}`).join("\n");
-      parts.push(`> \u{1F4AD} _reasoning_
-${quoted}`);
+function renderMarkdown(s, ctx) {
+  const renderedPerMessage = [];
+  for (const m of s.messages) {
+    const md = renderMessageBlock(m, ctx);
+    if (!md) continue;
+    renderedPerMessage.push({ md, src: m });
+  }
+  const bodyParts = [];
+  const messageLineOffsetsRelative = [];
+  let currentLine = 1;
+  for (let i2 = 0; i2 < renderedPerMessage.length; i2++) {
+    messageLineOffsetsRelative.push(currentLine);
+    const md = renderedPerMessage[i2].md;
+    bodyParts.push(md);
+    if (i2 < renderedPerMessage.length - 1) {
+      currentLine += md.split("\n").length + 1;
     }
-    if (m.text) parts.push(m.text);
-    if (parts.length === 0) return "";
-    return `${heading}${ts}
+  }
+  const body = bodyParts.join("\n\n");
+  const renderedMessages = renderedPerMessage.map((r2) => r2.src);
+  const manifestRel = extractManifest(renderedMessages, messageLineOffsetsRelative);
+  const tocRel = buildTocEntries(renderedMessages, messageLineOffsetsRelative);
+  const tocMdRel = renderTocMarkdown(tocRel);
+  const frontmatterRel = renderFrontmatter(s, manifestRel);
+  const tocSection = tocMdRel ? `
 
-${parts.join("\n\n")}
-`;
-  }).filter(Boolean).join("\n");
-  return header + body;
+${tocMdRel}` : "";
+  const prefixRel = frontmatterRel + tocSection + "\n\n";
+  const prefixLineCount = prefixRel.split("\n").length - 1;
+  const manifest = patchManifestLines(manifestRel, prefixLineCount);
+  const toc = tocRel.map((e) => ({ ...e, line: e.line + prefixLineCount }));
+  const frontmatter = renderFrontmatter(s, manifest);
+  const tocMd = renderTocMarkdown(toc);
+  return [frontmatter, tocMd, body].filter(Boolean).join("\n\n");
 }
+function patchManifestLines(m, offset) {
+  return {
+    ...m,
+    commits: m.commits.map((c3) => ({ ...c3, line: c3.line + offset })),
+    candidate_decisions: m.candidate_decisions.map((d) => ({ ...d, line: d.line + offset }))
+  };
+}
+function renderFrontmatter(s, m) {
+  const lines = [
+    "---",
+    `sessionId: ${s.sessionId}`,
+    `tool: ${s.tool}`,
+    `project: ${s.project}`,
+    `projectRaw: ${s.projectRaw}`,
+    `startedAt: ${s.startedAt}`,
+    `endedAt: ${s.endedAt}`,
+    `displayName: ${yamlSafeString(s.displayName)}`,
+    `manifest_version: 1`,
+    `user_turns: ${m.user_turns}`,
+    `assistant_turns: ${m.assistant_turns}`,
+    ...renderToolsUsed(m.tools_used),
+    ...renderCommits(m.commits),
+    ...renderFilesTouched(m.files_touched),
+    ...renderCandidateDecisions(m.candidate_decisions),
+    "---"
+  ];
+  return lines.join("\n");
+}
+function renderToolsUsed(t2) {
+  const entries = Object.entries(t2).sort((a, b2) => b2[1] - a[1]);
+  if (entries.length === 0) return ["tools_used: {}"];
+  return ["tools_used:", ...entries.map(([k2, v]) => `  ${yamlSafeKey(k2)}: ${v}`)];
+}
+function renderCommits(commits) {
+  if (commits.length === 0) return ["commits: []"];
+  return [
+    "commits:",
+    ...commits.map((c3) => `  - { sha: ${yamlSafeString(c3.sha)}, msg: ${yamlSafeString(c3.msg)}, line: ${c3.line} }`)
+  ];
+}
+function renderFilesTouched(files) {
+  if (files.length === 0) return ["files_touched: []"];
+  return [
+    "files_touched:",
+    ...files.map((f) => `  - ${yamlSafeString(f)}`)
+  ];
+}
+function renderCandidateDecisions(decisions) {
+  if (decisions.length === 0) return ["candidate_decisions: []"];
+  return [
+    "candidate_decisions:",
+    ...decisions.map((d) => `  - { line: ${d.line}, preview: ${yamlSafeString(d.preview)} }`)
+  ];
+}
+function yamlSafeString(s) {
+  if (/^[A-Za-z0-9_一-鿿　-〿 -]+$/.test(s) && s === s.trim()) return s;
+  const escaped = s.replace(/'/g, "''");
+  return `'${escaped}'`;
+}
+function yamlSafeKey(s) {
+  if (/^[A-Za-z0-9_-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, "''")}'`;
+}
+function renderMessageBlock(m, ctx) {
+  const heading = m.role === "user" ? "## User" : m.role === "assistant" ? "## Assistant" : `## ${m.role}`;
+  const ts = m.timestamp ? ` _(${m.timestamp})_` : "";
+  const rendered = renderMessageContent(m.contentBlocks, m.text, m.reasoning, ctx);
+  if (!rendered.trim()) return "";
+  return `${heading}${ts}
+
+${rendered}`;
+}
+function renderMessageContent(blocks, fallbackText, fallbackReasoning, ctx) {
+  if (blocks && blocks.length > 0) {
+    const out2 = [];
+    for (const b2 of blocks) {
+      if (b2.type === "thinking") {
+        if (!ctx.includeReasoning) continue;
+        out2.push(renderThinking(b2.thinking));
+      } else if (b2.type === "text") {
+        if (b2.text.trim()) out2.push(b2.text);
+      } else if (b2.type === "tool_use") {
+        out2.push(renderToolUse(b2, ctx));
+      } else if (b2.type === "tool_result") {
+        out2.push(renderToolResult(b2, ctx));
+      }
+    }
+    return out2.join("\n\n");
+  }
+  const out = [];
+  if (ctx.includeReasoning && fallbackReasoning) {
+    out.push(renderThinking(fallbackReasoning));
+  }
+  if (fallbackText) out.push(fallbackText);
+  return out.join("\n\n");
+}
+function renderThinking(text) {
+  const quoted = text.split("\n").map((l) => `> ${l}`).join("\n");
+  return `> \u{1F4AD} _thinking_
+${quoted}`;
+}
+function renderToolUse(b2, ctx) {
+  const inputStr = JSON.stringify(b2.input, null, 2);
+  const truncated = ctx.fullToolResults ? inputStr : maybeTruncate(inputStr, "input");
+  return `### \u{1F527} tool_use: ${b2.name}
+
+\`\`\`json
+${truncated}
+\`\`\``;
+}
+function renderToolResult(b2, ctx) {
+  const truncated = ctx.fullToolResults ? b2.content : maybeTruncate(b2.content, "output");
+  return `### \u2705 tool_result
+
+\`\`\`
+${truncated}
+\`\`\``;
+}
+function maybeTruncate(s, kind) {
+  if (Buffer.byteLength(s, "utf8") <= TRUNCATE_THRESHOLD_BYTES) return s;
+  const lines = s.split("\n");
+  if (lines.length <= 50) {
+    const head2 = s.slice(0, 4e3);
+    const tail2 = s.slice(-1e3);
+    return `${head2}
+
+[... truncated: ${(Buffer.byteLength(s, "utf8") / 1024).toFixed(1)} KB total, showing first 4000 + last 1000 chars ...]
+
+${tail2}`;
+  }
+  const head = lines.slice(0, 30).join("\n");
+  const tail = lines.slice(-10).join("\n");
+  const omitted = lines.length - 40;
+  const sizeKb = (Buffer.byteLength(s, "utf8") / 1024).toFixed(1);
+  return `${head}
+
+[... truncated: ${sizeKb} KB ${kind}, omitting ${omitted} middle lines ...]
+
+${tail}`;
+}
+var TRUNCATE_THRESHOLD_BYTES;
 var init_writer = __esm({
   "src/spool/writer.ts"() {
     "use strict";
+    init_manifest();
+    init_toc();
+    TRUNCATE_THRESHOLD_BYTES = 20 * 1024;
   }
 });
 
@@ -11577,6 +11999,10 @@ async function scanAndImport(opts) {
         result.skipped++;
         continue;
       }
+      if (session.messages.length === 0) {
+        result.skipped++;
+        continue;
+      }
       const written = writeSession(spoolRoot, session, { includeReasoning: true });
       const entry = {
         sessionId: session.sessionId,
@@ -11588,7 +12014,7 @@ async function scanAndImport(opts) {
         endedAt: session.endedAt,
         nameSlug: session.nameSlug,
         displayName: session.displayName,
-        relativePath: written.raw,
+        relativePath: written.md,
         sourcePath: session.sourcePath,
         sourceMtimeMs: discovered.sourceMtimeMs,
         sourceSha256: discovered.sourceSha256

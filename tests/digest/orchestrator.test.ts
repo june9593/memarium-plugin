@@ -22,8 +22,8 @@ describe("orchestrateCmd", () => {
 
   function writeFakeJsonl(projectDir: string, sessionId: string, cwd: string) {
     const lines = [
-      JSON.stringify({ type: "user", message: { role: "user", content: "hi" }, sessionId, cwd, timestamp: "2026-05-10T00:00:00Z" }),
-      JSON.stringify({ type: "assistant", message: { role: "assistant", content: "hey" }, sessionId, cwd, timestamp: "2026-05-10T00:00:01Z" }),
+      JSON.stringify({ type: "user", message: { role: "user", content: "fix the auth bug in the login flow" }, sessionId, cwd, timestamp: "2026-05-10T00:00:00Z" }),
+      JSON.stringify({ type: "assistant", message: { role: "assistant", content: "Looking into it now, reading the auth code." }, sessionId, cwd, timestamp: "2026-05-10T00:00:01Z" }),
     ];
     mkdirSync(projectDir, { recursive: true });
     writeFileSync(join(projectDir, `${sessionId}.jsonl`), lines.join("\n") + "\n");

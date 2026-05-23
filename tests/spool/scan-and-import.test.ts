@@ -19,17 +19,19 @@ describe("scanAndImport", () => {
     rmSync(fakeHome, { recursive: true, force: true });
   });
 
-  /** Helper: write a minimal Claude Code jsonl file. */
+  /** Helper: write a minimal Claude Code jsonl file. Content must be ≥10
+   *  chars or the 0.6.3+ sanitizer drops it as noise → empty messages →
+   *  scan-and-import skips the whole session as an empty shell. */
   function writeFakeJsonl(projectDir: string, sessionId: string, cwd: string) {
     mkdirSync(projectDir, { recursive: true });
     const lines = [
-      JSON.stringify({ type: "user", message: { role: "user", content: "hi" }, sessionId, cwd, timestamp: "2026-05-10T00:00:00Z" }),
-      JSON.stringify({ type: "assistant", message: { role: "assistant", content: "hey" }, sessionId, cwd, timestamp: "2026-05-10T00:00:01Z" }),
+      JSON.stringify({ type: "user", message: { role: "user", content: "fix the auth bug in the login flow" }, sessionId, cwd, timestamp: "2026-05-10T00:00:00Z" }),
+      JSON.stringify({ type: "assistant", message: { role: "assistant", content: "Looking into it now, reading the auth code." }, sessionId, cwd, timestamp: "2026-05-10T00:00:01Z" }),
     ];
     writeFileSync(join(projectDir, `${sessionId}.jsonl`), lines.join("\n") + "\n");
   }
 
-  it("imports new sessions: writes .md + .raw.json under raw_sessions/<tool>/<project>/<date>/", async () => {
+  it("imports new sessions: writes .md under raw_sessions/<tool>/<project>/<date>/", async () => {
     const projDir = join(claudeProjectsDir, "-Users-test-edge-src");
     writeFakeJsonl(projDir, "abc-123", "/Users/test/edge/src");
 
@@ -39,7 +41,7 @@ describe("scanAndImport", () => {
 
     const spoolRoot = join(fakeHome, ".vibebook/session-repo");
     // raw_sessions/claude/<project-slug>/<YYYY-MM-DD>/ should now contain
-    // exactly one .md and one .raw.json.
+    // exactly one .md. 0.2.0 dropped the .raw.json sibling.
     const claudeDir = join(spoolRoot, "raw_sessions/claude");
     expect(existsSync(claudeDir)).toBe(true);
     const projectSlugs = readdirSync(claudeDir);
@@ -48,9 +50,9 @@ describe("scanAndImport", () => {
     expect(dates.length).toBe(1);
     const files = readdirSync(join(claudeDir, projectSlugs[0], dates[0]));
     const md = files.find((f) => f.endsWith(".md"));
-    const raw = files.find((f) => f.endsWith(".raw.json"));
     expect(md).toBeTruthy();
-    expect(raw).toBeTruthy();
+    // No .raw.json — single-file md format since 0.2.0 (matches npm vibebook >= 0.6)
+    expect(files.find((f) => f.endsWith(".raw.json"))).toBeUndefined();
   });
 
   it("writes ~/.vibebook/session-repo/.vibebook/index.json with the imported session entry", async () => {
