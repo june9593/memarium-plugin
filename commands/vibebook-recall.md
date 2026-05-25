@@ -6,12 +6,14 @@ Invoke the **vibebook-recall** skill via the `Skill` tool with
 `skill: "vibebook-recall"`.
 
 Use this **before** you start exploring code in a project repo where the
-user has run `vibebook sync`. The skill walks you through three stages:
+user has run vibebook sync (via the plugin's bundled scan or the optional
+npm CLI). The skill walks you through three stages:
 
-1. **Stage 1**: `vibebook recall --cwd "$(pwd)"` — fetch the project's
+1. **Stage 1**: `"$VBP" recall --cwd "$(pwd)"` — fetch the project's
    topic list (~5 KB of title + summary). Includes memex cards if memex
-   is installed.
-2. **Stage 2**: `vibebook recall --cwd "$(pwd)" --topic <slug>` — for
+   is installed. `$VBP` is the plugin binary discovered in the skill's
+   Step −1 (`ls -td ~/.claude/plugins/cache/vibebook/vibebook/*/bin/vibebook-plugin.js | head -1`).
+2. **Stage 2**: `"$VBP" recall --cwd "$(pwd)" --topic <slug>` — for
    each topic that matches the task, fetch its chronicles with
    AI-first frontmatter (files_touched / commits / decisions / status).
 3. **Stage 3**: `Read` the chronicle bodies that the frontmatter

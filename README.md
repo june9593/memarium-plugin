@@ -94,7 +94,7 @@ See https://github.com/june9593/vibebook for the npm CLI.
 
 ### Files written
 
-- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.{md,raw.json,jsonl}` — rendered copies of your sessions plus the original `.jsonl` (preserved so the optional npm CLI can `vibebook resume` them on another machine)
+- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` — rendered session, single file with YAML frontmatter (manifest_version: 1 + tools_used / commits / files_touched) + a `# Table of Contents` block + the body. Resume reads this directly via the chunked path; no `.raw.json` or `.jsonl` sibling since 0.2.0.
 - `~/.vibebook/session-repo/book/<project>/{chronicle,topics}/*.md` — digested book
 - `~/.vibebook/session-repo/.vibebook/index.json` — per-session entry index
 - `~/.vibebook/session-repo/.vibebook/index.book.json` — chronicle/topic catalog
@@ -216,7 +216,7 @@ npm CLI 在 https://github.com/june9593/vibebook。
 
 ### 写到哪里
 
-- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.{md,raw.json,jsonl}` — 渲染过的会话副本加上原始 `.jsonl`(保留原始 jsonl 是为了让可选的 npm CLI 能在另一台机器上 `vibebook resume`)
+- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` — 渲染过的会话，单个文件包含 YAML frontmatter(manifest_version: 1 + tools_used / commits / files_touched) + `# Table of Contents` 区块 + 正文。resume 通过 chunked 路径直接读这个文件；自 0.2.0 起不再写 `.raw.json` 或 `.jsonl` 副本。
 - `~/.vibebook/session-repo/book/<project>/{chronicle,topics}/*.md` — 整理出来的笔记本
 - `~/.vibebook/session-repo/.vibebook/index.json` — 单会话条目索引
 - `~/.vibebook/session-repo/.vibebook/index.book.json` — chronicle / topic 目录
