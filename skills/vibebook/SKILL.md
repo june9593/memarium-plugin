@@ -1,6 +1,6 @@
 ---
 name: vibebook
-description: Digest already-synced raw_sessions into per-project book artifacts (chronicle / topics). Triggers on `/vibebook`. Two modes auto-selected by cwd — project-mode (cwd ≠ session-repo, digests just the matching project) or global-mode (cwd = session-repo, fan-out one subagent per pending project then regen catalog). Per-project isolated. When memex is installed, atomic cards are delegated to /memex-retro instead of being written by vibebook.
+description: Digest already-synced raw_sessions into per-project book artifacts (chronicle / topics). Triggers on `/vibebook`. Two modes auto-selected by cwd — project-mode (cwd ≠ session-repo, digests just the matching project) or global-mode (cwd = session-repo, fan-out one subagent per pending project then regen catalog). Per-project isolated.
 ---
 
 # /vibebook — write your book
@@ -87,9 +87,6 @@ into the spool. Idempotent. Read the JSON output:
 - `project`: the project slug (project mode only)
 - `scan.imported` / `scan.skipped`: how many sessions were copied this run
 - `nextStep`: hint for what to do next
-- `memexInstalled`: boolean — whether `memex` is on PATH (used in P0
-  below; **do NOT issue your own `command -v memex` Bash — read this
-  field instead**)
 
 Then run `list-projects` for the mode-detection table:
 
@@ -111,20 +108,7 @@ matching section below. Do not try to guess; trust `list-projects`.
 
 # Project mode
 
-### Step P0 — Memex hand-off prompt (if memex is installed)
-
-Look at the `memexInstalled` field from the Step 0 `orchestrate` output
-above. **Do NOT issue your own `command -v memex` Bash** — that pattern
-generalizes badly and AI tends to also check unrelated binaries.
-
-If `memexInstalled` is `true`, ask the user **once** at the very start:
-
-> Memex (atomic-card system) is installed. After I finish chronicles +
-> topics, do you want me to also kick off `/memex-retro` to capture any
-> reusable atomic insights from these sessions? (y/n)
-
-Remember the answer for Step P8. If `memexInstalled` is `false`, skip this
-question entirely — don't suggest installing it here.
+*(Project mode begins at Step P1.)*
 
 ### Step P1 — Prepare for cwd's project
 
@@ -480,9 +464,9 @@ Critical rules:
   skip the Dead ends section. If genuinely none, write `(none)` —
   empty section signals "considered, none came up", missing section
   signals "I forgot to think about it".
-- **Atomic insights → memex.** If the chronicle inspires a "next time
-  remember X" insight, that's a memex card not a chronicle bullet.
-  Skip atomic-insight prose here; the memex hand-off (Step P6) catches it.
+- **Atomic insights → Step P7.5.** If the chronicle inspires a "next time
+  remember X" insight, capture it as `procedural`/`semantic` typed memory in
+  Step P7.5 (not here). Skip atomic-insight prose here.
 - Preserve commit hashes / file paths / code blocks / command lines
   verbatim. Paste at most ONE small code block per section when the
   literal form genuinely matters (DCHECK message, magic constant).
@@ -541,9 +525,7 @@ For each affected topic:
 **Wikilinks** — write `[[chronicle/<threadId>]]` directly in topic +
 chronicle bodies as human-friendly placeholders. `"$VBP" publish`
 mechanically rewrites them to real relative-path markdown links. Use
-bare `threadId`, NOT a date-prefixed filename. (If memex is installed
-and you want to link to a memex card, write `[[memex:<cardSlug>]]` —
-those are left as text but flagged to readers.)
+bare `threadId`, NOT a date-prefixed filename.
 
 Write topics to `/tmp/vibebook-topics.json`:
 
@@ -557,21 +539,11 @@ Write topics to `/tmp/vibebook-topics.json`:
 ]
 ```
 
-### Step P6 — Atomic cards (delegated to memex)
+### Step P6 — Atomic insights
 
-vibebook itself **does not write atomic cards** anymore — that work
-belongs to [memex](https://github.com/iamtouchskyer/memex), which has
-the right primitives (Zettelkasten links, organize/orphan detection,
-archive, dedicated retro hook). vibebook keeps its scope tight:
-chronicles + topics, that's it.
-
-If `memex` is on the user's PATH, see "Memex hand-off" below — the
-orchestrator may chain into `/memex-retro` after publish to capture
-atomic insights. Don't try to write cards inline here.
-
-If `memex` is NOT installed, that's fine too. Atomic cards are a
-"future-self insurance policy"; chronicles + topics already cover the
-"future-AI search" use case via vibebook-recall.
+Atomic "next time remember X" insights are no longer a separate card layer.
+Capture them as `procedural` or `semantic` typed memory in Step P7.5 below.
+Don't write a separate atomic-card artifact here.
 
 ### Step P7 — Confirm + publish
 
@@ -613,7 +585,37 @@ warning, fix in a follow-up batch (`"$VBP" publish` is idempotent — already-
 inserted chronicles refuse via threadId collision, so you can re-run with
 just the new artifacts).
 
-### Step P8 — Done (and optional memex hand-off)
+### Step P7.5 — Distill typed memory
+
+After chronicles/topics are published, distill durable typed memory for this
+project so future sessions start informed. Write a JSON array to
+`/tmp/vibebook-memory.json` where each item is `{ entry, body }`:
+
+- **core** — never-forget rules (rare; e.g. release/workflow rules). scope
+  `global`/`user`/`project:<slug>`.
+- **semantic** — project facts / architecture / decisions that are durably
+  true. If a new fact replaces an old one, set `supersedes: <old-id>`.
+- **procedural** — how-to playbooks + gotchas ("to add X, do Y; watch out for Z").
+- **episodic** — a lightweight pointer per significant thread: title +
+  summary + `sourceSessions`, body = 1-2 lines linking to the chronicle.
+- **artifact** — notable commits/PRs/files (optional).
+
+`id` is a stable globally-unique slug: `<type>/<project|_global>/<kebab-slug>`.
+Fill `entities` with file paths / symbols / APIs the memory is about (powers
+retrieval). Set `importance` 0-5 and `confidence` 0-1. Then:
+
+    "$VBP" memory-write --input /tmp/vibebook-memory.json
+
+This writes `memory/<type>/...` md + updates `.vibebook/index.memory.json`.
+Then run a query to refresh the project primer:
+
+    "$VBP" memory-query --cwd "$(pwd)" >/dev/null
+
+Be conservative: a few high-value memories beat many trivial ones. Don't
+duplicate what's already in the index (it was loaded at session start via
+`/vibebook-context`).
+
+### Step P8 — Done
 
 Print a one-line summary:
 
@@ -621,31 +623,6 @@ Print a one-line summary:
 ✓ Published to book/<project>/: N chronicles, M topics.
 ✓ Pushed to <device-branch>.
 ```
-
-If the user said yes at Step P0 (memex is installed AND user opted in),
-hand off now by invoking the `memex-retro` skill via the Skill tool:
-
-```
-Skill(skill: "memex-retro")
-```
-
-That skill will look back at the work this conversation captured and
-write atomic cards as appropriate. vibebook's job is done at that
-point — memex owns the card layer.
-
-> **Two memex-write gotchas worth remembering** (observed in past runs):
-> 1. memex card frontmatter **MUST** include `source: retro` (along with
->    `title` + `created`). Forget it and `memex write` exits non-zero
->    with `Missing required fields: source`. memex-retro's own SKILL.md
->    spells this out, but the example block above the rules is easy to
->    skim past.
-> 2. **Do not run multiple `memex write` calls in parallel.** memex's
->    cards directory isn't write-concurrent; parallel calls fail with
->    "Cancelled: parallel tool call ... errored". Write each card with
->    its own sequential Bash invocation.
-
-If the user said no, or memex isn't installed, just print the summary
-and stop.
 
 That's it for project-mode. The user can now `cd ~/.vibebook/session-repo && claude → /vibebook`
 later to do a global sweep across all projects.
@@ -657,16 +634,6 @@ later to do a global sweep across all projects.
 Triggered when cwd = `~/.vibebook/session-repo`. The user wants a full
 sweep across every project. You orchestrate; subagents do the per-project
 work using the same project-mode flow.
-
-### Step G0 — Memex hand-off prompt (if memex is installed)
-
-Read `memexInstalled` from the Step 0 `orchestrate global` JSON output.
-If `true`, ask once at the start:
-
-> Memex is installed. After the global sweep finishes, want me to also
-> run /memex-retro on the most insight-dense chronicles? (y/n)
-
-Remember the answer for Step G4. If memex isn't installed, skip.
 
 ### Step G1 — Triage
 
@@ -758,7 +725,7 @@ After all subagents return:
 This regenerates `book/index.md`, `book/_meta/timeline.md`, and
 `book/<project>/index.md` for every project, then commits + pushes.
 
-### Step G4 — Summary (and optional memex hand-off)
+### Step G4 — Summary
 
 ```
 ✓ Global sweep complete.
@@ -767,19 +734,6 @@ This regenerates `book/index.md`, `book/_meta/timeline.md`, and
   ...
   catalog regenerated and pushed.
 ```
-
-If the user said yes at Step G0, hand off now:
-
-```
-Skill(skill: "memex-retro")
-```
-
-memex-retro will see the chronicles + topics this sweep just produced
-and decide which atomic insights deserve cards. vibebook stops here.
-
-(Same memex-write gotchas as project-mode P8 apply: every card needs
-`source: retro` in its frontmatter, and `memex write` calls must be
-sequential — never parallel.)
 
 ---
 
@@ -795,8 +749,7 @@ sequential — never parallel.)
   "Use X to achieve Y" — not "we did X and discovered Y".
 - ❌ Hallucinate outcomes. If user didn't say it worked, don't say it worked.
 - ❌ Cross project boundaries (edge-src content ending up in chromium-src/).
-- ❌ Try to write atomic cards yourself — that's memex's job. If memex
-  isn't installed, just skip the atomic-card layer entirely.
+- ❌ Skip Step P7.5. Distilling typed memory is what lets future sessions start already knowing the project.
 - ❌ Skip the `Read` of an existing topic page before rewriting it.
 - ❌ Touch any file in `raw_sessions/` — those are immutable source data.
 - ❌ Run global-mode `/vibebook` with cwd ≠ `~/.vibebook/session-repo`. The
