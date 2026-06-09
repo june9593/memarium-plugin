@@ -1,5 +1,5 @@
 import { posix, relative, dirname as nodeDirname } from "node:path";
-import type { BookIndexV2, ChronicleEntry, CardEntry } from "../digest/book-index-v2.js";
+import type { BookIndexV2, ChronicleEntry, CardEntry, TopicEntry } from "../digest/book-index-v2.js";
 
 /**
  * Resolve `[[wikilinks]]` in chronicle/topic/card bodies to real markdown
@@ -8,13 +8,17 @@ import type { BookIndexV2, ChronicleEntry, CardEntry } from "../digest/book-inde
  *
  * Supported shapes:
  *   [[chronicle/<threadId>]]            → [<title>](../chronicle/<file>.md)
+ *   [[topic/<topicSlug>]]               → [<topicSlug>](../topics/<slug>.md)
  *   [[<cardSlug>]]                      → [<cardSlug>](<relpath>.md)
  *   [[chronicle/<threadId>|alt text]]   → [alt text](...)  (alias form)
+ *   [[topic/<topicSlug>|alt text]]      → [alt text](...)
  *   [[<cardSlug>|alt text]]             → [alt text](...)
  *
  * Lookup rules:
  *   - threadId: must match a non-skip ChronicleEntry by `threadId`. Skipped
  *     chronicles have no path so they can't be linked to.
+ *   - topicSlug: prefer same-project, then any other project (topics are
+ *     keyed by `${project}/${topicSlug}`; same slug can recur per project).
  *   - cardSlug: prefer same-project, then `_global`, then any other project.
  *     Cards are project-scoped but `_global` is the fallback pool.
  *
@@ -63,7 +67,20 @@ export function resolveWikiLinks(body: string, ctx: ResolveContext): ResolveResu
       return whole;
     }
 
-    // Case 2: cards/<slug> (explicit prefix) or bare slug → card lookup,
+    // Case 2: topic/<topicSlug> — prefer same project, then any other.
+    if (t.startsWith("topic/") || t.startsWith("topics/")) {
+      const topicSlug = t.slice(t.indexOf("/") + 1);
+      const topic = findTopicBySlug(ctx.bookIndex, topicSlug, ctx.fromProject);
+      if (topic && topic.path) {
+        const rel = posix.relative(fromDir, topic.path);
+        const text = altText ?? topicSlug;
+        return `[${text}](${rel})`;
+      }
+      unresolved.push(t);
+      return whole;
+    }
+
+    // Case 3: cards/<slug> (explicit prefix) or bare slug → card lookup,
     // prefer same project then _global.
     const cardSlug = t.startsWith("cards/") ? t.slice("cards/".length) : t;
     const card = findCardBySlug(ctx.bookIndex, cardSlug, ctx.fromProject);
@@ -104,6 +121,22 @@ function findCardBySlug(
   return (
     candidates.find((c) => c.project === preferredProject) ??
     candidates.find((c) => c.project === "_global") ??
+    candidates[0]
+  );
+}
+
+function findTopicBySlug(
+  bookIndex: BookIndexV2,
+  topicSlug: string,
+  preferredProject: string,
+): TopicEntry | undefined {
+  // Topics are keyed by `${project}/${topicSlug}`; the same slug can recur
+  // across projects. Prefer the link-source's own project, then fall back
+  // to any project that has the topic.
+  const candidates = Object.values(bookIndex.topics).filter((t) => t.topicSlug === topicSlug);
+  if (candidates.length === 0) return undefined;
+  return (
+    candidates.find((t) => t.project === preferredProject) ??
     candidates[0]
   );
 }

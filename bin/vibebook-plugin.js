@@ -10107,6 +10107,17 @@ function resolveWikiLinks(body, ctx) {
       unresolved.push(t2);
       return whole;
     }
+    if (t2.startsWith("topic/") || t2.startsWith("topics/")) {
+      const topicSlug = t2.slice(t2.indexOf("/") + 1);
+      const topic = findTopicBySlug(ctx.bookIndex, topicSlug, ctx.fromProject);
+      if (topic && topic.path) {
+        const rel = posix.relative(fromDir, topic.path);
+        const text = altText ?? topicSlug;
+        return `[${text}](${rel})`;
+      }
+      unresolved.push(t2);
+      return whole;
+    }
     const cardSlug = t2.startsWith("cards/") ? t2.slice("cards/".length) : t2;
     const card = findCardBySlug(ctx.bookIndex, cardSlug, ctx.fromProject);
     if (card && card.path) {
@@ -10131,6 +10142,11 @@ function findCardBySlug(bookIndex, cardSlug, preferredProject) {
   const candidates = Object.values(bookIndex.cards).filter((c3) => c3.cardSlug === cardSlug);
   if (candidates.length === 0) return void 0;
   return candidates.find((c3) => c3.project === preferredProject) ?? candidates.find((c3) => c3.project === "_global") ?? candidates[0];
+}
+function findTopicBySlug(bookIndex, topicSlug, preferredProject) {
+  const candidates = Object.values(bookIndex.topics).filter((t2) => t2.topicSlug === topicSlug);
+  if (candidates.length === 0) return void 0;
+  return candidates.find((t2) => t2.project === preferredProject) ?? candidates[0];
 }
 var WIKILINK_RE;
 var init_wikilinks = __esm({
