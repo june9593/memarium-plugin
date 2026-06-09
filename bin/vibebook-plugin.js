@@ -10038,12 +10038,12 @@ function bucketBy(xs, key) {
   const m = /* @__PURE__ */ new Map();
   for (const x2 of xs) {
     const k2 = key(x2);
-    let arr = m.get(k2);
-    if (!arr) {
-      arr = [];
-      m.set(k2, arr);
+    let arr2 = m.get(k2);
+    if (!arr2) {
+      arr2 = [];
+      m.set(k2, arr2);
     }
-    arr.push(x2);
+    arr2.push(x2);
   }
   return m;
 }
@@ -10438,6 +10438,408 @@ var init_publish = __esm({
   }
 });
 
+// src/memory/types.ts
+function memoryKey(entry) {
+  return entry.id;
+}
+function emptyMemoryIndex() {
+  return { version: 1, entries: {} };
+}
+var init_types = __esm({
+  "src/memory/types.ts"() {
+    "use strict";
+  }
+});
+
+// src/memory/index-store.ts
+import { existsSync as existsSync7, mkdirSync as mkdirSync6, readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "node:fs";
+import { dirname as dirname3, join as join9 } from "node:path";
+function loadMemoryIndex(repoRoot) {
+  const p2 = join9(repoRoot, MEMORY_INDEX_REL);
+  if (!existsSync7(p2)) return emptyMemoryIndex();
+  try {
+    const parsed = JSON.parse(readFileSync6(p2, "utf8"));
+    if (parsed.version !== 1 || !parsed.entries) return emptyMemoryIndex();
+    return parsed;
+  } catch {
+    return emptyMemoryIndex();
+  }
+}
+function saveMemoryIndex(repoRoot, idx) {
+  const p2 = join9(repoRoot, MEMORY_INDEX_REL);
+  mkdirSync6(dirname3(p2), { recursive: true });
+  writeFileSync5(p2, JSON.stringify(idx, null, 2) + "\n");
+}
+function upsertMemory(idx, entry) {
+  idx.entries[memoryKey(entry)] = entry;
+}
+var MEMORY_INDEX_REL;
+var init_index_store2 = __esm({
+  "src/memory/index-store.ts"() {
+    "use strict";
+    init_repo_data_dir();
+    init_types();
+    MEMORY_INDEX_REL = `${REPO_DATA_DIR}/index.memory.json`;
+  }
+});
+
+// src/memory/render.ts
+function arr(xs) {
+  return xs.length === 0 ? "[]" : `[${xs.join(", ")}]`;
+}
+function scalar(v) {
+  return v === null ? "null" : String(v);
+}
+function renderMemoryMarkdown(entry, body) {
+  const fm = [
+    "---",
+    `id: ${entry.id}`,
+    `type: ${entry.type}`,
+    `scope: ${entry.scope}`,
+    `project: ${scalar(entry.project)}`,
+    `title: ${entry.title}`,
+    `summary: ${entry.summary}`,
+    `status: ${entry.status}`,
+    `confidence: ${entry.confidence}`,
+    `importance: ${entry.importance}`,
+    `createdAt: ${entry.createdAt}`,
+    `updatedAt: ${entry.updatedAt}`,
+    `validFrom: ${scalar(entry.validFrom)}`,
+    `validTo: ${scalar(entry.validTo)}`,
+    `supersedes: ${scalar(entry.supersedes)}`,
+    `originDevice: ${scalar(entry.originDevice)}`,
+    `sourceSessions: ${arr(entry.sourceSessions)}`,
+    `sourceCommits: ${arr(entry.sourceCommits)}`,
+    `sourceFiles: ${arr(entry.sourceFiles)}`,
+    `entities: ${arr(entry.entities)}`,
+    "---"
+  ].join("\n");
+  const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
+  return `${fm}
+
+# ${entry.title}
+
+${trimmedBody}
+`;
+}
+var init_render = __esm({
+  "src/memory/render.ts"() {
+    "use strict";
+  }
+});
+
+// src/commands/memory-write.ts
+var memory_write_exports = {};
+__export(memory_write_exports, {
+  memoryWriteCmd: () => memoryWriteCmd
+});
+import { existsSync as existsSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync7, writeFileSync as writeFileSync6 } from "node:fs";
+import { dirname as dirname4, join as join10 } from "node:path";
+function memoryPath(e) {
+  const scopeDir = e.project ?? "_global";
+  const slug = e.id.split("/").pop() ?? e.id;
+  return `memory/${e.type}/${scopeDir}/${slug}.md`;
+}
+async function memoryWriteCmd(opts) {
+  if (!opts.inputPath || !existsSync8(opts.inputPath)) {
+    throw new Error(`memory-write: --input JSON not found: ${opts.inputPath}`);
+  }
+  const items = JSON.parse(readFileSync7(opts.inputPath, "utf8"));
+  const cfg = readPluginConfig();
+  const idx = loadMemoryIndex(cfg.repoPath);
+  let written = 0, superseded = 0;
+  const paths = [];
+  for (const { entry, body } of items) {
+    if (!entry.path) entry.path = memoryPath(entry);
+    if (entry.supersedes && idx.entries[entry.supersedes]) {
+      idx.entries[entry.supersedes].status = "superseded";
+      superseded++;
+    }
+    const abs = join10(cfg.repoPath, entry.path);
+    mkdirSync7(dirname4(abs), { recursive: true });
+    writeFileSync6(abs, renderMemoryMarkdown(entry, body));
+    upsertMemory(idx, entry);
+    written++;
+    paths.push(entry.path);
+  }
+  saveMemoryIndex(cfg.repoPath, idx);
+  return { written, superseded, paths };
+}
+var init_memory_write = __esm({
+  "src/commands/memory-write.ts"() {
+    "use strict";
+    init_plugin_config();
+    init_index_store2();
+    init_render();
+  }
+});
+
+// src/memory/parse.ts
+function parseArr(v) {
+  const t2 = v.trim();
+  if (t2 === "[]" || t2 === "") return [];
+  return t2.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+function parseScalar(v) {
+  const t2 = v.trim();
+  return t2 === "null" ? null : t2;
+}
+function parseMemoryMarkdown(md) {
+  const m = md.match(/^---\n([\s\S]*?)\n---/);
+  if (!m) return null;
+  const fm = {};
+  for (const line of m[1].split("\n")) {
+    const i2 = line.indexOf(":");
+    if (i2 === -1) continue;
+    fm[line.slice(0, i2).trim()] = line.slice(i2 + 1).trim();
+  }
+  if (!fm.id || !fm.type) return null;
+  return {
+    id: fm.id,
+    type: fm.type,
+    scope: fm.scope,
+    project: parseScalar(fm.project),
+    title: fm.title ?? "",
+    summary: fm.summary ?? "",
+    path: "",
+    // filled by caller from the file path
+    status: fm.status ?? "active",
+    confidence: Number(fm.confidence ?? 0),
+    importance: Number(fm.importance ?? 0),
+    createdAt: fm.createdAt ?? "",
+    updatedAt: fm.updatedAt ?? "",
+    validFrom: parseScalar(fm.validFrom ?? "null"),
+    validTo: parseScalar(fm.validTo ?? "null"),
+    sourceSessions: parseArr(fm.sourceSessions ?? "[]"),
+    sourceCommits: parseArr(fm.sourceCommits ?? "[]"),
+    sourceFiles: parseArr(fm.sourceFiles ?? "[]"),
+    supersedes: parseScalar(fm.supersedes ?? "null"),
+    entities: parseArr(fm.entities ?? "[]"),
+    originDevice: parseScalar(fm.originDevice ?? "null"),
+    accessCount: 0,
+    lastAccess: null
+  };
+}
+var init_parse = __esm({
+  "src/memory/parse.ts"() {
+    "use strict";
+  }
+});
+
+// src/commands/memory-index.ts
+var memory_index_exports = {};
+__export(memory_index_exports, {
+  memoryIndexCmd: () => memoryIndexCmd
+});
+import { existsSync as existsSync9, readFileSync as readFileSync8, readdirSync as readdirSync2 } from "node:fs";
+import { join as join11, relative as relative2 } from "node:path";
+function walkMd(dir) {
+  const out = [];
+  const stack = [dir];
+  while (stack.length) {
+    const cur = stack.pop();
+    let entries;
+    try {
+      entries = readdirSync2(cur, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const p2 = join11(cur, e.name);
+      if (e.isDirectory()) stack.push(p2);
+      else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
+    }
+  }
+  return out;
+}
+async function memoryIndexCmd() {
+  const cfg = readPluginConfig();
+  const memRoot = join11(cfg.repoPath, "memory");
+  const idx = emptyMemoryIndex();
+  let indexed = 0;
+  if (existsSync9(memRoot)) {
+    for (const abs of walkMd(memRoot)) {
+      if (abs.includes(`${join11("memory", "_primer")}/`)) continue;
+      const entry = parseMemoryMarkdown(readFileSync8(abs, "utf8"));
+      if (!entry) continue;
+      entry.path = relative2(cfg.repoPath, abs);
+      upsertMemory(idx, entry);
+      indexed++;
+    }
+  }
+  saveMemoryIndex(cfg.repoPath, idx);
+  return { indexed };
+}
+var init_memory_index = __esm({
+  "src/commands/memory-index.ts"() {
+    "use strict";
+    init_plugin_config();
+    init_types();
+    init_index_store2();
+    init_parse();
+  }
+});
+
+// src/memory/score.ts
+function tokenize(s) {
+  return s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1);
+}
+function isEligible(e, q2) {
+  if (e.status === "superseded") return false;
+  if (e.validTo !== null && e.validTo <= q2.now) return false;
+  if (q2.type && e.type !== q2.type) return false;
+  if (e.scope === "global" || e.scope === "user") return true;
+  if (q2.project && e.scope === `project:${q2.project}`) return true;
+  return q2.project === null;
+}
+function scoreMemories(entries, q2) {
+  const qTokens = new Set(tokenize(q2.text));
+  const out = [];
+  for (const e of entries) {
+    if (!isEligible(e, q2)) continue;
+    let score = 0;
+    const why = [];
+    if (qTokens.size > 0) {
+      const haystack = new Set(tokenize(`${e.title} ${e.summary} ${e.entities.join(" ")}`));
+      let hits = 0;
+      for (const t2 of qTokens) if (haystack.has(t2)) hits++;
+      if (hits > 0) {
+        score += hits * 5;
+        why.push(`keyword\xD7${hits}`);
+      }
+    }
+    if (q2.project && e.scope === `project:${q2.project}`) {
+      score += 4;
+      why.push("scope:project");
+    }
+    if (e.scope === "global" || e.scope === "user") {
+      score += 2;
+      why.push(`scope:${e.scope}`);
+    }
+    if (e.status === "pinned") {
+      score += 3;
+      why.push("pinned");
+    }
+    const qf = new Set(q2.files ?? []);
+    const fileHit = e.sourceFiles.filter((f) => qf.has(f)).length;
+    if (fileHit > 0) {
+      score += fileHit * 3;
+      why.push(`file\xD7${fileHit}`);
+    }
+    const qc = new Set(q2.commits ?? []);
+    const commitHit = e.sourceCommits.filter((c3) => qc.has(c3)).length;
+    if (commitHit > 0) {
+      score += commitHit * 3;
+      why.push(`commit\xD7${commitHit}`);
+    }
+    score += recencyBoost(e.updatedAt, q2.now);
+    score += e.importance;
+    score += Math.min(e.accessCount, 5) * 0.5;
+    if (e.importance >= 3) why.push(`importance:${e.importance}`);
+    out.push({ entry: e, score, whyRecalled: why.join(" ") || "scope-eligible" });
+  }
+  out.sort((a, b2) => b2.score - a.score || a.entry.id.localeCompare(b2.entry.id));
+  return out;
+}
+function recencyBoost(updatedAt, now) {
+  const days = (Date.parse(now) - Date.parse(updatedAt)) / 864e5;
+  if (!isFinite(days)) return 0;
+  if (days <= 7) return 2;
+  if (days <= 30) return 1;
+  return 0;
+}
+var init_score = __esm({
+  "src/memory/score.ts"() {
+    "use strict";
+  }
+});
+
+// src/memory/primer.ts
+function pick2(entries, type, project) {
+  return entries.filter((e) => e.status !== "superseded" && e.type === type).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).sort((a, b2) => b2.importance - a.importance || a.title.localeCompare(b2.title));
+}
+function section(title, items) {
+  if (items.length === 0) return "";
+  const lines = items.map((e) => `- **${e.title}** \u2014 ${e.summary}`);
+  return `## ${title}
+
+${lines.join("\n")}
+`;
+}
+function renderPrimer(project, entries) {
+  const head = `# Project memory: ${project}
+
+> Auto-generated primer. The agent should treat this as already-known project context.
+`;
+  const parts = [
+    head,
+    section("Core rules", pick2(entries, "core", project)),
+    section("Project facts", pick2(entries, "semantic", project)),
+    section("Procedures & gotchas", pick2(entries, "procedural", project))
+  ].filter(Boolean);
+  return parts.join("\n");
+}
+var init_primer = __esm({
+  "src/memory/primer.ts"() {
+    "use strict";
+  }
+});
+
+// src/commands/memory-query.ts
+var memory_query_exports = {};
+__export(memory_query_exports, {
+  memoryQueryCmd: () => memoryQueryCmd
+});
+import { mkdirSync as mkdirSync8, writeFileSync as writeFileSync7 } from "node:fs";
+import { dirname as dirname5, join as join12 } from "node:path";
+function isType(s) {
+  const ok = ["core", "semantic", "episodic", "procedural", "working", "artifact"];
+  return s && ok.includes(s) ? s : null;
+}
+async function memoryQueryCmd(opts) {
+  const cfg = readPluginConfig();
+  const project = opts.cwd ? resolveProjectFromCwd(opts.cwd, cfg.repoPath) : null;
+  const idx = loadMemoryIndex(cfg.repoPath);
+  const entries = Object.values(idx.entries);
+  const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const scored = scoreMemories(entries, {
+    project,
+    text: opts.q ?? "",
+    type: isType(opts.type),
+    now
+  });
+  const byType = (t2) => scored.filter((s) => s.entry.type === t2);
+  let primer = "";
+  if (project) {
+    primer = renderPrimer(project, entries);
+    const abs = join12(cfg.repoPath, "memory", "_primer", `${project}.md`);
+    mkdirSync8(dirname5(abs), { recursive: true });
+    writeFileSync7(abs, primer);
+  }
+  const payload = {
+    project,
+    primer,
+    core: byType("core"),
+    procedures: byType("procedural"),
+    semantic: byType("semantic"),
+    episodes: byType("episodic"),
+    conflicts: scored.filter((s) => s.entry.supersedes !== null || s.entry.validTo !== null),
+    artifacts: byType("artifact"),
+    meta: { total: scored.length, project }
+  };
+  process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+}
+var init_memory_query = __esm({
+  "src/commands/memory-query.ts"() {
+    "use strict";
+    init_plugin_config();
+    init_project_resolve();
+    init_index_store2();
+    init_score();
+    init_primer();
+  }
+});
+
 // src/commands/recall.ts
 var recall_exports = {};
 __export(recall_exports, {
@@ -10445,9 +10847,9 @@ __export(recall_exports, {
   parseMemexIndex: () => parseMemexIndex,
   recallCmd: () => recallCmd
 });
-import { existsSync as existsSync7, readFileSync as readFileSync6 } from "node:fs";
+import { existsSync as existsSync10, readFileSync as readFileSync9 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { join as join9 } from "node:path";
+import { join as join13 } from "node:path";
 function buildRecallPayload(opts = {}) {
   const cfg = readPluginConfig();
   const bookIndex = loadBookIndexV2(cfg.repoPath);
@@ -10533,7 +10935,7 @@ function buildStage2(repoPath, bookIndex, projectFilter, topicSlug, queryMemex) 
         project,
         title: titleForArtifact(repoPath, c3.path, c3.title || c3.threadId),
         summary: summarizeFrontmatter(fm),
-        path: join9(repoPath, c3.path),
+        path: join13(repoPath, c3.path),
         slug: c3.threadId,
         frontmatter: fm,
         updatedAt: c3.updatedAt,
@@ -10582,9 +10984,9 @@ function projectFromPath(path) {
   return parts[1] || null;
 }
 function titleForArtifact(repoPath, repoRel, fallback) {
-  const abs = join9(repoPath, repoRel);
-  if (!existsSync7(abs)) return fallback;
-  const head = readFileSync6(abs, "utf8").slice(0, 1024);
+  const abs = join13(repoPath, repoRel);
+  if (!existsSync10(abs)) return fallback;
+  const head = readFileSync9(abs, "utf8").slice(0, 1024);
   const hMatch = head.match(/^#\s+(.+?)\s*$/m);
   if (hMatch) return hMatch[1].trim();
   const fmMatch = head.match(/^---[\s\S]*?\ntitle:\s*(.+?)\s*\n[\s\S]*?---/);
@@ -10592,9 +10994,9 @@ function titleForArtifact(repoPath, repoRel, fallback) {
   return fallback;
 }
 function summaryFor(repoPath, repoRel) {
-  const abs = join9(repoPath, repoRel);
-  if (!existsSync7(abs)) return "";
-  const body = readFileSync6(abs, "utf8");
+  const abs = join13(repoPath, repoRel);
+  if (!existsSync10(abs)) return "";
+  const body = readFileSync9(abs, "utf8");
   const stripped = body.replace(/^---[\s\S]*?---\s*\n/, "");
   const lines = stripped.split("\n");
   for (const raw of lines) {
@@ -10609,9 +11011,9 @@ function summaryFor(repoPath, repoRel) {
   return "";
 }
 function readChronicleFrontmatter(repoPath, repoRel) {
-  const abs = join9(repoPath, repoRel);
-  if (!existsSync7(abs)) return {};
-  const body = readFileSync6(abs, "utf8");
+  const abs = join13(repoPath, repoRel);
+  if (!existsSync10(abs)) return {};
+  const body = readFileSync9(abs, "utf8");
   const m = body.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return {};
   const lines = m[1].split("\n");
@@ -10773,14 +11175,14 @@ __export(site_exports, {
   serveSiteCmd: () => serveSiteCmd
 });
 import { spawn as spawn3 } from "node:child_process";
-import { existsSync as existsSync8, mkdirSync as mkdirSync6, cpSync, readFileSync as readFileSync7, writeFileSync as writeFileSync5, statSync, readdirSync as readdirSync2, rmSync } from "node:fs";
-import { join as join10, dirname as dirname3, resolve as resolve2 } from "node:path";
+import { existsSync as existsSync11, mkdirSync as mkdirSync9, cpSync, readFileSync as readFileSync10, writeFileSync as writeFileSync8, statSync, readdirSync as readdirSync3, rmSync } from "node:fs";
+import { join as join14, dirname as dirname6, resolve as resolve2 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir as homedir3 } from "node:os";
 function siteContext(opts) {
   const cfg = readPluginConfig();
   const repoPath = opts.repoPath ?? cfg.repoPath;
-  const here = dirname3(fileURLToPath(import.meta.url));
+  const here = dirname6(fileURLToPath(import.meta.url));
   const candidates = [
     resolve2(here, "..", "..", "site-template"),
     // src/commands/
@@ -10788,7 +11190,7 @@ function siteContext(opts) {
     // dist/src/commands/
     resolve2(here, "..", "..", "..", "..", "site-template")
   ];
-  const templateDir = candidates.find((c3) => existsSync8(join10(c3, "package.json")));
+  const templateDir = candidates.find((c3) => existsSync11(join14(c3, "package.json")));
   if (!templateDir) {
     throw new Error(
       `vibebook site template not found. Tried:
@@ -10797,7 +11199,7 @@ If you installed vibebook from npm, try \`npm install -g vibebook@latest\`.`
     );
   }
   const sig = templateSignature(templateDir);
-  const cacheDir = join10(homedir3(), ".vibebook", "site-cache", sig);
+  const cacheDir = join14(homedir3(), ".vibebook", "site-cache", sig);
   return {
     templateDir,
     cacheDir,
@@ -10807,27 +11209,27 @@ If you installed vibebook from npm, try \`npm install -g vibebook@latest\`.`
   };
 }
 function templateSignature(templateDir) {
-  const pkg = JSON.parse(readFileSync7(join10(templateDir, "package.json"), "utf8"));
+  const pkg = JSON.parse(readFileSync10(join14(templateDir, "package.json"), "utf8"));
   const seed = JSON.stringify({ name: pkg.name, version: pkg.version, deps: pkg.dependencies });
   return Buffer.from(seed).toString("base64url").slice(0, 12);
 }
 function syncTemplateInto(templateDir, cacheDir) {
-  if (!existsSync8(cacheDir)) mkdirSync6(cacheDir, { recursive: true });
+  if (!existsSync11(cacheDir)) mkdirSync9(cacheDir, { recursive: true });
   const skip = /* @__PURE__ */ new Set(["node_modules", "dist", ".astro"]);
-  const cacheSrc = join10(cacheDir, "src");
-  if (existsSync8(cacheSrc)) rmSync(cacheSrc, { recursive: true, force: true });
-  for (const name of readdirSync2(templateDir)) {
+  const cacheSrc = join14(cacheDir, "src");
+  if (existsSync11(cacheSrc)) rmSync(cacheSrc, { recursive: true, force: true });
+  for (const name of readdirSync3(templateDir)) {
     if (skip.has(name)) continue;
-    const src = join10(templateDir, name);
-    const dst = join10(cacheDir, name);
+    const src = join14(templateDir, name);
+    const dst = join14(cacheDir, name);
     cpSync(src, dst, { recursive: true });
   }
 }
 async function ensureNodeModules(cacheDir) {
-  const nm = join10(cacheDir, "node_modules");
-  if (existsSync8(nm)) {
-    const astroBin = join10(nm, ".bin", "astro");
-    if (existsSync8(astroBin)) return;
+  const nm = join14(cacheDir, "node_modules");
+  if (existsSync11(nm)) {
+    const astroBin = join14(nm, ".bin", "astro");
+    if (existsSync11(astroBin)) return;
   }
   console.log(source_default.cyan(`  installing site template dependencies (one-time, ~1-2 min)...`));
   await runCmd("npm", ["install", "--no-audit", "--no-fund", "--silent"], cacheDir);
@@ -10858,7 +11260,7 @@ async function serveSiteCmd(opts = {}) {
 `));
   await runCmd(
     "node",
-    [join10(ctx.cacheDir, "node_modules", "astro", "astro.js"), "dev"],
+    [join14(ctx.cacheDir, "node_modules", "astro", "astro.js"), "dev"],
     ctx.cacheDir,
     { VIBEBOOK_REPO_PATH: ctx.repoPath }
   );
@@ -10871,7 +11273,7 @@ async function buildSiteCmd(opts = {}) {
   vibebook build-site \u2014 astro build`));
   await runCmd(
     "node",
-    [join10(ctx.cacheDir, "node_modules", "astro", "astro.js"), "build"],
+    [join14(ctx.cacheDir, "node_modules", "astro", "astro.js"), "build"],
     ctx.cacheDir,
     {
       VIBEBOOK_REPO_PATH: ctx.repoPath,
@@ -10879,9 +11281,9 @@ async function buildSiteCmd(opts = {}) {
       VIBEBOOK_SITE_URL: ctx.siteUrl
     }
   );
-  const builtDist = join10(ctx.cacheDir, "dist");
-  const repoDist = join10(ctx.repoPath, "site-dist");
-  if (existsSync8(repoDist)) {
+  const builtDist = join14(ctx.cacheDir, "dist");
+  const repoDist = join14(ctx.repoPath, "site-dist");
+  if (existsSync11(repoDist)) {
     rmSync(repoDist, { recursive: true, force: true });
   }
   cpSync(builtDist, repoDist, { recursive: true });
@@ -10898,25 +11300,25 @@ var init_site = __esm({
 });
 
 // src/spool/plugin-state.ts
-import { existsSync as existsSync9, mkdirSync as mkdirSync7, readFileSync as readFileSync8, writeFileSync as writeFileSync6 } from "node:fs";
+import { existsSync as existsSync12, mkdirSync as mkdirSync10, readFileSync as readFileSync11, writeFileSync as writeFileSync9 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { dirname as dirname4, join as join11 } from "node:path";
+import { dirname as dirname7, join as join15 } from "node:path";
 function statePath() {
-  return join11(homedir4(), ".vibebook", ".plugin-state.json");
+  return join15(homedir4(), ".vibebook", ".plugin-state.json");
 }
 function loadState() {
   const p2 = statePath();
-  if (!existsSync9(p2)) return {};
+  if (!existsSync12(p2)) return {};
   try {
-    return JSON.parse(readFileSync8(p2, "utf8"));
+    return JSON.parse(readFileSync11(p2, "utf8"));
   } catch {
     return {};
   }
 }
 function saveState(state) {
   const p2 = statePath();
-  mkdirSync7(dirname4(p2), { recursive: true });
-  writeFileSync6(p2, JSON.stringify(state, null, 2) + "\n");
+  mkdirSync10(dirname7(p2), { recursive: true });
+  writeFileSync9(p2, JSON.stringify(state, null, 2) + "\n");
 }
 var init_plugin_state = __esm({
   "src/spool/plugin-state.ts"() {
@@ -10960,16 +11362,16 @@ var init_first_run = __esm({
 });
 
 // src/spool/ensure-dir.ts
-import { mkdirSync as mkdirSync8, existsSync as existsSync10 } from "node:fs";
+import { mkdirSync as mkdirSync11, existsSync as existsSync13 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { join as join12 } from "node:path";
+import { join as join16 } from "node:path";
 function ensureSpoolDir() {
-  const spoolRoot = join12(homedir5(), SPOOL_REL_PATH);
-  const created = !existsSync10(spoolRoot);
-  const rawSessionsDir = join12(spoolRoot, "raw_sessions");
-  const bookDir = join12(spoolRoot, "book");
-  mkdirSync8(rawSessionsDir, { recursive: true });
-  mkdirSync8(bookDir, { recursive: true });
+  const spoolRoot = join16(homedir5(), SPOOL_REL_PATH);
+  const created = !existsSync13(spoolRoot);
+  const rawSessionsDir = join16(spoolRoot, "raw_sessions");
+  const bookDir = join16(spoolRoot, "book");
+  mkdirSync11(rawSessionsDir, { recursive: true });
+  mkdirSync11(bookDir, { recursive: true });
   return { spoolRoot, rawSessionsDir, bookDir, created };
 }
 var SPOOL_REL_PATH;
@@ -10981,17 +11383,17 @@ var init_ensure_dir = __esm({
 });
 
 // src/_shared/content-project-inference.ts
-import { readdirSync as readdirSync3 } from "node:fs";
+import { readdirSync as readdirSync4 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
-import { join as join13 } from "node:path";
+import { join as join17 } from "node:path";
 function decodeProjectDirName(name) {
   if (!name.startsWith("-")) return name;
   return "/" + name.slice(1).replace(/-/g, "/");
 }
-function listKnownProjectRoots(projectsDir = join13(homedir6(), ".claude", "projects")) {
+function listKnownProjectRoots(projectsDir = join17(homedir6(), ".claude", "projects")) {
   let entries;
   try {
-    entries = readdirSync3(projectsDir);
+    entries = readdirSync4(projectsDir);
   } catch {
     return [];
   }
@@ -11090,9 +11492,9 @@ var init_content_project_inference = __esm({
 
 // src/_shared/sources/claude-code.ts
 import { createHash } from "node:crypto";
-import { readdirSync as readdirSync4, readFileSync as readFileSync9, statSync as statSync2, existsSync as existsSync11 } from "node:fs";
+import { readdirSync as readdirSync5, readFileSync as readFileSync12, statSync as statSync2, existsSync as existsSync14 } from "node:fs";
 import { homedir as homedir7 } from "node:os";
-import { join as join14, basename } from "node:path";
+import { join as join18, basename } from "node:path";
 function getRoots() {
   if (cachedRoots === null) cachedRoots = listKnownProjectRoots();
   return cachedRoots;
@@ -11238,30 +11640,30 @@ var init_claude_code = __esm({
     init_content_project_inference();
     cachedRoots = null;
     ClaudeCodeAdapter = class {
-      constructor(root = join14(homedir7(), ".claude", "projects")) {
+      constructor(root = join18(homedir7(), ".claude", "projects")) {
         this.root = root;
       }
       name = "claude";
       async *discover() {
-        if (!existsSync11(this.root)) return;
+        if (!existsSync14(this.root)) return;
         const stack = [this.root];
         while (stack.length) {
           const dir = stack.pop();
           let entries;
           try {
-            entries = readdirSync4(dir, { withFileTypes: true });
+            entries = readdirSync5(dir, { withFileTypes: true });
           } catch {
             continue;
           }
           for (const e of entries) {
-            const p2 = join14(dir, e.name);
+            const p2 = join18(dir, e.name);
             if (e.isDirectory()) {
               if (dir === this.root && isVibebookOrTmpProjectDir(e.name)) continue;
               if (e.name === "subagents") continue;
               stack.push(p2);
             } else if (e.isFile() && e.name.endsWith(".jsonl")) {
               const st = statSync2(p2);
-              const buf = readFileSync9(p2);
+              const buf = readFileSync12(p2);
               const sha = createHash("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -11279,20 +11681,20 @@ var init_claude_code = __esm({
 
 // src/_shared/sources/vscode-copilot.ts
 import { createHash as createHash2 } from "node:crypto";
-import { readdirSync as readdirSync5, readFileSync as readFileSync10, statSync as statSync3, existsSync as existsSync12 } from "node:fs";
+import { readdirSync as readdirSync6, readFileSync as readFileSync13, statSync as statSync3, existsSync as existsSync15 } from "node:fs";
 import { homedir as homedir8 } from "node:os";
-import { join as join15, basename as basename2 } from "node:path";
+import { join as join19, basename as basename2 } from "node:path";
 function defaultStorageRoot() {
   if (process.platform === "darwin")
-    return join15(homedir8(), "Library", "Application Support", "Code", "User", "workspaceStorage");
+    return join19(homedir8(), "Library", "Application Support", "Code", "User", "workspaceStorage");
   if (process.platform === "win32")
-    return join15(homedir8(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
-  return join15(homedir8(), ".config", "Code", "User", "workspaceStorage");
+    return join19(homedir8(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
+  return join19(homedir8(), ".config", "Code", "User", "workspaceStorage");
 }
 function readWorkspacePath(workspaceJsonPath) {
-  if (!existsSync12(workspaceJsonPath)) return "";
+  if (!existsSync15(workspaceJsonPath)) return "";
   try {
-    const obj = JSON.parse(readFileSync10(workspaceJsonPath, "utf8"));
+    const obj = JSON.parse(readFileSync13(workspaceJsonPath, "utf8"));
     const u = obj.folder ?? obj.workspace ?? "";
     if (!u) return "";
     return u.startsWith("file://") ? decodeURIComponent(u.slice("file://".length)) : u;
@@ -11512,23 +11914,23 @@ var init_vscode_copilot = __esm({
       }
       name = "copilot";
       async *discover() {
-        if (!existsSync12(this.root)) return;
+        if (!existsSync15(this.root)) return;
         let workspaces;
         try {
-          workspaces = readdirSync5(this.root, { withFileTypes: true });
+          workspaces = readdirSync6(this.root, { withFileTypes: true });
         } catch {
           return;
         }
         for (const w of workspaces) {
           if (!w.isDirectory()) continue;
-          const wsDir = join15(this.root, w.name);
-          const wsPath = readWorkspacePath(join15(wsDir, "workspace.json"));
-          const chatDir = join15(wsDir, "chatSessions");
+          const wsDir = join19(this.root, w.name);
+          const wsPath = readWorkspacePath(join19(wsDir, "workspace.json"));
+          const chatDir = join19(wsDir, "chatSessions");
           const chatSessionIds = /* @__PURE__ */ new Set();
-          if (existsSync12(chatDir)) {
+          if (existsSync15(chatDir)) {
             let files = [];
             try {
-              files = readdirSync5(chatDir, { withFileTypes: true });
+              files = readdirSync6(chatDir, { withFileTypes: true });
             } catch {
               files = [];
             }
@@ -11537,11 +11939,11 @@ var init_vscode_copilot = __esm({
               const isJson = f.name.endsWith(".json");
               const isJsonl = f.name.endsWith(".jsonl");
               if (!isJson && !isJsonl) continue;
-              const p2 = join15(chatDir, f.name);
+              const p2 = join19(chatDir, f.name);
               const st = statSync3(p2);
               if (st.size === 0) continue;
               chatSessionIds.add(basename2(f.name, isJsonl ? ".jsonl" : ".json"));
-              const buf = readFileSync10(p2);
+              const buf = readFileSync13(p2);
               const sha = createHash2("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -11551,11 +11953,11 @@ var init_vscode_copilot = __esm({
               };
             }
           }
-          const transcriptsDir = join15(wsDir, "GitHub.copilot-chat", "transcripts");
-          if (existsSync12(transcriptsDir)) {
+          const transcriptsDir = join19(wsDir, "GitHub.copilot-chat", "transcripts");
+          if (existsSync15(transcriptsDir)) {
             let tfiles = [];
             try {
-              tfiles = readdirSync5(transcriptsDir, { withFileTypes: true });
+              tfiles = readdirSync6(transcriptsDir, { withFileTypes: true });
             } catch {
               tfiles = [];
             }
@@ -11563,10 +11965,10 @@ var init_vscode_copilot = __esm({
               if (!f.isFile() || !f.name.endsWith(".jsonl")) continue;
               const id = basename2(f.name, ".jsonl");
               if (chatSessionIds.has(id)) continue;
-              const p2 = join15(transcriptsDir, f.name);
+              const p2 = join19(transcriptsDir, f.name);
               const st = statSync3(p2);
               if (st.size === 0) continue;
-              const buf = readFileSync10(p2);
+              const buf = readFileSync13(p2);
               const sha = createHash2("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -11779,19 +12181,19 @@ var init_toc = __esm({
 });
 
 // src/spool/writer.ts
-import { mkdirSync as mkdirSync9, writeFileSync as writeFileSync7 } from "node:fs";
-import { join as join16 } from "node:path";
+import { mkdirSync as mkdirSync12, writeFileSync as writeFileSync10 } from "node:fs";
+import { join as join20 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
-  const dirRel = join16("raw_sessions", s.tool, s.project, date);
-  const absDir = join16(repoRoot, dirRel);
-  mkdirSync9(absDir, { recursive: true });
+  const dirRel = join20("raw_sessions", s.tool, s.project, date);
+  const absDir = join20(repoRoot, dirRel);
+  mkdirSync12(absDir, { recursive: true });
   const base = `${s.nameSlug}__${s.shortId}`;
-  const mdRel = join16(dirRel, `${base}.md`);
+  const mdRel = join20(dirRel, `${base}.md`);
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults = opts.fullToolResults ?? process.env.VIBEBOOK_FULL_TOOL_RESULTS === "1";
-  writeFileSync7(
-    join16(repoRoot, mdRel),
+  writeFileSync10(
+    join20(repoRoot, mdRel),
     renderMarkdown(s, { includeReasoning, fullToolResults })
   );
   return { md: mdRel };
@@ -12129,14 +12531,14 @@ var {
 } = import_index.default;
 
 // src/plugin-cli.ts
-import { readFileSync as readFileSync11 } from "node:fs";
+import { readFileSync as readFileSync14 } from "node:fs";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-import { dirname as dirname5, resolve as resolve3 } from "node:path";
+import { dirname as dirname8, resolve as resolve3 } from "node:path";
 function readPackageVersion() {
-  const here = dirname5(fileURLToPath2(import.meta.url));
+  const here = dirname8(fileURLToPath2(import.meta.url));
   for (const rel of ["../package.json", "../../package.json", "../../../package.json"]) {
     try {
-      return JSON.parse(readFileSync11(resolve3(here, rel), "utf8")).version;
+      return JSON.parse(readFileSync14(resolve3(here, rel), "utf8")).version;
     } catch {
     }
   }
@@ -12161,6 +12563,20 @@ async function run(argv) {
       noCatalog: opts.catalog === false
     });
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+  });
+  program2.command("memory-write").description("Write typed-memory .md files + update the memory index from an agent JSON payload.").option("--input <path>", "path to memory entries JSON").action(async (opts) => {
+    const { memoryWriteCmd: memoryWriteCmd2 } = await Promise.resolve().then(() => (init_memory_write(), memory_write_exports));
+    const report = await memoryWriteCmd2({ inputPath: opts.input });
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+  });
+  program2.command("memory-index").description("Rebuild .vibebook/index.memory.json from the memory/ markdown files.").action(async () => {
+    const { memoryIndexCmd: memoryIndexCmd2 } = await Promise.resolve().then(() => (init_memory_index(), memory_index_exports));
+    const report = await memoryIndexCmd2();
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+  });
+  program2.command("memory-query").description("Load typed memory for the cwd's project and emit layered context (Core/Procedures/Semantic/Episodes/Conflicts) + primer.").option("--cwd <path>", "treat this dir as the user's cwd (default: process.cwd())").option("--type <type>", "filter by memory type").option("--q <text>", "free-text query").action(async (opts) => {
+    const { memoryQueryCmd: memoryQueryCmd2 } = await Promise.resolve().then(() => (init_memory_query(), memory_query_exports));
+    await memoryQueryCmd2({ cwd: opts.cwd, type: opts.type, q: opts.q });
   });
   program2.command("recall").description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.").option("--cwd <path>", "infer project from this cwd").option("--project <slug>", "force a specific project slug").option("--topic <slug>", "stage 2: list chronicles in this topic").action(async (opts) => {
     const { recallCmd: recallCmd2 } = await Promise.resolve().then(() => (init_recall(), recall_exports));
@@ -12192,10 +12608,14 @@ async function run(argv) {
   });
   await program2.parseAsync(argv);
 }
-run(process.argv).catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+var _thisFile = fileURLToPath2(import.meta.url);
+var _mainFile = process.argv[1] ? resolve3(process.argv[1]) : "";
+if (_thisFile === _mainFile || _mainFile.endsWith("vibebook-plugin.js")) {
+  run(process.argv).catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}
 export {
   run
 };
