@@ -35,7 +35,7 @@ So before any subcommand, discover the plugin's bin path and stash it
 in a shell variable. Run:
 
 ```bash
-VBP=$(ls -td ~/.claude/plugins/cache/vibebook/vibebook/*/bin/vibebook-plugin.js 2>/dev/null | head -1) && echo "VBP=$VBP"
+VBP=$(ls -td ~/.claude/plugins/cache/*/vibebook/*/bin/vibebook-plugin.js 2>/dev/null | head -1) && echo "VBP=$VBP"
 ```
 
 Confirm `$VBP` resolves to an existing file:

@@ -12,7 +12,7 @@ as a familiar engineer instead of a stranger.
 ## Step -1 — Locate the plugin binary
 
 ```bash
-VBP=$(ls -td ~/.claude/plugins/cache/vibebook/vibebook/*/bin/vibebook-plugin.js 2>/dev/null | head -1) && echo "VBP=$VBP"
+VBP=$(ls -td ~/.claude/plugins/cache/*/vibebook/*/bin/vibebook-plugin.js 2>/dev/null | head -1) && echo "VBP=$VBP"
 [ -x "$VBP" ] && "$VBP" --version
 ```
 
