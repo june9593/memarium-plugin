@@ -30,6 +30,14 @@ function isEligibleMemory(m: MemoryEntry, now: string, project: string | null): 
   return project === null;
 }
 
+/** Mirror of score.ts isEligible (scope-only) for EntityPage — no kind filter here. */
+function isEligibleEntity(e: EntityPage, project: string | null): boolean {
+  if (e.scope === "global" || e.scope === "user") return true;
+  if (project && e.scope === `project:${project}`) return true;
+  // project-scoped entities from other projects are excluded when cwd project is set
+  return project === null;
+}
+
 interface ReferencingMemory {
   id: string;
   title: string;
@@ -86,10 +94,13 @@ export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
     payload.referencingMemories = referencingMemories;
 
     // matchedEntities: entity pages whose title or any alias matches <name> case-insensitively,
-    // or whose id ends with a matching slug derived from the name
+    // or whose id ends with a matching slug derived from the name.
+    // First narrow to scope-eligible entities (mirrors score.ts isEligible) so we never
+    // return pages from other projects when a cwd project is resolved.
     const nameSlug = entityName.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
     const entRoot = resolve(join(cfg.repoPath, "memory", "entities"));
     const matchedEntities: MatchedEntity[] = entries
+      .filter((e: EntityPage) => isEligibleEntity(e, project))
       .filter((e: EntityPage) => {
         const titleMatch = e.title.toLowerCase() === entityName;
         const aliasMatch = e.aliases.some((a) => a.toLowerCase() === entityName);

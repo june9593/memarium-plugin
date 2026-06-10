@@ -70,6 +70,38 @@ describe("entityQueryCmd", () => {
           createdAt: "2026-06-01",
           updatedAt: "2026-06-01",
         },
+        // Entity with the SAME title/alias as spool-writer but belonging to a DIFFERENT project
+        "entity/other-proj/spool-writer": {
+          id: "entity/other-proj/spool-writer",
+          kind: "symbol",
+          scope: "project:other-proj",
+          project: "other-proj",
+          title: "SpoolWriter",
+          aliases: ["writer"],
+          sourceMemoryIds: [],
+          sourceSessions: [],
+          sourceFiles: [],
+          relatedEntities: [],
+          path: "memory/entities/other-proj/spool-writer.md",
+          createdAt: "2026-06-09",
+          updatedAt: "2026-06-09",
+        },
+        // Global-scoped entity that shares the alias "writer" — should always appear
+        "entity/_global/writer-global": {
+          id: "entity/_global/writer-global",
+          kind: "concept",
+          scope: "global",
+          project: null,
+          title: "WriterGlobal",
+          aliases: ["writer"],
+          sourceMemoryIds: [],
+          sourceSessions: [],
+          sourceFiles: [],
+          relatedEntities: [],
+          path: "memory/entities/_global/writer-global.md",
+          createdAt: "2026-06-01",
+          updatedAt: "2026-06-01",
+        },
       },
     }));
 
@@ -451,6 +483,32 @@ describe("entityQueryCmd", () => {
     const ids = payload.referencingMemories.map((x: any) => x.id);
     expect(ids).not.toContain("semantic/edge-memvc/expired");
     expect(ids).toContain("semantic/edge-memvc/active");
+  });
+
+  // Fix 3: scope-filter on matchedEntities — no cross-project leakage
+  it("--entity matchedEntities includes only cwd-project and global entities, not other-project entities with the same title/alias", async () => {
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    // "SpoolWriter" is shared by entity/edge-memvc/spool-writer (scope: project:edge-memvc)
+    // AND entity/other-proj/spool-writer (scope: project:other-proj).
+    // Cwd resolves to "edge-memvc" — so only the cwd-project page and global ones may appear.
+    await entityQueryCmd({ cwd: "/work/edge-memvc", entity: "SpoolWriter" });
+    const payload = JSON.parse(stdout.join(""));
+    const ids = payload.matchedEntities.map((x: any) => x.entry.id);
+    // cwd-project page MUST be present
+    expect(ids).toContain("entity/edge-memvc/spool-writer");
+    // other-project page with the same title MUST be absent
+    expect(ids).not.toContain("entity/other-proj/spool-writer");
+  });
+
+  it("--entity matchedEntities includes a global-scoped entity whose alias matches even from another scope", async () => {
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    // "writer" is an alias of both cwd-project spool-writer AND global writer-global
+    await entityQueryCmd({ cwd: "/work/edge-memvc", entity: "writer" });
+    const payload = JSON.parse(stdout.join(""));
+    const ids = payload.matchedEntities.map((x: any) => x.entry.id);
+    expect(ids).toContain("entity/edge-memvc/spool-writer");
+    expect(ids).toContain("entity/_global/writer-global");
+    expect(ids).not.toContain("entity/other-proj/spool-writer");
   });
 
   // Fix 2: path-traversal guard tests
