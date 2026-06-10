@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "vibebook",
-      "description": "Run /vibebook to digest your sessions into chronicle + topic. Run /vibebook-recall before starting work to surface past notes that bear on the current task. Atomic cards delegated to memex when installed.",
-      "version": "0.2.0",
+      "description": "Run /vibebook to digest your sessions into chronicle + topic and distill durable typed memory. Run /vibebook-context at the start of work so a new session begins already familiar with the project (architecture, setup, gotchas, rules). Run /vibebook-recall to dig into past chronicles.",
+      "version": "0.3.0",
       "source": "./",
       "category": "productivity"
     }

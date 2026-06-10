@@ -66,6 +66,36 @@ export async function run(argv: string[]) {
     });
 
   program
+    .command("memory-write")
+    .description("Write typed-memory .md files + update the memory index from an agent JSON payload.")
+    .option("--input <path>", "path to memory entries JSON")
+    .action(async (opts: { input?: string }) => {
+      const { memoryWriteCmd } = await import("./commands/memory-write.js");
+      const report = await memoryWriteCmd({ inputPath: opts.input });
+      process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    });
+
+  program
+    .command("memory-index")
+    .description("Rebuild .vibebook/index.memory.json from the memory/ markdown files.")
+    .action(async () => {
+      const { memoryIndexCmd } = await import("./commands/memory-index.js");
+      const report = await memoryIndexCmd();
+      process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    });
+
+  program
+    .command("memory-query")
+    .description("Load typed memory for the cwd's project and emit layered context (Core/Procedures/Semantic/Episodes/Conflicts) + primer.")
+    .option("--cwd <path>", "treat this dir as the user's cwd (default: process.cwd())")
+    .option("--type <type>", "filter by memory type")
+    .option("--q <text>", "free-text query")
+    .action(async (opts: { cwd?: string; type?: string; q?: string }) => {
+      const { memoryQueryCmd } = await import("./commands/memory-query.js");
+      await memoryQueryCmd({ cwd: opts.cwd, type: opts.type, q: opts.q });
+    });
+
+  program
     .command("recall")
     .description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.")
     .option("--cwd <path>", "infer project from this cwd")
@@ -123,7 +153,13 @@ export async function run(argv: string[]) {
   await program.parseAsync(argv);
 }
 
-run(process.argv).catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+// Only invoke when run directly as the entry-point (not when imported by tests
+// or other modules). The `import.meta.url` guard mirrors Node's __filename check.
+const _thisFile = fileURLToPath(import.meta.url);
+const _mainFile = process.argv[1] ? resolve(process.argv[1]) : "";
+if (_thisFile === _mainFile || _mainFile.endsWith("vibebook-plugin.js")) {
+  run(process.argv).catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}
