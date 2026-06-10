@@ -9699,7 +9699,7 @@ function expandHome(p2) {
   return p2;
 }
 function cloneWithProgress(repoUrl, dest) {
-  return new Promise((resolve6, reject) => {
+  return new Promise((resolve7, reject) => {
     const env2 = { ...process.env };
     if (!process.stdin.isTTY) env2.GIT_TERMINAL_PROMPT = "0";
     const p2 = spawn2("git", ["clone", "--progress", repoUrl, dest], {
@@ -9708,7 +9708,7 @@ function cloneWithProgress(repoUrl, dest) {
     });
     p2.on("error", reject);
     p2.on("close", (code) => {
-      if (code === 0) resolve6();
+      if (code === 0) resolve7();
       else reject(new Error(`git clone exited with code ${code}. If this is an HTTPS URL needing auth, prefer SSH (git@github.com:...) or store a PAT via 'git config credential.helper'.`));
     });
   });
@@ -9768,7 +9768,7 @@ async function ensureDeviceBranch(git, branch) {
   await git.raw(["rm", "-rf", "--cached", "--ignore-unmatch", "."]);
 }
 function pushWithProgress(cwd, branch) {
-  return new Promise((resolve6) => {
+  return new Promise((resolve7) => {
     const errBuf = [];
     let bufLen = 0;
     const p2 = spawn2(
@@ -9786,10 +9786,10 @@ function pushWithProgress(cwd, branch) {
         if (drop) bufLen -= drop.length;
       }
     });
-    p2.on("error", () => resolve6({ ok: false, secretBlocked: false, stderrTail: errBuf.join("") }));
+    p2.on("error", () => resolve7({ ok: false, secretBlocked: false, stderrTail: errBuf.join("") }));
     p2.on("close", (code) => {
       const tail = errBuf.join("");
-      resolve6({
+      resolve7({
         ok: code === 0,
         secretBlocked: code !== 0 && SECRET_BLOCK_RE.test(tail),
         stderrTail: tail.slice(-4096)
@@ -10783,13 +10783,13 @@ function renderPrimer(project, entries, opts = {}) {
 
 > Auto-generated primer. The agent should treat this as already-known project context.
 `;
-  const parts = [
-    head,
+  const sections = [
     section("Core rules", pick2(entries, "core", project, max)),
     section("Project facts", pick2(entries, "semantic", project, max)),
     section("Procedures & gotchas", pick2(entries, "procedural", project, max))
   ].filter(Boolean);
-  return parts.join("\n");
+  if (sections.length === 0) return "";
+  return [head, ...sections].join("\n");
 }
 var MAX_PER_SECTION;
 var init_primer = __esm({
@@ -11187,10 +11187,22 @@ __export(entity_query_exports, {
   entityQueryCmd: () => entityQueryCmd
 });
 import { existsSync as existsSync14, readFileSync as readFileSync13 } from "node:fs";
-import { join as join17 } from "node:path";
+import { join as join17, resolve as resolve4, sep as sep3 } from "node:path";
 function isKind(s) {
   const ok = ["file", "symbol", "api", "concept", "person"];
   return s && ok.includes(s) ? s : null;
+}
+function isEligibleMemory(m, now, project) {
+  if (m.status === "superseded") return false;
+  if (m.validTo !== null && m.validTo <= now) return false;
+  if (m.scope === "global" || m.scope === "user") return true;
+  if (project && m.scope === `project:${project}`) return true;
+  return project === null;
+}
+function isEligibleEntity(e, project) {
+  if (e.scope === "global" || e.scope === "user") return true;
+  if (project && e.scope === `project:${project}`) return true;
+  return project === null;
 }
 async function entityQueryCmd(opts) {
   const cfg = readPluginConfig();
@@ -11213,6 +11225,7 @@ async function entityQueryCmd(opts) {
     const entityName = opts.entity.toLowerCase();
     const memIdx = loadMemoryIndex(cfg.repoPath);
     const referencingMemories = Object.values(memIdx.entries).filter((m) => {
+      if (!isEligibleMemory(m, now, project)) return false;
       const inEntities = (Array.isArray(m.entities) ? m.entities : []).some((e) => e.toLowerCase() === entityName);
       const inTitle = m.title.toLowerCase().includes(entityName);
       return inEntities || inTitle;
@@ -11224,14 +11237,16 @@ async function entityQueryCmd(opts) {
     }));
     payload.referencingMemories = referencingMemories;
     const nameSlug = entityName.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    const matchedEntities = entries.filter((e) => {
+    const entRoot = resolve4(join17(cfg.repoPath, "memory", "entities"));
+    const matchedEntities = entries.filter((e) => isEligibleEntity(e, project)).filter((e) => {
       const titleMatch = e.title.toLowerCase() === entityName;
       const aliasMatch = e.aliases.some((a) => a.toLowerCase() === entityName);
       const slugMatch = nameSlug.length > 0 && e.id.toLowerCase().endsWith("/" + nameSlug);
       return titleMatch || aliasMatch || slugMatch;
     }).map((e) => {
-      const mdPath = join17(cfg.repoPath, e.path);
-      const body = existsSync14(mdPath) ? readFileSync13(mdPath, "utf8") : "";
+      const abs = resolve4(join17(cfg.repoPath, e.path));
+      const safeToRead = (abs === entRoot || abs.startsWith(entRoot + sep3)) && existsSync14(abs);
+      const body = safeToRead ? readFileSync13(abs, "utf8") : "";
       return { entry: e, body };
     });
     payload.matchedEntities = matchedEntities;
@@ -11585,7 +11600,7 @@ __export(site_exports, {
 });
 import { spawn as spawn3 } from "node:child_process";
 import { existsSync as existsSync16, mkdirSync as mkdirSync11, cpSync, readFileSync as readFileSync15, writeFileSync as writeFileSync10, statSync, readdirSync as readdirSync4, rmSync } from "node:fs";
-import { join as join19, dirname as dirname8, resolve as resolve4 } from "node:path";
+import { join as join19, dirname as dirname8, resolve as resolve5 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir as homedir3 } from "node:os";
 function siteContext(opts) {
@@ -11593,11 +11608,11 @@ function siteContext(opts) {
   const repoPath = opts.repoPath ?? cfg.repoPath;
   const here = dirname8(fileURLToPath(import.meta.url));
   const candidates = [
-    resolve4(here, "..", "..", "site-template"),
+    resolve5(here, "..", "..", "site-template"),
     // src/commands/
-    resolve4(here, "..", "..", "..", "site-template"),
+    resolve5(here, "..", "..", "..", "site-template"),
     // dist/src/commands/
-    resolve4(here, "..", "..", "..", "..", "site-template")
+    resolve5(here, "..", "..", "..", "..", "site-template")
   ];
   const templateDir = candidates.find((c3) => existsSync16(join19(c3, "package.json")));
   if (!templateDir) {
@@ -12942,12 +12957,12 @@ var {
 // src/plugin-cli.ts
 import { readFileSync as readFileSync19 } from "node:fs";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-import { dirname as dirname10, resolve as resolve5 } from "node:path";
+import { dirname as dirname10, resolve as resolve6 } from "node:path";
 function readPackageVersion() {
   const here = dirname10(fileURLToPath2(import.meta.url));
   for (const rel of ["../package.json", "../../package.json", "../../../package.json"]) {
     try {
-      return JSON.parse(readFileSync19(resolve5(here, rel), "utf8")).version;
+      return JSON.parse(readFileSync19(resolve6(here, rel), "utf8")).version;
     } catch {
     }
   }
@@ -13036,7 +13051,7 @@ async function run(argv) {
   await program2.parseAsync(argv);
 }
 var _thisFile = fileURLToPath2(import.meta.url);
-var _mainFile = process.argv[1] ? resolve5(process.argv[1]) : "";
+var _mainFile = process.argv[1] ? resolve6(process.argv[1]) : "";
 if (_thisFile === _mainFile || _mainFile.endsWith("vibebook-plugin.js")) {
   run(process.argv).catch((err) => {
     console.error(err instanceof Error ? err.message : err);

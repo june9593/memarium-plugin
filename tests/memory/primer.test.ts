@@ -60,5 +60,12 @@ describe("renderPrimer", () => {
     expect(bulletCount).toBeLessThanOrEqual(12);
     expect(bulletCount).toBe(12);
   });
+
+  it("returns empty string when there is no eligible memory (silent, no bare header)", () => {
+    expect(renderPrimer("p", [])).toBe("");
+    // entries that are all ineligible for project "p" (other project, no global) → still empty
+    const otherProj = e({ id: "semantic/q/x", type: "semantic", scope: "project:q", project: "q", title: "x" });
+    expect(renderPrimer("p", [otherProj])).toBe("");
+  });
 });
 

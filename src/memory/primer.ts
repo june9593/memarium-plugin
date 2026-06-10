@@ -28,11 +28,13 @@ export function renderPrimer(
   const raw = opts.maxPerSection ?? MAX_PER_SECTION;
   const max = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : MAX_PER_SECTION;
   const head = `# Project memory: ${project}\n\n> Auto-generated primer. The agent should treat this as already-known project context.\n`;
-  const parts = [
-    head,
+  const sections = [
     section("Core rules", pick(entries, "core", project, max)),
     section("Project facts", pick(entries, "semantic", project, max)),
     section("Procedures & gotchas", pick(entries, "procedural", project, max)),
   ].filter(Boolean);
-  return parts.join("\n");
+  // Silent when there's no eligible memory for this project — so memory-primer
+  // (and the SessionStart hook) emit nothing rather than a bare header block.
+  if (sections.length === 0) return "";
+  return [head, ...sections].join("\n");
 }
