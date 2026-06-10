@@ -104,6 +104,23 @@ export async function run(argv: string[]) {
       await memoryPrimerCmd({ cwd: opts.cwd });
     });
 
+  program.command("entity-write")
+    .description("Write entity-wiki .md pages + update .vibebook/index.entity.json from an agent JSON payload.")
+    .option("--input <path>", "path to entity pages JSON")
+    .action(async (o: { input?: string }) => { const { entityWriteCmd } = await import("./commands/entity-write.js"); const r = await entityWriteCmd({ inputPath: o.input }); process.stdout.write(JSON.stringify(r, null, 2) + "\n"); });
+
+  program.command("entity-index")
+    .description("Rebuild .vibebook/index.entity.json from memory/entities/ markdown.")
+    .action(async () => { const { entityIndexCmd } = await import("./commands/entity-index.js"); const r = await entityIndexCmd(); process.stdout.write(JSON.stringify(r, null, 2) + "\n"); });
+
+  program.command("entity-query")
+    .description("Load entity wiki for the cwd's project, score, and emit ranked entities. --entity <name> adds a reverse lookup of memories referencing it (for digest authoring).")
+    .option("--cwd <path>", "treat this dir as cwd (default process.cwd())")
+    .option("--q <text>", "free-text query")
+    .option("--kind <kind>", "filter by entity kind (file|symbol|api|concept|person)")
+    .option("--entity <name>", "reverse-lookup: entities + memories referencing this name")
+    .action(async (o: { cwd?: string; q?: string; kind?: string; entity?: string }) => { const { entityQueryCmd } = await import("./commands/entity-query.js"); await entityQueryCmd(o); });
+
   program
     .command("recall")
     .description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.")
