@@ -124,6 +124,56 @@ describe("entityQueryCmd", () => {
           accessCount: 0,
           lastAccess: null,
         },
+        // superseded entry — must be excluded from referencingMemories
+        "semantic/edge-memvc/spool-superseded": {
+          id: "semantic/edge-memvc/spool-superseded",
+          type: "semantic",
+          scope: "project:edge-memvc",
+          project: "edge-memvc",
+          title: "Old SpoolWriter note",
+          summary: "superseded old note",
+          path: "memory/semantic/edge-memvc/spool-superseded.md",
+          status: "superseded",
+          confidence: 0.5,
+          importance: 2,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+          validFrom: null,
+          validTo: null,
+          sourceSessions: [],
+          sourceCommits: [],
+          sourceFiles: [],
+          supersedes: null,
+          entities: ["SpoolWriter"],
+          originDevice: null,
+          accessCount: 0,
+          lastAccess: null,
+        },
+        // other-project entry — must be excluded from referencingMemories when cwd project is set
+        "semantic/other-proj/spool-note": {
+          id: "semantic/other-proj/spool-note",
+          type: "semantic",
+          scope: "project:other-proj",
+          project: "other-proj",
+          title: "SpoolWriter in other project",
+          summary: "from a different project",
+          path: "memory/semantic/other-proj/spool-note.md",
+          status: "active",
+          confidence: 0.8,
+          importance: 3,
+          createdAt: "2026-06-01",
+          updatedAt: "2026-06-01",
+          validFrom: null,
+          validTo: null,
+          sourceSessions: [],
+          sourceCommits: [],
+          sourceFiles: [],
+          supersedes: null,
+          entities: ["SpoolWriter"],
+          originDevice: null,
+          accessCount: 0,
+          lastAccess: null,
+        },
       },
     }));
 
@@ -315,5 +365,128 @@ describe("entityQueryCmd", () => {
     expect(ids).not.toContain("semantic/edge-memvc/no-entities");
     // title-match entry matches via title → in results
     expect(ids).toContain("semantic/edge-memvc/title-match");
+  });
+
+  // Fix 1: eligibility filtering tests
+  it("referencingMemories excludes superseded memories even when they mention the entity", async () => {
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    await entityQueryCmd({ cwd: "/work/edge-memvc", entity: "spoolwriter" });
+    const payload = JSON.parse(stdout.join(""));
+    const ids = payload.referencingMemories.map((x: any) => x.id);
+    // superseded entry has entities: ["SpoolWriter"] and title "Old SpoolWriter note" — must be excluded
+    expect(ids).not.toContain("semantic/edge-memvc/spool-superseded");
+    // eligible same-project entry IS included
+    expect(ids).toContain("semantic/edge-memvc/spool");
+  });
+
+  it("referencingMemories excludes other-project memories when cwd project is set", async () => {
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    await entityQueryCmd({ cwd: "/work/edge-memvc", entity: "spoolwriter" });
+    const payload = JSON.parse(stdout.join(""));
+    const ids = payload.referencingMemories.map((x: any) => x.id);
+    // other-project entry (scope: "project:other-proj") must be excluded when cwd is edge-memvc
+    expect(ids).not.toContain("semantic/other-proj/spool-note");
+    // global-scope entry IS included
+    expect(ids).toContain("core/g/workflow");
+  });
+
+  it("referencingMemories excludes expired memories (validTo <= today)", async () => {
+    // Overwrite memory index with an expired entry
+    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({
+      version: 1, entries: {
+        "semantic/edge-memvc/expired": {
+          id: "semantic/edge-memvc/expired",
+          type: "semantic",
+          scope: "project:edge-memvc",
+          project: "edge-memvc",
+          title: "SpoolWriter expired note",
+          summary: "this expired yesterday",
+          path: "memory/semantic/edge-memvc/expired.md",
+          status: "active",
+          confidence: 0.9,
+          importance: 3,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+          validFrom: null,
+          validTo: "2026-01-01",  // in the past → expired
+          sourceSessions: [],
+          sourceCommits: [],
+          sourceFiles: [],
+          supersedes: null,
+          entities: ["SpoolWriter"],
+          originDevice: null,
+          accessCount: 0,
+          lastAccess: null,
+        },
+        "semantic/edge-memvc/active": {
+          id: "semantic/edge-memvc/active",
+          type: "semantic",
+          scope: "project:edge-memvc",
+          project: "edge-memvc",
+          title: "SpoolWriter active note",
+          summary: "still valid",
+          path: "memory/semantic/edge-memvc/active.md",
+          status: "active",
+          confidence: 0.9,
+          importance: 3,
+          createdAt: "2026-06-01",
+          updatedAt: "2026-06-01",
+          validFrom: null,
+          validTo: null,
+          sourceSessions: [],
+          sourceCommits: [],
+          sourceFiles: [],
+          supersedes: null,
+          entities: ["SpoolWriter"],
+          originDevice: null,
+          accessCount: 0,
+          lastAccess: null,
+        },
+      },
+    }));
+    vi.resetModules();
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    await entityQueryCmd({ cwd: "/work/edge-memvc", entity: "spoolwriter" });
+    const payload = JSON.parse(stdout.join(""));
+    const ids = payload.referencingMemories.map((x: any) => x.id);
+    expect(ids).not.toContain("semantic/edge-memvc/expired");
+    expect(ids).toContain("semantic/edge-memvc/active");
+  });
+
+  // Fix 2: path-traversal guard tests
+  it("matchedEntities with path outside memory/entities/ yields body: '' and does not read the file", async () => {
+    // Create a secret file outside memory/entities/
+    const secretPath = join(repo, "secret.md");
+    writeFileSync(secretPath, "super secret content");
+    // Add an entity index entry with a traversal path
+    writeFileSync(join(repo, ".vibebook/index.entity.json"), JSON.stringify({
+      version: 1, entries: {
+        "entity/edge-memvc/evil": {
+          id: "entity/edge-memvc/evil",
+          kind: "symbol",
+          scope: "project:edge-memvc",
+          project: "edge-memvc",
+          title: "TraversalTarget",
+          aliases: [],
+          sourceMemoryIds: [],
+          sourceSessions: [],
+          sourceFiles: [],
+          relatedEntities: [],
+          // traversal path: ../../secret.md resolves outside memory/entities/
+          path: "memory/entities/../../secret.md",
+          createdAt: "2026-06-09",
+          updatedAt: "2026-06-09",
+        },
+      },
+    }));
+    vi.resetModules();
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    await entityQueryCmd({ cwd: "/work/edge-memvc", entity: "traversaltarget" });
+    const payload = JSON.parse(stdout.join(""));
+    expect(Array.isArray(payload.matchedEntities)).toBe(true);
+    const match = payload.matchedEntities.find((x: any) => x.entry.id === "entity/edge-memvc/evil");
+    expect(match).toBeDefined();
+    // body must be empty — file outside memory/entities/ must not be read
+    expect(match.body).toBe("");
   });
 });

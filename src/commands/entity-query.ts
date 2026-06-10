@@ -6,7 +6,7 @@ import type { EntityKind, EntityPage } from "../entity/types.js";
 import { loadMemoryIndex } from "../memory/index-store.js";
 import type { MemoryEntry } from "../memory/types.js";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 export interface EntityQueryOptions {
   cwd?: string;
@@ -18,6 +18,16 @@ export interface EntityQueryOptions {
 function isKind(s: string | undefined): EntityKind | null {
   const ok: EntityKind[] = ["file", "symbol", "api", "concept", "person"];
   return s && ok.includes(s as EntityKind) ? (s as EntityKind) : null;
+}
+
+/** Mirror of score.ts isEligible — filters by status, expiry, and scope. */
+function isEligibleMemory(m: MemoryEntry, now: string, project: string | null): boolean {
+  if (m.status === "superseded") return false;
+  if (m.validTo !== null && m.validTo <= now) return false;
+  if (m.scope === "global" || m.scope === "user") return true;
+  if (project && m.scope === `project:${project}`) return true;
+  // project-scoped entries from other projects are excluded when cwd project is set
+  return project === null;
 }
 
 interface ReferencingMemory {
@@ -59,6 +69,8 @@ export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
     const memIdx = loadMemoryIndex(cfg.repoPath);
     const referencingMemories: ReferencingMemory[] = Object.values(memIdx.entries)
       .filter((m: MemoryEntry) => {
+        // Apply same eligibility predicate as score.ts isEligible
+        if (!isEligibleMemory(m, now, project)) return false;
         // Check m.entities[] (case-insensitive) — defensive: treat missing/non-array as []
         const inEntities = (Array.isArray(m.entities) ? m.entities : []).some((e) => e.toLowerCase() === entityName);
         // Check m.title contains entity name (case-insensitive)
@@ -76,6 +88,7 @@ export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
     // matchedEntities: entity pages whose title or any alias matches <name> case-insensitively,
     // or whose id ends with a matching slug derived from the name
     const nameSlug = entityName.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const entRoot = resolve(join(cfg.repoPath, "memory", "entities"));
     const matchedEntities: MatchedEntity[] = entries
       .filter((e: EntityPage) => {
         const titleMatch = e.title.toLowerCase() === entityName;
@@ -84,8 +97,10 @@ export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
         return titleMatch || aliasMatch || slugMatch;
       })
       .map((e: EntityPage) => {
-        const mdPath = join(cfg.repoPath, e.path);
-        const body = existsSync(mdPath) ? readFileSync(mdPath, "utf8") : "";
+        const abs = resolve(join(cfg.repoPath, e.path));
+        // path-guard: only read files under <repoPath>/memory/entities/
+        const safeToRead = (abs === entRoot || abs.startsWith(entRoot + sep)) && existsSync(abs);
+        const body = safeToRead ? readFileSync(abs, "utf8") : "";
         return { entry: e, body };
       });
     payload.matchedEntities = matchedEntities;
