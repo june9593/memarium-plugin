@@ -36,6 +36,24 @@ Read the JSON payload:
   before relying on them.
 - each entry has `whyRecalled` — why it surfaced.
 
+## Step 1.5 — Browse the entity wiki (knowledge base)
+
+The project also has an **entity wiki** — living pages per file / symbol / API /
+concept / person, aggregating what's known about each across sessions:
+
+```bash
+"$VBP" entity-query --cwd "$(pwd)"
+```
+
+Read the `entities` array (ranked, each with `whyMatched`). These are
+reference pages — don't load them all; `Read` an entity's `entry.path` only
+when the task is about that entity. If the user's task names a specific thing,
+look it up directly:
+
+```bash
+"$VBP" entity-query --cwd "$(pwd)" --entity "<file/symbol/concept>"
+```
+
 ## Step 2 — Optionally narrow
 
 If the user's task has clear keywords, pass them:

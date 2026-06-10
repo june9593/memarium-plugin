@@ -615,6 +615,41 @@ Be conservative: a few high-value memories beat many trivial ones. Don't
 duplicate what's already in the index (it was loaded at session start via
 `/vibebook-context`).
 
+### Step P7.6 — Synthesize entity wiki (personal knowledge base)
+
+After typed memory, grow the project's **entity wiki** — one living page per
+salient entity (file / symbol / API / concept / person) that aggregates what's
+known about it across sessions. This is the knowledge-base layer; it's
+SEPARATE from typed memory (an entity page is a synthesis/reverse-index, not a
+fact with a lifecycle).
+
+1. Pick the few entities this session is genuinely *about* (e.g. a core file
+   you changed, an API you learned, a recurring concept). Be conservative —
+   one page per real entity, not per mention.
+2. For each, pull existing context so you update rather than overwrite:
+
+       "$VBP" entity-query --cwd "$(pwd)" --entity "<name>"
+
+   This returns the existing entity page (if any) + `referencingMemories`
+   (the typed memories that mention it) — your raw material.
+3. Write a JSON array to `/tmp/vibebook-entities.json` where each item is
+   `{ entry, body }`:
+   - `entry`: `id` = `entity/<project|_global>/<kebab-slug>`, `kind` =
+     `file|symbol|api|concept|person`, `scope`/`project`, `title`, `aliases`,
+     `sourceMemoryIds` (the referencing memory ids), `sourceSessions`,
+     `sourceFiles`, `relatedEntities` (other entity ids — the graph),
+     `createdAt`/`updatedAt`.
+   - `body`: one-line definition + **What it is** + **Key facts** + **Gotchas**
+     + **Related** (reference chronicles/memories/other entities by name; don't
+     copy them). Imperative, agent-reuse voice.
+4. Persist:
+
+       "$VBP" entity-write --input /tmp/vibebook-entities.json
+
+   Writes `memory/entities/...` md + updates `.vibebook/index.entity.json`.
+
+Skip this step entirely if the session produced no durable entity worth a page.
+
 ### Step P8 — Done
 
 Print a one-line summary:
