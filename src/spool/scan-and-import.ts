@@ -13,6 +13,7 @@
 
 import { ClaudeCodeAdapter } from "../_shared/sources/claude-code.js";
 import { VSCodeCopilotAdapter } from "../_shared/sources/vscode-copilot.js";
+import { CodexAdapter } from "../_shared/sources/codex.js";
 import type { SourceAdapter } from "../_shared/sources/base.js";
 import { isRealProjectPath } from "../_shared/digest/project-filter.js";
 import { loadIndex, saveIndex, upsertEntry, hasUnchanged } from "../_shared/index-store.js";
@@ -41,6 +42,7 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
   const adapters: SourceAdapter[] = [
     new ClaudeCodeAdapter(),
     new VSCodeCopilotAdapter(),
+    new CodexAdapter(),
   ];
   const idx = loadIndex(spoolRoot);
 

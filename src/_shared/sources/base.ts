@@ -4,7 +4,7 @@
 import type { NormalizedSession } from "../types.js";
 
 export interface SourceAdapter {
-  name: "claude" | "copilot";
+  name: "claude" | "copilot" | "codex";
   /** Scan the local filesystem and yield every session found. */
   discover(): AsyncIterable<DiscoveredSession>;
 }

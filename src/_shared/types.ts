@@ -1,7 +1,7 @@
 // @sync-from: github.com/june9593/vibebook → src/types.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
-export type Tool = "claude" | "copilot";
+export type Tool = "claude" | "copilot" | "codex";
 
 /** A single rich content block from the source jsonl. Mirrors the
  *  Anthropic API content block shape so renderers can produce markdown

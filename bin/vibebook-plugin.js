@@ -12001,6 +12001,305 @@ var init_vscode_copilot = __esm({
   }
 });
 
+// src/_shared/sources/codex.ts
+import { createHash as createHash3 } from "node:crypto";
+import { readFileSync as readFileSync14, readdirSync as readdirSync7, statSync as statSync4, existsSync as existsSync16 } from "node:fs";
+import { homedir as homedir9 } from "node:os";
+import { join as join20, basename as basename3 } from "node:path";
+function collectRolloutPaths(root) {
+  const results = [];
+  function walk(dir) {
+    let entries;
+    try {
+      entries = readdirSync7(dir, { withFileTypes: true, encoding: "utf8" });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const p2 = join20(dir, e.name);
+      if (e.isDirectory()) walk(p2);
+      else if (e.isFile() && e.name.startsWith("rollout-") && e.name.endsWith(".jsonl")) {
+        results.push(p2);
+      }
+    }
+  }
+  const sessionsDir = join20(root, "sessions");
+  const archivedDir = join20(root, "archived_sessions");
+  if (existsSync16(sessionsDir)) walk(sessionsDir);
+  if (existsSync16(archivedDir)) walk(archivedDir);
+  return results;
+}
+function stripLeadingInjectedBlock(text) {
+  const t2 = text.trimStart();
+  if (t2.startsWith("# AGENTS.md") || t2.startsWith("<environment_context") || t2.startsWith("<permissions")) {
+    const closingMatch = t2.match(/<\/\w[^>]*>\s*\n?/);
+    if (closingMatch && closingMatch.index !== void 0) {
+      const after = t2.slice(closingMatch.index + closingMatch[0].length).trim();
+      return after;
+    }
+    const lines = t2.split("\n");
+    let blankIdx = -1;
+    for (let i2 = 1; i2 < lines.length; i2++) {
+      if (lines[i2].trim() === "") {
+        blankIdx = i2;
+        break;
+      }
+    }
+    if (blankIdx >= 0) {
+      return lines.slice(blankIdx + 1).join("\n").trim();
+    }
+    return "";
+  }
+  return text;
+}
+function looksLikeCommandNoise(s) {
+  const t2 = s.trimStart();
+  return /^<(command-name|command-message|local-command-stdout|local-command-caveat)\b/.test(t2);
+}
+function parseCodexJsonl(sourcePath, content, titleMap) {
+  const lines = content.split("\n").filter((l) => l.trim().length > 0);
+  if (lines.length === 0) {
+    return emptySession(sourcePath, titleMap);
+  }
+  let sessionId = basename3(sourcePath, ".jsonl");
+  let cwd = "";
+  let originator = "";
+  let startedAt = "";
+  try {
+    const meta = JSON.parse(lines[0]);
+    if (meta?.type === "session_meta" && meta?.payload) {
+      const p2 = meta.payload;
+      if (typeof p2.id === "string") sessionId = p2.id;
+      if (typeof p2.cwd === "string") cwd = p2.cwd;
+      if (typeof p2.originator === "string") originator = p2.originator;
+      if (typeof p2.timestamp === "string") startedAt = p2.timestamp;
+    }
+  } catch {
+  }
+  const isExec = originator === "codex_exec";
+  const isCodexDir = typeof cwd === "string" && cwd.startsWith(join20(homedir9(), "Documents", "Codex"));
+  if (isExec || isCodexDir) {
+    return {
+      tool: "codex",
+      sessionId,
+      shortId: sessionId.replace(/-/g, "").slice(-8),
+      project: projectSlugFromPath(cwd),
+      projectRaw: cwd,
+      startedAt: startedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
+      endedAt: startedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
+      nameSlug: "untitled",
+      displayName: "untitled",
+      messages: [],
+      sourcePath
+    };
+  }
+  const messages = [];
+  let endedAt = startedAt;
+  for (let i2 = 1; i2 < lines.length; i2++) {
+    let obj;
+    try {
+      obj = JSON.parse(lines[i2]);
+    } catch {
+      continue;
+    }
+    if (typeof obj?.timestamp === "string" && obj.timestamp) {
+      endedAt = obj.timestamp;
+    }
+    if (obj?.type !== "response_item") continue;
+    const payload = obj?.payload;
+    if (!payload) continue;
+    const ptype = payload.type;
+    if (ptype === "message") {
+      const role = payload.role;
+      if (role === "developer") continue;
+      if (role === "user") {
+        const contentArr = Array.isArray(payload.content) ? payload.content : [];
+        const rawTexts = [];
+        for (const block of contentArr) {
+          if (block?.type === "input_text" && typeof block.text === "string") {
+            rawTexts.push(block.text);
+          }
+        }
+        if (rawTexts.length === 0) continue;
+        let firstText = stripLeadingInjectedBlock(rawTexts[0]);
+        const remainingTexts = rawTexts.slice(1);
+        const allParts = firstText ? [firstText, ...remainingTexts] : remainingTexts;
+        const joined = allParts.join("\n").trim();
+        if (!joined) continue;
+        const text = sanitizeMessageText(joined);
+        if (!text) continue;
+        const ts = typeof obj.timestamp === "string" ? obj.timestamp : void 0;
+        messages.push({
+          role: "user",
+          text,
+          timestamp: ts,
+          contentBlocks: [{ type: "text", text }]
+        });
+      } else if (role === "assistant") {
+        const contentArr = Array.isArray(payload.content) ? payload.content : [];
+        const texts = [];
+        for (const block of contentArr) {
+          if (block?.type === "output_text" && typeof block.text === "string") {
+            texts.push(block.text);
+          }
+        }
+        const joined = texts.join("\n");
+        const text = sanitizeMessageText(joined);
+        if (!text) continue;
+        const ts = typeof obj.timestamp === "string" ? obj.timestamp : void 0;
+        messages.push({
+          role: "assistant",
+          text,
+          timestamp: ts,
+          contentBlocks: [{ type: "text", text }]
+        });
+      }
+    } else if (ptype === "function_call") {
+      const name = typeof payload.name === "string" ? payload.name : "unknown";
+      const callId = typeof payload.call_id === "string" ? payload.call_id : void 0;
+      let input;
+      try {
+        input = typeof payload.arguments === "string" ? JSON.parse(payload.arguments) : payload.arguments ?? {};
+      } catch {
+        input = typeof payload.arguments === "string" ? payload.arguments : {};
+      }
+      const block = { type: "tool_use", name, input };
+      if (callId) block.id = callId;
+      const ts = typeof obj.timestamp === "string" ? obj.timestamp : void 0;
+      messages.push({
+        role: "assistant",
+        text: "",
+        timestamp: ts,
+        contentBlocks: [block]
+      });
+    } else if (ptype === "function_call_output") {
+      const callId = typeof payload.call_id === "string" ? payload.call_id : void 0;
+      const output = typeof payload.output === "string" ? payload.output : String(payload.output ?? "");
+      const block = { type: "tool_result", content: output };
+      if (callId) block.toolUseId = callId;
+      const ts = typeof obj.timestamp === "string" ? obj.timestamp : void 0;
+      messages.push({
+        role: "user",
+        text: "",
+        timestamp: ts,
+        contentBlocks: [block]
+      });
+    } else if (ptype === "reasoning") {
+      continue;
+    }
+  }
+  const threadName = titleMap.get(sessionId);
+  const useThreadName = typeof threadName === "string" && threadName.trim().length > 0 && !looksLikeCommandNoise(threadName);
+  let titleSource = "";
+  if (useThreadName) {
+    titleSource = threadName;
+  } else {
+    for (const m of messages) {
+      if (m.role !== "user" || !m.text) continue;
+      if (looksLikeCommandNoise(m.text)) continue;
+      titleSource = m.text;
+      break;
+    }
+    if (!titleSource) titleSource = sessionId.slice(0, 8);
+  }
+  const derived = deriveSlug(titleSource);
+  const nameSlug = derived.slug;
+  const displayName = derived.display;
+  const shortId = sessionId.replace(/-/g, "").slice(-8);
+  const project = projectSlugFromPath(cwd);
+  return {
+    tool: "codex",
+    sessionId,
+    shortId,
+    project,
+    projectRaw: cwd,
+    startedAt: startedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
+    endedAt: endedAt || startedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
+    nameSlug,
+    displayName,
+    messages,
+    sourcePath
+  };
+}
+function emptySession(sourcePath, _titleMap) {
+  const sessionId = basename3(sourcePath, ".jsonl");
+  return {
+    tool: "codex",
+    sessionId,
+    shortId: sessionId.replace(/-/g, "").slice(-8),
+    project: "root",
+    projectRaw: "",
+    startedAt: (/* @__PURE__ */ new Date(0)).toISOString(),
+    endedAt: (/* @__PURE__ */ new Date(0)).toISOString(),
+    nameSlug: "untitled",
+    displayName: "untitled",
+    messages: [],
+    sourcePath
+  };
+}
+var CodexAdapter;
+var init_codex = __esm({
+  "src/_shared/sources/codex.ts"() {
+    "use strict";
+    init_slug();
+    init_claude_code();
+    CodexAdapter = class {
+      constructor(root = join20(homedir9(), ".codex")) {
+        this.root = root;
+      }
+      name = "codex";
+      titleMapCache = null;
+      loadTitleMap() {
+        if (this.titleMapCache !== null) return this.titleMapCache;
+        const map = /* @__PURE__ */ new Map();
+        const indexPath = join20(this.root, "session_index.jsonl");
+        if (existsSync16(indexPath)) {
+          try {
+            const lines = readFileSync14(indexPath, "utf8").split("\n");
+            for (const line of lines) {
+              const s = line.trim();
+              if (!s) continue;
+              try {
+                const obj = JSON.parse(s);
+                if (typeof obj.id === "string" && typeof obj.thread_name === "string") {
+                  map.set(obj.id, obj.thread_name);
+                }
+              } catch {
+              }
+            }
+          } catch {
+          }
+        }
+        this.titleMapCache = map;
+        return map;
+      }
+      async *discover() {
+        if (!existsSync16(this.root)) return;
+        const paths = collectRolloutPaths(this.root);
+        const titleMap = this.loadTitleMap();
+        for (const p2 of paths) {
+          let st;
+          try {
+            st = statSync4(p2);
+          } catch {
+            continue;
+          }
+          if (st.size === 0) continue;
+          const buf = readFileSync14(p2);
+          const sha = createHash3("sha256").update(buf).digest("hex");
+          const content = buf.toString("utf8");
+          yield {
+            sourcePath: p2,
+            sourceMtimeMs: st.mtimeMs,
+            sourceSha256: sha,
+            load: async () => parseCodexJsonl(p2, content, titleMap)
+          };
+        }
+      }
+    };
+  }
+});
+
 // src/_shared/digest/manifest.ts
 function extractManifest(messages, messageLineOffsets) {
   const tools_used = {};
@@ -12199,18 +12498,18 @@ var init_toc = __esm({
 
 // src/spool/writer.ts
 import { mkdirSync as mkdirSync12, writeFileSync as writeFileSync10 } from "node:fs";
-import { join as join20 } from "node:path";
+import { join as join21 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
-  const dirRel = join20("raw_sessions", s.tool, s.project, date);
-  const absDir = join20(repoRoot, dirRel);
+  const dirRel = join21("raw_sessions", s.tool, s.project, date);
+  const absDir = join21(repoRoot, dirRel);
   mkdirSync12(absDir, { recursive: true });
   const base = `${s.nameSlug}__${s.shortId}`;
-  const mdRel = join20(dirRel, `${base}.md`);
+  const mdRel = join21(dirRel, `${base}.md`);
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults = opts.fullToolResults ?? process.env.VIBEBOOK_FULL_TOOL_RESULTS === "1";
   writeFileSync10(
-    join20(repoRoot, mdRel),
+    join21(repoRoot, mdRel),
     renderMarkdown(s, { includeReasoning, fullToolResults })
   );
   return { md: mdRel };
@@ -12405,7 +12704,8 @@ async function scanAndImport(opts) {
   const { spoolRoot } = ensureSpoolDir();
   const adapters = [
     new ClaudeCodeAdapter(),
-    new VSCodeCopilotAdapter()
+    new VSCodeCopilotAdapter(),
+    new CodexAdapter()
   ];
   const idx = loadIndex(spoolRoot);
   const result = {
@@ -12466,6 +12766,7 @@ var init_scan_and_import = __esm({
     "use strict";
     init_claude_code();
     init_vscode_copilot();
+    init_codex();
     init_project_filter();
     init_index_store();
     init_ensure_dir();
@@ -12548,14 +12849,14 @@ var {
 } = import_index.default;
 
 // src/plugin-cli.ts
-import { readFileSync as readFileSync14 } from "node:fs";
+import { readFileSync as readFileSync15 } from "node:fs";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 import { dirname as dirname8, resolve as resolve4 } from "node:path";
 function readPackageVersion() {
   const here = dirname8(fileURLToPath2(import.meta.url));
   for (const rel of ["../package.json", "../../package.json", "../../../package.json"]) {
     try {
-      return JSON.parse(readFileSync14(resolve4(here, rel), "utf8")).version;
+      return JSON.parse(readFileSync15(resolve4(here, rel), "utf8")).version;
     } catch {
     }
   }
