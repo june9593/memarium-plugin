@@ -9699,7 +9699,7 @@ function expandHome(p2) {
   return p2;
 }
 function cloneWithProgress(repoUrl, dest) {
-  return new Promise((resolve4, reject) => {
+  return new Promise((resolve5, reject) => {
     const env2 = { ...process.env };
     if (!process.stdin.isTTY) env2.GIT_TERMINAL_PROMPT = "0";
     const p2 = spawn2("git", ["clone", "--progress", repoUrl, dest], {
@@ -9708,7 +9708,7 @@ function cloneWithProgress(repoUrl, dest) {
     });
     p2.on("error", reject);
     p2.on("close", (code) => {
-      if (code === 0) resolve4();
+      if (code === 0) resolve5();
       else reject(new Error(`git clone exited with code ${code}. If this is an HTTPS URL needing auth, prefer SSH (git@github.com:...) or store a PAT via 'git config credential.helper'.`));
     });
   });
@@ -9768,7 +9768,7 @@ async function ensureDeviceBranch(git, branch) {
   await git.raw(["rm", "-rf", "--cached", "--ignore-unmatch", "."]);
 }
 function pushWithProgress(cwd, branch) {
-  return new Promise((resolve4) => {
+  return new Promise((resolve5) => {
     const errBuf = [];
     let bufLen = 0;
     const p2 = spawn2(
@@ -9786,10 +9786,10 @@ function pushWithProgress(cwd, branch) {
         if (drop) bufLen -= drop.length;
       }
     });
-    p2.on("error", () => resolve4({ ok: false, secretBlocked: false, stderrTail: errBuf.join("") }));
+    p2.on("error", () => resolve5({ ok: false, secretBlocked: false, stderrTail: errBuf.join("") }));
     p2.on("close", (code) => {
       const tail = errBuf.join("");
-      resolve4({
+      resolve5({
         ok: code === 0,
         secretBlocked: code !== 0 && SECRET_BLOCK_RE.test(tail),
         stderrTail: tail.slice(-4096)
@@ -10534,7 +10534,7 @@ __export(memory_write_exports, {
   memoryWriteCmd: () => memoryWriteCmd
 });
 import { existsSync as existsSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync7, writeFileSync as writeFileSync6 } from "node:fs";
-import { dirname as dirname4, join as join10 } from "node:path";
+import { dirname as dirname4, join as join10, resolve as resolve2, sep } from "node:path";
 function memoryPath(e) {
   const scopeDir = e.project ?? "_global";
   const slug = e.id.split("/").pop() ?? e.id;
@@ -10551,11 +10551,21 @@ async function memoryWriteCmd(opts) {
   const paths = [];
   for (const { entry, body } of items) {
     if (!entry.path) entry.path = memoryPath(entry);
-    if (entry.supersedes && idx.entries[entry.supersedes]) {
-      idx.entries[entry.supersedes].status = "superseded";
-      superseded++;
+    const memRoot = resolve2(join10(cfg.repoPath, "memory"));
+    const abs = resolve2(join10(cfg.repoPath, entry.path));
+    if (abs !== memRoot && !abs.startsWith(memRoot + sep)) {
+      throw new Error(`memory-write: refusing to write outside memory/: ${entry.path}`);
     }
-    const abs = join10(cfg.repoPath, entry.path);
+    if (entry.supersedes && idx.entries[entry.supersedes]) {
+      const target = idx.entries[entry.supersedes];
+      target.status = "superseded";
+      superseded++;
+      const tabs = resolve2(join10(cfg.repoPath, target.path));
+      if (existsSync8(tabs)) {
+        const md = readFileSync7(tabs, "utf8").replace(/^status: .*$/m, "status: superseded");
+        writeFileSync6(tabs, md);
+      }
+    }
     mkdirSync7(dirname4(abs), { recursive: true });
     writeFileSync6(abs, renderMemoryMarkdown(entry, body));
     upsertMemory(idx, entry);
@@ -10798,7 +10808,8 @@ function isType(s) {
 }
 async function memoryQueryCmd(opts) {
   const cfg = readPluginConfig();
-  const project = opts.cwd ? resolveProjectFromCwd(opts.cwd, cfg.repoPath) : null;
+  const cwd = opts.cwd ?? process.cwd();
+  const project = resolveProjectFromCwd(cwd, cfg.repoPath);
   const idx = loadMemoryIndex(cfg.repoPath);
   const entries = Object.values(idx.entries);
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
@@ -10816,6 +10827,11 @@ async function memoryQueryCmd(opts) {
     mkdirSync8(dirname5(abs), { recursive: true });
     writeFileSync7(abs, primer);
   }
+  const conflicts2 = entries.filter((e) => e.status === "superseded" || e.supersedes !== null || e.validTo !== null).map((e) => ({
+    entry: e,
+    score: 0,
+    whyRecalled: e.status === "superseded" ? "superseded" : e.supersedes !== null ? "supersedes-other" : "time-bounded"
+  }));
   const payload = {
     project,
     primer,
@@ -10823,7 +10839,8 @@ async function memoryQueryCmd(opts) {
     procedures: byType("procedural"),
     semantic: byType("semantic"),
     episodes: byType("episodic"),
-    conflicts: scored.filter((s) => s.entry.supersedes !== null || s.entry.validTo !== null),
+    working: byType("working"),
+    conflicts: conflicts2,
     artifacts: byType("artifact"),
     meta: { total: scored.length, project }
   };
@@ -11176,7 +11193,7 @@ __export(site_exports, {
 });
 import { spawn as spawn3 } from "node:child_process";
 import { existsSync as existsSync11, mkdirSync as mkdirSync9, cpSync, readFileSync as readFileSync10, writeFileSync as writeFileSync8, statSync, readdirSync as readdirSync3, rmSync } from "node:fs";
-import { join as join14, dirname as dirname6, resolve as resolve2 } from "node:path";
+import { join as join14, dirname as dirname6, resolve as resolve3 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir as homedir3 } from "node:os";
 function siteContext(opts) {
@@ -11184,11 +11201,11 @@ function siteContext(opts) {
   const repoPath = opts.repoPath ?? cfg.repoPath;
   const here = dirname6(fileURLToPath(import.meta.url));
   const candidates = [
-    resolve2(here, "..", "..", "site-template"),
+    resolve3(here, "..", "..", "site-template"),
     // src/commands/
-    resolve2(here, "..", "..", "..", "site-template"),
+    resolve3(here, "..", "..", "..", "site-template"),
     // dist/src/commands/
-    resolve2(here, "..", "..", "..", "..", "site-template")
+    resolve3(here, "..", "..", "..", "..", "site-template")
   ];
   const templateDir = candidates.find((c3) => existsSync11(join14(c3, "package.json")));
   if (!templateDir) {
@@ -12533,12 +12550,12 @@ var {
 // src/plugin-cli.ts
 import { readFileSync as readFileSync14 } from "node:fs";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-import { dirname as dirname8, resolve as resolve3 } from "node:path";
+import { dirname as dirname8, resolve as resolve4 } from "node:path";
 function readPackageVersion() {
   const here = dirname8(fileURLToPath2(import.meta.url));
   for (const rel of ["../package.json", "../../package.json", "../../../package.json"]) {
     try {
-      return JSON.parse(readFileSync14(resolve3(here, rel), "utf8")).version;
+      return JSON.parse(readFileSync14(resolve4(here, rel), "utf8")).version;
     } catch {
     }
   }
@@ -12609,7 +12626,7 @@ async function run(argv) {
   await program2.parseAsync(argv);
 }
 var _thisFile = fileURLToPath2(import.meta.url);
-var _mainFile = process.argv[1] ? resolve3(process.argv[1]) : "";
+var _mainFile = process.argv[1] ? resolve4(process.argv[1]) : "";
 if (_thisFile === _mainFile || _mainFile.endsWith("vibebook-plugin.js")) {
   run(process.argv).catch((err) => {
     console.error(err instanceof Error ? err.message : err);

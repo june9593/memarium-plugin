@@ -16,7 +16,8 @@ function isType(s: string | undefined): MemoryType | null {
 
 export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
   const cfg = readPluginConfig();
-  const project = opts.cwd ? resolveProjectFromCwd(opts.cwd, cfg.repoPath) : null;
+  const cwd = opts.cwd ?? process.cwd();
+  const project = resolveProjectFromCwd(cwd, cfg.repoPath);
   const idx = loadMemoryIndex(cfg.repoPath);
   const entries = Object.values(idx.entries);
   const now = new Date().toISOString().slice(0, 10);
@@ -36,6 +37,17 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
     writeFileSync(abs, primer);
   }
 
+  const conflicts = entries
+    .filter((e) => e.status === "superseded" || e.supersedes !== null || e.validTo !== null)
+    .map((e) => ({
+      entry: e,
+      score: 0,
+      whyRecalled:
+        e.status === "superseded" ? "superseded"
+        : e.supersedes !== null ? "supersedes-other"
+        : "time-bounded",
+    }));
+
   const payload = {
     project,
     primer,
@@ -43,7 +55,8 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
     procedures: byType("procedural"),
     semantic: byType("semantic"),
     episodes: byType("episodic"),
-    conflicts: scored.filter((s) => s.entry.supersedes !== null || s.entry.validTo !== null),
+    working: byType("working"),
+    conflicts,
     artifacts: byType("artifact"),
     meta: { total: scored.length, project },
   };

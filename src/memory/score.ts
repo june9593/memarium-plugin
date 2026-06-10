@@ -26,8 +26,9 @@ function isEligible(e: MemoryEntry, q: MemoryQuery): boolean {
   // scope: global/user always eligible; project-scoped only for the cwd project
   if (e.scope === "global" || e.scope === "user") return true;
   if (q.project && e.scope === `project:${q.project}`) return true;
-  // other-project entries are still eligible but will be down-weighted, unless
-  // there's no cwd project at all (then everything is eligible)
+  // Project-scoped entries from OTHER projects are excluded when a cwd project
+  // is set (return false below). They're only eligible when there's no cwd
+  // project at all (q.project === null), in which case everything is eligible.
   return q.project === null;
 }
 

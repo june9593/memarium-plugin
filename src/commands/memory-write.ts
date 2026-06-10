@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "../memory/index-store.js";
 import { renderMemoryMarkdown } from "../memory/render.js";
@@ -28,12 +28,24 @@ export async function memoryWriteCmd(opts: MemoryWriteOptions): Promise<MemoryWr
   const paths: string[] = [];
   for (const { entry, body } of items) {
     if (!entry.path) entry.path = memoryPath(entry);
+    // path-traversal guard: final resolved path must be within <repoPath>/memory/
+    const memRoot = resolve(join(cfg.repoPath, "memory"));
+    const abs = resolve(join(cfg.repoPath, entry.path));
+    if (abs !== memRoot && !abs.startsWith(memRoot + sep)) {
+      throw new Error(`memory-write: refusing to write outside memory/: ${entry.path}`);
+    }
     // mark superseded target
     if (entry.supersedes && idx.entries[entry.supersedes]) {
-      idx.entries[entry.supersedes].status = "superseded";
+      const target = idx.entries[entry.supersedes];
+      target.status = "superseded";
       superseded++;
+      // persist to the target's md so a later `memory-index` rebuild keeps it superseded
+      const tabs = resolve(join(cfg.repoPath, target.path));
+      if (existsSync(tabs)) {
+        const md = readFileSync(tabs, "utf8").replace(/^status: .*$/m, "status: superseded");
+        writeFileSync(tabs, md);
+      }
     }
-    const abs = join(cfg.repoPath, entry.path);
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, renderMemoryMarkdown(entry, body));
     upsertMemory(idx, entry);

@@ -73,4 +73,57 @@ describe("memoryWriteCmd", () => {
     expect(idx.entries["semantic/p/old"].status).toBe("superseded");
     expect(idx.entries["semantic/p/new"].status).toBe("active");
   });
+
+  it("persists superseded status to the target md frontmatter", async () => {
+    const seed = join(fakeHome, "seed2.json");
+    writeFileSync(seed, JSON.stringify([{
+      entry: { id: "semantic/p/stale", type: "semantic", scope: "project:p", project: "p",
+        title: "stale fact", summary: "s", status: "active", confidence: 0.8, importance: 2,
+        createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+        sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
+        entities: [], originDevice: null, accessCount: 0, lastAccess: null }, body: "stale" },
+    ]));
+    const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
+    await memoryWriteCmd({ inputPath: seed });
+
+    const staleMdPath = join(repo, "memory/semantic/p/stale.md");
+    expect(existsSync(staleMdPath)).toBe(true);
+    // Verify md currently says status: active
+    expect(readFileSync(staleMdPath, "utf8")).toContain("status: active");
+
+    const replace2 = join(fakeHome, "new2.json");
+    writeFileSync(replace2, JSON.stringify([{
+      entry: { id: "semantic/p/fresh", type: "semantic", scope: "project:p", project: "p",
+        title: "fresh fact", summary: "f", status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-06-09", updatedAt: "2026-06-09", validFrom: null, validTo: null,
+        sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: "semantic/p/stale",
+        entities: [], originDevice: null, accessCount: 0, lastAccess: null }, body: "fresh" },
+    ]));
+    await memoryWriteCmd({ inputPath: replace2 });
+
+    // The superseded target's md file must now contain "status: superseded"
+    expect(readFileSync(staleMdPath, "utf8")).toContain("status: superseded");
+    expect(readFileSync(staleMdPath, "utf8")).not.toContain("status: active");
+  });
+
+  it("throws on path traversal attempt", async () => {
+    const input = join(fakeHome, "evil.json");
+    writeFileSync(input, JSON.stringify([{
+      entry: {
+        id: "semantic/p/evil", type: "semantic", scope: "project:p", project: "p",
+        title: "evil", summary: "e", status: "active", confidence: 0.5, importance: 1,
+        createdAt: "2026-06-09", updatedAt: "2026-06-09", validFrom: null, validTo: null,
+        sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
+        entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+        // crafted path that escapes out of memory/
+        path: "../../escape.md",
+      },
+      body: "bad",
+    }]));
+
+    const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
+    await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow("refusing to write outside memory/");
+    // must not have created the file at the escaping path
+    expect(existsSync(join(repo, "../../escape.md"))).toBe(false);
+  });
 });
