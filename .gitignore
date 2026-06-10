@@ -5,6 +5,8 @@ dist/
 .vscode/
 .idea/
 .env*
+# AGENTS.md is generated locally by Codex (copy of CLAUDE.md); keep it untracked
+AGENTS.md
 # docs/ contains the GitHub Pages site (Astro). Tracked in git.
 docs/node_modules/
 docs/dist/
