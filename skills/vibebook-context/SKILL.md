@@ -54,6 +54,13 @@ look it up directly:
 "$VBP" entity-query --cwd "$(pwd)" --entity "<file/symbol/concept>"
 ```
 
+This returns:
+- `matchedEntities`: array of `{ entry, body }` — entity pages whose `title` or
+  any `aliases[]` equals the name (case-insensitive), with full markdown body.
+  `Read` these directly; no second file read needed.
+- `referencingMemories`: typed memories that mention this entity by name/title.
+- `entities`: the full ranked list (same as the unfiltered browse above).
+
 ## Step 2 — Optionally narrow
 
 If the user's task has clear keywords, pass them:

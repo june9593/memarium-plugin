@@ -1,7 +1,7 @@
 import type { EntityPage } from "./types.js";
 
 function arr(xs: string[]): string {
-  return xs.length === 0 ? "[]" : `[${xs.join(", ")}]`;
+  return JSON.stringify(xs);
 }
 function scalar(v: string | null): string {
   return v === null ? "null" : v;

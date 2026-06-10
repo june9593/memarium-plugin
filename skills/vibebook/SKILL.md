@@ -630,8 +630,13 @@ fact with a lifecycle).
 
        "$VBP" entity-query --cwd "$(pwd)" --entity "<name>"
 
-   This returns the existing entity page (if any) + `referencingMemories`
-   (the typed memories that mention it) — your raw material.
+   This returns three things in the JSON payload:
+   - `matchedEntities`: array of `{ entry, body }` — entity pages whose `title`
+     or any `aliases[]` equals `<name>` (case-insensitive), with their full `.md`
+     file contents as `body`. This is the existing page to update in place.
+   - `referencingMemories`: typed memories that mention this entity (by title or
+     `entities[]` field) — your raw material for synthesising the updated page.
+   - `entities`: the full ranked entity list (unfiltered browse), always present.
 3. Write a JSON array to `/tmp/vibebook-entities.json` where each item is
    `{ entry, body }`:
    - `entry`: `id` = `entity/<project|_global>/<kebab-slug>`, `kind` =

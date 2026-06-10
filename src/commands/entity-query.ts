@@ -2,9 +2,11 @@ import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { loadEntityIndex } from "../entity/index-store.js";
 import { scoreEntities } from "../entity/score.js";
-import type { EntityKind } from "../entity/types.js";
+import type { EntityKind, EntityPage } from "../entity/types.js";
 import { loadMemoryIndex } from "../memory/index-store.js";
 import type { MemoryEntry } from "../memory/types.js";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 export interface EntityQueryOptions {
   cwd?: string;
@@ -23,6 +25,11 @@ interface ReferencingMemory {
   title: string;
   type: string;
   sourceSessions: string[];
+}
+
+interface MatchedEntity {
+  entry: EntityPage;
+  body: string;
 }
 
 export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
@@ -46,6 +53,7 @@ export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
   };
 
   // Reverse lookup: when --entity is passed, find memories that reference it
+  // AND return matched entity pages with their body content
   if (opts.entity) {
     const entityName = opts.entity.toLowerCase();
     const memIdx = loadMemoryIndex(cfg.repoPath);
@@ -64,6 +72,23 @@ export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
         sourceSessions: m.sourceSessions,
       }));
     payload.referencingMemories = referencingMemories;
+
+    // matchedEntities: entity pages whose title or any alias matches <name> case-insensitively,
+    // or whose id ends with a matching slug derived from the name
+    const nameSlug = entityName.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const matchedEntities: MatchedEntity[] = entries
+      .filter((e: EntityPage) => {
+        const titleMatch = e.title.toLowerCase() === entityName;
+        const aliasMatch = e.aliases.some((a) => a.toLowerCase() === entityName);
+        const slugMatch = nameSlug.length > 0 && e.id.toLowerCase().endsWith("/" + nameSlug);
+        return titleMatch || aliasMatch || slugMatch;
+      })
+      .map((e: EntityPage) => {
+        const mdPath = join(cfg.repoPath, e.path);
+        const body = existsSync(mdPath) ? readFileSync(mdPath, "utf8") : "";
+        return { entry: e, body };
+      });
+    payload.matchedEntities = matchedEntities;
   }
 
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");

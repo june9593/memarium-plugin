@@ -68,6 +68,13 @@ describe("parseEntityMarkdown", () => {
     expect(parseEntityMarkdown(md)).toBeNull();
   });
 
+  it("round-trips array value containing a comma (JSON encoding)", () => {
+    const orig = page({ aliases: ["a, b", "c"] });
+    const md = renderEntityMarkdown(orig, "body");
+    const parsed = parseEntityMarkdown(md);
+    expect(parsed?.aliases).toEqual(["a, b", "c"]);
+  });
+
   it("returns null when kind is missing", () => {
     const md = "---\nid: entity/foo/bar\n---\n\n# Title\n";
     expect(parseEntityMarkdown(md)).toBeNull();

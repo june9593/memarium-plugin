@@ -2,7 +2,15 @@ import type { EntityPage, EntityKind } from "./types.js";
 
 function parseArr(v: string): string[] {
   const t = v.trim();
-  if (t === "[]" || t === "") return [];
+  if (t === "" || t === "[]") return [];
+  if (t.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(t);
+      if (Array.isArray(parsed)) return parsed as string[];
+    } catch {
+      // fall through to legacy comma-split
+    }
+  }
   return t.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 function parseScalar(v: string): string | null {

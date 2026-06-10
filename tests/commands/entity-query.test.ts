@@ -31,6 +31,13 @@ describe("entityQueryCmd", () => {
     }));
 
     // seed entity index with two entities
+    mkdirSync(join(repo, "memory/entities/edge-memvc"), { recursive: true });
+    mkdirSync(join(repo, "memory/entities/_global"), { recursive: true });
+    // write the spool-writer entity md file so matchedEntities can read its body
+    writeFileSync(
+      join(repo, "memory/entities/edge-memvc/spool-writer.md"),
+      "---\nid: entity/edge-memvc/spool-writer\nkind: symbol\n---\n\n# SpoolWriter\n\nWrites spool files.\n",
+    );
     writeFileSync(join(repo, ".vibebook/index.entity.json"), JSON.stringify({
       version: 1, entries: {
         "entity/edge-memvc/spool-writer": {
@@ -186,6 +193,51 @@ describe("entityQueryCmd", () => {
     await entityQueryCmd({ cwd: "/work/edge-memvc" });
     const payload = JSON.parse(stdout.join(""));
     expect(payload.referencingMemories).toBeUndefined();
+  });
+
+  it("without --entity, matchedEntities is absent", async () => {
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    await entityQueryCmd({ cwd: "/work/edge-memvc" });
+    const payload = JSON.parse(stdout.join(""));
+    expect(payload.matchedEntities).toBeUndefined();
+  });
+
+  it("--entity returns matchedEntities with entry + body when md exists (title match)", async () => {
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    await entityQueryCmd({ cwd: "/work/edge-memvc", entity: "SpoolWriter" });
+    const payload = JSON.parse(stdout.join(""));
+    expect(Array.isArray(payload.matchedEntities)).toBe(true);
+    const match = payload.matchedEntities.find((x: any) => x.entry.id === "entity/edge-memvc/spool-writer");
+    expect(match).toBeDefined();
+    expect(match.entry.title).toBe("SpoolWriter");
+    expect(typeof match.body).toBe("string");
+    expect(match.body).toContain("SpoolWriter");
+    expect(match.body).toContain("Writes spool files.");
+  });
+
+  it("--entity returns matchedEntities via alias match (case-insensitive)", async () => {
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    // "writer" is an alias of spool-writer
+    await entityQueryCmd({ cwd: "/work/edge-memvc", entity: "writer" });
+    const payload = JSON.parse(stdout.join(""));
+    const ids = payload.matchedEntities.map((x: any) => x.entry.id);
+    expect(ids).toContain("entity/edge-memvc/spool-writer");
+  });
+
+  it("--entity returns empty matchedEntities when no entity page matches", async () => {
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    await entityQueryCmd({ cwd: "/work/edge-memvc", entity: "nonexistent-thing" });
+    const payload = JSON.parse(stdout.join(""));
+    expect(Array.isArray(payload.matchedEntities)).toBe(true);
+    expect(payload.matchedEntities).toHaveLength(0);
+  });
+
+  it("--entity still returns referencingMemories alongside matchedEntities", async () => {
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    await entityQueryCmd({ cwd: "/work/edge-memvc", entity: "SpoolWriter" });
+    const payload = JSON.parse(stdout.join(""));
+    expect(Array.isArray(payload.referencingMemories)).toBe(true);
+    expect(Array.isArray(payload.matchedEntities)).toBe(true);
   });
 
   it("referencingMemories items have expected fields", async () => {

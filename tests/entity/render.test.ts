@@ -34,13 +34,13 @@ describe("renderEntityMarkdown", () => {
     expect(md.trimEnd().endsWith("The base interface for all source adapters.")).toBe(true);
   });
 
-  it("renders inline arrays with values", () => {
+  it("renders inline arrays with values as JSON", () => {
     const md = renderEntityMarkdown(page(), "body");
-    expect(md).toContain("aliases: [source adapter, adapter]");
-    expect(md).toContain("sourceMemoryIds: [procedural/edge-memvc/add-source-adapter]");
-    expect(md).toContain("sourceSessions: [abc12345]");
-    expect(md).toContain("sourceFiles: [src/sources/base.ts]");
-    expect(md).toContain("relatedEntities: [entity/edge-memvc/tool]");
+    expect(md).toContain(`aliases: ["source adapter","adapter"]`);
+    expect(md).toContain(`sourceMemoryIds: ["procedural/edge-memvc/add-source-adapter"]`);
+    expect(md).toContain(`sourceSessions: ["abc12345"]`);
+    expect(md).toContain(`sourceFiles: ["src/sources/base.ts"]`);
+    expect(md).toContain(`relatedEntities: ["entity/edge-memvc/tool"]`);
   });
 
   it("emits empty arrays as []", () => {
