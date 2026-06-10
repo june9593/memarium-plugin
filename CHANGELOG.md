@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.3.0 — 2026-06-10
+
+**Typed memory layer — a new session starts already knowing the project.**
+vibebook now distills durable, typed memory from your sessions and loads it
+at the start of work, so an agent opening a fresh session in a project begins
+familiar with it (architecture, setup, gotchas, rules) instead of re-learning
+the codebase every task.
+
+### New
+
+- **Six memory types** written as markdown under `memory/<type>/<scope>/<slug>.md`:
+  `core` (never-forget rules), `semantic` (project facts/architecture),
+  `procedural` (how-to + gotchas), `episodic` (lightweight chronicle pointers),
+  `working`, `artifact`. Markdown is the source of truth; a committed
+  `.vibebook/index.memory.json` mirrors it for retrieval.
+- **Three CLI subcommands**: `memory-write` (render md + update index +
+  supersede), `memory-query` (resolve cwd→project, score, emit layered context
+  + refresh the per-project primer), `memory-index` (rebuild the index from
+  markdown — recovery path).
+- **`/vibebook-context` skill** — run at the start of work to load the
+  project's typed memory (Core / Procedures / Project facts / Episodes /
+  Conflicts) plus a compact per-project primer.
+- **Per-project primer** (`memory/_primer/<project>.md`) — the carrier of
+  "don't forget the project", refreshed on every query.
+- **JS retrieval scorer** — BM25-lite term overlap over title/summary/entities
+  plus scope, file/commit overlap, recency, importance, and prior-use signals,
+  with a `whyRecalled` explanation per hit. No SQLite, no native deps.
+- **Digest distill step (P7.5)** — after publishing chronicles/topics,
+  `/vibebook` distills durable typed memory for the project.
+
+### Changed
+
+- **Decoupled from memex.** vibebook no longer hands off to memex; atomic
+  insights are captured as `procedural`/`semantic` typed memory in P7.5.
+- **Robust plugin-binary discovery** — skills now locate the bundled binary
+  across any marketplace dir (`cache/*/vibebook/*`), so installs from the
+  `vibebook-plugin` marketplace resolve correctly.
+
+> Cross-device aggregation of `memory/` (union by id, latest wins) ships in
+> the vibebook npm CLI 0.8.6 (`merge-books` + `sync` staging).
+
 ## 0.2.0 — 2026-05-23
 
 **Full sync of the spool extractor with vibebook (npm) 0.7.1.** Before
