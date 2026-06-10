@@ -408,7 +408,7 @@ describe("entityQueryCmd", () => {
           createdAt: "2026-01-01",
           updatedAt: "2026-01-01",
           validFrom: null,
-          validTo: "2026-01-01",  // in the past → expired
+          validTo: "2000-01-01",  // unconditionally in the past → always expired (clock-independent)
           sourceSessions: [],
           sourceCommits: [],
           sourceFiles: [],
