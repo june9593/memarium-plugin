@@ -25,7 +25,8 @@ export function renderPrimer(
   entries: MemoryEntry[],
   opts: { maxPerSection?: number } = {},
 ): string {
-  const max = opts.maxPerSection ?? MAX_PER_SECTION;
+  const raw = opts.maxPerSection ?? MAX_PER_SECTION;
+  const max = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : MAX_PER_SECTION;
   const head = `# Project memory: ${project}\n\n> Auto-generated primer. The agent should treat this as already-known project context.\n`;
   const parts = [
     head,

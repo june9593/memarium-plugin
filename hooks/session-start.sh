@@ -9,7 +9,8 @@
 # Strictly read-only: it only calls `memory-primer` (which never writes) and
 # prints to stdout, which Claude Code injects as session context. Never blocks
 # the session — exits 0 unconditionally, silent when there's no project memory.
-VBP=$(ls -td ~/.claude/plugins/cache/*/vibebook/*/bin/vibebook-plugin.js 2>/dev/null | head -1)
+VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/vibebook-plugin.js}"
+[ -x "$VBP" ] || VBP=$(ls -td ~/.claude/plugins/cache/*/vibebook/*/bin/vibebook-plugin.js 2>/dev/null | head -1)
 if [ -x "$VBP" ]; then
   PRIMER=$("$VBP" memory-primer --cwd "$(pwd)" 2>/dev/null || true)
   if [ -n "$PRIMER" ]; then

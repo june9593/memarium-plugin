@@ -51,8 +51,8 @@ export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
     const memIdx = loadMemoryIndex(cfg.repoPath);
     const referencingMemories: ReferencingMemory[] = Object.values(memIdx.entries)
       .filter((m: MemoryEntry) => {
-        // Check m.entities[] (case-insensitive)
-        const inEntities = m.entities.some((e) => e.toLowerCase() === entityName);
+        // Check m.entities[] (case-insensitive) — defensive: treat missing/non-array as []
+        const inEntities = (Array.isArray(m.entities) ? m.entities : []).some((e) => e.toLowerCase() === entityName);
         // Check m.title contains entity name (case-insensitive)
         const inTitle = m.title.toLowerCase().includes(entityName);
         return inEntities || inTitle;

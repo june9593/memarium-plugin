@@ -198,4 +198,70 @@ describe("entityQueryCmd", () => {
     expect(mem.type).toBe("semantic");
     expect(Array.isArray(mem.sourceSessions)).toBe(true);
   });
+
+  it("--entity with missing/undefined entities field does not throw and only matches on title", async () => {
+    // Overwrite memory index with an entry that has NO entities field (corrupted/older index)
+    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({
+      version: 1, entries: {
+        "semantic/edge-memvc/no-entities": {
+          id: "semantic/edge-memvc/no-entities",
+          type: "semantic",
+          scope: "project:edge-memvc",
+          project: "edge-memvc",
+          title: "entry without entities field",
+          summary: "older entry",
+          path: "memory/semantic/edge-memvc/no-entities.md",
+          status: "active",
+          confidence: 0.9,
+          importance: 3,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+          validFrom: null,
+          validTo: null,
+          sourceSessions: [],
+          sourceCommits: [],
+          sourceFiles: [],
+          supersedes: null,
+          // entities field intentionally absent (simulates corrupted/older index)
+          originDevice: null,
+          accessCount: 0,
+          lastAccess: null,
+        },
+        "semantic/edge-memvc/title-match": {
+          id: "semantic/edge-memvc/title-match",
+          type: "semantic",
+          scope: "project:edge-memvc",
+          project: "edge-memvc",
+          title: "spoolwriter design note",
+          summary: "matches via title only",
+          path: "memory/semantic/edge-memvc/title-match.md",
+          status: "active",
+          confidence: 0.9,
+          importance: 3,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+          validFrom: null,
+          validTo: null,
+          sourceSessions: [],
+          sourceCommits: [],
+          sourceFiles: [],
+          supersedes: null,
+          // entities also absent
+          originDevice: null,
+          accessCount: 0,
+          lastAccess: null,
+        },
+      },
+    }));
+    vi.resetModules();
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    // must not throw even though entities field is missing
+    await expect(entityQueryCmd({ cwd: "/work/edge-memvc", entity: "spoolwriter" })).resolves.not.toThrow();
+    const payload = JSON.parse(stdout.join(""));
+    const ids = payload.referencingMemories.map((x: any) => x.id);
+    // no-entities entry has no title match → not in results
+    expect(ids).not.toContain("semantic/edge-memvc/no-entities");
+    // title-match entry matches via title → in results
+    expect(ids).toContain("semantic/edge-memvc/title-match");
+  });
 });

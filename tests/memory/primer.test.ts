@@ -50,12 +50,15 @@ describe("renderPrimer", () => {
     expect(bulletCount).toBe(5);
   });
 
-  it("defaults to MAX_PER_SECTION (12) when no cap passed", () => {
+  it("clamps negative maxPerSection to MAX_PER_SECTION (does not return all-but-last)", () => {
     const many = Array.from({ length: 20 }, (_, i) =>
       e({ id: `semantic/p/${i}`, type: "semantic", title: `fact ${i}`, summary: "s", importance: i }),
     );
-    const md = renderPrimer("p", many);
+    const md = renderPrimer("p", many, { maxPerSection: -1 });
     const bulletCount = (md.match(/^- \*\*/gm) ?? []).length;
+    // -1 should fall back to MAX_PER_SECTION (12), NOT slice(0,-1) = 19
+    expect(bulletCount).toBeLessThanOrEqual(12);
     expect(bulletCount).toBe(12);
   });
 });
+
