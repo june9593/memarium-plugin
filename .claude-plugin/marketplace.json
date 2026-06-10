@@ -9,7 +9,7 @@
     {
       "name": "vibebook",
       "description": "Run /vibebook to digest your sessions into chronicle + topic and distill durable typed memory. Run /vibebook-context at the start of work so a new session begins already familiar with the project (architecture, setup, gotchas, rules). Run /vibebook-recall to dig into past chronicles.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "source": "./",
       "category": "productivity"
     }

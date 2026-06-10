@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0 — 2026-06-10
+
+### Codex sessions (third source)
+
+The plugin's standalone scan now also extracts **OpenAI Codex** sessions
+(Codex CLI + Codex Desktop) from `~/.codex/`, alongside Claude Code and VS
+Code Copilot Chat. `/vibebook` digests them and `/vibebook-context` /
+typed-memory distillation now cover Codex work too. Mirrors the npm CLI's
+`CodexAdapter` (npm 0.9.0) verbatim via `src/_shared/sources/codex.ts`
+(`@sync-from` canonical).
+
+Highlights of the adapter (validated on 73 real local sessions):
+- Reads `~/.codex/sessions/**/rollout-*.jsonl` + `archived_sessions/`,
+  titles from `session_index.jsonl`.
+- Drops `event_msg` + encrypted `reasoning`; maps `function_call` /
+  `function_call_output` to tool_use / tool_result.
+- Skips `codex_exec` + `~/Documents/Codex/` scratch sessions; strips
+  AGENTS.md / command-wrapper noise; rejects command-noise thread names.
+- UUIDv7 shortId fix (timestamp-prefixed IDs collided same-second) — 54
+  real sessions → 54 distinct files.
+
 ## 0.3.0 — 2026-06-10
 
 **Typed memory layer — a new session starts already knowing the project.**
