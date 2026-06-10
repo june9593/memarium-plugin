@@ -36,4 +36,26 @@ describe("renderPrimer", () => {
     ]);
     expect(md).toContain("rule");
   });
+
+  it("caps each section at maxPerSection top entries (by importance) for token control", () => {
+    const many = Array.from({ length: 20 }, (_, i) =>
+      e({ id: `semantic/p/${i}`, type: "semantic", title: `fact ${String(i).padStart(2, "0")}`, summary: "s", importance: i }),
+    );
+    const md = renderPrimer("p", many, { maxPerSection: 5 });
+    // top-5 by importance = facts 19..15; fact 14 and below excluded
+    expect(md).toContain("fact 19");
+    expect(md).toContain("fact 15");
+    expect(md).not.toContain("fact 14");
+    const bulletCount = (md.match(/^- \*\*/gm) ?? []).length;
+    expect(bulletCount).toBe(5);
+  });
+
+  it("defaults to MAX_PER_SECTION (12) when no cap passed", () => {
+    const many = Array.from({ length: 20 }, (_, i) =>
+      e({ id: `semantic/p/${i}`, type: "semantic", title: `fact ${i}`, summary: "s", importance: i }),
+    );
+    const md = renderPrimer("p", many);
+    const bulletCount = (md.match(/^- \*\*/gm) ?? []).length;
+    expect(bulletCount).toBe(12);
+  });
 });

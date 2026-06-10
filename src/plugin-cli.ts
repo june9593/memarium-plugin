@@ -96,6 +96,15 @@ export async function run(argv: string[]) {
     });
 
   program
+    .command("memory-primer")
+    .description("Read-only: print the cwd project's primer markdown (used by the SessionStart hook). Never writes, always exits 0.")
+    .option("--cwd <path>", "treat this dir as the user's cwd (default: process.cwd())")
+    .action(async (opts: { cwd?: string }) => {
+      const { memoryPrimerCmd } = await import("./commands/memory-primer.js");
+      await memoryPrimerCmd({ cwd: opts.cwd });
+    });
+
+  program
     .command("recall")
     .description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.")
     .option("--cwd <path>", "infer project from this cwd")
