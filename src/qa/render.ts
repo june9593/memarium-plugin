@@ -10,7 +10,7 @@ export function renderQaMarkdown(entry: QaEntry, body: string): string {
     "---",
     `id: ${entry.id}`,
     `scope: ${entry.scope}`,
-    `project: ${scalar(entry.project)}`,
+    `project: ${entry.project === null ? "null" : JSON.stringify(entry.project)}`,
     `question: ${JSON.stringify(entry.question)}`,
     `answerSummary: ${JSON.stringify(entry.answerSummary)}`,
     `kind: ${entry.kind}`,

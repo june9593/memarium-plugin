@@ -219,6 +219,26 @@ describe("qaWriteCmd", () => {
     expect(idx.entries[ids[0]].project).toBe("p");
   });
 
+  it("canonicalizes entry.scope when scope has space: 'project: p' → stored scope 'project:p'", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project: p", project: " p",
+      question: "What is the build command?", answerSummary: "npm run build", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    const r = await qaWriteCmd({ inputPath });
+    expect(r.written).toBe(1);
+    // File lives under memory/qa/p/
+    expect(r.paths[0].startsWith("memory/qa/p/")).toBe(true);
+    // Load index and verify the stored entry is canonical
+    const idx = loadQaIndex(repo);
+    const ids = Object.keys(idx.entries);
+    expect(ids).toHaveLength(1);
+    const stored = idx.entries[ids[0]];
+    expect(stored.scope).toBe("project:p");    // canonical — no space
+    expect(stored.project).toBe("p");
+  });
+
+
   it("rejects internal-space project slug: 'project:a b' (space not trimmed away)", async () => {
     const inputPath = writeInput([{ entry: {
       scope: "project:a b", project: "a b",

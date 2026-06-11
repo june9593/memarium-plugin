@@ -11329,15 +11329,12 @@ var init_index_store4 = __esm({
 function arr3(xs) {
   return JSON.stringify(xs);
 }
-function scalar3(v) {
-  return v === null ? "null" : v;
-}
 function renderQaMarkdown(entry, body) {
   const fm = [
     "---",
     `id: ${entry.id}`,
     `scope: ${entry.scope}`,
-    `project: ${scalar3(entry.project)}`,
+    `project: ${entry.project === null ? "null" : JSON.stringify(entry.project)}`,
     `question: ${JSON.stringify(entry.question)}`,
     `answerSummary: ${JSON.stringify(entry.answerSummary)}`,
     `kind: ${entry.kind}`,
@@ -11449,9 +11446,15 @@ async function qaWriteCmd(opts) {
   for (const { entry, body } of items) {
     entry.question = normalizeSingleLine(entry.question);
     entry.answerSummary = normalizeSingleLine(entry.answerSummary);
-    entry.project = entry.scope.startsWith("project:") ? entry.scope.slice("project:".length).trim() : null;
-    if (entry.project !== null && !isSafeProjectSlug(entry.project)) {
-      throw new Error(`qa-write: invalid project slug in scope ${JSON.stringify(entry.scope)}`);
+    if (entry.scope.startsWith("project:")) {
+      const slug = entry.scope.slice("project:".length).trim();
+      if (!isSafeProjectSlug(slug)) {
+        throw new Error(`qa-write: invalid project slug in scope ${JSON.stringify(entry.scope)}`);
+      }
+      entry.project = slug;
+      entry.scope = `project:${slug}`;
+    } else {
+      entry.project = null;
     }
     entry.id = qaId(entry.scope, entry.project, entry.question);
     entry.path = qaPath(entry);
@@ -11513,9 +11516,17 @@ function parseArr3(v) {
   }
   return t2.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
 }
-function parseScalar3(v) {
+function parseProject(v) {
   const t2 = v.trim();
-  return t2 === "null" ? null : t2;
+  if (t2 === "null") return null;
+  if (t2.startsWith('"')) {
+    try {
+      const p2 = JSON.parse(t2);
+      if (typeof p2 === "string") return p2;
+    } catch {
+    }
+  }
+  return t2;
 }
 function parseQuoted(v) {
   const t2 = v.trim();
@@ -11541,7 +11552,7 @@ function parseQaMarkdown(md) {
   return {
     id: fm.id,
     scope: fm.scope ?? "",
-    project: parseScalar3(fm.project ?? "null"),
+    project: parseProject(fm.project ?? "null"),
     question: parseQuoted(fm.question ?? ""),
     answerSummary: parseQuoted(fm.answerSummary ?? ""),
     kind: fm.kind,

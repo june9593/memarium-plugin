@@ -31,4 +31,19 @@ describe("parseQaMarkdown", () => {
     expect(parsed).not.toBeNull();
     expect(parsed!.question).toBe("How do I configure X: the sequel?");
   });
+  it('round-trips project named "null" (string) — parseProject returns string, not null', () => {
+    const e = entry({ scope: "project:null", project: "null",
+      id: "qa/null/q-deadbeef", path: "memory/qa/null/q-deadbeef.md" });
+    const md = renderQaMarkdown(e, "body");
+    const parsed = parseQaMarkdown(md);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.project).toBe("null");        // string "null", not null
+  });
+  it("round-trips genuinely-null project — parses bare null back to null", () => {
+    const e = entry(); // default: project: null, scope: "global"
+    const md = renderQaMarkdown(e, "body");
+    const parsed = parseQaMarkdown(md);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.project).toBeNull();
+  });
 });

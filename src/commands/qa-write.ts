@@ -44,13 +44,19 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
   for (const { entry, body } of items) {
     entry.question = normalizeSingleLine(entry.question);
     entry.answerSummary = normalizeSingleLine(entry.answerSummary);
-    // scope is authoritative for project membership: derive project from it so
-    // id/path (project-based) and scorer eligibility (scope-based) can't disagree.
-    entry.project = entry.scope.startsWith("project:")
-      ? entry.scope.slice("project:".length).trim()
-      : null;
-    if (entry.project !== null && !isSafeProjectSlug(entry.project)) {
-      throw new Error(`qa-write: invalid project slug in scope ${JSON.stringify(entry.scope)}`);
+    // scope is authoritative for project membership. Derive a trimmed, validated
+    // project slug, then canonicalize entry.scope so the stored scope matches
+    // exactly what the scorer compares against (`project:<slug>`). Otherwise an
+    // entry written under memory/qa/<slug>/ would be unretrievable.
+    if (entry.scope.startsWith("project:")) {
+      const slug = entry.scope.slice("project:".length).trim();
+      if (!isSafeProjectSlug(slug)) {
+        throw new Error(`qa-write: invalid project slug in scope ${JSON.stringify(entry.scope)}`);
+      }
+      entry.project = slug;
+      entry.scope = `project:${slug}`;   // canonical (trimmed)
+    } else {
+      entry.project = null;              // global / user (or other) → no project dir
     }
     // CLI is authoritative for identity: always derive id/path from the
     // canonical question + scope/project, ignoring any agent-provided id/path.

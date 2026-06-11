@@ -13,9 +13,13 @@ function parseArr(v: string): string[] {
   }
   return t.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
 }
-function parseScalar(v: string): string | null {
+function parseProject(v: string): string | null {
   const t = v.trim();
-  return t === "null" ? null : t;
+  if (t === "null") return null;
+  if (t.startsWith('"')) {
+    try { const p = JSON.parse(t); if (typeof p === "string") return p; } catch { /* fall through */ }
+  }
+  return t; // legacy unquoted non-null value
 }
 function parseQuoted(v: string): string {
   const t = v.trim();
@@ -40,7 +44,7 @@ export function parseQaMarkdown(md: string): QaEntry | null {
   return {
     id: fm.id,
     scope: fm.scope ?? "",
-    project: parseScalar(fm.project ?? "null"),
+    project: parseProject(fm.project ?? "null"),
     question: parseQuoted(fm.question ?? ""),
     answerSummary: parseQuoted(fm.answerSummary ?? ""),
     kind: fm.kind as QaKind,
