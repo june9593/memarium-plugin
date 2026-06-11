@@ -20,7 +20,7 @@ describe("lintMemory", () => {
 
 function mem(over: Partial<MemoryEntry>): MemoryEntry {
   return { id: over.id ?? "semantic/p/x", type: over.type ?? "semantic",
-    scope: over.scope ?? "project:p", project: over.project ?? "p",
+    scope: over.scope ?? "project:p", project: over.project !== undefined ? over.project : "p",
     title: over.title ?? "t", summary: over.summary ?? "s", path: "memory/x.md",
     status: over.status ?? "active", confidence: 0.8, importance: 1,
     createdAt: "2026-01-01", updatedAt: over.updatedAt ?? "2026-06-11",
@@ -90,7 +90,7 @@ describe("lintMemory — duplicate-like", () => {
 import type { EntityPage } from "../../src/entity/types.js";
 function ent(over: Partial<EntityPage>): EntityPage {
   return { id: over.id ?? "entity/p/X", kind: "concept", scope: over.scope ?? "project:p",
-    project: over.project ?? "p", title: over.title ?? "X", aliases: [],
+    project: over.project !== undefined ? over.project : "p", title: over.title ?? "X", aliases: [],
     sourceMemoryIds: over.sourceMemoryIds ?? [], sourceSessions: [], sourceFiles: [],
     relatedEntities: over.relatedEntities ?? [], path: "memory/entities/p/X.md",
     createdAt: "2026-06-11", updatedAt: "2026-06-11" };
@@ -111,7 +111,7 @@ describe("lintMemory — entity checks", () => {
 
 import type { QaEntry } from "../../src/qa/types.js";
 function qa(over: Partial<QaEntry>): QaEntry {
-  return { id: over.id ?? "qa/p/x", scope: over.scope ?? "project:p", project: over.project ?? "p",
+  return { id: over.id ?? "qa/p/x", scope: over.scope ?? "project:p", project: over.project !== undefined ? over.project : "p",
     question: "q", answerSummary: "a", kind: "operational", tags: [], sources: [],
     sourceMemoryIds: over.sourceMemoryIds ?? [], sourceSessions: [], relatedEntities: over.relatedEntities ?? [],
     path: "memory/qa/p/x.md", createdAt: "2026-06-11", updatedAt: "2026-06-11" };
@@ -135,6 +135,11 @@ describe("lintMemory — qa checks", () => {
   it("global qa with project=null is NOT a scope-leak", () => {
     const r = lintMemory(emptyMemoryIndex(), emptyEntityIndex(), qidx(qa({ id: "qa/_g/x", scope: "global", project: null })), { ...opts, project: null });
     expect(r.issues.map((f) => f.check)).not.toContain("qa-scope-leak");
+  });
+  it("qa-scope-leak: global/user scope with a non-null project IS flagged", () => {
+    const leak = qa({ id: "qa/g/x", scope: "global", project: "p" }); // global must have project null
+    const r = lintMemory(emptyMemoryIndex(), emptyEntityIndex(), qidx(leak), { ...opts, project: null });
+    expect(r.issues.map((f) => f.check)).toContain("qa-scope-leak");
   });
 });
 

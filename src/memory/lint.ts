@@ -131,7 +131,7 @@ export function lintMemory(
       }
     }
     const expectProject = e.scope.startsWith("project:") ? e.scope.slice("project:".length) : null;
-    if (expectProject !== null && expectProject !== e.project) {
+    if (expectProject !== e.project) {
       issues.push({ check: "qa-scope-leak", severity: "error", layer: "qa", id: e.id,
         detail: `scope=${e.scope} implies project=${JSON.stringify(expectProject)} but stored project=${JSON.stringify(e.project)}` });
     }
