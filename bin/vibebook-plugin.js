@@ -11739,6 +11739,400 @@ var init_qa_query = __esm({
   }
 });
 
+// src/memory/lint.ts
+function entrySnapshot(e) {
+  let s;
+  try {
+    s = JSON.stringify(e);
+  } catch {
+    s = String(e);
+  }
+  if (typeof s !== "string") s = String(s);
+  return s.length > 120 ? s.slice(0, 120) + "\u2026" : s;
+}
+function safeValues(rec) {
+  if (!rec || typeof rec !== "object" || Array.isArray(rec)) return [];
+  return Object.values(rec).filter(
+    (v) => v !== null && typeof v === "object" && !Array.isArray(v)
+  );
+}
+function validEntryExists(rec, id) {
+  if (!rec || typeof rec !== "object" || Array.isArray(rec)) return false;
+  const v = rec[id];
+  return v !== null && typeof v === "object" && !Array.isArray(v) && v.id === id;
+}
+function inScope(scope, cwdProject) {
+  if (typeof scope !== "string") return cwdProject === null;
+  if (cwdProject === null) return true;
+  if (scope === "global" || scope === "user") return true;
+  const scopeProject = scope.startsWith("project:") ? scope.slice("project:".length) : null;
+  return scopeProject === cwdProject;
+}
+function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
+  const issues = [];
+  const suggestions = [];
+  const memEntries = safeValues(memoryIdx.entries).filter((e) => inScope(e.scope, opts.project));
+  for (const e of memEntries) {
+    try {
+      if (e.status === "active" && e.validTo !== null) {
+        const ts = Date.parse(e.validTo);
+        let vDate = null;
+        if (isFinite(ts)) {
+          try {
+            vDate = new Date(ts).toISOString().slice(0, 10);
+          } catch {
+            vDate = null;
+          }
+        }
+        if (vDate === null) {
+          issues.push({
+            check: "malformed-date",
+            severity: "warning",
+            layer: "memory",
+            id: e.id,
+            detail: `unparseable validTo=${JSON.stringify(e.validTo)}`
+          });
+        } else if (vDate <= opts.now) {
+          issues.push({
+            check: "expired",
+            severity: "warning",
+            layer: "memory",
+            id: e.id,
+            detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})`
+          });
+        }
+      }
+      if (typeof e.supersedes === "string" && !validEntryExists(memoryIdx.entries, e.supersedes)) {
+        issues.push({
+          check: "dangling-supersedes",
+          severity: "error",
+          layer: "memory",
+          id: e.id,
+          detail: `supersedes a memory not in the index`,
+          refs: [e.supersedes]
+        });
+      }
+      if (typeof e.supersedes === "string" && validEntryExists(memoryIdx.entries, e.supersedes)) {
+        const target = memoryIdx.entries[e.supersedes];
+        if (target.status === "active") {
+          issues.push({
+            check: "superseded-conflict",
+            severity: "error",
+            layer: "memory",
+            id: e.id,
+            detail: `supersedes ${target.id} but that target is still status=active`,
+            refs: [target.id]
+          });
+        }
+      }
+      const exemptProvenance = e.type === "core" || e.status === "pinned";
+      if (!exemptProvenance && e.sourceSessions.length === 0 && e.sourceCommits.length === 0 && e.sourceFiles.length === 0) {
+        issues.push({
+          check: "missing-provenance",
+          severity: "warning",
+          layer: "memory",
+          id: e.id,
+          detail: `no sourceSessions/sourceCommits/sourceFiles \u2014 origin not traceable`
+        });
+      }
+      if (e.status === "active" && (e.type === "episodic" || e.type === "working")) {
+        const age = daysBetween(opts.now, e.updatedAt);
+        if (!isFinite(age)) {
+          issues.push({
+            check: "malformed-date",
+            severity: "warning",
+            layer: "memory",
+            id: e.id,
+            detail: `unparseable updatedAt=${JSON.stringify(e.updatedAt)}`
+          });
+        } else if (age > opts.staleDays) {
+          issues.push({
+            check: "stale-candidate",
+            severity: "info",
+            layer: "memory",
+            id: e.id,
+            detail: `${e.type} not updated in >${opts.staleDays}d (updatedAt=${e.updatedAt})`
+          });
+        }
+      }
+    } catch {
+      const eid = e && typeof e.id === "string" ? e.id : "<unknown>";
+      issues.push({
+        check: "malformed-entry",
+        severity: "error",
+        layer: "memory",
+        id: eid,
+        detail: `entry has unexpected field types and was skipped (snapshot: ${entrySnapshot(e)})`
+      });
+    }
+  }
+  const dupThreshold = opts.dupThreshold ?? 0.6;
+  const active = memEntries.filter((e) => e.status === "active");
+  const buckets = /* @__PURE__ */ new Map();
+  for (const e of active) {
+    const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
+    const arr4 = buckets.get(key) ?? [];
+    arr4.push({ e, tokens: tokenize4(`${e.title} ${e.summary}`) });
+    buckets.set(key, arr4);
+  }
+  for (const group of buckets.values()) {
+    for (let i2 = 0; i2 < group.length; i2++) {
+      for (let j2 = i2 + 1; j2 < group.length; j2++) {
+        try {
+          const sim = jaccard(group[i2].tokens, group[j2].tokens);
+          if (sim >= dupThreshold) {
+            const pair = [group[i2].e.id, group[j2].e.id].slice().sort();
+            issues.push({
+              check: "duplicate-like",
+              severity: "info",
+              layer: "memory",
+              id: pair[0],
+              detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`,
+              refs: pair
+            });
+          }
+        } catch {
+        }
+      }
+    }
+  }
+  const entEntries = safeValues(entityIdx.entries).filter((e) => inScope(e.scope, opts.project));
+  for (const e of entEntries) {
+    try {
+      if (Array.isArray(e.sourceMemoryIds)) {
+        for (const mid of e.sourceMemoryIds) {
+          if (typeof mid !== "string") continue;
+          if (!validEntryExists(memoryIdx.entries, mid)) {
+            issues.push({
+              check: "entity-dangling-sourceMemoryId",
+              severity: "warning",
+              layer: "entity",
+              id: e.id,
+              detail: `sourceMemoryId not in memory index`,
+              refs: [mid]
+            });
+          }
+        }
+      }
+      if (Array.isArray(e.relatedEntities)) {
+        for (const rid of e.relatedEntities) {
+          if (typeof rid !== "string") continue;
+          if (!validEntryExists(entityIdx.entries, rid)) {
+            issues.push({
+              check: "entity-unknown-relatedEntity",
+              severity: "warning",
+              layer: "entity",
+              id: e.id,
+              detail: `relatedEntity not in entity index`,
+              refs: [rid]
+            });
+          }
+        }
+      }
+    } catch {
+      const eid = e && typeof e.id === "string" ? e.id : "<unknown>";
+      issues.push({
+        check: "malformed-entry",
+        severity: "error",
+        layer: "entity",
+        id: eid,
+        detail: `entry has unexpected field types and was skipped (snapshot: ${entrySnapshot(e)})`
+      });
+    }
+  }
+  const qaEntries = safeValues(qaIdx.entries).filter((e) => inScope(e.scope, opts.project));
+  for (const e of qaEntries) {
+    try {
+      if (Array.isArray(e.sourceMemoryIds)) {
+        for (const mid of e.sourceMemoryIds) {
+          if (typeof mid !== "string") continue;
+          if (!validEntryExists(memoryIdx.entries, mid)) {
+            issues.push({
+              check: "qa-dangling-sourceMemoryId",
+              severity: "warning",
+              layer: "qa",
+              id: e.id,
+              detail: `sourceMemoryId not in memory index`,
+              refs: [mid]
+            });
+          }
+        }
+      }
+      if (Array.isArray(e.relatedEntities)) {
+        for (const rid of e.relatedEntities) {
+          if (typeof rid !== "string") continue;
+          if (!validEntryExists(entityIdx.entries, rid)) {
+            issues.push({
+              check: "qa-unknown-relatedEntity",
+              severity: "warning",
+              layer: "qa",
+              id: e.id,
+              detail: `relatedEntity not in entity index`,
+              refs: [rid]
+            });
+          }
+        }
+      }
+      const expectProject = e.scope.startsWith("project:") ? e.scope.slice("project:".length) : null;
+      if (expectProject !== e.project) {
+        issues.push({
+          check: "qa-scope-leak",
+          severity: "error",
+          layer: "qa",
+          id: e.id,
+          detail: `scope=${e.scope} implies project=${JSON.stringify(expectProject)} but stored project=${JSON.stringify(e.project)}`
+        });
+      }
+    } catch {
+      const eid = e && typeof e.id === "string" ? e.id : "<unknown>";
+      issues.push({
+        check: "malformed-entry",
+        severity: "error",
+        layer: "qa",
+        id: eid,
+        detail: `entry has unexpected field types and was skipped (snapshot: ${entrySnapshot(e)})`
+      });
+    }
+  }
+  const clusterMin = opts.clusterMin ?? 2;
+  const epis = active.filter((e) => e.type === "episodic");
+  const byEntity = /* @__PURE__ */ new Map();
+  for (const e of epis) {
+    if (!Array.isArray(e.entities)) continue;
+    for (const tok of e.entities) {
+      if (typeof tok !== "string") continue;
+      const key = `${e.project ?? "_global"}::${tok.toLowerCase()}`;
+      const arr4 = byEntity.get(key) ?? [];
+      arr4.push(e);
+      byEntity.set(key, arr4);
+    }
+  }
+  const seenClusters = /* @__PURE__ */ new Set();
+  for (const group of byEntity.values()) {
+    const ids = [...new Set(group.map((e) => e.id))].sort();
+    if (ids.length < clusterMin) continue;
+    const sig = ids.join("|");
+    if (seenClusters.has(sig)) continue;
+    seenClusters.add(sig);
+    suggestions.push({
+      check: "promotion-candidate",
+      severity: "info",
+      layer: "memory",
+      id: ids[0],
+      detail: `${ids.length} episodic entries share an entity \u2014 consider promoting a stable fact to semantic/procedural (agent decides)`,
+      refs: ids
+    });
+  }
+  return {
+    generatedAt: opts.generatedAt ?? opts.now,
+    counts: { issues: issues.length, suggestions: suggestions.length },
+    issues,
+    suggestions
+  };
+}
+var tokenize4, jaccard, daysBetween;
+var init_lint = __esm({
+  "src/memory/lint.ts"() {
+    "use strict";
+    tokenize4 = (s) => new Set(s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1));
+    jaccard = (a, b2) => {
+      if (a.size === 0 && b2.size === 0) return 0;
+      let inter = 0;
+      for (const t2 of a) if (b2.has(t2)) inter++;
+      return inter / (a.size + b2.size - inter);
+    };
+    daysBetween = (a, b2) => (Date.parse(a) - Date.parse(b2)) / 864e5;
+  }
+});
+
+// src/commands/memory-lint.ts
+var memory_lint_exports = {};
+__export(memory_lint_exports, {
+  memoryLintCmd: () => memoryLintCmd
+});
+import { existsSync as existsSync18, readFileSync as readFileSync17 } from "node:fs";
+import { join as join22 } from "node:path";
+function readIndexOnce(repoPath, rel, layer, empty) {
+  const p2 = join22(repoPath, rel);
+  if (!existsSync18(p2)) return { index: empty, finding: null };
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync17(p2, "utf8"));
+  } catch {
+    return { index: empty, finding: {
+      check: "corrupt-index",
+      severity: "error",
+      layer,
+      id: rel,
+      detail: "index file is not valid JSON \u2014 treated as empty; findings for this layer may be incomplete"
+    } };
+  }
+  const ok = parsed && typeof parsed === "object" && parsed.version === 1 && typeof parsed.entries === "object" && parsed.entries !== null && !Array.isArray(parsed.entries);
+  if (!ok) {
+    return { index: empty, finding: {
+      check: "corrupt-index",
+      severity: "error",
+      layer,
+      id: rel,
+      detail: "index file is not a valid v1 index (version/entries shape) \u2014 treated as empty; findings for this layer may be incomplete"
+    } };
+  }
+  return { index: parsed, finding: null };
+}
+function humanReport(r2) {
+  const lines = [];
+  lines.push(`# memory-lint \u2014 ${r2.counts.issues} issue(s), ${r2.counts.suggestions} suggestion(s)`);
+  const group = (title, fs) => {
+    if (fs.length === 0) return;
+    lines.push(`
+## ${title}`);
+    for (const f of fs) {
+      lines.push(`- [${f.severity}] ${f.layer}/${f.check} \u2014 ${f.id}: ${f.detail}` + (f.refs && f.refs.length ? ` (refs: ${f.refs.join(", ")})` : ""));
+    }
+  };
+  group("Issues", r2.issues);
+  group("Suggestions", r2.suggestions);
+  if (r2.counts.issues === 0 && r2.counts.suggestions === 0) lines.push("\n\u2713 clean");
+  return lines.join("\n") + "\n";
+}
+async function memoryLintCmd(opts) {
+  const cfg = readPluginConfig();
+  let project = null;
+  if (opts.cwd) {
+    try {
+      project = resolveProjectFromCwd(opts.cwd, cfg.repoPath);
+    } catch {
+      project = null;
+    }
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const staleDays = Number.isFinite(opts.staleDays) && opts.staleDays > 0 ? Math.floor(opts.staleDays) : 90;
+  const m = readIndexOnce(cfg.repoPath, MEMORY_INDEX_REL, "memory", emptyMemoryIndex());
+  const e = readIndexOnce(cfg.repoPath, ENTITY_INDEX_REL, "entity", emptyEntityIndex());
+  const q2 = readIndexOnce(cfg.repoPath, QA_INDEX_REL, "qa", emptyQaIndex());
+  const report = lintMemory(m.index, e.index, q2.index, { now, staleDays, project, generatedAt: now });
+  const corrupt = [m.finding, e.finding, q2.finding].filter((f) => f !== null);
+  if (corrupt.length) {
+    report.issues = [...corrupt, ...report.issues];
+    report.counts = { issues: report.issues.length, suggestions: report.suggestions.length };
+  }
+  process.stdout.write(opts.json ? JSON.stringify(report, null, 2) + "\n" : humanReport(report));
+}
+var init_memory_lint = __esm({
+  "src/commands/memory-lint.ts"() {
+    "use strict";
+    init_plugin_config();
+    init_project_resolve();
+    init_index_store2();
+    init_index_store3();
+    init_index_store4();
+    init_types();
+    init_types2();
+    init_types3();
+    init_lint();
+  }
+});
+
 // src/commands/recall.ts
 var recall_exports = {};
 __export(recall_exports, {
@@ -11746,9 +12140,9 @@ __export(recall_exports, {
   parseMemexIndex: () => parseMemexIndex,
   recallCmd: () => recallCmd
 });
-import { existsSync as existsSync18, readFileSync as readFileSync17 } from "node:fs";
+import { existsSync as existsSync19, readFileSync as readFileSync18 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { join as join22 } from "node:path";
+import { join as join23 } from "node:path";
 function buildRecallPayload(opts = {}) {
   const cfg = readPluginConfig();
   const bookIndex = loadBookIndexV2(cfg.repoPath);
@@ -11834,7 +12228,7 @@ function buildStage2(repoPath, bookIndex, projectFilter, topicSlug, queryMemex) 
         project,
         title: titleForArtifact(repoPath, c3.path, c3.title || c3.threadId),
         summary: summarizeFrontmatter(fm),
-        path: join22(repoPath, c3.path),
+        path: join23(repoPath, c3.path),
         slug: c3.threadId,
         frontmatter: fm,
         updatedAt: c3.updatedAt,
@@ -11883,9 +12277,9 @@ function projectFromPath(path) {
   return parts[1] || null;
 }
 function titleForArtifact(repoPath, repoRel, fallback) {
-  const abs = join22(repoPath, repoRel);
-  if (!existsSync18(abs)) return fallback;
-  const head = readFileSync17(abs, "utf8").slice(0, 1024);
+  const abs = join23(repoPath, repoRel);
+  if (!existsSync19(abs)) return fallback;
+  const head = readFileSync18(abs, "utf8").slice(0, 1024);
   const hMatch = head.match(/^#\s+(.+?)\s*$/m);
   if (hMatch) return hMatch[1].trim();
   const fmMatch = head.match(/^---[\s\S]*?\ntitle:\s*(.+?)\s*\n[\s\S]*?---/);
@@ -11893,9 +12287,9 @@ function titleForArtifact(repoPath, repoRel, fallback) {
   return fallback;
 }
 function summaryFor(repoPath, repoRel) {
-  const abs = join22(repoPath, repoRel);
-  if (!existsSync18(abs)) return "";
-  const body = readFileSync17(abs, "utf8");
+  const abs = join23(repoPath, repoRel);
+  if (!existsSync19(abs)) return "";
+  const body = readFileSync18(abs, "utf8");
   const stripped = body.replace(/^---[\s\S]*?---\s*\n/, "");
   const lines = stripped.split("\n");
   for (const raw of lines) {
@@ -11910,9 +12304,9 @@ function summaryFor(repoPath, repoRel) {
   return "";
 }
 function readChronicleFrontmatter(repoPath, repoRel) {
-  const abs = join22(repoPath, repoRel);
-  if (!existsSync18(abs)) return {};
-  const body = readFileSync17(abs, "utf8");
+  const abs = join23(repoPath, repoRel);
+  if (!existsSync19(abs)) return {};
+  const body = readFileSync18(abs, "utf8");
   const m = body.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return {};
   const lines = m[1].split("\n");
@@ -12074,8 +12468,8 @@ __export(site_exports, {
   serveSiteCmd: () => serveSiteCmd
 });
 import { spawn as spawn3 } from "node:child_process";
-import { existsSync as existsSync19, mkdirSync as mkdirSync13, cpSync, readFileSync as readFileSync18, writeFileSync as writeFileSync12, statSync, readdirSync as readdirSync5, rmSync } from "node:fs";
-import { join as join23, dirname as dirname10, resolve as resolve6 } from "node:path";
+import { existsSync as existsSync20, mkdirSync as mkdirSync13, cpSync, readFileSync as readFileSync19, writeFileSync as writeFileSync12, statSync, readdirSync as readdirSync5, rmSync } from "node:fs";
+import { join as join24, dirname as dirname10, resolve as resolve6 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir as homedir3 } from "node:os";
 function siteContext(opts) {
@@ -12089,7 +12483,7 @@ function siteContext(opts) {
     // dist/src/commands/
     resolve6(here, "..", "..", "..", "..", "site-template")
   ];
-  const templateDir = candidates.find((c3) => existsSync19(join23(c3, "package.json")));
+  const templateDir = candidates.find((c3) => existsSync20(join24(c3, "package.json")));
   if (!templateDir) {
     throw new Error(
       `vibebook site template not found. Tried:
@@ -12098,7 +12492,7 @@ If you installed vibebook from npm, try \`npm install -g vibebook@latest\`.`
     );
   }
   const sig = templateSignature(templateDir);
-  const cacheDir = join23(homedir3(), ".vibebook", "site-cache", sig);
+  const cacheDir = join24(homedir3(), ".vibebook", "site-cache", sig);
   return {
     templateDir,
     cacheDir,
@@ -12108,27 +12502,27 @@ If you installed vibebook from npm, try \`npm install -g vibebook@latest\`.`
   };
 }
 function templateSignature(templateDir) {
-  const pkg = JSON.parse(readFileSync18(join23(templateDir, "package.json"), "utf8"));
+  const pkg = JSON.parse(readFileSync19(join24(templateDir, "package.json"), "utf8"));
   const seed = JSON.stringify({ name: pkg.name, version: pkg.version, deps: pkg.dependencies });
   return Buffer.from(seed).toString("base64url").slice(0, 12);
 }
 function syncTemplateInto(templateDir, cacheDir) {
-  if (!existsSync19(cacheDir)) mkdirSync13(cacheDir, { recursive: true });
+  if (!existsSync20(cacheDir)) mkdirSync13(cacheDir, { recursive: true });
   const skip = /* @__PURE__ */ new Set(["node_modules", "dist", ".astro"]);
-  const cacheSrc = join23(cacheDir, "src");
-  if (existsSync19(cacheSrc)) rmSync(cacheSrc, { recursive: true, force: true });
+  const cacheSrc = join24(cacheDir, "src");
+  if (existsSync20(cacheSrc)) rmSync(cacheSrc, { recursive: true, force: true });
   for (const name of readdirSync5(templateDir)) {
     if (skip.has(name)) continue;
-    const src = join23(templateDir, name);
-    const dst = join23(cacheDir, name);
+    const src = join24(templateDir, name);
+    const dst = join24(cacheDir, name);
     cpSync(src, dst, { recursive: true });
   }
 }
 async function ensureNodeModules(cacheDir) {
-  const nm = join23(cacheDir, "node_modules");
-  if (existsSync19(nm)) {
-    const astroBin = join23(nm, ".bin", "astro");
-    if (existsSync19(astroBin)) return;
+  const nm = join24(cacheDir, "node_modules");
+  if (existsSync20(nm)) {
+    const astroBin = join24(nm, ".bin", "astro");
+    if (existsSync20(astroBin)) return;
   }
   console.log(source_default.cyan(`  installing site template dependencies (one-time, ~1-2 min)...`));
   await runCmd("npm", ["install", "--no-audit", "--no-fund", "--silent"], cacheDir);
@@ -12159,7 +12553,7 @@ async function serveSiteCmd(opts = {}) {
 `));
   await runCmd(
     "node",
-    [join23(ctx.cacheDir, "node_modules", "astro", "astro.js"), "dev"],
+    [join24(ctx.cacheDir, "node_modules", "astro", "astro.js"), "dev"],
     ctx.cacheDir,
     { VIBEBOOK_REPO_PATH: ctx.repoPath }
   );
@@ -12172,7 +12566,7 @@ async function buildSiteCmd(opts = {}) {
   vibebook build-site \u2014 astro build`));
   await runCmd(
     "node",
-    [join23(ctx.cacheDir, "node_modules", "astro", "astro.js"), "build"],
+    [join24(ctx.cacheDir, "node_modules", "astro", "astro.js"), "build"],
     ctx.cacheDir,
     {
       VIBEBOOK_REPO_PATH: ctx.repoPath,
@@ -12180,9 +12574,9 @@ async function buildSiteCmd(opts = {}) {
       VIBEBOOK_SITE_URL: ctx.siteUrl
     }
   );
-  const builtDist = join23(ctx.cacheDir, "dist");
-  const repoDist = join23(ctx.repoPath, "site-dist");
-  if (existsSync19(repoDist)) {
+  const builtDist = join24(ctx.cacheDir, "dist");
+  const repoDist = join24(ctx.repoPath, "site-dist");
+  if (existsSync20(repoDist)) {
     rmSync(repoDist, { recursive: true, force: true });
   }
   cpSync(builtDist, repoDist, { recursive: true });
@@ -12199,17 +12593,17 @@ var init_site = __esm({
 });
 
 // src/spool/plugin-state.ts
-import { existsSync as existsSync20, mkdirSync as mkdirSync14, readFileSync as readFileSync19, writeFileSync as writeFileSync13 } from "node:fs";
+import { existsSync as existsSync21, mkdirSync as mkdirSync14, readFileSync as readFileSync20, writeFileSync as writeFileSync13 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { dirname as dirname11, join as join24 } from "node:path";
+import { dirname as dirname11, join as join25 } from "node:path";
 function statePath() {
-  return join24(homedir4(), ".vibebook", ".plugin-state.json");
+  return join25(homedir4(), ".vibebook", ".plugin-state.json");
 }
 function loadState() {
   const p2 = statePath();
-  if (!existsSync20(p2)) return {};
+  if (!existsSync21(p2)) return {};
   try {
-    return JSON.parse(readFileSync19(p2, "utf8"));
+    return JSON.parse(readFileSync20(p2, "utf8"));
   } catch {
     return {};
   }
@@ -12261,14 +12655,14 @@ var init_first_run = __esm({
 });
 
 // src/spool/ensure-dir.ts
-import { mkdirSync as mkdirSync15, existsSync as existsSync21 } from "node:fs";
+import { mkdirSync as mkdirSync15, existsSync as existsSync22 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { join as join25 } from "node:path";
+import { join as join26 } from "node:path";
 function ensureSpoolDir() {
-  const spoolRoot = join25(homedir5(), SPOOL_REL_PATH);
-  const created = !existsSync21(spoolRoot);
-  const rawSessionsDir = join25(spoolRoot, "raw_sessions");
-  const bookDir = join25(spoolRoot, "book");
+  const spoolRoot = join26(homedir5(), SPOOL_REL_PATH);
+  const created = !existsSync22(spoolRoot);
+  const rawSessionsDir = join26(spoolRoot, "raw_sessions");
+  const bookDir = join26(spoolRoot, "book");
   mkdirSync15(rawSessionsDir, { recursive: true });
   mkdirSync15(bookDir, { recursive: true });
   return { spoolRoot, rawSessionsDir, bookDir, created };
@@ -12284,12 +12678,12 @@ var init_ensure_dir = __esm({
 // src/_shared/content-project-inference.ts
 import { readdirSync as readdirSync6 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
-import { join as join26 } from "node:path";
+import { join as join27 } from "node:path";
 function decodeProjectDirName(name) {
   if (!name.startsWith("-")) return name;
   return "/" + name.slice(1).replace(/-/g, "/");
 }
-function listKnownProjectRoots(projectsDir = join26(homedir6(), ".claude", "projects")) {
+function listKnownProjectRoots(projectsDir = join27(homedir6(), ".claude", "projects")) {
   let entries;
   try {
     entries = readdirSync6(projectsDir);
@@ -12391,9 +12785,9 @@ var init_content_project_inference = __esm({
 
 // src/_shared/sources/claude-code.ts
 import { createHash as createHash2 } from "node:crypto";
-import { readdirSync as readdirSync7, readFileSync as readFileSync20, statSync as statSync2, existsSync as existsSync22 } from "node:fs";
+import { readdirSync as readdirSync7, readFileSync as readFileSync21, statSync as statSync2, existsSync as existsSync23 } from "node:fs";
 import { homedir as homedir7 } from "node:os";
-import { join as join27, basename } from "node:path";
+import { join as join28, basename } from "node:path";
 function getRoots() {
   if (cachedRoots === null) cachedRoots = listKnownProjectRoots();
   return cachedRoots;
@@ -12539,12 +12933,12 @@ var init_claude_code = __esm({
     init_content_project_inference();
     cachedRoots = null;
     ClaudeCodeAdapter = class {
-      constructor(root = join27(homedir7(), ".claude", "projects")) {
+      constructor(root = join28(homedir7(), ".claude", "projects")) {
         this.root = root;
       }
       name = "claude";
       async *discover() {
-        if (!existsSync22(this.root)) return;
+        if (!existsSync23(this.root)) return;
         const stack = [this.root];
         while (stack.length) {
           const dir = stack.pop();
@@ -12555,14 +12949,14 @@ var init_claude_code = __esm({
             continue;
           }
           for (const e of entries) {
-            const p2 = join27(dir, e.name);
+            const p2 = join28(dir, e.name);
             if (e.isDirectory()) {
               if (dir === this.root && isVibebookOrTmpProjectDir(e.name)) continue;
               if (e.name === "subagents") continue;
               stack.push(p2);
             } else if (e.isFile() && e.name.endsWith(".jsonl")) {
               const st = statSync2(p2);
-              const buf = readFileSync20(p2);
+              const buf = readFileSync21(p2);
               const sha = createHash2("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -12580,20 +12974,20 @@ var init_claude_code = __esm({
 
 // src/_shared/sources/vscode-copilot.ts
 import { createHash as createHash3 } from "node:crypto";
-import { readdirSync as readdirSync8, readFileSync as readFileSync21, statSync as statSync3, existsSync as existsSync23 } from "node:fs";
+import { readdirSync as readdirSync8, readFileSync as readFileSync22, statSync as statSync3, existsSync as existsSync24 } from "node:fs";
 import { homedir as homedir8 } from "node:os";
-import { join as join28, basename as basename2 } from "node:path";
+import { join as join29, basename as basename2 } from "node:path";
 function defaultStorageRoot() {
   if (process.platform === "darwin")
-    return join28(homedir8(), "Library", "Application Support", "Code", "User", "workspaceStorage");
+    return join29(homedir8(), "Library", "Application Support", "Code", "User", "workspaceStorage");
   if (process.platform === "win32")
-    return join28(homedir8(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
-  return join28(homedir8(), ".config", "Code", "User", "workspaceStorage");
+    return join29(homedir8(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
+  return join29(homedir8(), ".config", "Code", "User", "workspaceStorage");
 }
 function readWorkspacePath(workspaceJsonPath) {
-  if (!existsSync23(workspaceJsonPath)) return "";
+  if (!existsSync24(workspaceJsonPath)) return "";
   try {
-    const obj = JSON.parse(readFileSync21(workspaceJsonPath, "utf8"));
+    const obj = JSON.parse(readFileSync22(workspaceJsonPath, "utf8"));
     const u = obj.folder ?? obj.workspace ?? "";
     if (!u) return "";
     return u.startsWith("file://") ? decodeURIComponent(u.slice("file://".length)) : u;
@@ -12813,7 +13207,7 @@ var init_vscode_copilot = __esm({
       }
       name = "copilot";
       async *discover() {
-        if (!existsSync23(this.root)) return;
+        if (!existsSync24(this.root)) return;
         let workspaces;
         try {
           workspaces = readdirSync8(this.root, { withFileTypes: true });
@@ -12822,11 +13216,11 @@ var init_vscode_copilot = __esm({
         }
         for (const w of workspaces) {
           if (!w.isDirectory()) continue;
-          const wsDir = join28(this.root, w.name);
-          const wsPath = readWorkspacePath(join28(wsDir, "workspace.json"));
-          const chatDir = join28(wsDir, "chatSessions");
+          const wsDir = join29(this.root, w.name);
+          const wsPath = readWorkspacePath(join29(wsDir, "workspace.json"));
+          const chatDir = join29(wsDir, "chatSessions");
           const chatSessionIds = /* @__PURE__ */ new Set();
-          if (existsSync23(chatDir)) {
+          if (existsSync24(chatDir)) {
             let files = [];
             try {
               files = readdirSync8(chatDir, { withFileTypes: true });
@@ -12838,11 +13232,11 @@ var init_vscode_copilot = __esm({
               const isJson = f.name.endsWith(".json");
               const isJsonl = f.name.endsWith(".jsonl");
               if (!isJson && !isJsonl) continue;
-              const p2 = join28(chatDir, f.name);
+              const p2 = join29(chatDir, f.name);
               const st = statSync3(p2);
               if (st.size === 0) continue;
               chatSessionIds.add(basename2(f.name, isJsonl ? ".jsonl" : ".json"));
-              const buf = readFileSync21(p2);
+              const buf = readFileSync22(p2);
               const sha = createHash3("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -12852,8 +13246,8 @@ var init_vscode_copilot = __esm({
               };
             }
           }
-          const transcriptsDir = join28(wsDir, "GitHub.copilot-chat", "transcripts");
-          if (existsSync23(transcriptsDir)) {
+          const transcriptsDir = join29(wsDir, "GitHub.copilot-chat", "transcripts");
+          if (existsSync24(transcriptsDir)) {
             let tfiles = [];
             try {
               tfiles = readdirSync8(transcriptsDir, { withFileTypes: true });
@@ -12864,10 +13258,10 @@ var init_vscode_copilot = __esm({
               if (!f.isFile() || !f.name.endsWith(".jsonl")) continue;
               const id = basename2(f.name, ".jsonl");
               if (chatSessionIds.has(id)) continue;
-              const p2 = join28(transcriptsDir, f.name);
+              const p2 = join29(transcriptsDir, f.name);
               const st = statSync3(p2);
               if (st.size === 0) continue;
-              const buf = readFileSync21(p2);
+              const buf = readFileSync22(p2);
               const sha = createHash3("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -13081,18 +13475,18 @@ var init_toc = __esm({
 
 // src/spool/writer.ts
 import { mkdirSync as mkdirSync16, writeFileSync as writeFileSync14 } from "node:fs";
-import { join as join29 } from "node:path";
+import { join as join30 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
-  const dirRel = join29("raw_sessions", s.tool, s.project, date);
-  const absDir = join29(repoRoot, dirRel);
+  const dirRel = join30("raw_sessions", s.tool, s.project, date);
+  const absDir = join30(repoRoot, dirRel);
   mkdirSync16(absDir, { recursive: true });
   const base = `${s.nameSlug}__${s.shortId}`;
-  const mdRel = join29(dirRel, `${base}.md`);
+  const mdRel = join30(dirRel, `${base}.md`);
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults = opts.fullToolResults ?? process.env.VIBEBOOK_FULL_TOOL_RESULTS === "1";
   writeFileSync14(
-    join29(repoRoot, mdRel),
+    join30(repoRoot, mdRel),
     renderMarkdown(s, { includeReasoning, fullToolResults })
   );
   return { md: mdRel };
@@ -13430,14 +13824,14 @@ var {
 } = import_index.default;
 
 // src/plugin-cli.ts
-import { readFileSync as readFileSync22 } from "node:fs";
+import { readFileSync as readFileSync23 } from "node:fs";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 import { dirname as dirname12, resolve as resolve7 } from "node:path";
 function readPackageVersion() {
   const here = dirname12(fileURLToPath2(import.meta.url));
   for (const rel of ["../package.json", "../../package.json", "../../../package.json"]) {
     try {
-      return JSON.parse(readFileSync22(resolve7(here, rel), "utf8")).version;
+      return JSON.parse(readFileSync23(resolve7(here, rel), "utf8")).version;
     } catch {
     }
   }
@@ -13508,6 +13902,10 @@ async function run(argv) {
   program2.command("qa-query").description("Load distilled Q&A for the cwd's project, score, and emit ranked Q&A (index-only, read-only).").option("--cwd <path>", "working directory to resolve the project from").option("--q <text>", "free-text query").option("--kind <kind>", "filter by qa kind (compound|troubleshooting|decision|operational)").action(async (o2) => {
     const { qaQueryCmd: qaQueryCmd2 } = await Promise.resolve().then(() => (init_qa_query(), qa_query_exports));
     await qaQueryCmd2(o2);
+  });
+  program2.command("memory-lint").description("Read-only integrity diagnostic across memory/entity/qa indexes (never writes). --json for structured output.").option("--cwd <path>", "scope findings to the project at this path (+ global/user); default: lint the whole store").option("--json", "emit the structured LintReport JSON instead of a human report").option("--stale-days <n>", "age threshold for stale episodic/working (default 90)", (v) => parseInt(v, 10)).action(async (o2) => {
+    const { memoryLintCmd: memoryLintCmd2 } = await Promise.resolve().then(() => (init_memory_lint(), memory_lint_exports));
+    await memoryLintCmd2({ cwd: o2.cwd, json: o2.json, staleDays: o2.staleDays });
   });
   program2.command("recall").description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.").option("--cwd <path>", "infer project from this cwd").option("--project <slug>", "force a specific project slug").option("--topic <slug>", "stage 2: list chronicles in this topic").action(async (opts) => {
     const { recallCmd: recallCmd2 } = await Promise.resolve().then(() => (init_recall(), recall_exports));

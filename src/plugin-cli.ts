@@ -159,6 +159,16 @@ export async function run(argv: string[]) {
       await qaQueryCmd(o);
     });
 
+  program.command("memory-lint")
+    .description("Read-only integrity diagnostic across memory/entity/qa indexes (never writes). --json for structured output.")
+    .option("--cwd <path>", "scope findings to the project at this path (+ global/user); default: lint the whole store")
+    .option("--json", "emit the structured LintReport JSON instead of a human report")
+    .option("--stale-days <n>", "age threshold for stale episodic/working (default 90)", (v) => parseInt(v, 10))
+    .action(async (o: { cwd?: string; json?: boolean; staleDays?: number }) => {
+      const { memoryLintCmd } = await import("./commands/memory-lint.js");
+      await memoryLintCmd({ cwd: o.cwd, json: o.json, staleDays: o.staleDays });
+    });
+
   program
     .command("recall")
     .description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.")
