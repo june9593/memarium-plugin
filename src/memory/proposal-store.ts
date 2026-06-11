@@ -1,0 +1,74 @@
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import type { MemoryEntry } from "./types.js";
+import type { MemoryAction } from "./gate.js";
+
+export interface MemoryProposal {
+  proposalId: string;       // = flatTargetKey
+  targetKey: string;        // live memory the change targets (supersedes ?? id)
+  proposedEntryId: string;  // entry.id being written
+  action: MemoryAction;     // create | update | replace (display; re-derived at apply)
+  rationale: string | null;
+  sourceSession: string | null;
+  createdAt: string;        // ISO
+  proposal: { entry: MemoryEntry; body: string };
+}
+
+/** Device-local queue dir, OUTSIDE the git repo so it never syncs/aggregates.
+ *  Namespaced per session-repo so multiple repos on one device can't collide. */
+export function proposalsDir(repoPath: string): string {
+  const repoHash = createHash("sha256").update(resolve(repoPath)).digest("hex").slice(0, 12);
+  return join(homedir(), ".vibebook", "local-proposals", repoHash);
+}
+
+/** Filesystem-safe queue key. Flattens "/" → "__" and rejects any traversal. */
+export function flatTargetKey(targetKey: string): string {
+  const flat = targetKey.split("/").join("__");
+  if (flat.includes("..") || flat.includes("/") || flat.includes("\\") || flat.length === 0) {
+    throw new Error(`proposal-store: unsafe target key ${JSON.stringify(targetKey)}`);
+  }
+  return flat;
+}
+
+/** Accept either a targetKey ("core/yue-workflow") or a flat id ("core__yue-workflow"). */
+function fileFor(repoPath: string, idOrKey: string): string {
+  const flat = idOrKey.includes("/") ? flatTargetKey(idOrKey) : flatTargetKey(idOrKey.split("__").join("/"));
+  return join(proposalsDir(repoPath), `${flat}.json`);
+}
+
+export function writeProposal(repoPath: string, p: MemoryProposal): string {
+  const dir = proposalsDir(repoPath);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${flatTargetKey(p.targetKey)}.json`);
+  writeFileSync(file, JSON.stringify(p, null, 2) + "\n");
+  return file;
+}
+
+export function readProposal(repoPath: string, idOrKey: string): MemoryProposal | null {
+  let file: string;
+  try { file = fileFor(repoPath, idOrKey); } catch { return null; }
+  if (!existsSync(file)) return null;
+  try { return JSON.parse(readFileSync(file, "utf8")) as MemoryProposal; } catch { return null; }
+}
+
+export function listProposals(repoPath: string): MemoryProposal[] {
+  const dir = proposalsDir(repoPath);
+  if (!existsSync(dir)) return [];
+  const out: MemoryProposal[] = [];
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".json")) continue;
+    try { out.push(JSON.parse(readFileSync(join(dir, name), "utf8")) as MemoryProposal); }
+    catch { /* skip corrupt proposal file */ }
+  }
+  return out;
+}
+
+export function deleteProposal(repoPath: string, idOrKey: string): string | null {
+  let file: string;
+  try { file = fileFor(repoPath, idOrKey); } catch { return null; }
+  if (!existsSync(file)) return null;
+  rmSync(file);
+  return file;
+}
