@@ -13491,12 +13491,12 @@ async function run(argv) {
   program2.command("qa-write").description("Write distilled Q&A .md pages + update .vibebook/index.qa.json from an agent JSON payload.").option("--input <path>", "path to qa pages JSON").action(async (o2) => {
     const { qaWriteCmd: qaWriteCmd2 } = await Promise.resolve().then(() => (init_qa_write(), qa_write_exports));
     const r2 = await qaWriteCmd2({ inputPath: o2.input });
-    console.log(`qa-write: wrote ${r2.written} page(s)`);
+    process.stdout.write(JSON.stringify(r2, null, 2) + "\n");
   });
   program2.command("qa-index").description("Rebuild .vibebook/index.qa.json from memory/qa/ markdown.").action(async () => {
     const { qaIndexCmd: qaIndexCmd2 } = await Promise.resolve().then(() => (init_qa_index(), qa_index_exports));
     const r2 = await qaIndexCmd2();
-    console.log(`qa-index: indexed ${r2.indexed} page(s)`);
+    process.stdout.write(JSON.stringify(r2, null, 2) + "\n");
   });
   program2.command("qa-query").description("Load distilled Q&A for the cwd's project, score, and emit ranked Q&A (index-only, read-only).").option("--cwd <path>", "working directory to resolve the project from").option("--q <text>", "free-text query").option("--kind <kind>", "filter by qa kind (compound|troubleshooting|decision|operational)").action(async (o2) => {
     const { qaQueryCmd: qaQueryCmd2 } = await Promise.resolve().then(() => (init_qa_query(), qa_query_exports));

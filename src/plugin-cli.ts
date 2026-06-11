@@ -138,7 +138,7 @@ export async function run(argv: string[]) {
     .action(async (o: { input?: string }) => {
       const { qaWriteCmd } = await import("./commands/qa-write.js");
       const r = await qaWriteCmd({ inputPath: o.input });
-      console.log(`qa-write: wrote ${r.written} page(s)`);
+      process.stdout.write(JSON.stringify(r, null, 2) + "\n");
     });
 
   program.command("qa-index")
@@ -146,7 +146,7 @@ export async function run(argv: string[]) {
     .action(async () => {
       const { qaIndexCmd } = await import("./commands/qa-index.js");
       const r = await qaIndexCmd();
-      console.log(`qa-index: indexed ${r.indexed} page(s)`);
+      process.stdout.write(JSON.stringify(r, null, 2) + "\n");
     });
 
   program.command("qa-query")
