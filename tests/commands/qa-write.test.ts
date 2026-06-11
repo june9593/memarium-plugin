@@ -84,4 +84,15 @@ describe("qaWriteCmd", () => {
     await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/symlink guard/);
     expect(existsSync(nonExistent)).toBe(false);
   });
+
+  it("refuses to write when memory/ ancestor is a symlink (symlink guard)", async () => {
+    const evil = join(home, "evil-ancestor"); mkdirSync(evil, { recursive: true });
+    symlinkSync(evil, join(repo, "memory"));
+    const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "memory/qa/p/x.md",
+      scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/symlink guard/);
+    expect(existsSync(join(evil, "qa"))).toBe(false);
+  });
 });

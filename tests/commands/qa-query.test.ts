@@ -35,6 +35,14 @@ describe("qaQueryCmd", () => {
     expect(payload.qa[0].entry.answerSummary).toBe("npm build");
     expect(payload.qa[0].entry.path).toBe("memory/qa/p/build.md");
     expect(payload.qa[0].entry).not.toHaveProperty("body");
+    // Compact projection must not include heavy fields
+    expect(payload.qa[0].entry).not.toHaveProperty("sources");
+    expect(payload.qa[0].entry).not.toHaveProperty("sourceMemoryIds");
+    expect(payload.qa[0].entry).not.toHaveProperty("tags");
+    expect(payload.qa[0].entry).not.toHaveProperty("sourceSessions");
+    expect(payload.qa[0].entry).not.toHaveProperty("relatedEntities");
+    expect(payload.qa[0].entry).not.toHaveProperty("createdAt");
+    expect(payload.qa[0].entry).not.toHaveProperty("updatedAt");
   });
 
   it("kind filter: returns only entries matching requested kind", async () => {

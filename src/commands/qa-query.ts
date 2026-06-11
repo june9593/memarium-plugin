@@ -31,5 +31,18 @@ export async function qaQueryCmd(opts: QaQueryOptions): Promise<void> {
     now,
   });
 
-  process.stdout.write(JSON.stringify({ project, qa: scored }, null, 2) + "\n");
+  const compact = scored.map((s) => ({
+    entry: {
+      id: s.entry.id,
+      scope: s.entry.scope,
+      project: s.entry.project,
+      question: s.entry.question,
+      answerSummary: s.entry.answerSummary,
+      kind: s.entry.kind,
+      path: s.entry.path,
+    },
+    score: s.score,
+    whyMatched: s.whyMatched,
+  }));
+  process.stdout.write(JSON.stringify({ project, qa: compact }, null, 2) + "\n");
 }

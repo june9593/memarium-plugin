@@ -58,4 +58,10 @@ describe("qaIndexCmd", () => {
     symlinkSync(target, join(repo, "memory", "qa"));
     await expect(qaIndexCmd()).rejects.toThrow(/symlink/);
   });
+
+  it("refuses to index when memory/ ancestor is a symlink (symlink guard)", async () => {
+    const evil = join(home, "evil-ancestor"); mkdirSync(evil, { recursive: true });
+    symlinkSync(evil, join(repo, "memory"));
+    await expect(qaIndexCmd()).rejects.toThrow(/symlink/);
+  });
 });

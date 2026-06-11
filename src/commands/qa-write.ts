@@ -1,10 +1,11 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadQaIndex, saveQaIndex, upsertQa } from "../qa/index-store.js";
 import { renderQaMarkdown } from "../qa/render.js";
 import { normalizeSingleLine, qaId } from "../qa/id.js";
 import type { QaEntry } from "../qa/types.js";
+import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 
 /** Returns true if `child` is equal to or a subdirectory of `parent` (both realpath-resolved). */
 function isUnder(child: string, parent: string): boolean {
@@ -41,16 +42,7 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
 
     const qaRoot = resolve(join(cfg.repoPath, "memory", "qa"));
 
-    // Pre-check: refuse if memory/qa itself is a symlink (incl. broken symlink).
-    // lstatSync does not follow the link, so this fires before any mkdir that
-    // would otherwise create the link target outside the repo.
-    let qaRootStat;
-    try { qaRootStat = lstatSync(qaRoot); } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-    }
-    if (qaRootStat?.isSymbolicLink()) {
-      throw new Error(`qa-write: refusing to write outside memory/qa/ (symlink guard): ${entry.path}`);
-    }
+    assertNoSymlinkedComponent(cfg.repoPath, qaRoot, "qa-write");
 
     mkdirSync(qaRoot, { recursive: true });
     const abs = resolve(join(cfg.repoPath, entry.path));
