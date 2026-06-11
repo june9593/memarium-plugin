@@ -341,3 +341,59 @@ describe("lintMemory — corrupt-but-parseable index (A-theme)", () => {
     expect(() => lintMemory(bad, emptyEntityIndex(), emptyQaIndex(), { ...opts, project: "p" })).not.toThrow();
   });
 });
+
+describe("lintMemory — corrupt-but-truthy referential targets", () => {
+  it("memory: supersedes target is truthy non-object → dangling-supersedes flagged, superseded-conflict NOT flagged, no throw", () => {
+    const mIdx = {
+      version: 1 as const,
+      entries: {
+        "semantic/p/a": mem({ id: "semantic/p/a", supersedes: "B" }),
+        "B": "garbage" as unknown as ReturnType<typeof mem>,
+      },
+    };
+    const r = lintMemory(mIdx, emptyEntityIndex(), emptyQaIndex(), opts);
+    expect(r.issues.find((f) => f.check === "dangling-supersedes" && f.id === "semantic/p/a")).toBeTruthy();
+    expect(r.issues.find((f) => f.check === "superseded-conflict" && f.id === "semantic/p/a")).toBeFalsy();
+    expect(() => lintMemory(mIdx, emptyEntityIndex(), emptyQaIndex(), opts)).not.toThrow();
+  });
+
+  it("entity: sourceMemoryId points at truthy-non-object memoryIdx entry → entity-dangling-sourceMemoryId flagged", () => {
+    const mIdx = {
+      version: 1 as const,
+      entries: { "bad": 5 as unknown as ReturnType<typeof mem> },
+    };
+    const e = ent({ id: "entity/p/X", sourceMemoryIds: ["bad"] });
+    const r = lintMemory(mIdx, eidx(e), emptyQaIndex(), opts);
+    expect(r.issues.find((f) => f.check === "entity-dangling-sourceMemoryId" && f.refs?.includes("bad"))).toBeTruthy();
+  });
+
+  it("qa: relatedEntity points at truthy-array entityIdx entry → qa-unknown-relatedEntity flagged", () => {
+    const eIdx = {
+      version: 1 as const,
+      entries: { "bad": [] as unknown as ReturnType<typeof ent> },
+    };
+    const q = qa({ id: "qa/p/x", relatedEntities: ["bad"] });
+    const r = lintMemory(emptyMemoryIndex(), eIdx, qidx(q), opts);
+    expect(r.issues.find((f) => f.check === "qa-unknown-relatedEntity" && f.refs?.includes("bad"))).toBeTruthy();
+  });
+
+  it("positive: valid object targets are NOT flagged as dangling", () => {
+    // supersedes a real entry → no dangling-supersedes
+    const A = mem({ id: "semantic/p/a", supersedes: "semantic/p/b" });
+    const B = mem({ id: "semantic/p/b", status: "superseded" });
+    const r = lintMemory(idxOf(A, B), emptyEntityIndex(), emptyQaIndex(), opts);
+    expect(r.issues.find((f) => f.check === "dangling-supersedes")).toBeFalsy();
+
+    // valid entity sourceMemoryId → no entity-dangling-sourceMemoryId
+    const mIdx = idxOf(mem({ id: "semantic/p/real" }));
+    const e = ent({ id: "entity/p/X", sourceMemoryIds: ["semantic/p/real"] });
+    const r2 = lintMemory(mIdx, eidx(e), emptyQaIndex(), opts);
+    expect(r2.issues.find((f) => f.check === "entity-dangling-sourceMemoryId")).toBeFalsy();
+
+    // valid qa relatedEntity → no qa-unknown-relatedEntity
+    const eIdx2 = eidx(ent({ id: "entity/p/known" }));
+    const q = qa({ id: "qa/p/x", relatedEntities: ["entity/p/known"] });
+    const r3 = lintMemory(emptyMemoryIndex(), eIdx2, qidx(q), opts);
+    expect(r3.issues.find((f) => f.check === "qa-unknown-relatedEntity")).toBeFalsy();
+  });
+});

@@ -13,6 +13,14 @@ function safeValues<T>(rec: unknown): T[] {
   );
 }
 
+/** Returns true only when rec[id] is a non-null, non-array object (a valid index entry).
+ *  A truthy-but-corrupt value (string, number, array) returns false. */
+function validEntryExists(rec: unknown, id: string): boolean {
+  if (!rec || typeof rec !== "object" || Array.isArray(rec)) return false;
+  const v = (rec as Record<string, unknown>)[id];
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
 export interface LintFinding {
   check: string;
   severity: "error" | "warning" | "info";
@@ -83,13 +91,13 @@ export function lintMemory(
             detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})` });
         }
       }
-      if (e.supersedes !== null && !memoryIdx.entries[e.supersedes]) {
+      if (e.supersedes !== null && !validEntryExists(memoryIdx.entries, e.supersedes)) {
         issues.push({ check: "dangling-supersedes", severity: "error", layer: "memory", id: e.id,
           detail: `supersedes a memory not in the index`, refs: [e.supersedes] });
       }
-      if (e.supersedes !== null) {
-        const target = memoryIdx.entries[e.supersedes];
-        if (target && target.status === "active") {
+      if (e.supersedes !== null && validEntryExists(memoryIdx.entries, e.supersedes)) {
+        const target = (memoryIdx.entries as Record<string, MemoryEntry>)[e.supersedes];
+        if (target.status === "active") {
           issues.push({ check: "superseded-conflict", severity: "error", layer: "memory", id: e.id,
             detail: `supersedes ${target.id} but that target is still status=active`, refs: [target.id] });
         }
@@ -147,13 +155,13 @@ export function lintMemory(
   for (const e of entEntries) {
     try {
       for (const mid of e.sourceMemoryIds) {
-        if (!memoryIdx.entries[mid]) {
+        if (!validEntryExists(memoryIdx.entries, mid)) {
           issues.push({ check: "entity-dangling-sourceMemoryId", severity: "warning", layer: "entity",
             id: e.id, detail: `sourceMemoryId not in memory index`, refs: [mid] });
         }
       }
       for (const rid of e.relatedEntities) {
-        if (!entityIdx.entries[rid]) {
+        if (!validEntryExists(entityIdx.entries, rid)) {
           issues.push({ check: "entity-unknown-relatedEntity", severity: "warning", layer: "entity",
             id: e.id, detail: `relatedEntity not in entity index`, refs: [rid] });
         }
@@ -171,13 +179,13 @@ export function lintMemory(
   for (const e of qaEntries) {
     try {
       for (const mid of e.sourceMemoryIds) {
-        if (!memoryIdx.entries[mid]) {
+        if (!validEntryExists(memoryIdx.entries, mid)) {
           issues.push({ check: "qa-dangling-sourceMemoryId", severity: "warning", layer: "qa",
             id: e.id, detail: `sourceMemoryId not in memory index`, refs: [mid] });
         }
       }
       for (const rid of e.relatedEntities) {
-        if (!entityIdx.entries[rid]) {
+        if (!validEntryExists(entityIdx.entries, rid)) {
           issues.push({ check: "qa-unknown-relatedEntity", severity: "warning", layer: "qa",
             id: e.id, detail: `relatedEntity not in entity index`, refs: [rid] });
         }

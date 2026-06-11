@@ -11746,6 +11746,11 @@ function safeValues(rec) {
     (v) => v !== null && typeof v === "object" && !Array.isArray(v)
   );
 }
+function validEntryExists(rec, id) {
+  if (!rec || typeof rec !== "object" || Array.isArray(rec)) return false;
+  const v = rec[id];
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
 function inScope(scope, cwdProject) {
   if (typeof scope !== "string") return cwdProject === null;
   if (cwdProject === null) return true;
@@ -11787,7 +11792,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
           });
         }
       }
-      if (e.supersedes !== null && !memoryIdx.entries[e.supersedes]) {
+      if (e.supersedes !== null && !validEntryExists(memoryIdx.entries, e.supersedes)) {
         issues.push({
           check: "dangling-supersedes",
           severity: "error",
@@ -11797,9 +11802,9 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
           refs: [e.supersedes]
         });
       }
-      if (e.supersedes !== null) {
+      if (e.supersedes !== null && validEntryExists(memoryIdx.entries, e.supersedes)) {
         const target = memoryIdx.entries[e.supersedes];
-        if (target && target.status === "active") {
+        if (target.status === "active") {
           issues.push({
             check: "superseded-conflict",
             severity: "error",
@@ -11885,7 +11890,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   for (const e of entEntries) {
     try {
       for (const mid of e.sourceMemoryIds) {
-        if (!memoryIdx.entries[mid]) {
+        if (!validEntryExists(memoryIdx.entries, mid)) {
           issues.push({
             check: "entity-dangling-sourceMemoryId",
             severity: "warning",
@@ -11897,7 +11902,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
         }
       }
       for (const rid of e.relatedEntities) {
-        if (!entityIdx.entries[rid]) {
+        if (!validEntryExists(entityIdx.entries, rid)) {
           issues.push({
             check: "entity-unknown-relatedEntity",
             severity: "warning",
@@ -11923,7 +11928,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   for (const e of qaEntries) {
     try {
       for (const mid of e.sourceMemoryIds) {
-        if (!memoryIdx.entries[mid]) {
+        if (!validEntryExists(memoryIdx.entries, mid)) {
           issues.push({
             check: "qa-dangling-sourceMemoryId",
             severity: "warning",
@@ -11935,7 +11940,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
         }
       }
       for (const rid of e.relatedEntities) {
-        if (!entityIdx.entries[rid]) {
+        if (!validEntryExists(entityIdx.entries, rid)) {
           issues.push({
             check: "qa-unknown-relatedEntity",
             severity: "warning",
