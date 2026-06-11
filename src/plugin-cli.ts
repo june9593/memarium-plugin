@@ -169,6 +169,15 @@ export async function run(argv: string[]) {
       await memoryLintCmd({ cwd: o.cwd, json: o.json, staleDays: o.staleDays });
     });
 
+  program.command("memory-propose")
+    .description("Queue a gated (core/procedural/pinned) memory change as a local proposal instead of writing it. Reads an --input JSON array of {entry, body, rationale?, sourceSession?}.")
+    .requiredOption("--input <path>", "JSON file: array of { entry, body, rationale?, sourceSession? }")
+    .action(async (o: { input: string }) => {
+      const { memoryProposeCmd } = await import("./commands/memory-propose.js");
+      const r = await memoryProposeCmd({ inputPath: o.input });
+      console.log(JSON.stringify(r));
+    });
+
   program
     .command("recall")
     .description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.")
