@@ -4,9 +4,10 @@ import type { MemoryEntry, MemoryType } from "./types.js";
  *  budget. Sections render their top-N by importance. */
 export const MAX_PER_SECTION = 12;
 
-function pick(entries: MemoryEntry[], type: MemoryType, project: string, max: number): MemoryEntry[] {
+function pick(entries: MemoryEntry[], type: MemoryType, project: string, max: number, now: string): MemoryEntry[] {
   return entries
     .filter((e) => e.status !== "superseded" && e.type === type)
+    .filter((e) => e.validTo === null || e.validTo > now)
     .filter((e) => e.scope === "global" || e.scope === "user" || e.project === project)
     .sort((a, b) => b.importance - a.importance || a.title.localeCompare(b.title))
     .slice(0, max);
@@ -23,15 +24,16 @@ function section(title: string, items: MemoryEntry[]): string {
 export function renderPrimer(
   project: string,
   entries: MemoryEntry[],
-  opts: { maxPerSection?: number } = {},
+  opts: { maxPerSection?: number; now?: string } = {},
 ): string {
   const raw = opts.maxPerSection ?? MAX_PER_SECTION;
   const max = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : MAX_PER_SECTION;
+  const now = opts.now ?? new Date().toISOString().slice(0, 10);
   const head = `# Project memory: ${project}\n\n> Auto-generated primer. The agent should treat this as already-known project context.\n`;
   const sections = [
-    section("Core rules", pick(entries, "core", project, max)),
-    section("Project facts", pick(entries, "semantic", project, max)),
-    section("Procedures & gotchas", pick(entries, "procedural", project, max)),
+    section("Core rules", pick(entries, "core", project, max, now)),
+    section("Project facts", pick(entries, "semantic", project, max, now)),
+    section("Procedures & gotchas", pick(entries, "procedural", project, max, now)),
   ].filter(Boolean);
   // Silent when there's no eligible memory for this project — so memory-primer
   // (and the SessionStart hook) emit nothing rather than a bare header block.

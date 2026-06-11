@@ -118,4 +118,35 @@ describe("entityWriteCmd", () => {
     await expect(entityWriteCmd({ inputPath: "/nonexistent/entities.json" }))
       .rejects.toThrow("entity-write: --input JSON not found");
   });
+
+  // Fix 3: symlink-safe write guard
+  it("throws when entry path resolves via a symlinked dir pointing outside memory/entities/", async () => {
+    const { symlinkSync, mkdirSync: fsMkdir } = await import("node:fs");
+
+    // Create a directory outside the repo that simulates an attacker-controlled target
+    const outsideDir = join(fakeHome, "outside-dir");
+    fsMkdir(outsideDir, { recursive: true });
+
+    // Create memory/entities/ dir, then place a symlink subdirectory inside it
+    fsMkdir(join(repo, "memory/entities"), { recursive: true });
+    const symlinkSubdir = join(repo, "memory/entities/evil-link");
+    try {
+      symlinkSync(outsideDir, symlinkSubdir);
+    } catch {
+      // skip if symlinks not supported in this environment
+      return;
+    }
+
+    // Entry path points through the symlinked subdir
+    const entry = makeEntry({ path: "memory/entities/evil-link/injected.md", project: "edge-memvc" });
+    const input = join(fakeHome, "symlink-attack.json");
+    writeFileSync(input, JSON.stringify([{ entry, body: "injected content" }]));
+
+    const { entityWriteCmd } = await import("../../src/commands/entity-write.js");
+    await expect(entityWriteCmd({ inputPath: input }))
+      .rejects.toThrow(/refusing to write outside memory\/entities\//);
+
+    // confirm nothing was written outside
+    expect(existsSync(join(outsideDir, "injected.md"))).toBe(false);
+  });
 });

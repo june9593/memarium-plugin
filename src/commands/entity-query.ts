@@ -5,7 +5,7 @@ import { scoreEntities } from "../entity/score.js";
 import type { EntityKind, EntityPage } from "../entity/types.js";
 import { loadMemoryIndex } from "../memory/index-store.js";
 import type { MemoryEntry } from "../memory/types.js";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
 export interface EntityQueryOptions {
@@ -103,15 +103,23 @@ export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
       .filter((e: EntityPage) => isEligibleEntity(e, project))
       .filter((e: EntityPage) => {
         const titleMatch = e.title.toLowerCase() === entityName;
-        const aliasMatch = e.aliases.some((a) => a.toLowerCase() === entityName);
+        const aliasMatch = (Array.isArray(e.aliases) ? e.aliases : []).some((a) => typeof a === "string" && a.toLowerCase() === entityName);
         const slugMatch = nameSlug.length > 0 && e.id.toLowerCase().endsWith("/" + nameSlug);
         return titleMatch || aliasMatch || slugMatch;
       })
       .map((e: EntityPage) => {
         const abs = resolve(join(cfg.repoPath, e.path));
-        // path-guard: only read files under <repoPath>/memory/entities/
-        const safeToRead = (abs === entRoot || abs.startsWith(entRoot + sep)) && existsSync(abs);
-        const body = safeToRead ? readFileSync(abs, "utf8") : "";
+        // path-guard (string prefix): only read files under <repoPath>/memory/entities/
+        const inRoot = abs === entRoot || abs.startsWith(entRoot + sep);
+        let body = "";
+        if (inRoot && existsSync(abs)) {
+          // symlink-safe guard: use realpath to prevent reading via symlinked paths
+          const realRoot = existsSync(entRoot) ? realpathSync(entRoot) : entRoot;
+          const real = realpathSync(abs);
+          if (real === realRoot || real.startsWith(realRoot + sep)) {
+            body = readFileSync(abs, "utf8");
+          }
+        }
         return { entry: e, body };
       });
     payload.matchedEntities = matchedEntities;

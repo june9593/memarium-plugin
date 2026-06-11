@@ -6,7 +6,7 @@ function e(over: Partial<MemoryEntry>): MemoryEntry {
   return { id: over.id ?? "x", type: over.type ?? "semantic", scope: over.scope ?? "project:p",
     project: over.project ?? "p", title: over.title ?? "t", summary: over.summary ?? "s",
     path: "memory/x.md", status: over.status ?? "active", confidence: 0.8, importance: over.importance ?? 1,
-    createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+    createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: over.validTo ?? null,
     sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
     entities: [], originDevice: null, accessCount: 0, lastAccess: null };
 }
@@ -66,6 +66,26 @@ describe("renderPrimer", () => {
     // entries that are all ineligible for project "p" (other project, no global) → still empty
     const otherProj = e({ id: "semantic/q/x", type: "semantic", scope: "project:q", project: "q", title: "x" });
     expect(renderPrimer("p", [otherProj])).toBe("");
+  });
+
+  it("excludes entries whose validTo is in the past when now is provided", () => {
+    const expired = e({ id: "semantic/p/expired", type: "semantic", title: "expired fact", summary: "gone", validTo: "2000-01-01" });
+    const nullExp = e({ id: "semantic/p/null-exp", type: "semantic", title: "null-exp fact", summary: "valid", validTo: null });
+    const futureExp = e({ id: "semantic/p/future", type: "semantic", title: "future fact", summary: "valid", validTo: "2099-12-31" });
+
+    const md = renderPrimer("p", [expired, nullExp, futureExp], { now: "2026-06-10" });
+
+    expect(md).not.toContain("expired fact");
+    expect(md).toContain("null-exp fact");
+    expect(md).toContain("future fact");
+  });
+
+  it("includes entries with validTo equal to now (boundary: expired on that day, strictly <)", () => {
+    // validTo <= now means expired, so validTo === now is expired
+    const sameDay = e({ id: "semantic/p/same", type: "semantic", title: "same-day", summary: "boundary", validTo: "2026-06-10" });
+    const md = renderPrimer("p", [sameDay], { now: "2026-06-10" });
+    // validTo <= now → excluded (2026-06-10 <= 2026-06-10 is true)
+    expect(md).not.toContain("same-day");
   });
 });
 

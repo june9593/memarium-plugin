@@ -547,4 +547,102 @@ describe("entityQueryCmd", () => {
     // body must be empty — file outside memory/entities/ must not be read
     expect(match.body).toBe("");
   });
+
+  // Fix 2: aliases non-array guard
+  it("--entity with missing/non-array aliases on entity does not throw and skips alias match", async () => {
+    // Overwrite entity index with an entry that has no aliases field (corrupted/older index)
+    writeFileSync(join(repo, ".vibebook/index.entity.json"), JSON.stringify({
+      version: 1, entries: {
+        "entity/edge-memvc/no-aliases": {
+          id: "entity/edge-memvc/no-aliases",
+          kind: "symbol",
+          scope: "project:edge-memvc",
+          project: "edge-memvc",
+          title: "NoAliasEntity",
+          // aliases intentionally absent — simulates corrupted index
+          sourceMemoryIds: [],
+          sourceSessions: [],
+          sourceFiles: [],
+          relatedEntities: [],
+          path: "memory/entities/edge-memvc/no-aliases.md",
+          createdAt: "2026-06-09",
+          updatedAt: "2026-06-09",
+        },
+        "entity/edge-memvc/alias-match": {
+          id: "entity/edge-memvc/alias-match",
+          kind: "symbol",
+          scope: "project:edge-memvc",
+          project: "edge-memvc",
+          title: "HasAlias",
+          aliases: ["noaliasalias"],
+          sourceMemoryIds: [],
+          sourceSessions: [],
+          sourceFiles: [],
+          relatedEntities: [],
+          path: "memory/entities/edge-memvc/alias-match.md",
+          createdAt: "2026-06-09",
+          updatedAt: "2026-06-09",
+        },
+      },
+    }));
+    vi.resetModules();
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    // must not throw even when aliases field is absent
+    await expect(entityQueryCmd({ cwd: "/work/edge-memvc", entity: "noaliasalias" })).resolves.not.toThrow();
+    const payload = JSON.parse(stdout.join(""));
+    const ids = payload.matchedEntities.map((x: any) => x.entry.id);
+    // no-aliases entity should NOT match on alias (aliases missing → treated as [])
+    expect(ids).not.toContain("entity/edge-memvc/no-aliases");
+    // alias-match entity DOES match via alias
+    expect(ids).toContain("entity/edge-memvc/alias-match");
+  });
+
+  // Fix 4: symlink-safe read guard
+  it("--entity with a symlinked path outside memory/entities/ yields body: '' (symlink guard)", async () => {
+    const { symlinkSync, mkdirSync: fsMkdir } = await import("node:fs");
+    // Create a secret file outside the repo
+    const secretContent = "TOP SECRET via symlink";
+    const secretFile = join(fakeHome, "secret-outside.md");
+    writeFileSync(secretFile, secretContent);
+
+    // Create a symlink INSIDE memory/entities/ that points to the secret file
+    fsMkdir(join(repo, "memory/entities/edge-memvc"), { recursive: true });
+    const symlinkPath = join(repo, "memory/entities/edge-memvc/symlinked.md");
+    try {
+      symlinkSync(secretFile, symlinkPath);
+    } catch {
+      // skip if symlinks not supported
+      return;
+    }
+
+    writeFileSync(join(repo, ".vibebook/index.entity.json"), JSON.stringify({
+      version: 1, entries: {
+        "entity/edge-memvc/symlinked": {
+          id: "entity/edge-memvc/symlinked",
+          kind: "symbol",
+          scope: "project:edge-memvc",
+          project: "edge-memvc",
+          title: "SymlinkedSecret",
+          aliases: [],
+          sourceMemoryIds: [],
+          sourceSessions: [],
+          sourceFiles: [],
+          relatedEntities: [],
+          path: "memory/entities/edge-memvc/symlinked.md",
+          createdAt: "2026-06-09",
+          updatedAt: "2026-06-09",
+        },
+      },
+    }));
+    vi.resetModules();
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    await entityQueryCmd({ cwd: "/work/edge-memvc", entity: "symlinkedsecret" });
+    const payload = JSON.parse(stdout.join(""));
+    const match = payload.matchedEntities.find((x: any) => x.entry.id === "entity/edge-memvc/symlinked");
+    expect(match).toBeDefined();
+    // body must be empty — symlink points outside memory/entities/
+    expect(match.body).toBe("");
+    // must not disclose secret content
+    expect(JSON.stringify(payload)).not.toContain(secretContent);
+  });
 });

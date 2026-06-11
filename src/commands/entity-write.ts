@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadEntityIndex, saveEntityIndex, upsertEntity } from "../entity/index-store.js";
@@ -31,10 +31,22 @@ export async function entityWriteCmd(opts: EntityWriteOptions): Promise<EntityWr
     if (!entry.path) entry.path = entityPath(entry);
 
     // path-traversal guard: final resolved path must be within <repoPath>/memory/entities/
-    const memRoot = resolve(join(cfg.repoPath, "memory", "entities"));
+    const entRoot = resolve(join(cfg.repoPath, "memory", "entities"));
+    // Ensure entRoot exists so realpathSync can resolve it
+    mkdirSync(entRoot, { recursive: true });
+    const memRoot = entRoot;
     const abs = resolve(join(cfg.repoPath, entry.path));
     if (abs !== memRoot && !abs.startsWith(memRoot + sep)) {
       throw new Error(`entity-write: refusing to write outside memory/entities/: ${entry.path}`);
+    }
+
+    // Symlink-safe check: after creating the parent directory, verify via realpath that
+    // the resolved parent is still within memory/entities/ (guards against symlinked dirs).
+    mkdirSync(dirname(abs), { recursive: true });
+    const realParent = realpathSync(dirname(abs));
+    const realRoot = realpathSync(entRoot);
+    if (realParent !== realRoot && !realParent.startsWith(realRoot + sep)) {
+      throw new Error(`entity-write: refusing to write outside memory/entities/ (symlink guard): ${entry.path}`);
     }
 
     // Wikilink resolution: resolveWikiLinks requires a BookIndexV2 context
@@ -45,7 +57,6 @@ export async function entityWriteCmd(opts: EntityWriteOptions): Promise<EntityWr
     // via plain text, not book-chronicle/topic/card wikilinks.
     const resolvedBody = body;
 
-    mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, renderEntityMarkdown(entry, resolvedBody));
     upsertEntity(idx, entry);
     written++;
