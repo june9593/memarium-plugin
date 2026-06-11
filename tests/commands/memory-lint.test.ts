@@ -75,8 +75,9 @@ describe("memoryLintCmd", () => {
   it("Fix4: corrupt .vibebook/index.json does not crash — emits valid LintReport (project=null fallback)", async () => {
     // Write an invalid JSON to the spool index (not the memory index) to force a throw in resolveProjectFromCwd
     writeFileSync(join(repo, ".vibebook", "index.json"), "{ not json");
-    // Should not throw; must emit a valid (possibly empty) LintReport
-    await expect(memoryLintCmd({ json: true })).resolves.not.toThrow();
+    // Must pass cwd so resolveProjectFromCwd is actually invoked against the corrupt spool index.
+    // Without cwd, memoryLintCmd skips resolveProjectFromCwd entirely — the try/catch would never be exercised.
+    await expect(memoryLintCmd({ json: true, cwd: "/some/path/demo-proj" })).resolves.not.toThrow();
     const payload = JSON.parse(out.join(""));
     expect(Array.isArray(payload.issues)).toBe(true);
     expect(Array.isArray(payload.suggestions)).toBe(true);

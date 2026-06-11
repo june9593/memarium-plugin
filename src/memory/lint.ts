@@ -209,6 +209,7 @@ export function lintMemory(
   for (const e of epis) {
     if (!Array.isArray(e.entities)) continue;
     for (const tok of e.entities) {
+      if (typeof tok !== "string") continue;   // skip non-string tokens in a corrupt index
       const key = `${e.project ?? "_global"}::${tok.toLowerCase()}`;
       const arr = byEntity.get(key) ?? [];
       arr.push(e);

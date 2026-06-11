@@ -215,6 +215,20 @@ describe("lintMemory — suggestions (promotion-candidate)", () => {
     const e2 = mem({ id: "episodic/p/2", type: "episodic", entities: ["b"], updatedAt: "2026-06-10" });
     expect(run(idxOf(e1, e2)).suggestions).toHaveLength(0);
   });
+  it("non-string entity tokens in a corrupt index: does NOT throw; valid shared token still clusters", () => {
+    // entities: ["shared", 123] — the 123 is a corrupt non-string token.
+    // Both entries share the valid string "shared", so promotion-candidate must still fire.
+    const e1 = mem({ id: "episodic/p/1", type: "episodic",
+      entities: ["shared", 123 as unknown as string], updatedAt: "2026-06-10" });
+    const e2 = mem({ id: "episodic/p/2", type: "episodic",
+      entities: ["shared", 123 as unknown as string], updatedAt: "2026-06-10" });
+    expect(() => run(idxOf(e1, e2))).not.toThrow();
+    const r = run(idxOf(e1, e2));
+    // The valid "shared" token is in both → should still cluster into a promotion-candidate suggestion
+    const s = r.suggestions.find((x) => x.check === "promotion-candidate");
+    expect(s).toBeTruthy();
+    expect(s!.refs!.slice().sort()).toEqual(["episodic/p/1", "episodic/p/2"]);
+  });
 });
 
 describe("lintMemory — scope-filter regression", () => {

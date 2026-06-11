@@ -11978,6 +11978,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   for (const e of epis) {
     if (!Array.isArray(e.entities)) continue;
     for (const tok of e.entities) {
+      if (typeof tok !== "string") continue;
       const key = `${e.project ?? "_global"}::${tok.toLowerCase()}`;
       const arr4 = byEntity.get(key) ?? [];
       arr4.push(e);
