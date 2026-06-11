@@ -2,35 +2,36 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
-import { loadMemoryIndex, MEMORY_INDEX_REL } from "../memory/index-store.js";
-import { loadEntityIndex, ENTITY_INDEX_REL } from "../entity/index-store.js";
-import { loadQaIndex, QA_INDEX_REL } from "../qa/index-store.js";
+import { MEMORY_INDEX_REL } from "../memory/index-store.js";
+import { ENTITY_INDEX_REL } from "../entity/index-store.js";
+import { QA_INDEX_REL } from "../qa/index-store.js";
+import { emptyMemoryIndex, type MemoryIndex } from "../memory/types.js";
+import { emptyEntityIndex, type EntityIndex } from "../entity/types.js";
+import { emptyQaIndex, type QaIndex } from "../qa/types.js";
 import { lintMemory, type LintFinding, type LintReport } from "../memory/lint.js";
 
 export interface MemoryLintOptions { cwd?: string; json?: boolean; staleDays?: number; }
 
-function corruptIndexFindings(repoPath: string): LintFinding[] {
-  const out: LintFinding[] = [];
-  const specs: Array<{ rel: string; layer: LintFinding["layer"] }> = [
-    { rel: MEMORY_INDEX_REL, layer: "memory" },
-    { rel: ENTITY_INDEX_REL, layer: "entity" },
-    { rel: QA_INDEX_REL, layer: "qa" },
-  ];
-  for (const { rel, layer } of specs) {
-    const p = join(repoPath, rel);
-    if (!existsSync(p)) continue; // missing is fine (empty store)
-    try {
-      const parsed = JSON.parse(readFileSync(p, "utf8"));
-      if (!parsed || parsed.version !== 1 || typeof parsed.entries !== "object" || parsed.entries === null || Array.isArray(parsed.entries)) {
-        out.push({ check: "corrupt-index", severity: "error", layer, id: rel,
-          detail: `index file is not a valid v1 index (version/entries shape) — load returned empty, findings for this layer may be incomplete` });
-      }
-    } catch {
-      out.push({ check: "corrupt-index", severity: "error", layer, id: rel,
-        detail: `index file is not valid JSON — load returned empty, findings for this layer may be incomplete` });
-    }
+function readIndexOnce<T extends { version: number; entries: object }>(
+  repoPath: string, rel: string, layer: LintFinding["layer"], empty: T,
+): { index: T; finding: LintFinding | null } {
+  const p = join(repoPath, rel);
+  if (!existsSync(p)) return { index: empty, finding: null };
+  let parsed: unknown;
+  try { parsed = JSON.parse(readFileSync(p, "utf8")); }
+  catch {
+    return { index: empty, finding: { check: "corrupt-index", severity: "error", layer, id: rel,
+      detail: "index file is not valid JSON — treated as empty; findings for this layer may be incomplete" } };
   }
-  return out;
+  const ok = parsed && typeof parsed === "object" && (parsed as Record<string, unknown>).version === 1 &&
+    typeof (parsed as Record<string, unknown>).entries === "object" &&
+    (parsed as Record<string, unknown>).entries !== null &&
+    !Array.isArray((parsed as Record<string, unknown>).entries);
+  if (!ok) {
+    return { index: empty, finding: { check: "corrupt-index", severity: "error", layer, id: rel,
+      detail: "index file is not a valid v1 index (version/entries shape) — treated as empty; findings for this layer may be incomplete" } };
+  }
+  return { index: parsed as T, finding: null };
 }
 
 function humanReport(r: LintReport): string {
@@ -50,8 +51,8 @@ function humanReport(r: LintReport): string {
   return lines.join("\n") + "\n";
 }
 
-/** Read-only diagnostic. Loads the committed indexes directly (NEVER via
- *  memory-query — that writes _primer). Never mutates the repo. Exit 0. */
+/** Read-only diagnostic. Reads and parses each index file once, lints all three layers,
+ *  then prepends any corrupt-index findings. Never mutates the repo. Exit 0. */
 export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
   const cfg = readPluginConfig();
   let project: string | null = null;
@@ -59,15 +60,14 @@ export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
     try { project = resolveProjectFromCwd(opts.cwd, cfg.repoPath); } catch { project = null; }
   }
   const now = new Date().toISOString().slice(0, 10);
-  const report = lintMemory(
-    loadMemoryIndex(cfg.repoPath),
-    loadEntityIndex(cfg.repoPath),
-    loadQaIndex(cfg.repoPath),
-    { now,
-      staleDays: Number.isFinite(opts.staleDays) && (opts.staleDays as number) > 0 ? Math.floor(opts.staleDays as number) : 90,
-      project, generatedAt: now },
-  );
-  const corrupt = corruptIndexFindings(cfg.repoPath);
+  const staleDays = Number.isFinite(opts.staleDays) && (opts.staleDays as number) > 0
+    ? Math.floor(opts.staleDays as number)
+    : 90;
+  const m = readIndexOnce<MemoryIndex>(cfg.repoPath, MEMORY_INDEX_REL, "memory", emptyMemoryIndex());
+  const e = readIndexOnce<EntityIndex>(cfg.repoPath, ENTITY_INDEX_REL, "entity", emptyEntityIndex());
+  const q = readIndexOnce<QaIndex>(cfg.repoPath, QA_INDEX_REL, "qa", emptyQaIndex());
+  const report = lintMemory(m.index, e.index, q.index, { now, staleDays, project, generatedAt: now });
+  const corrupt = [m.finding, e.finding, q.finding].filter((f): f is LintFinding => f !== null);
   if (corrupt.length) {
     report.issues = [...corrupt, ...report.issues];
     report.counts = { issues: report.issues.length, suggestions: report.suggestions.length };

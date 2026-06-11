@@ -269,6 +269,15 @@ describe("lintMemory — corrupt-but-parseable index (A-theme)", () => {
     expect(r.issues.filter((f) => f.id === "x")).toHaveLength(0);
   });
 
+  it("Fix1 (safeValues rejects arrays): entries map with an array value → no throw, array value skipped", () => {
+    // typeof [] === "object" but arrays are not valid entries; safeValues must exclude them
+    const mIdx = { version: 1 as const, entries: { "x": [] as unknown as ReturnType<typeof mem> } };
+    const r = lintMemory(mIdx, emptyEntityIndex(), emptyQaIndex(), opts);
+    expect(r).toBeTruthy();
+    // array value "x" is skipped, no findings emitted for it
+    expect(r.issues.filter((f) => f.id === "x")).toHaveLength(0);
+  });
+
   it("A2: malformed-entry catch path: entry with null-typed field that causes throw", () => {
     // Create an entry where sourceSessions is null (will throw .length === 0 access)
     const broken = { ...mem({ id: "semantic/p/broken" }), sourceSessions: null as unknown as string[] };

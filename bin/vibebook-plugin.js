@@ -11743,20 +11743,20 @@ var init_qa_query = __esm({
 function safeValues(rec) {
   if (!rec || typeof rec !== "object" || Array.isArray(rec)) return [];
   return Object.values(rec).filter(
-    (v) => v !== null && typeof v === "object"
+    (v) => v !== null && typeof v === "object" && !Array.isArray(v)
   );
 }
-function inScope(scope, project, cwdProject) {
+function inScope(scope, cwdProject) {
   if (typeof scope !== "string") return cwdProject === null;
   if (cwdProject === null) return true;
   if (scope === "global" || scope === "user") return true;
   const scopeProject = scope.startsWith("project:") ? scope.slice("project:".length) : null;
-  return scopeProject === cwdProject || project === cwdProject;
+  return scopeProject === cwdProject;
 }
 function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   const issues = [];
   const suggestions = [];
-  const memEntries = safeValues(memoryIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
+  const memEntries = safeValues(memoryIdx.entries).filter((e) => inScope(e.scope, opts.project));
   for (const e of memEntries) {
     try {
       if (e.status === "active" && e.validTo !== null) {
@@ -11853,29 +11853,35 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   }
   const dupThreshold = opts.dupThreshold ?? 0.6;
   const active = memEntries.filter((e) => e.status === "active");
-  const activeTokens = active.map((e) => tokenize4(`${e.title} ${e.summary}`));
-  for (let i2 = 0; i2 < active.length; i2++) {
-    for (let j2 = i2 + 1; j2 < active.length; j2++) {
-      try {
-        const a = active[i2], b2 = active[j2];
-        if (a.type !== b2.type || a.scope !== b2.scope || a.project !== b2.project) continue;
-        const sim = jaccard(activeTokens[i2], activeTokens[j2]);
-        if (sim >= dupThreshold) {
-          const pair = [a.id, b2.id].slice().sort();
-          issues.push({
-            check: "duplicate-like",
-            severity: "info",
-            layer: "memory",
-            id: pair[0],
-            detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`,
-            refs: pair
-          });
+  const buckets = /* @__PURE__ */ new Map();
+  for (const e of active) {
+    const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
+    const arr4 = buckets.get(key) ?? [];
+    arr4.push({ e, tokens: tokenize4(`${e.title} ${e.summary}`) });
+    buckets.set(key, arr4);
+  }
+  for (const group of buckets.values()) {
+    for (let i2 = 0; i2 < group.length; i2++) {
+      for (let j2 = i2 + 1; j2 < group.length; j2++) {
+        try {
+          const sim = jaccard(group[i2].tokens, group[j2].tokens);
+          if (sim >= dupThreshold) {
+            const pair = [group[i2].e.id, group[j2].e.id].slice().sort();
+            issues.push({
+              check: "duplicate-like",
+              severity: "info",
+              layer: "memory",
+              id: pair[0],
+              detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`,
+              refs: pair
+            });
+          }
+        } catch {
         }
-      } catch {
       }
     }
   }
-  const entEntries = safeValues(entityIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
+  const entEntries = safeValues(entityIdx.entries).filter((e) => inScope(e.scope, opts.project));
   for (const e of entEntries) {
     try {
       for (const mid of e.sourceMemoryIds) {
@@ -11913,7 +11919,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
       });
     }
   }
-  const qaEntries = safeValues(qaIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
+  const qaEntries = safeValues(qaIdx.entries).filter((e) => inScope(e.scope, opts.project));
   for (const e of qaEntries) {
     try {
       for (const mid of e.sourceMemoryIds) {
@@ -12018,38 +12024,32 @@ __export(memory_lint_exports, {
 });
 import { existsSync as existsSync18, readFileSync as readFileSync17 } from "node:fs";
 import { join as join22 } from "node:path";
-function corruptIndexFindings(repoPath) {
-  const out = [];
-  const specs = [
-    { rel: MEMORY_INDEX_REL, layer: "memory" },
-    { rel: ENTITY_INDEX_REL, layer: "entity" },
-    { rel: QA_INDEX_REL, layer: "qa" }
-  ];
-  for (const { rel, layer } of specs) {
-    const p2 = join22(repoPath, rel);
-    if (!existsSync18(p2)) continue;
-    try {
-      const parsed = JSON.parse(readFileSync17(p2, "utf8"));
-      if (!parsed || parsed.version !== 1 || typeof parsed.entries !== "object" || parsed.entries === null || Array.isArray(parsed.entries)) {
-        out.push({
-          check: "corrupt-index",
-          severity: "error",
-          layer,
-          id: rel,
-          detail: `index file is not a valid v1 index (version/entries shape) \u2014 load returned empty, findings for this layer may be incomplete`
-        });
-      }
-    } catch {
-      out.push({
-        check: "corrupt-index",
-        severity: "error",
-        layer,
-        id: rel,
-        detail: `index file is not valid JSON \u2014 load returned empty, findings for this layer may be incomplete`
-      });
-    }
+function readIndexOnce(repoPath, rel, layer, empty) {
+  const p2 = join22(repoPath, rel);
+  if (!existsSync18(p2)) return { index: empty, finding: null };
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync17(p2, "utf8"));
+  } catch {
+    return { index: empty, finding: {
+      check: "corrupt-index",
+      severity: "error",
+      layer,
+      id: rel,
+      detail: "index file is not valid JSON \u2014 treated as empty; findings for this layer may be incomplete"
+    } };
   }
-  return out;
+  const ok = parsed && typeof parsed === "object" && parsed.version === 1 && typeof parsed.entries === "object" && parsed.entries !== null && !Array.isArray(parsed.entries);
+  if (!ok) {
+    return { index: empty, finding: {
+      check: "corrupt-index",
+      severity: "error",
+      layer,
+      id: rel,
+      detail: "index file is not a valid v1 index (version/entries shape) \u2014 treated as empty; findings for this layer may be incomplete"
+    } };
+  }
+  return { index: parsed, finding: null };
 }
 function humanReport(r2) {
   const lines = [];
@@ -12078,18 +12078,12 @@ async function memoryLintCmd(opts) {
     }
   }
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  const report = lintMemory(
-    loadMemoryIndex(cfg.repoPath),
-    loadEntityIndex(cfg.repoPath),
-    loadQaIndex(cfg.repoPath),
-    {
-      now,
-      staleDays: Number.isFinite(opts.staleDays) && opts.staleDays > 0 ? Math.floor(opts.staleDays) : 90,
-      project,
-      generatedAt: now
-    }
-  );
-  const corrupt = corruptIndexFindings(cfg.repoPath);
+  const staleDays = Number.isFinite(opts.staleDays) && opts.staleDays > 0 ? Math.floor(opts.staleDays) : 90;
+  const m = readIndexOnce(cfg.repoPath, MEMORY_INDEX_REL, "memory", emptyMemoryIndex());
+  const e = readIndexOnce(cfg.repoPath, ENTITY_INDEX_REL, "entity", emptyEntityIndex());
+  const q2 = readIndexOnce(cfg.repoPath, QA_INDEX_REL, "qa", emptyQaIndex());
+  const report = lintMemory(m.index, e.index, q2.index, { now, staleDays, project, generatedAt: now });
+  const corrupt = [m.finding, e.finding, q2.finding].filter((f) => f !== null);
   if (corrupt.length) {
     report.issues = [...corrupt, ...report.issues];
     report.counts = { issues: report.issues.length, suggestions: report.suggestions.length };
@@ -12104,6 +12098,9 @@ var init_memory_lint = __esm({
     init_index_store2();
     init_index_store3();
     init_index_store4();
+    init_types();
+    init_types2();
+    init_types3();
     init_lint();
   }
 });

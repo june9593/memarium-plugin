@@ -4,11 +4,12 @@ import type { EntityPage } from "../entity/types.js";
 import type { QaIndex } from "../qa/types.js";
 import type { QaEntry } from "../qa/types.js";
 
-/** Safely extract values from a Record-shaped unknown — returns [] for anything non-object/array/null. */
+/** Safely extract values from a Record-shaped unknown — returns [] for anything non-object/array/null.
+ *  Array values are excluded: typeof [] === "object" but arrays are not valid entries. */
 function safeValues<T>(rec: unknown): T[] {
   if (!rec || typeof rec !== "object" || Array.isArray(rec)) return [];
   return Object.values(rec as Record<string, T>).filter(
-    (v): v is T => v !== null && typeof v === "object",
+    (v): v is T => v !== null && typeof v === "object" && !Array.isArray(v),
   );
 }
 
@@ -35,12 +36,12 @@ export interface LintOptions {
   clusterMin?: number;
 }
 
-function inScope(scope: string, project: string | null, cwdProject: string | null): boolean {
-  if (typeof scope !== "string") return cwdProject === null; // malformed scope: include only in whole-store mode so it can be surfaced; it can't match a specific project
+function inScope(scope: string, cwdProject: string | null): boolean {
+  if (typeof scope !== "string") return cwdProject === null; // malformed scope: only in whole-store mode
   if (cwdProject === null) return true;
   if (scope === "global" || scope === "user") return true;
   const scopeProject = scope.startsWith("project:") ? scope.slice("project:".length) : null;
-  return scopeProject === cwdProject || project === cwdProject;
+  return scopeProject === cwdProject;
 }
 
 const tokenize = (s: string): Set<string> =>
@@ -66,7 +67,7 @@ export function lintMemory(
   const suggestions: LintFinding[] = [];
 
   const memEntries = safeValues<MemoryEntry>(memoryIdx.entries)
-    .filter((e) => inScope(e.scope, e.project, opts.project));
+    .filter((e) => inScope(e.scope, opts.project));
 
   for (const e of memEntries) {
     try {
@@ -119,25 +120,30 @@ export function lintMemory(
 
   const dupThreshold = opts.dupThreshold ?? 0.6;
   const active = memEntries.filter((e) => e.status === "active");
-  const activeTokens = active.map((e) => tokenize(`${e.title} ${e.summary}`));
-  for (let i = 0; i < active.length; i++) {
-    for (let j = i + 1; j < active.length; j++) {
-      try {
-        const a = active[i], b = active[j];
-        if (a.type !== b.type || a.scope !== b.scope || a.project !== b.project) continue;
-        const sim = jaccard(activeTokens[i], activeTokens[j]);
-        if (sim >= dupThreshold) {
-          const pair = [a.id, b.id].slice().sort();
-          issues.push({ check: "duplicate-like", severity: "info", layer: "memory",
-            id: pair[0], detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`,
-            refs: pair });
-        }
-      } catch { /* skip malformed pair */ }
+  const buckets = new Map<string, { e: MemoryEntry; tokens: Set<string> }[]>();
+  for (const e of active) {
+    const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
+    const arr = buckets.get(key) ?? [];
+    arr.push({ e, tokens: tokenize(`${e.title} ${e.summary}`) });
+    buckets.set(key, arr);
+  }
+  for (const group of buckets.values()) {
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        try {
+          const sim = jaccard(group[i].tokens, group[j].tokens);
+          if (sim >= dupThreshold) {
+            const pair = [group[i].e.id, group[j].e.id].slice().sort();
+            issues.push({ check: "duplicate-like", severity: "info", layer: "memory",
+              id: pair[0], detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`, refs: pair });
+          }
+        } catch { /* defensive: skip malformed pair */ }
+      }
     }
   }
 
   const entEntries = safeValues<EntityPage>(entityIdx.entries)
-    .filter((e) => inScope(e.scope, e.project, opts.project));
+    .filter((e) => inScope(e.scope, opts.project));
   for (const e of entEntries) {
     try {
       for (const mid of e.sourceMemoryIds) {
@@ -161,7 +167,7 @@ export function lintMemory(
   }
 
   const qaEntries = safeValues<QaEntry>(qaIdx.entries)
-    .filter((e) => inScope(e.scope, e.project, opts.project));
+    .filter((e) => inScope(e.scope, opts.project));
   for (const e of qaEntries) {
     try {
       for (const mid of e.sourceMemoryIds) {
