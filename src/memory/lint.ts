@@ -115,6 +115,28 @@ export function lintMemory(
     }
   }
 
+  const qaEntries = Object.values(qaIdx.entries)
+    .filter((e) => inScope(e.scope, e.project, opts.project));
+  for (const e of qaEntries) {
+    for (const mid of e.sourceMemoryIds) {
+      if (!memoryIdx.entries[mid]) {
+        issues.push({ check: "qa-dangling-sourceMemoryId", severity: "warning", layer: "qa",
+          id: e.id, detail: `sourceMemoryId not in memory index`, refs: [mid] });
+      }
+    }
+    for (const rid of e.relatedEntities) {
+      if (!entityIdx.entries[rid]) {
+        issues.push({ check: "qa-unknown-relatedEntity", severity: "warning", layer: "qa",
+          id: e.id, detail: `relatedEntity not in entity index`, refs: [rid] });
+      }
+    }
+    const expectProject = e.scope.startsWith("project:") ? e.scope.slice("project:".length) : null;
+    if (expectProject !== null && expectProject !== e.project) {
+      issues.push({ check: "qa-scope-leak", severity: "error", layer: "qa", id: e.id,
+        detail: `scope=${e.scope} implies project=${JSON.stringify(expectProject)} but stored project=${JSON.stringify(e.project)}` });
+    }
+  }
+
   return {
     generatedAt: opts.generatedAt ?? opts.now,
     counts: { issues: issues.length, suggestions: suggestions.length },

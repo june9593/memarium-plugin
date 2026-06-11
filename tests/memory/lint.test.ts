@@ -108,3 +108,32 @@ describe("lintMemory — entity checks", () => {
     expect(r.issues.filter((f) => f.check === "entity-dangling-sourceMemoryId")).toHaveLength(1);
   });
 });
+
+import type { QaEntry } from "../../src/qa/types.js";
+function qa(over: Partial<QaEntry>): QaEntry {
+  return { id: over.id ?? "qa/p/x", scope: over.scope ?? "project:p", project: over.project ?? "p",
+    question: "q", answerSummary: "a", kind: "operational", tags: [], sources: [],
+    sourceMemoryIds: over.sourceMemoryIds ?? [], sourceSessions: [], relatedEntities: over.relatedEntities ?? [],
+    path: "memory/qa/p/x.md", createdAt: "2026-06-11", updatedAt: "2026-06-11" };
+}
+function qidx(...qs: QaEntry[]) { return { version: 1 as const, entries: Object.fromEntries(qs.map((q) => [q.id, q])) }; }
+
+describe("lintMemory — qa checks", () => {
+  it("qa dangling sourceMemoryId + unknown relatedEntity + scope-leak", () => {
+    const mIdx = idxOf(mem({ id: "semantic/p/real" }));
+    const eIdx = eidx(ent({ id: "entity/p/known" }));
+    const good = qa({ id: "qa/p/a", scope: "project:p", project: "p", sourceMemoryIds: ["semantic/p/real"], relatedEntities: ["entity/p/known"] });
+    const bad = qa({ id: "qa/p/b", scope: "project:p", project: "p", sourceMemoryIds: ["semantic/p/ghost"], relatedEntities: ["entity/p/ghost"] });
+    const leak = qa({ id: "qa/p/c", scope: "project:p", project: "q" });
+    const r = lintMemory(mIdx, eIdx, qidx(good, bad, leak), opts);
+    const cs = r.issues.map((f) => f.check);
+    expect(cs).toContain("qa-dangling-sourceMemoryId");
+    expect(cs).toContain("qa-unknown-relatedEntity");
+    expect(cs).toContain("qa-scope-leak");
+    expect(r.issues.filter((f) => f.id === "qa/p/a")).toHaveLength(0);
+  });
+  it("global qa with project=null is NOT a scope-leak", () => {
+    const r = lintMemory(emptyMemoryIndex(), emptyEntityIndex(), qidx(qa({ id: "qa/_g/x", scope: "global", project: null })), { ...opts, project: null });
+    expect(r.issues.map((f) => f.check)).not.toContain("qa-scope-leak");
+  });
+});
