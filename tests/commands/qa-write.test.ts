@@ -72,4 +72,16 @@ describe("qaWriteCmd", () => {
     await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/symlink guard/);
     expect(existsSync(join(evil, "p", "x.md"))).toBe(false);
   });
+
+  it("refuses to write through a broken symlink on qa dir (symlink guard)", async () => {
+    const nonExistent = join(home, "no-such-target");
+    mkdirSync(join(repo, "memory"), { recursive: true });
+    symlinkSync(nonExistent, join(repo, "memory", "qa"));
+    const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "memory/qa/p/x.md",
+      scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/symlink guard/);
+    expect(existsSync(nonExistent)).toBe(false);
+  });
 });

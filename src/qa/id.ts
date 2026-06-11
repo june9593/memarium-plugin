@@ -23,8 +23,12 @@ export function qaSlug(question: string): string {
   return kebab ? `${kebab}-${hash}` : `q-${hash}`;
 }
 
-/** Full stable identity: qa/<project|_global>/<slug>. Scope is baked into the
- *  scope dir, so the same question in a different scope is a different page. */
+/** Stable identity: qa/<project|_global>/<slug>. The scope DIRECTORY (the
+ *  project slug, or "_global" for global/user scope) plus the slug determine
+ *  the page. global and user scope (both project=null) share the _global
+ *  directory, so they map to the same id — by design, mirroring entity pages.
+ *  `_scope` is accepted for call-site symmetry with the entity API but does
+ *  not affect the id. */
 export function qaId(_scope: string, project: string | null, question: string): string {
   const scopeDir = project ?? "_global";
   return `qa/${scopeDir}/${qaSlug(question)}`;

@@ -11396,7 +11396,7 @@ var qa_write_exports = {};
 __export(qa_write_exports, {
   qaWriteCmd: () => qaWriteCmd
 });
-import { existsSync as existsSync16, mkdirSync as mkdirSync12, readFileSync as readFileSync15, realpathSync as realpathSync3, writeFileSync as writeFileSync11 } from "node:fs";
+import { existsSync as existsSync16, lstatSync, mkdirSync as mkdirSync12, readFileSync as readFileSync15, realpathSync as realpathSync3, writeFileSync as writeFileSync11 } from "node:fs";
 import { dirname as dirname9, join as join19, resolve as resolve5, sep as sep4 } from "node:path";
 function isUnder(child, parent) {
   return child === parent || child.startsWith(parent + sep4);
@@ -11421,6 +11421,15 @@ async function qaWriteCmd(opts) {
     if (!entry.id) entry.id = qaId(entry.scope, entry.project, entry.question);
     if (!entry.path) entry.path = qaPath(entry);
     const qaRoot = resolve5(join19(cfg.repoPath, "memory", "qa"));
+    let qaRootStat;
+    try {
+      qaRootStat = lstatSync(qaRoot);
+    } catch (e) {
+      if (e.code !== "ENOENT") throw e;
+    }
+    if (qaRootStat?.isSymbolicLink()) {
+      throw new Error(`qa-write: refusing to write outside memory/qa/ (symlink guard): ${entry.path}`);
+    }
     mkdirSync12(qaRoot, { recursive: true });
     const abs = resolve5(join19(cfg.repoPath, entry.path));
     if (abs !== qaRoot && !abs.startsWith(qaRoot + sep4)) {
@@ -11509,7 +11518,7 @@ var qa_index_exports = {};
 __export(qa_index_exports, {
   qaIndexCmd: () => qaIndexCmd
 });
-import { existsSync as existsSync17, readFileSync as readFileSync16, readdirSync as readdirSync4 } from "node:fs";
+import { existsSync as existsSync17, lstatSync as lstatSync2, readFileSync as readFileSync16, readdirSync as readdirSync4 } from "node:fs";
 import { join as join20, relative as relative4 } from "node:path";
 function walkMd3(dir) {
   const out = [];
@@ -11535,6 +11544,15 @@ async function qaIndexCmd() {
   const qaRoot = join20(cfg.repoPath, "memory", "qa");
   const idx = emptyQaIndex();
   let indexed = 0;
+  let qaRootStat;
+  try {
+    qaRootStat = lstatSync2(qaRoot);
+  } catch (e) {
+    if (e.code !== "ENOENT") throw e;
+  }
+  if (qaRootStat?.isSymbolicLink()) {
+    throw new Error("qa-index: refusing to index through a symlinked memory/qa/");
+  }
   if (existsSync17(qaRoot)) {
     for (const abs of walkMd3(qaRoot)) {
       const entry = parseQaMarkdown(readFileSync16(abs, "utf8"));

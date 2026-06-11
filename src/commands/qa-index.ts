@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { emptyQaIndex, type QaIndex } from "../qa/types.js";
@@ -28,6 +28,16 @@ export async function qaIndexCmd(): Promise<QaIndexReport> {
   const qaRoot = join(cfg.repoPath, "memory", "qa");
   const idx: QaIndex = emptyQaIndex();
   let indexed = 0;
+
+  // Refuse to index through a symlinked memory/qa (could pull in files from
+  // outside the repo). lstatSync does not follow the link.
+  let qaRootStat;
+  try { qaRootStat = lstatSync(qaRoot); } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  if (qaRootStat?.isSymbolicLink()) {
+    throw new Error("qa-index: refusing to index through a symlinked memory/qa/");
+  }
 
   if (existsSync(qaRoot)) {
     for (const abs of walkMd(qaRoot)) {

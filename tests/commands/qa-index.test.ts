@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { qaWriteCmd } from "../../src/commands/qa-write.js";
@@ -49,5 +49,13 @@ describe("qaIndexCmd", () => {
       vi.stubEnv("HOME", home); // restore outer beforeEach HOME
       rmSync(home2, { recursive: true, force: true });
     }
+  });
+
+  it("refuses to index through a symlinked memory/qa (symlink guard)", async () => {
+    const target = join(home, "outside-dir");
+    mkdirSync(target, { recursive: true });
+    mkdirSync(join(repo, "memory"), { recursive: true });
+    symlinkSync(target, join(repo, "memory", "qa"));
+    await expect(qaIndexCmd()).rejects.toThrow(/symlink/);
   });
 });
