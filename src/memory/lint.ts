@@ -58,9 +58,15 @@ export function lintMemory(
     .filter((e) => inScope(e.scope, e.project, opts.project));
 
   for (const e of memEntries) {
-    if (e.status === "active" && e.validTo !== null && e.validTo.slice(0, 10) <= opts.now) {
-      issues.push({ check: "expired", severity: "warning", layer: "memory", id: e.id,
-        detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})` });
+    if (e.status === "active" && e.validTo !== null) {
+      const ts = Date.parse(e.validTo);
+      if (!isFinite(ts)) {
+        issues.push({ check: "malformed-date", severity: "warning", layer: "memory", id: e.id,
+          detail: `unparseable validTo=${JSON.stringify(e.validTo)}` });
+      } else if (new Date(ts).toISOString().slice(0, 10) <= opts.now) {
+        issues.push({ check: "expired", severity: "warning", layer: "memory", id: e.id,
+          detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})` });
+      }
     }
     if (e.supersedes !== null && !memoryIdx.entries[e.supersedes]) {
       issues.push({ check: "dangling-supersedes", severity: "error", layer: "memory", id: e.id,

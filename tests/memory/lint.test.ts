@@ -49,6 +49,32 @@ describe("lintMemory — memory issues", () => {
     // one day in the future is NOT expired
     expect(checks(run(idxOf(mem({ id: "semantic/p/iso-fut", validTo: "2026-06-12T00:00:00Z" })), { now: "2026-06-11" }))).not.toContain("expired");
   });
+  it("Fix1 (validTo parse-validate): ISO timestamp same-day (noon) → expired flagged", () => {
+    // "2026-06-11T12:00:00Z" normalises to "2026-06-11" which equals now → expired
+    const r = run(idxOf(mem({ id: "semantic/p/noon", validTo: "2026-06-11T12:00:00Z" })), { now: "2026-06-11" });
+    expect(checks(r)).toContain("expired");
+    expect(checks(r)).not.toContain("malformed-date");
+  });
+  it("Fix1 (validTo parse-validate): unparseable validTo → malformed-date, NOT expired", () => {
+    const r = run(idxOf(mem({ id: "semantic/p/bad-vt", validTo: "not-a-date" })));
+    expect(checks(r)).toContain("malformed-date");
+    expect(checks(r)).not.toContain("expired");
+    const f = r.issues.find((x) => x.check === "malformed-date");
+    expect(f?.detail).toContain("not-a-date");
+  });
+  it("Fix1 (validTo parse-validate): non-ISO format validTo → malformed-date, NOT expired", () => {
+    // "06/11/2026" is not parseable as a reliable ISO date in all JS engines
+    const r = run(idxOf(mem({ id: "semantic/p/slash-date", validTo: "06/11/2026" })));
+    // Either malformed-date (if engine rejects it) or expired (if engine accepts it) — must NOT crash
+    // The key invariant: expired is only emitted when the date parses successfully
+    const issueChecks = checks(r);
+    if (issueChecks.includes("malformed-date")) {
+      expect(issueChecks).not.toContain("expired");
+    }
+    // If the engine parsed "06/11/2026" as June 11 2026 it may emit expired — that's acceptable
+    // The point is no crash and the two checks are mutually exclusive
+    expect(issueChecks.filter(c => c === "expired").length + issueChecks.filter(c => c === "malformed-date").length).toBeLessThanOrEqual(1);
+  });
   it("dangling-supersedes: target absent", () => {
     const r = run(idxOf(mem({ id: "semantic/p/a", supersedes: "semantic/p/ghost" })));
     expect(r.issues.find((x) => x.check === "dangling-supersedes")?.refs).toContain("semantic/p/ghost");

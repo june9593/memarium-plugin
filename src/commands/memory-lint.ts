@@ -21,7 +21,7 @@ function corruptIndexFindings(repoPath: string): LintFinding[] {
     if (!existsSync(p)) continue; // missing is fine (empty store)
     try {
       const parsed = JSON.parse(readFileSync(p, "utf8"));
-      if (!parsed || parsed.version !== 1 || typeof parsed.entries !== "object" || parsed.entries === null) {
+      if (!parsed || parsed.version !== 1 || typeof parsed.entries !== "object" || parsed.entries === null || Array.isArray(parsed.entries)) {
         out.push({ check: "corrupt-index", severity: "error", layer, id: rel,
           detail: `index file is not a valid v1 index (version/entries shape) — load returned empty, findings for this layer may be incomplete` });
       }
@@ -62,7 +62,9 @@ export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
     loadMemoryIndex(cfg.repoPath),
     loadEntityIndex(cfg.repoPath),
     loadQaIndex(cfg.repoPath),
-    { now, staleDays: Number.isFinite(opts.staleDays) ? (opts.staleDays as number) : 90, project, generatedAt: now },
+    { now,
+      staleDays: Number.isFinite(opts.staleDays) && (opts.staleDays as number) > 0 ? Math.floor(opts.staleDays as number) : 90,
+      project, generatedAt: now },
   );
   const corrupt = corruptIndexFindings(cfg.repoPath);
   if (corrupt.length) {

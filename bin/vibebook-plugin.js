@@ -11751,14 +11751,25 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   const suggestions = [];
   const memEntries = Object.values(memoryIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
   for (const e of memEntries) {
-    if (e.status === "active" && e.validTo !== null && e.validTo.slice(0, 10) <= opts.now) {
-      issues.push({
-        check: "expired",
-        severity: "warning",
-        layer: "memory",
-        id: e.id,
-        detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})`
-      });
+    if (e.status === "active" && e.validTo !== null) {
+      const ts = Date.parse(e.validTo);
+      if (!isFinite(ts)) {
+        issues.push({
+          check: "malformed-date",
+          severity: "warning",
+          layer: "memory",
+          id: e.id,
+          detail: `unparseable validTo=${JSON.stringify(e.validTo)}`
+        });
+      } else if (new Date(ts).toISOString().slice(0, 10) <= opts.now) {
+        issues.push({
+          check: "expired",
+          severity: "warning",
+          layer: "memory",
+          id: e.id,
+          detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})`
+        });
+      }
     }
     if (e.supersedes !== null && !memoryIdx.entries[e.supersedes]) {
       issues.push({
@@ -11967,7 +11978,7 @@ function corruptIndexFindings(repoPath) {
     if (!existsSync18(p2)) continue;
     try {
       const parsed = JSON.parse(readFileSync17(p2, "utf8"));
-      if (!parsed || parsed.version !== 1 || typeof parsed.entries !== "object" || parsed.entries === null) {
+      if (!parsed || parsed.version !== 1 || typeof parsed.entries !== "object" || parsed.entries === null || Array.isArray(parsed.entries)) {
         out.push({
           check: "corrupt-index",
           severity: "error",
@@ -12018,7 +12029,12 @@ async function memoryLintCmd(opts) {
     loadMemoryIndex(cfg.repoPath),
     loadEntityIndex(cfg.repoPath),
     loadQaIndex(cfg.repoPath),
-    { now, staleDays: Number.isFinite(opts.staleDays) ? opts.staleDays : 90, project, generatedAt: now }
+    {
+      now,
+      staleDays: Number.isFinite(opts.staleDays) && opts.staleDays > 0 ? Math.floor(opts.staleDays) : 90,
+      project,
+      generatedAt: now
+    }
   );
   const corrupt = corruptIndexFindings(cfg.repoPath);
   if (corrupt.length) {

@@ -93,4 +93,29 @@ describe("memoryLintCmd", () => {
     const corrupt = payload.issues.filter((f: { check: string }) => f.check === "corrupt-index");
     expect(corrupt.length).toBe(0);
   });
+
+  it("Fix2 (array entries): entries:[] is NOT a valid v1 index → corrupt-index flagged", async () => {
+    writeFileSync(join(repo, ".vibebook", "index.memory.json"), JSON.stringify({ version: 1, entries: [] }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    const corrupt = payload.issues.filter((f: { check: string }) => f.check === "corrupt-index");
+    expect(corrupt.length).toBeGreaterThan(0);
+    expect(corrupt[0].layer).toBe("memory");
+    expect(corrupt[0].severity).toBe("error");
+  });
+
+  it("Fix3 (stale clamp): staleDays=-1 falls back to 90 — a today-dated episodic is NOT flagged stale-candidate", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    writeFileSync(join(repo, ".vibebook", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "episodic/p/recent": { id: "episodic/p/recent", type: "episodic", scope: "project:p", project: "p",
+        title: "recent thing", summary: "happened today", path: "memory/x.md",
+        status: "active", confidence: 0.8, importance: 1,
+        createdAt: today, updatedAt: today, validFrom: null, validTo: null,
+        sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
+        entities: [], originDevice: null, accessCount: 0, lastAccess: null } } }));
+    await memoryLintCmd({ json: true, staleDays: -1 });
+    const payload = JSON.parse(out.join(""));
+    const stale = payload.issues.filter((f: { check: string }) => f.check === "stale-candidate");
+    expect(stale.length).toBe(0);
+  });
 });
