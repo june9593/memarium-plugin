@@ -62,6 +62,13 @@ describe("lintMemory — memory issues", () => {
     expect(checks(run(idxOf(mem({ id: "semantic/p/s", type: "semantic", updatedAt: "2026-01-01", accessCount: 0 }))))).not.toContain("stale-candidate");
     expect(checks(run(idxOf(mem({ id: "episodic/p/r", type: "episodic", updatedAt: "2026-06-10" }))))).not.toContain("stale-candidate");
   });
+  it("malformed-date: active episodic with unparseable updatedAt → malformed-date, NOT stale-candidate", () => {
+    const r = run(idxOf(mem({ id: "episodic/p/bad", type: "episodic", updatedAt: "not-a-date" })));
+    expect(checks(r)).toContain("malformed-date");
+    expect(checks(r)).not.toContain("stale-candidate");
+    const f = r.issues.find((x) => x.check === "malformed-date");
+    expect(f?.detail).toContain("not-a-date");
+  });
   it("superseded entries are not double-flagged as expired/stale", () => {
     const r = run(idxOf(mem({ id: "semantic/p/g", status: "superseded", validTo: "2000-01-01", updatedAt: "2020-01-01", type: "episodic" })));
     expect(checks(r)).not.toContain("expired");
@@ -76,6 +83,16 @@ describe("lintMemory — duplicate-like", () => {
     const f = run(idxOf(a, b)).issues.find((x) => x.check === "duplicate-like");
     expect(f).toBeTruthy();
     expect(f!.refs!.slice().sort()).toEqual(["semantic/p/a", "semantic/p/b"]);
+  });
+  it("duplicate-like id is deterministic: id === refs[0] (lexicographically first)", () => {
+    // semantic/p/a sorts before semantic/p/b — id must be "semantic/p/a" regardless of loop order
+    const a = mem({ id: "semantic/p/a", title: "Spool format single md", summary: "one md per session with manifest" });
+    const b = mem({ id: "semantic/p/b", title: "Spool format single md file", summary: "one md per session plus manifest" });
+    const f = run(idxOf(a, b)).issues.find((x) => x.check === "duplicate-like");
+    expect(f).toBeTruthy();
+    expect(f!.id).toBe("semantic/p/a");
+    expect(f!.refs![0]).toBe("semantic/p/a");
+    expect(f!.refs![1]).toBe("semantic/p/b");
   });
   it("does NOT flag low-overlap or different type", () => {
     const a = mem({ id: "semantic/p/a", title: "Spool format", summary: "one md per session" });
@@ -159,5 +176,40 @@ describe("lintMemory — suggestions (promotion-candidate)", () => {
     expect(run(idxOf(e1)).suggestions).toHaveLength(0);
     const e2 = mem({ id: "episodic/p/2", type: "episodic", entities: ["b"], updatedAt: "2026-06-10" });
     expect(run(idxOf(e1, e2)).suggestions).toHaveLength(0);
+  });
+});
+
+describe("lintMemory — scope-filter regression", () => {
+  it("opts.project='p': entry scoped project:q excluded from ALL checks, project:p and global ARE linted", () => {
+    // project:q entry would trigger missing-provenance if included
+    const qEntry = mem({ id: "semantic/q/bare", scope: "project:q", project: "q",
+      sourceSessions: [], sourceCommits: [], sourceFiles: [] });
+    // project:p entry also missing provenance
+    const pEntry = mem({ id: "semantic/p/bare", scope: "project:p", project: "p",
+      sourceSessions: [], sourceCommits: [], sourceFiles: [] });
+    // global entry also missing provenance
+    const gEntry = mem({ id: "core/g/bare", type: "semantic", scope: "global", project: null,
+      sourceSessions: [], sourceCommits: [], sourceFiles: [] });
+    const r = run(idxOf(qEntry, pEntry, gEntry), { project: "p" });
+    const ids = r.issues.map((f) => f.id);
+    // q-scoped entry must not appear
+    expect(ids).not.toContain("semantic/q/bare");
+    // p-scoped and global entries must appear
+    expect(ids).toContain("semantic/p/bare");
+    expect(ids).toContain("core/g/bare");
+  });
+});
+
+describe("lintMemory — duplicate-like below-threshold regression", () => {
+  it("overlap just under 0.6 is NOT flagged as duplicate-like", () => {
+    // These titles/summaries produce ~0.5 overlap — below the default 0.6 threshold
+    const a = mem({ id: "semantic/p/a", type: "semantic",
+      title: "vibebook sync command",
+      summary: "runs git push and extracts sessions to markdown" });
+    const b = mem({ id: "semantic/p/b", type: "semantic",
+      title: "vibebook doctor command",
+      summary: "health check validates config and git remote" });
+    const r = run(idxOf(a, b));
+    expect(checks(r)).not.toContain("duplicate-like");
   });
 });
