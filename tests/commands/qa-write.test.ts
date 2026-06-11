@@ -60,31 +60,47 @@ describe("qaWriteCmd", () => {
     expect(Object.keys(loadQaIndex(repo).entries)).toHaveLength(1);
   });
 
-  it("refuses to write outside memory/qa/ (path traversal)", async () => {
-    const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "../../escape.md",
-      scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
+  it("refuses to write when a malicious project escapes memory/qa (derived-path traversal)", async () => {
+    const inputPath = writeInput([{ entry: { scope: "project:x", project: "../../etc",
+      question: "q", answerSummary: "a", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
       createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
     await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/outside memory\/qa/);
+  });
+
+  it("overrides any agent-provided id/path with the value derived from the question", async () => {
+    const inputPath = writeInput([{ entry: { id: "qa/p/STALE", path: "memory/qa/p/STALE.md",
+      scope: "project:p", project: "p", question: "How do I build the project?", answerSummary: "npm build",
+      kind: "operational", tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    const r = await qaWriteCmd({ inputPath });
+    // path is the derived one, not the provided STALE one
+    expect(r.paths[0]).not.toContain("STALE");
+    expect(r.paths[0]).toMatch(/^memory\/qa\/p\/.+\.md$/);
+    const idx = loadQaIndex(repo);
+    const ids = Object.keys(idx.entries);
+    expect(ids).toHaveLength(1);
+    expect(ids[0]).not.toBe("qa/p/STALE");           // derived id, not the stale one
+    expect(ids[0].startsWith("qa/p/")).toBe(true);
   });
 
   it("refuses to write through a symlinked qa dir (symlink guard)", async () => {
     const evil = join(home, "evil"); mkdirSync(evil, { recursive: true });
     mkdirSync(join(repo, "memory"), { recursive: true });
     if (!trySymlink(evil, join(repo, "memory", "qa"))) return; // symlinks unsupported here — skip
-    const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "memory/qa/p/x.md",
+    const inputPath = writeInput([{ entry: {
       scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
       createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
     await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/symlink guard/);
-    expect(existsSync(join(evil, "p", "x.md"))).toBe(false);
+    expect(existsSync(join(evil, "p", "q-8e35c2cd.md"))).toBe(false);
   });
 
   it("refuses to write through a broken symlink on qa dir (symlink guard)", async () => {
     const nonExistent = join(home, "no-such-target");
     mkdirSync(join(repo, "memory"), { recursive: true });
     if (!trySymlink(nonExistent, join(repo, "memory", "qa"))) return; // symlinks unsupported here — skip
-    const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "memory/qa/p/x.md",
+    const inputPath = writeInput([{ entry: {
       scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
       createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
@@ -95,7 +111,7 @@ describe("qaWriteCmd", () => {
   it("refuses to write when memory/ ancestor is a symlink (symlink guard)", async () => {
     const evil = join(home, "evil-ancestor"); mkdirSync(evil, { recursive: true });
     if (!trySymlink(evil, join(repo, "memory"))) return; // symlinks unsupported here — skip
-    const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "memory/qa/p/x.md",
+    const inputPath = writeInput([{ entry: {
       scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
       createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
@@ -107,11 +123,11 @@ describe("qaWriteCmd", () => {
     const external = join(home, "external-scope"); mkdirSync(external, { recursive: true });
     mkdirSync(join(repo, "memory", "qa"), { recursive: true });
     if (!trySymlink(external, join(repo, "memory", "qa", "p"))) return; // symlinks unsupported here — skip
-    const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "memory/qa/p/x.md",
+    const inputPath = writeInput([{ entry: {
       scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
       createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
     await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/symlink guard/);
-    expect(existsSync(join(external, "x.md"))).toBe(false);
+    expect(existsSync(join(external, "q-8e35c2cd.md"))).toBe(false);
   });
 });

@@ -37,8 +37,12 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
   for (const { entry, body } of items) {
     entry.question = normalizeSingleLine(entry.question);
     entry.answerSummary = normalizeSingleLine(entry.answerSummary);
-    if (!entry.id) entry.id = qaId(entry.scope, entry.project, entry.question);
-    if (!entry.path) entry.path = qaPath(entry);
+    // CLI is authoritative for identity: always derive id/path from the
+    // canonical question + scope/project, ignoring any agent-provided id/path.
+    // This keeps the deterministic-slug + upsert-dedup contract stable
+    // regardless of the payload.
+    entry.id = qaId(entry.scope, entry.project, entry.question);
+    entry.path = qaPath(entry);
 
     const qaRoot = resolve(join(cfg.repoPath, "memory", "qa"));
     const abs = resolve(join(cfg.repoPath, entry.path));

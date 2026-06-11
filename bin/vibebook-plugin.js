@@ -11446,8 +11446,8 @@ async function qaWriteCmd(opts) {
   for (const { entry, body } of items) {
     entry.question = normalizeSingleLine(entry.question);
     entry.answerSummary = normalizeSingleLine(entry.answerSummary);
-    if (!entry.id) entry.id = qaId(entry.scope, entry.project, entry.question);
-    if (!entry.path) entry.path = qaPath(entry);
+    entry.id = qaId(entry.scope, entry.project, entry.question);
+    entry.path = qaPath(entry);
     const qaRoot = resolve5(join20(cfg.repoPath, "memory", "qa"));
     const abs = resolve5(join20(cfg.repoPath, entry.path));
     assertNoSymlinkedComponent(cfg.repoPath, dirname9(abs), "qa-write");
