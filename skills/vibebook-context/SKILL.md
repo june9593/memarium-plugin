@@ -71,6 +71,21 @@ vibebook-plugin qa-query --cwd "$(pwd)" --q "<keywords from the user's ask>"
 
 This is **index-only** — it returns ranked `{ question, answerSummary, kind, path }` (NOT the full answer). Present the top matches as a short "Past Q&A" list (question + answerSummary). If the user wants the full answer, Read the `.md` at `path`. Keep this separate from the memory recall list — it is its own light scorer, not part of the BM25 memory ranking.
 
+## Step 1.7 — Pending memory proposals (`memory-diff`)
+
+Long-term memory changes (`core` / `procedural` / pinned) captured by past digests
+are not applied automatically — they wait in a local review queue. Surface them:
+
+```bash
+"$VBP" memory-diff
+```
+
+This is **read-only**. If there are pending proposals, present them briefly
+(target, action, changed fields). The user applies one with
+`memory-approve --id <targetKey>` or discards it with `memory-reject --id <targetKey>`.
+**Do not approve on the user's behalf** — surfacing is recall; approval is the
+user's decision.
+
 ## Step 2 — Optionally narrow
 
 If the user's task has clear keywords, pass them:
