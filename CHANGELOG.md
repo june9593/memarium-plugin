@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.5.0 — 2026-06-10
+
+**Memory OS v2 — automatic project memory + a personal knowledge base.**
+v1 made typed memory exist behind a manual `/vibebook-context`. v2 closes the
+killer use case: project memory now loads **automatically** at session start,
+and sessions grow an **entity wiki**.
+
+### SessionStart auto-injection (the killer use case, automatic)
+
+- **New `SessionStart` hook** (`hooks/session-start.sh`) injects the cwd
+  project's primer (Core + Semantic + Procedural) at the start of every
+  session — so a new session begins already knowing the project without
+  running anything.
+- **New read-only `memory-primer --cwd` command** backs the hook. Strictly
+  read-only (prefers the digest-written `_primer/<project>.md`, falls back to
+  rendering from the index in-memory), never writes, always exits 0, silent
+  when there's no project memory. (The existing `memory-query` writes the
+  primer file, so it is deliberately NOT used by the hook.)
+- Primer sections are capped (top-N by importance) for a hard token budget.
+
+### Entity wiki — personal knowledge base
+
+- **New `memory/entities/<project|_global>/<slug>.md`** living pages — one per
+  file / symbol / API / concept / person — that aggregate what's known about an
+  entity across sessions, with a committed `.vibebook/index.entity.json`.
+- This is a **derived layer, not a 7th memory type**: an entity page is a
+  synthesis / reverse index (no lifecycle/supersede), distinct from the typed
+  memory facts.
+- **New `entity-write` / `entity-query` / `entity-index` commands.**
+  `entity-query --entity <name>` does a reverse lookup (which memories
+  reference the entity) — the raw material the digest agent uses to author a
+  page. Path-safety guarded; own light scorer (not the memory BM25).
+- **Digest step P7.6** synthesizes/updates entity pages after typed-memory
+  distillation; `/vibebook-context` gains an **Entities** browse section.
+
+> Cross-device aggregation of entity pages ships as a small `merge-books`
+> entity pass in the vibebook npm CLI.
+
 ## 0.3.0 — 2026-06-10
 
 **Typed memory layer — a new session starts already knowing the project.**
