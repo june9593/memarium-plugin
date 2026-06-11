@@ -11747,6 +11747,7 @@ function safeValues(rec) {
   );
 }
 function inScope(scope, project, cwdProject) {
+  if (typeof scope !== "string") return cwdProject === null;
   if (cwdProject === null) return true;
   if (scope === "global" || scope === "user") return true;
   const scopeProject = scope.startsWith("project:") ? scope.slice("project:".length) : null;

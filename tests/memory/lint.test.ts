@@ -324,4 +324,11 @@ describe("lintMemory — corrupt-but-parseable index (A-theme)", () => {
     // Should not throw; e1 is skipped in clustering, e2 alone won't meet clusterMin
     expect(() => run(idxOf(e1, e2))).not.toThrow();
   });
+
+  it("does not throw when an entry's scope is non-string (malformed); whole-store includes it without crashing", () => {
+    const bad = { version: 1 as const, entries: { "x": { ...mem({ id: "semantic/p/x" }), scope: 123 as unknown as string } } };
+    expect(() => lintMemory(bad, emptyEntityIndex(), emptyQaIndex(), { ...opts, project: null })).not.toThrow();
+    // and when scoped to a project, the malformed entry is excluded (no crash)
+    expect(() => lintMemory(bad, emptyEntityIndex(), emptyQaIndex(), { ...opts, project: "p" })).not.toThrow();
+  });
 });

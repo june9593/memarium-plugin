@@ -36,6 +36,7 @@ export interface LintOptions {
 }
 
 function inScope(scope: string, project: string | null, cwdProject: string | null): boolean {
+  if (typeof scope !== "string") return cwdProject === null; // malformed scope: include only in whole-store mode so it can be surfaced; it can't match a specific project
   if (cwdProject === null) return true;
   if (scope === "global" || scope === "user") return true;
   const scopeProject = scope.startsWith("project:") ? scope.slice("project:".length) : null;
