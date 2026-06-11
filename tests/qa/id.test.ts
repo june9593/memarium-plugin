@@ -29,4 +29,9 @@ describe("qaSlug / qaId", () => {
   it("falls back to q-<hash> when the question has no slug-able chars", () => {
     expect(qaSlug("???")).toMatch(/^q-[0-9a-f]{8}$/);
   });
+  it("strips apostrophes from slug (no shell/glob hazard)", () => {
+    const s = qaSlug("What's the best way to deploy?");
+    expect(s).not.toContain("'");
+    expect(s).toMatch(/^[a-z0-9-]+-[0-9a-f]{8}$/);
+  });
 });

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-const UNSAFE = /[\\/:*?"<>|\s.,;!()[\]{}@#$%^&+=`~]+/g;
+const UNSAFE = /[\\/:*?"'<>|\s.,;!()[\]{}@#$%^&+=`~]+/g;
 
 /** Collapse all whitespace runs (incl. newlines) to single spaces, trim.
  *  REQUIRED on `question` and `answerSummary` before write — the frontmatter

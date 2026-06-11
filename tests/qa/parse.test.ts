@@ -25,4 +25,10 @@ describe("parseQaMarkdown", () => {
     const md = renderQaMarkdown(entry({ tags: [] }), "b").replace(`tags: []`, `tags: [a, b]`);
     expect(parseQaMarkdown(md)!.tags).toEqual(["a", "b"]);
   });
+  it("question containing a colon round-trips correctly", () => {
+    const e = entry({ question: "How do I configure X: the sequel?" });
+    const parsed = parseQaMarkdown(renderQaMarkdown(e, "body text"));
+    expect(parsed).not.toBeNull();
+    expect(parsed!.question).toBe("How do I configure X: the sequel?");
+  });
 });

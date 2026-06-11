@@ -38,4 +38,36 @@ describe("scoreQa", () => {
     const out = scoreQa([a, b], { project: "p", text: "", kind: "decision", now });
     expect(out.map((x) => x.entry.id)).toEqual(["qa/p/a"]);
   });
+
+  it("future updatedAt does NOT get max recency boost", () => {
+    const future = e({ id: "qa/p/future", updatedAt: "2030-01-01" });
+    const recent = e({ id: "qa/p/recent", updatedAt: now });
+    const out = scoreQa([future, recent], { project: "p", text: "", kind: null, now });
+    // recent should rank >= future; future must not outrank recent purely on recency
+    const futureScore = out.find((x) => x.entry.id === "qa/p/future")!.score;
+    const recentScore = out.find((x) => x.entry.id === "qa/p/recent")!.score;
+    expect(futureScore).toBeLessThanOrEqual(recentScore);
+  });
+
+  it("recent entry ranks above old entry (same text/scope)", () => {
+    const old = e({ id: "qa/p/old", updatedAt: "2026-01-01" });
+    const recent = e({ id: "qa/p/recent", updatedAt: now });
+    const out = scoreQa([old, recent], { project: "p", text: "", kind: null, now });
+    expect(out[0].entry.id).toBe("qa/p/recent");
+  });
+
+  it("project-scoped entries from ANY project included when q.project === null", () => {
+    const other = e({ id: "qa/q/x", scope: "project:q", project: "q" });
+    const out = scoreQa([other], { project: null, text: "", kind: null, now });
+    expect(out).toHaveLength(1);
+  });
+
+  it("sorts by score desc, tiebreaks by id asc", () => {
+    const entries = [
+      e({ id: "qa/p/b", scope: "global", project: null }),
+      e({ id: "qa/p/a", scope: "global", project: null }),
+    ];
+    const out = scoreQa(entries, { project: "p", text: "", kind: null, now });
+    expect(out[0].entry.id).toBe("qa/p/a");
+  });
 });
