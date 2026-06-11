@@ -4,6 +4,14 @@ import type { EntityPage } from "../entity/types.js";
 import type { QaIndex } from "../qa/types.js";
 import type { QaEntry } from "../qa/types.js";
 
+/** Returns a short, truncated, safe snapshot of an unknown entry for use in error details. */
+function entrySnapshot(e: unknown): string {
+  let s: string;
+  try { s = JSON.stringify(e); } catch { s = String(e); }
+  if (typeof s !== "string") s = String(s);
+  return s.length > 120 ? s.slice(0, 120) + "…" : s;
+}
+
 /** Safely extract values from a Record-shaped unknown — returns [] for anything non-object/array/null.
  *  Array values are excluded: typeof [] === "object" but arrays are not valid entries. */
 function safeValues<T>(rec: unknown): T[] {
@@ -124,7 +132,7 @@ export function lintMemory(
       const eid = (e && typeof (e as unknown as Record<string, unknown>).id === "string")
         ? (e as unknown as Record<string, unknown>).id as string : "<unknown>";
       issues.push({ check: "malformed-entry", severity: "error", layer: "memory", id: eid,
-        detail: "entry has unexpected field types and was skipped" });
+        detail: `entry has unexpected field types and was skipped (snapshot: ${entrySnapshot(e)})` });
     }
   }
 
@@ -172,7 +180,7 @@ export function lintMemory(
       const eid = (e && typeof (e as unknown as Record<string, unknown>).id === "string")
         ? (e as unknown as Record<string, unknown>).id as string : "<unknown>";
       issues.push({ check: "malformed-entry", severity: "error", layer: "entity", id: eid,
-        detail: "entry has unexpected field types and was skipped" });
+        detail: `entry has unexpected field types and was skipped (snapshot: ${entrySnapshot(e)})` });
     }
   }
 
@@ -201,7 +209,7 @@ export function lintMemory(
       const eid = (e && typeof (e as unknown as Record<string, unknown>).id === "string")
         ? (e as unknown as Record<string, unknown>).id as string : "<unknown>";
       issues.push({ check: "malformed-entry", severity: "error", layer: "qa", id: eid,
-        detail: "entry has unexpected field types and was skipped" });
+        detail: `entry has unexpected field types and was skipped (snapshot: ${entrySnapshot(e)})` });
     }
   }
 

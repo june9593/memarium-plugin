@@ -302,6 +302,32 @@ describe("lintMemory — corrupt-but-parseable index (A-theme)", () => {
     // The malformed-entry check fires when .sourceSessions.length throws
     const ids = r.issues.map((f) => f.id);
     expect(ids).toContain("semantic/p/broken");
+    // snapshot must appear in detail and contain a recognizable fragment
+    const mf = r.issues.find((f) => f.check === "malformed-entry" && f.id === "semantic/p/broken");
+    if (mf) {
+      expect(mf.detail).toContain("snapshot:");
+      expect(mf.detail).toContain("semantic/p/broken");
+    }
+  });
+
+  it("A2-entity: malformed-entry for entity layer contains snapshot with recognizable fragment", () => {
+    // sourceMemoryIds is null → throws during iteration inside try block
+    const broken = { ...ent({ id: "entity/p/broken" }), sourceMemoryIds: null as unknown as string[] };
+    const r = lintMemory(emptyMemoryIndex(), eidx(broken), emptyQaIndex(), opts);
+    const mf = r.issues.find((f) => f.check === "malformed-entry" && f.layer === "entity");
+    expect(mf).toBeTruthy();
+    expect(mf!.detail).toContain("snapshot:");
+    expect(mf!.detail).toContain("entity/p/broken");
+  });
+
+  it("A2-qa: malformed-entry for qa layer contains snapshot with recognizable fragment", () => {
+    // sourceMemoryIds is null → throws during iteration inside try block
+    const broken = { ...qa({ id: "qa/p/broken" }), sourceMemoryIds: null as unknown as string[] };
+    const r = lintMemory(emptyMemoryIndex(), emptyEntityIndex(), qidx(broken), opts);
+    const mf = r.issues.find((f) => f.check === "malformed-entry" && f.layer === "qa");
+    expect(mf).toBeTruthy();
+    expect(mf!.detail).toContain("snapshot:");
+    expect(mf!.detail).toContain("qa/p/broken");
   });
 
   it("A3: out-of-range validTo string yields malformed-date and does NOT throw", () => {

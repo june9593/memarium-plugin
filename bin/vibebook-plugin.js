@@ -11740,6 +11740,16 @@ var init_qa_query = __esm({
 });
 
 // src/memory/lint.ts
+function entrySnapshot(e) {
+  let s;
+  try {
+    s = JSON.stringify(e);
+  } catch {
+    s = String(e);
+  }
+  if (typeof s !== "string") s = String(s);
+  return s.length > 120 ? s.slice(0, 120) + "\u2026" : s;
+}
 function safeValues(rec) {
   if (!rec || typeof rec !== "object" || Array.isArray(rec)) return [];
   return Object.values(rec).filter(
@@ -11852,7 +11862,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
         severity: "error",
         layer: "memory",
         id: eid,
-        detail: "entry has unexpected field types and was skipped"
+        detail: `entry has unexpected field types and was skipped (snapshot: ${entrySnapshot(e)})`
       });
     }
   }
@@ -11920,7 +11930,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
         severity: "error",
         layer: "entity",
         id: eid,
-        detail: "entry has unexpected field types and was skipped"
+        detail: `entry has unexpected field types and was skipped (snapshot: ${entrySnapshot(e)})`
       });
     }
   }
@@ -11968,7 +11978,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
         severity: "error",
         layer: "qa",
         id: eid,
-        detail: "entry has unexpected field types and was skipped"
+        detail: `entry has unexpected field types and was skipped (snapshot: ${entrySnapshot(e)})`
       });
     }
   }
