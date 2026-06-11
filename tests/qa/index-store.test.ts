@@ -6,9 +6,10 @@ import { loadQaIndex, saveQaIndex, upsertQa, QA_INDEX_REL } from "../../src/qa/i
 import { emptyQaIndex, type QaEntry } from "../../src/qa/types.js";
 
 function entry(id: string): QaEntry {
+  const slug = id.split("/").pop()!;
   return { id, scope: "global", project: null, question: "q", answerSummary: "a",
     kind: "operational", tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [],
-    relatedEntities: [], path: `memory/qa/_global/${id}.md`, createdAt: "2026-06-11", updatedAt: "2026-06-11" };
+    relatedEntities: [], path: `memory/qa/_global/${slug}.md`, createdAt: "2026-06-11", updatedAt: "2026-06-11" };
 }
 
 describe("qa index-store", () => {

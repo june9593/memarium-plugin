@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assertNoSymlinkedComponent } from "../../src/qa/path-guard.js";
 
+/** Create a symlink; return false (so the test can early-return/skip) when the
+ *  platform/permissions don't allow symlink creation (e.g. Windows w/o Dev Mode). */
+function trySymlink(target: string, linkPath: string): boolean {
+  try { symlinkSync(target, linkPath); return true; }
+  catch { return false; }
+}
+
 describe("assertNoSymlinkedComponent", () => {
   let repo: string;
   let external: string;
@@ -23,7 +30,7 @@ describe("assertNoSymlinkedComponent", () => {
     const dotDotFoo = join(repo, "..foo");
     mkdirSync(dotDotFoo);
     const link = join(dotDotFoo, "link");
-    symlinkSync(external, link);
+    if (!trySymlink(external, link)) return; // symlinks unsupported here — skip
     // The guard must NOT skip because "..foo" starts with ".."; it must reach
     // the "link" component and throw.
     expect(() =>
@@ -49,7 +56,7 @@ describe("assertNoSymlinkedComponent", () => {
 
   it("throws when a path component is a symlink to an external dir", () => {
     const a = join(repo, "a");
-    symlinkSync(external, a);
+    if (!trySymlink(external, a)) return; // symlinks unsupported here — skip
     expect(() =>
       assertNoSymlinkedComponent(repo, join(repo, "a", "x"), "t")
     ).toThrow(/symlink guard/);

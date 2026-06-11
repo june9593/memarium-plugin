@@ -5,6 +5,13 @@ import { join } from "node:path";
 import { qaWriteCmd } from "../../src/commands/qa-write.js";
 import { loadQaIndex } from "../../src/qa/index-store.js";
 
+/** Create a symlink; return false (so the test can early-return/skip) when the
+ *  platform/permissions don't allow symlink creation (e.g. Windows w/o Dev Mode). */
+function trySymlink(target: string, linkPath: string): boolean {
+  try { symlinkSync(target, linkPath); return true; }
+  catch { return false; }
+}
+
 let home: string, repo: string;
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "qa-write-home-"));
@@ -64,7 +71,7 @@ describe("qaWriteCmd", () => {
   it("refuses to write through a symlinked qa dir (symlink guard)", async () => {
     const evil = join(home, "evil"); mkdirSync(evil, { recursive: true });
     mkdirSync(join(repo, "memory"), { recursive: true });
-    symlinkSync(evil, join(repo, "memory", "qa"));
+    if (!trySymlink(evil, join(repo, "memory", "qa"))) return; // symlinks unsupported here — skip
     const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "memory/qa/p/x.md",
       scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
@@ -76,7 +83,7 @@ describe("qaWriteCmd", () => {
   it("refuses to write through a broken symlink on qa dir (symlink guard)", async () => {
     const nonExistent = join(home, "no-such-target");
     mkdirSync(join(repo, "memory"), { recursive: true });
-    symlinkSync(nonExistent, join(repo, "memory", "qa"));
+    if (!trySymlink(nonExistent, join(repo, "memory", "qa"))) return; // symlinks unsupported here — skip
     const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "memory/qa/p/x.md",
       scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
@@ -87,7 +94,7 @@ describe("qaWriteCmd", () => {
 
   it("refuses to write when memory/ ancestor is a symlink (symlink guard)", async () => {
     const evil = join(home, "evil-ancestor"); mkdirSync(evil, { recursive: true });
-    symlinkSync(evil, join(repo, "memory"));
+    if (!trySymlink(evil, join(repo, "memory"))) return; // symlinks unsupported here — skip
     const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "memory/qa/p/x.md",
       scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
@@ -99,7 +106,7 @@ describe("qaWriteCmd", () => {
   it("refuses to write through a symlinked scope subdir memory/qa/<scope> (symlink guard)", async () => {
     const external = join(home, "external-scope"); mkdirSync(external, { recursive: true });
     mkdirSync(join(repo, "memory", "qa"), { recursive: true });
-    symlinkSync(external, join(repo, "memory", "qa", "p"));
+    if (!trySymlink(external, join(repo, "memory", "qa", "p"))) return; // symlinks unsupported here — skip
     const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "memory/qa/p/x.md",
       scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],

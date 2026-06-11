@@ -7,6 +7,13 @@ import { qaIndexCmd } from "../../src/commands/qa-index.js";
 import { saveQaIndex, loadQaIndex } from "../../src/qa/index-store.js";
 import { emptyQaIndex } from "../../src/qa/types.js";
 
+/** Create a symlink; return false (so the test can early-return/skip) when the
+ *  platform/permissions don't allow symlink creation (e.g. Windows w/o Dev Mode). */
+function trySymlink(target: string, linkPath: string): boolean {
+  try { symlinkSync(target, linkPath); return true; }
+  catch { return false; }
+}
+
 let home: string, repo: string;
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "qa-index-"));
@@ -55,13 +62,13 @@ describe("qaIndexCmd", () => {
     const target = join(home, "outside-dir");
     mkdirSync(target, { recursive: true });
     mkdirSync(join(repo, "memory"), { recursive: true });
-    symlinkSync(target, join(repo, "memory", "qa"));
+    if (!trySymlink(target, join(repo, "memory", "qa"))) return; // symlinks unsupported here — skip
     await expect(qaIndexCmd()).rejects.toThrow(/symlink/);
   });
 
   it("refuses to index when memory/ ancestor is a symlink (symlink guard)", async () => {
     const evil = join(home, "evil-ancestor"); mkdirSync(evil, { recursive: true });
-    symlinkSync(evil, join(repo, "memory"));
+    if (!trySymlink(evil, join(repo, "memory"))) return; // symlinks unsupported here — skip
     await expect(qaIndexCmd()).rejects.toThrow(/symlink/);
   });
 });
