@@ -29,13 +29,14 @@ function humanReport(r: LintReport): string {
 export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
   const cfg = readPluginConfig();
   const cwd = opts.cwd ?? process.cwd();
-  const project = resolveProjectFromCwd(cwd, cfg.repoPath);
+  let project: string | null = null;
+  try { project = resolveProjectFromCwd(cwd, cfg.repoPath); } catch { project = null; }
   const now = new Date().toISOString().slice(0, 10);
   const report = lintMemory(
     loadMemoryIndex(cfg.repoPath),
     loadEntityIndex(cfg.repoPath),
     loadQaIndex(cfg.repoPath),
-    { now, staleDays: opts.staleDays ?? 90, project, generatedAt: now },
+    { now, staleDays: Number.isFinite(opts.staleDays) ? (opts.staleDays as number) : 90, project, generatedAt: now },
   );
   process.stdout.write(opts.json ? JSON.stringify(report, null, 2) + "\n" : humanReport(report));
 }

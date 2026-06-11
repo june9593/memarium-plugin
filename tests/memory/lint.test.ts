@@ -43,6 +43,12 @@ describe("lintMemory — memory issues", () => {
     expect(checks(run(idxOf(mem({ id: "semantic/p/old", validTo: "2000-01-01" }))))).toContain("expired");
     expect(checks(run(idxOf(mem({ id: "semantic/p/fut", validTo: "2099-01-01" }))))).not.toContain("expired");
   });
+  it("Fix2: validTo with time component — same-day ISO timestamp is expired", () => {
+    // "2026-06-11T00:00:00Z" with now="2026-06-11" — slice(0,10) makes "2026-06-11" <= "2026-06-11"
+    expect(checks(run(idxOf(mem({ id: "semantic/p/iso-same", validTo: "2026-06-11T00:00:00Z" })), { now: "2026-06-11" }))).toContain("expired");
+    // one day in the future is NOT expired
+    expect(checks(run(idxOf(mem({ id: "semantic/p/iso-fut", validTo: "2026-06-12T00:00:00Z" })), { now: "2026-06-11" }))).not.toContain("expired");
+  });
   it("dangling-supersedes: target absent", () => {
     const r = run(idxOf(mem({ id: "semantic/p/a", supersedes: "semantic/p/ghost" })));
     expect(r.issues.find((x) => x.check === "dangling-supersedes")?.refs).toContain("semantic/p/ghost");
@@ -156,6 +162,12 @@ describe("lintMemory — qa checks", () => {
   it("qa-scope-leak: global/user scope with a non-null project IS flagged", () => {
     const leak = qa({ id: "qa/g/x", scope: "global", project: "p" }); // global must have project null
     const r = lintMemory(emptyMemoryIndex(), emptyEntityIndex(), qidx(leak), { ...opts, project: null });
+    expect(r.issues.map((f) => f.check)).toContain("qa-scope-leak");
+  });
+  it("Fix1: corrupt entry (scope:project:p, project:q) still produces qa-scope-leak when linting under project p", () => {
+    // scope says p, project field says q — this is corrupt. lint must not filter it away
+    const corrupt = qa({ id: "qa/p/x", scope: "project:p", project: "q" });
+    const r = lintMemory(emptyMemoryIndex(), emptyEntityIndex(), qidx(corrupt), { ...opts, project: "p" });
     expect(r.issues.map((f) => f.check)).toContain("qa-scope-leak");
   });
 });

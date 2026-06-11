@@ -28,7 +28,8 @@ export interface LintOptions {
 function inScope(scope: string, project: string | null, cwdProject: string | null): boolean {
   if (cwdProject === null) return true;
   if (scope === "global" || scope === "user") return true;
-  return project === cwdProject;
+  const scopeProject = scope.startsWith("project:") ? scope.slice("project:".length) : null;
+  return scopeProject === cwdProject || project === cwdProject;
 }
 
 const tokenize = (s: string): Set<string> =>
@@ -57,7 +58,7 @@ export function lintMemory(
     .filter((e) => inScope(e.scope, e.project, opts.project));
 
   for (const e of memEntries) {
-    if (e.status === "active" && e.validTo !== null && e.validTo <= opts.now) {
+    if (e.status === "active" && e.validTo !== null && e.validTo.slice(0, 10) <= opts.now) {
       issues.push({ check: "expired", severity: "warning", layer: "memory", id: e.id,
         detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})` });
     }

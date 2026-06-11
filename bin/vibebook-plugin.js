@@ -11743,14 +11743,15 @@ var init_qa_query = __esm({
 function inScope(scope, project, cwdProject) {
   if (cwdProject === null) return true;
   if (scope === "global" || scope === "user") return true;
-  return project === cwdProject;
+  const scopeProject = scope.startsWith("project:") ? scope.slice("project:".length) : null;
+  return scopeProject === cwdProject || project === cwdProject;
 }
 function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   const issues = [];
   const suggestions = [];
   const memEntries = Object.values(memoryIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
   for (const e of memEntries) {
-    if (e.status === "active" && e.validTo !== null && e.validTo <= opts.now) {
+    if (e.status === "active" && e.validTo !== null && e.validTo.slice(0, 10) <= opts.now) {
       issues.push({
         check: "expired",
         severity: "warning",
@@ -11970,13 +11971,18 @@ function humanReport(r2) {
 async function memoryLintCmd(opts) {
   const cfg = readPluginConfig();
   const cwd = opts.cwd ?? process.cwd();
-  const project = resolveProjectFromCwd(cwd, cfg.repoPath);
+  let project = null;
+  try {
+    project = resolveProjectFromCwd(cwd, cfg.repoPath);
+  } catch {
+    project = null;
+  }
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const report = lintMemory(
     loadMemoryIndex(cfg.repoPath),
     loadEntityIndex(cfg.repoPath),
     loadQaIndex(cfg.repoPath),
-    { now, staleDays: opts.staleDays ?? 90, project, generatedAt: now }
+    { now, staleDays: Number.isFinite(opts.staleDays) ? opts.staleDays : 90, project, generatedAt: now }
   );
   process.stdout.write(opts.json ? JSON.stringify(report, null, 2) + "\n" : humanReport(report));
 }

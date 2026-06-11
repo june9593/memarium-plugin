@@ -41,4 +41,29 @@ describe("memoryLintCmd", () => {
     try { primerExists = readdirSync(join(repo, "memory")).includes("_primer"); } catch { primerExists = false; }
     expect(primerExists).toBe(false);
   });
+
+  it("Fix3: NaN staleDays falls back to 90 — old episodic (200d ago) still flagged as stale-candidate", async () => {
+    // updatedAt well over 90 days before today
+    writeFileSync(join(repo, ".vibebook", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "episodic/p/old": { id: "episodic/p/old", type: "episodic", scope: "project:p", project: "p",
+        title: "t", summary: "s", path: "memory/x.md", status: "active", confidence: 0.8, importance: 1,
+        createdAt: "2025-01-01", updatedAt: "2025-01-01", validFrom: null, validTo: null,
+        sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
+        entities: [], originDevice: null, accessCount: 0, lastAccess: null } } }));
+    await memoryLintCmd({ json: true, staleDays: NaN });
+    const payload = JSON.parse(out.join(""));
+    const checks = payload.issues.map((f: { check: string }) => f.check);
+    expect(checks).toContain("stale-candidate");
+  });
+
+  it("Fix4: corrupt .vibebook/index.json does not crash — emits valid LintReport (project=null fallback)", async () => {
+    // Write an invalid JSON to the spool index (not the memory index) to force a throw in resolveProjectFromCwd
+    writeFileSync(join(repo, ".vibebook", "index.json"), "{ not json");
+    // Should not throw; must emit a valid (possibly empty) LintReport
+    await expect(memoryLintCmd({ json: true })).resolves.not.toThrow();
+    const payload = JSON.parse(out.join(""));
+    expect(Array.isArray(payload.issues)).toBe(true);
+    expect(Array.isArray(payload.suggestions)).toBe(true);
+    expect(typeof payload.counts.issues).toBe("number");
+  });
 });
