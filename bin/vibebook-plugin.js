@@ -11396,7 +11396,7 @@ import { lstatSync } from "node:fs";
 import { join as join19, relative as relative4, sep as sep4 } from "node:path";
 function assertNoSymlinkedComponent(repoPath, targetAbs, label) {
   const rel = relative4(repoPath, targetAbs);
-  if (rel.startsWith("..") || rel === "") return;
+  if (rel === "" || rel === ".." || rel.startsWith(".." + sep4)) return;
   let cur = repoPath;
   for (const seg of rel.split(sep4)) {
     if (!seg) continue;

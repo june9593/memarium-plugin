@@ -12,8 +12,9 @@ import { join, relative, sep } from "node:path";
  */
 export function assertNoSymlinkedComponent(repoPath: string, targetAbs: string, label: string): void {
   const rel = relative(repoPath, targetAbs);
-  // If target is not under repoPath, that's a separate (path-traversal) concern.
-  if (rel.startsWith("..") || rel === "") return;
+  // Outside repoPath (or equal to it) → not our concern here. Use a precise
+  // check: a literal ".." segment, NOT any name that merely starts with "..".
+  if (rel === "" || rel === ".." || rel.startsWith(".." + sep)) return;
   let cur = repoPath;
   for (const seg of rel.split(sep)) {
     if (!seg) continue;
