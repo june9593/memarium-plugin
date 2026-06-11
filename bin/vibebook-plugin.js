@@ -11429,6 +11429,9 @@ import { dirname as dirname9, join as join20, resolve as resolve5, sep as sep5 }
 function isUnder(child, parent) {
   return child === parent || child.startsWith(parent + sep5);
 }
+function isSafeProjectSlug(p2) {
+  return p2.length > 0 && !p2.includes("/") && !p2.includes("\\") && !p2.includes("\0") && p2 !== "." && p2 !== "..";
+}
 function qaPath(e) {
   const scopeDir = e.project ?? "_global";
   const slug = e.id.split("/").pop() ?? e.id;
@@ -11447,6 +11450,9 @@ async function qaWriteCmd(opts) {
     entry.question = normalizeSingleLine(entry.question);
     entry.answerSummary = normalizeSingleLine(entry.answerSummary);
     entry.project = entry.scope.startsWith("project:") ? entry.scope.slice("project:".length) : null;
+    if (entry.project !== null && !isSafeProjectSlug(entry.project)) {
+      throw new Error(`qa-write: invalid project slug in scope ${JSON.stringify(entry.scope)}`);
+    }
     entry.id = qaId(entry.scope, entry.project, entry.question);
     entry.path = qaPath(entry);
     const qaRoot = resolve5(join20(cfg.repoPath, "memory", "qa"));

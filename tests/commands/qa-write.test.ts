@@ -62,12 +62,48 @@ describe("qaWriteCmd", () => {
 
   it("refuses to write when a malicious scope escapes memory/qa (derived-path traversal via scope)", async () => {
     // scope is authoritative: project is derived from scope, so the escape vector
-    // must be in scope. "project:../../etc" → derived project = "../../etc" → path escapes.
+    // must be in scope. "project:../../etc" → derived project = "../../etc" → slug validation
+    // fires first (contains "/") before the path-traversal guard is reached.
     const inputPath = writeInput([{ entry: { scope: "project:../../etc", project: "anything",
       question: "q", answerSummary: "a", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
       createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
-    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/outside memory\/qa/);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
+  it("rejects malformed project slug: empty (scope: 'project:')", async () => {
+    const inputPath = writeInput([{ entry: { scope: "project:", project: "",
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
+  it("rejects malformed project slug: path separator (scope: 'project:a/b')", async () => {
+    const inputPath = writeInput([{ entry: { scope: "project:a/b", project: "a/b",
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
+  it("rejects malformed project slug: dot-dot segment (scope: 'project:..')", async () => {
+    const inputPath = writeInput([{ entry: { scope: "project:..", project: "..",
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
+  it("accepts a normal project slug and writes under memory/qa/<project>/ (scope: 'project:edge-memvc')", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project:edge-memvc", project: "edge-memvc",
+      question: "How do I build edge-memvc?", answerSummary: "npm run build", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    const r = await qaWriteCmd({ inputPath });
+    expect(r.written).toBe(1);
+    expect(r.paths[0].startsWith("memory/qa/edge-memvc/")).toBe(true);
   });
 
   it("overrides any agent-provided id/path with the value derived from the question", async () => {

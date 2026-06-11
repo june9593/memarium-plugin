@@ -12,6 +12,11 @@ function isUnder(child: string, parent: string): boolean {
   return child === parent || child.startsWith(parent + sep);
 }
 
+/** Returns true when a project slug is safe to use as a single path component. */
+function isSafeProjectSlug(p: string): boolean {
+  return p.length > 0 && !p.includes("/") && !p.includes("\\") && !p.includes("\0") && p !== "." && p !== "..";
+}
+
 export interface QaWriteOptions { inputPath?: string; }
 export interface QaWriteReport { written: number; paths: string[]; }
 
@@ -42,6 +47,9 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
     entry.project = entry.scope.startsWith("project:")
       ? entry.scope.slice("project:".length)
       : null;
+    if (entry.project !== null && !isSafeProjectSlug(entry.project)) {
+      throw new Error(`qa-write: invalid project slug in scope ${JSON.stringify(entry.scope)}`);
+    }
     // CLI is authoritative for identity: always derive id/path from the
     // canonical question + scope/project, ignoring any agent-provided id/path.
     // This keeps the deterministic-slug + upsert-dedup contract stable
