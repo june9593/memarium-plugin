@@ -282,4 +282,47 @@ describe("qaWriteCmd", () => {
     await expect(qaWriteCmd({ inputPath: mkInput() })).rejects.toThrow(/symlink guard/);
     expect(existsSync(evil)).toBe(false); // content was NOT written through the symlink
   });
+
+  it("trims and accepts 'global ' (trailing space) → stored scope 'global', project null, path under _global", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "global ", project: null,
+      question: "What does global mean?", answerSummary: "Cross-project entry.", kind: "decision",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    const r = await qaWriteCmd({ inputPath });
+    expect(r.written).toBe(1);
+    expect(r.paths[0].startsWith("memory/qa/_global/")).toBe(true);
+    const idx = loadQaIndex(repo);
+    const ids = Object.keys(idx.entries);
+    expect(ids).toHaveLength(1);
+    const stored = idx.entries[ids[0]];
+    expect(stored.scope).toBe("global");   // trimmed/canonical — no trailing space
+    expect(stored.project).toBeNull();
+  });
+
+  it("accepts scope 'user' → stored scope 'user', project null", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "user", project: null,
+      question: "What is my user preference?", answerSummary: "Detailed answer.", kind: "decision",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    const r = await qaWriteCmd({ inputPath });
+    expect(r.written).toBe(1);
+    expect(r.paths[0].startsWith("memory/qa/_global/")).toBe(true);
+    const idx = loadQaIndex(repo);
+    const ids = Object.keys(idx.entries);
+    expect(ids).toHaveLength(1);
+    const stored = idx.entries[ids[0]];
+    expect(stored.scope).toBe("user");
+    expect(stored.project).toBeNull();
+  });
+
+  it("rejects an unrecognized scope 'weird' (not global/user/project:) → throws /invalid scope/", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "weird", project: null,
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid scope/);
+  });
 });

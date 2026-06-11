@@ -11454,6 +11454,11 @@ async function qaWriteCmd(opts) {
       entry.project = slug;
       entry.scope = `project:${slug}`;
     } else {
+      const s = entry.scope.trim();
+      if (s !== "global" && s !== "user") {
+        throw new Error(`qa-write: invalid scope ${JSON.stringify(entry.scope)} (expected "global", "user", or "project:<slug>")`);
+      }
+      entry.scope = s;
       entry.project = null;
     }
     entry.id = qaId(entry.scope, entry.project, entry.question);

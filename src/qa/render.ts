@@ -1,7 +1,6 @@
 import type { QaEntry } from "./types.js";
 
 function arr(xs: string[]): string { return JSON.stringify(xs); }
-function scalar(v: string | null): string { return v === null ? "null" : v; }
 
 /** Render a qa page .md = YAML frontmatter (from the structured entry) + verbatim body.
  *  `question` / `answerSummary` MUST already be single-line (see qa/id.ts). */

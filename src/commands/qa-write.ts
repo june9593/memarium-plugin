@@ -56,7 +56,12 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
       entry.project = slug;
       entry.scope = `project:${slug}`;   // canonical (trimmed)
     } else {
-      entry.project = null;              // global / user (or other) → no project dir
+      const s = entry.scope.trim();
+      if (s !== "global" && s !== "user") {
+        throw new Error(`qa-write: invalid scope ${JSON.stringify(entry.scope)} (expected "global", "user", or "project:<slug>")`);
+      }
+      entry.scope = s;          // canonical (trimmed)
+      entry.project = null;
     }
     // CLI is authoritative for identity: always derive id/path from the
     // canonical question + scope/project, ignoring any agent-provided id/path.
