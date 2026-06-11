@@ -13,12 +13,12 @@ function safeValues<T>(rec: unknown): T[] {
   );
 }
 
-/** Returns true only when rec[id] is a non-null, non-array object (a valid index entry).
- *  A truthy-but-corrupt value (string, number, array) returns false. */
+/** Returns true only when rec[id] is a non-null, non-array object with a string id field (a valid index entry).
+ *  A truthy-but-corrupt value (string, number, array, or empty object without a string id) returns false. */
 function validEntryExists(rec: unknown, id: string): boolean {
   if (!rec || typeof rec !== "object" || Array.isArray(rec)) return false;
   const v = (rec as Record<string, unknown>)[id];
-  return v !== null && typeof v === "object" && !Array.isArray(v);
+  return v !== null && typeof v === "object" && !Array.isArray(v) && typeof (v as { id?: unknown }).id === "string";
 }
 
 export interface LintFinding {

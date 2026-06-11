@@ -391,6 +391,27 @@ describe("lintMemory — corrupt-but-truthy referential targets", () => {
     expect(r.issues.find((f) => f.check === "qa-unknown-relatedEntity" && f.refs?.includes("bad"))).toBeTruthy();
   });
 
+  it("empty-object target ({}) → dangling-supersedes IS flagged, superseded-conflict NOT flagged", () => {
+    const mIdx = {
+      version: 1 as const,
+      entries: {
+        "semantic/p/a": mem({ id: "semantic/p/a", supersedes: "B" }),
+        "B": {} as unknown as ReturnType<typeof mem>,
+      },
+    };
+    const r = lintMemory(mIdx, emptyEntityIndex(), emptyQaIndex(), opts);
+    expect(r.issues.find((f) => f.check === "dangling-supersedes" && f.id === "semantic/p/a")).toBeTruthy();
+    expect(r.issues.find((f) => f.check === "superseded-conflict" && f.id === "semantic/p/a")).toBeFalsy();
+  });
+
+  it("positive control: valid object target with string id + status:active → superseded-conflict IS flagged, dangling-supersedes NOT flagged", () => {
+    const A = mem({ id: "semantic/p/a", supersedes: "B" });
+    const B = mem({ id: "B", status: "active" });
+    const r = lintMemory(idxOf(A, B), emptyEntityIndex(), emptyQaIndex(), opts);
+    expect(r.issues.find((f) => f.check === "superseded-conflict" && f.id === "semantic/p/a")).toBeTruthy();
+    expect(r.issues.find((f) => f.check === "dangling-supersedes" && f.id === "semantic/p/a")).toBeFalsy();
+  });
+
   it("positive: valid object targets are NOT flagged as dangling", () => {
     // supersedes a real entry → no dangling-supersedes
     const A = mem({ id: "semantic/p/a", supersedes: "semantic/p/b" });

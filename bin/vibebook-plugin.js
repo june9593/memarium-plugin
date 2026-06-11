@@ -11749,7 +11749,7 @@ function safeValues(rec) {
 function validEntryExists(rec, id) {
   if (!rec || typeof rec !== "object" || Array.isArray(rec)) return false;
   const v = rec[id];
-  return v !== null && typeof v === "object" && !Array.isArray(v);
+  return v !== null && typeof v === "object" && !Array.isArray(v) && typeof v.id === "string";
 }
 function inScope(scope, cwdProject) {
   if (typeof scope !== "string") return cwdProject === null;
