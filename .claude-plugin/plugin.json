@@ -1,7 +1,7 @@
 {
   "name": "vibebook",
-  "description": "Turn your Claude Code + VS Code Copilot Chat + Codex sessions into per-project chronicles, typed memory, and a personal entity wiki — then auto-load the project primer at the start of every session so a new session already knows the project (architecture, setup, gotchas, rules). Standalone Claude Code plugin. Optional vibebook npm CLI for cross-device sync.",
-  "version": "0.5.0",
+  "description": "Turn your Claude Code + VS Code Copilot Chat + Codex sessions into per-project chronicles, typed memory, a personal entity wiki, and distilled Q&A — then auto-load the project primer at the start of every session so a new session already knows the project (architecture, setup, gotchas, rules). Standalone Claude Code plugin. Optional vibebook npm CLI for cross-device sync.",
+  "version": "0.6.0",
   "license": "MIT",
   "keywords": [
     "claude-code",

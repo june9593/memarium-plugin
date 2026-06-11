@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "vibebook",
-      "description": "/vibebook digests sessions into chronicles + typed memory + an entity wiki. A SessionStart hook auto-injects the project primer so a new session starts already knowing the project. /vibebook-context for deeper recall + entities; /vibebook-recall to dig into chronicles.",
-      "version": "0.5.0",
+      "description": "/vibebook digests sessions into chronicles + typed memory + an entity wiki + distilled Q&A. A SessionStart hook auto-injects the project primer so a new session starts already knowing the project. /vibebook-context for deeper recall + entities + past Q&A; /vibebook-recall to dig into chronicles.",
+      "version": "0.6.0",
       "source": "./",
       "category": "productivity"
     }
