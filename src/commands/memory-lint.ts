@@ -1,11 +1,37 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
-import { loadMemoryIndex } from "../memory/index-store.js";
-import { loadEntityIndex } from "../entity/index-store.js";
-import { loadQaIndex } from "../qa/index-store.js";
+import { loadMemoryIndex, MEMORY_INDEX_REL } from "../memory/index-store.js";
+import { loadEntityIndex, ENTITY_INDEX_REL } from "../entity/index-store.js";
+import { loadQaIndex, QA_INDEX_REL } from "../qa/index-store.js";
 import { lintMemory, type LintFinding, type LintReport } from "../memory/lint.js";
 
 export interface MemoryLintOptions { cwd?: string; json?: boolean; staleDays?: number; }
+
+function corruptIndexFindings(repoPath: string): LintFinding[] {
+  const out: LintFinding[] = [];
+  const specs: Array<{ rel: string; layer: LintFinding["layer"] }> = [
+    { rel: MEMORY_INDEX_REL, layer: "memory" },
+    { rel: ENTITY_INDEX_REL, layer: "entity" },
+    { rel: QA_INDEX_REL, layer: "qa" },
+  ];
+  for (const { rel, layer } of specs) {
+    const p = join(repoPath, rel);
+    if (!existsSync(p)) continue; // missing is fine (empty store)
+    try {
+      const parsed = JSON.parse(readFileSync(p, "utf8"));
+      if (!parsed || parsed.version !== 1 || typeof parsed.entries !== "object" || parsed.entries === null) {
+        out.push({ check: "corrupt-index", severity: "error", layer, id: rel,
+          detail: `index file is not a valid v1 index (version/entries shape) — load returned empty, findings for this layer may be incomplete` });
+      }
+    } catch {
+      out.push({ check: "corrupt-index", severity: "error", layer, id: rel,
+        detail: `index file is not valid JSON — load returned empty, findings for this layer may be incomplete` });
+    }
+  }
+  return out;
+}
 
 function humanReport(r: LintReport): string {
   const lines: string[] = [];
@@ -38,5 +64,10 @@ export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
     loadQaIndex(cfg.repoPath),
     { now, staleDays: Number.isFinite(opts.staleDays) ? (opts.staleDays as number) : 90, project, generatedAt: now },
   );
+  const corrupt = corruptIndexFindings(cfg.repoPath);
+  if (corrupt.length) {
+    report.issues = [...corrupt, ...report.issues];
+    report.counts = { issues: report.issues.length, suggestions: report.suggestions.length };
+  }
   process.stdout.write(opts.json ? JSON.stringify(report, null, 2) + "\n" : humanReport(report));
 }

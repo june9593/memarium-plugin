@@ -93,11 +93,12 @@ export function lintMemory(
 
   const dupThreshold = opts.dupThreshold ?? 0.6;
   const active = memEntries.filter((e) => e.status === "active");
+  const activeTokens = active.map((e) => tokenize(`${e.title} ${e.summary}`));
   for (let i = 0; i < active.length; i++) {
     for (let j = i + 1; j < active.length; j++) {
       const a = active[i], b = active[j];
       if (a.type !== b.type || a.scope !== b.scope || a.project !== b.project) continue;
-      const sim = jaccard(tokenize(`${a.title} ${a.summary}`), tokenize(`${b.title} ${b.summary}`));
+      const sim = jaccard(activeTokens[i], activeTokens[j]);
       if (sim >= dupThreshold) {
         const pair = [a.id, b.id].slice().sort();
         issues.push({ check: "duplicate-like", severity: "info", layer: "memory",

@@ -66,4 +66,31 @@ describe("memoryLintCmd", () => {
     expect(Array.isArray(payload.suggestions)).toBe(true);
     expect(typeof payload.counts.issues).toBe("number");
   });
+
+  it("corrupt-index: invalid JSON in index.memory.json → corrupt-index finding with layer=memory, no throw", async () => {
+    writeFileSync(join(repo, ".vibebook", "index.memory.json"), "{ not json");
+    await expect(memoryLintCmd({ json: true })).resolves.not.toThrow();
+    const payload = JSON.parse(out.join(""));
+    const corrupt = payload.issues.filter((f: { check: string }) => f.check === "corrupt-index");
+    expect(corrupt.length).toBeGreaterThan(0);
+    expect(corrupt[0].layer).toBe("memory");
+    expect(corrupt[0].severity).toBe("error");
+  });
+
+  it("corrupt-index: wrong-version index.qa.json → corrupt-index finding with layer=qa", async () => {
+    writeFileSync(join(repo, ".vibebook", "index.qa.json"), JSON.stringify({ version: 2, entries: {} }));
+    await expect(memoryLintCmd({ json: true })).resolves.not.toThrow();
+    const payload = JSON.parse(out.join(""));
+    const corrupt = payload.issues.filter((f: { check: string }) => f.check === "corrupt-index");
+    expect(corrupt.length).toBeGreaterThan(0);
+    expect(corrupt[0].layer).toBe("qa");
+  });
+
+  it("corrupt-index: valid v1 index file → no corrupt-index finding", async () => {
+    writeFileSync(join(repo, ".vibebook", "index.memory.json"), JSON.stringify({ version: 1, entries: {} }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    const corrupt = payload.issues.filter((f: { check: string }) => f.check === "corrupt-index");
+    expect(corrupt.length).toBe(0);
+  });
 });
