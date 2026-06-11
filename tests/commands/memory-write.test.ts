@@ -122,8 +122,66 @@ describe("memoryWriteCmd", () => {
     }]));
 
     const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
-    await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow("refusing to write outside memory/");
+    // canonical-path check fires first (path mismatch), but the traversal is also blocked
+    await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow(/does not match canonical|refusing to write outside memory\//);
     // must not have created the file at the escaping path
     expect(existsSync(join(repo, "../../escape.md"))).toBe(false);
+  });
+
+  it("rejects a gated entry (core) — directs to memory-propose, writes nothing", async () => {
+    const input = join(fakeHome, "g.json");
+    writeFileSync(input, JSON.stringify([{
+      entry: {
+        id: "core/yue-workflow", type: "core", scope: "global", project: null,
+        title: "wf", summary: "s", status: "active", confidence: 0.9, importance: 5,
+        createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
+        sourceSessions: [], sourceCommits: [], sourceFiles: [],
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+      },
+      body: "b",
+    }]));
+    const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
+    await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow(/memory-propose/);
+    expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(false);
+  });
+
+  it("rejects a non-gated entry that supersedes a gated id (bypass closed)", async () => {
+    const idxPath = join(repo, ".vibebook/index.memory.json");
+    writeFileSync(idxPath, JSON.stringify({ version: 1, entries: { "core/y": {
+      id: "core/y", type: "core", scope: "global", project: null, title: "y", summary: "s",
+      path: "memory/core/_global/y.md", status: "active", confidence: 1, importance: 5,
+      createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
+      sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null, entities: [],
+      originDevice: null, accessCount: 0, lastAccess: null } } }));
+    const input = join(fakeHome, "s.json");
+    writeFileSync(input, JSON.stringify([{
+      entry: {
+        id: "semantic/p/z", type: "semantic", scope: "project:p", project: "p",
+        title: "z", summary: "s", status: "active", confidence: 0.5, importance: 1,
+        createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
+        sourceSessions: [], sourceCommits: [], sourceFiles: [],
+        supersedes: "core/y", entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+      },
+      body: "b",
+    }]));
+    const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
+    await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow(/memory-propose/);
+  });
+
+  it("rejects a non-gated entry whose path points under memory/core/", async () => {
+    const input = join(fakeHome, "p.json");
+    writeFileSync(input, JSON.stringify([{
+      entry: {
+        id: "semantic/p/z", type: "semantic", scope: "project:p", project: "p",
+        title: "z", summary: "s", path: "memory/core/_global/yue-workflow.md",
+        status: "active", confidence: 0.5, importance: 1,
+        createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
+        sourceSessions: [], sourceCommits: [], sourceFiles: [],
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+      },
+      body: "evil",
+    }]));
+    const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
+    await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow(/does not match canonical/);
   });
 });
