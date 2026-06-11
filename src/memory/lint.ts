@@ -75,6 +75,29 @@ export function lintMemory(
     }
   }
 
+  const tokenize = (s: string): Set<string> =>
+    new Set(s.toLowerCase().split(/[^a-z0-9_]+/).filter((t) => t.length > 2));
+  const jaccard = (a: Set<string>, b: Set<string>): number => {
+    if (a.size === 0 && b.size === 0) return 0;
+    let inter = 0;
+    for (const t of a) if (b.has(t)) inter++;
+    return inter / (a.size + b.size - inter);
+  };
+  const dupThreshold = opts.dupThreshold ?? 0.6;
+  const active = memEntries.filter((e) => e.status === "active");
+  for (let i = 0; i < active.length; i++) {
+    for (let j = i + 1; j < active.length; j++) {
+      const a = active[i], b = active[j];
+      if (a.type !== b.type || a.scope !== b.scope || a.project !== b.project) continue;
+      const sim = jaccard(tokenize(`${a.title} ${a.summary}`), tokenize(`${b.title} ${b.summary}`));
+      if (sim >= dupThreshold) {
+        issues.push({ check: "duplicate-like", severity: "info", layer: "memory",
+          id: a.id, detail: `near-duplicate of ${b.id} (overlap ${sim.toFixed(2)})`,
+          refs: [a.id, b.id].slice().sort() });
+      }
+    }
+  }
+
   return {
     generatedAt: opts.generatedAt ?? opts.now,
     counts: { issues: issues.length, suggestions: suggestions.length },

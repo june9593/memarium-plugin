@@ -68,3 +68,21 @@ describe("lintMemory — memory issues", () => {
     expect(checks(r)).not.toContain("stale-candidate");
   });
 });
+
+describe("lintMemory — duplicate-like", () => {
+  it("flags two active same-type/scope/project entries with high title+summary overlap", () => {
+    const a = mem({ id: "semantic/p/a", title: "Spool format single md", summary: "one md per session with manifest" });
+    const b = mem({ id: "semantic/p/b", title: "Spool format single md file", summary: "one md per session plus manifest" });
+    const f = run(idxOf(a, b)).issues.find((x) => x.check === "duplicate-like");
+    expect(f).toBeTruthy();
+    expect(f!.refs!.slice().sort()).toEqual(["semantic/p/a", "semantic/p/b"]);
+  });
+  it("does NOT flag low-overlap or different type", () => {
+    const a = mem({ id: "semantic/p/a", title: "Spool format", summary: "one md per session" });
+    const b = mem({ id: "semantic/p/b", title: "Encryption toggle", summary: "git filter scrubs raw" });
+    expect(checks(run(idxOf(a, b)))).not.toContain("duplicate-like");
+    const c = mem({ id: "procedural/p/c", type: "procedural", title: "Spool format single md", summary: "one md per session with manifest" });
+    const d = mem({ id: "semantic/p/d", type: "semantic", title: "Spool format single md", summary: "one md per session with manifest" });
+    expect(checks(run(idxOf(c, d)))).not.toContain("duplicate-like");
+  });
+});
