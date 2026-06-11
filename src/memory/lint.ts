@@ -101,11 +101,11 @@ export function lintMemory(
             detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})` });
         }
       }
-      if (e.supersedes !== null && !validEntryExists(memoryIdx.entries, e.supersedes)) {
+      if (typeof e.supersedes === "string" && !validEntryExists(memoryIdx.entries, e.supersedes)) {
         issues.push({ check: "dangling-supersedes", severity: "error", layer: "memory", id: e.id,
           detail: `supersedes a memory not in the index`, refs: [e.supersedes] });
       }
-      if (e.supersedes !== null && validEntryExists(memoryIdx.entries, e.supersedes)) {
+      if (typeof e.supersedes === "string" && validEntryExists(memoryIdx.entries, e.supersedes)) {
         const target = (memoryIdx.entries as Record<string, MemoryEntry>)[e.supersedes];
         if (target.status === "active") {
           issues.push({ check: "superseded-conflict", severity: "error", layer: "memory", id: e.id,
@@ -164,16 +164,22 @@ export function lintMemory(
     .filter((e) => inScope(e.scope, opts.project));
   for (const e of entEntries) {
     try {
-      for (const mid of e.sourceMemoryIds) {
-        if (!validEntryExists(memoryIdx.entries, mid)) {
-          issues.push({ check: "entity-dangling-sourceMemoryId", severity: "warning", layer: "entity",
-            id: e.id, detail: `sourceMemoryId not in memory index`, refs: [mid] });
+      if (Array.isArray(e.sourceMemoryIds)) {
+        for (const mid of e.sourceMemoryIds) {
+          if (typeof mid !== "string") continue;
+          if (!validEntryExists(memoryIdx.entries, mid)) {
+            issues.push({ check: "entity-dangling-sourceMemoryId", severity: "warning", layer: "entity",
+              id: e.id, detail: `sourceMemoryId not in memory index`, refs: [mid] });
+          }
         }
       }
-      for (const rid of e.relatedEntities) {
-        if (!validEntryExists(entityIdx.entries, rid)) {
-          issues.push({ check: "entity-unknown-relatedEntity", severity: "warning", layer: "entity",
-            id: e.id, detail: `relatedEntity not in entity index`, refs: [rid] });
+      if (Array.isArray(e.relatedEntities)) {
+        for (const rid of e.relatedEntities) {
+          if (typeof rid !== "string") continue;
+          if (!validEntryExists(entityIdx.entries, rid)) {
+            issues.push({ check: "entity-unknown-relatedEntity", severity: "warning", layer: "entity",
+              id: e.id, detail: `relatedEntity not in entity index`, refs: [rid] });
+          }
         }
       }
     } catch {
@@ -188,16 +194,22 @@ export function lintMemory(
     .filter((e) => inScope(e.scope, opts.project));
   for (const e of qaEntries) {
     try {
-      for (const mid of e.sourceMemoryIds) {
-        if (!validEntryExists(memoryIdx.entries, mid)) {
-          issues.push({ check: "qa-dangling-sourceMemoryId", severity: "warning", layer: "qa",
-            id: e.id, detail: `sourceMemoryId not in memory index`, refs: [mid] });
+      if (Array.isArray(e.sourceMemoryIds)) {
+        for (const mid of e.sourceMemoryIds) {
+          if (typeof mid !== "string") continue;
+          if (!validEntryExists(memoryIdx.entries, mid)) {
+            issues.push({ check: "qa-dangling-sourceMemoryId", severity: "warning", layer: "qa",
+              id: e.id, detail: `sourceMemoryId not in memory index`, refs: [mid] });
+          }
         }
       }
-      for (const rid of e.relatedEntities) {
-        if (!validEntryExists(entityIdx.entries, rid)) {
-          issues.push({ check: "qa-unknown-relatedEntity", severity: "warning", layer: "qa",
-            id: e.id, detail: `relatedEntity not in entity index`, refs: [rid] });
+      if (Array.isArray(e.relatedEntities)) {
+        for (const rid of e.relatedEntities) {
+          if (typeof rid !== "string") continue;
+          if (!validEntryExists(entityIdx.entries, rid)) {
+            issues.push({ check: "qa-unknown-relatedEntity", severity: "warning", layer: "qa",
+              id: e.id, detail: `relatedEntity not in entity index`, refs: [rid] });
+          }
         }
       }
       const expectProject = e.scope.startsWith("project:") ? e.scope.slice("project:".length) : null;

@@ -311,8 +311,15 @@ describe("lintMemory — corrupt-but-parseable index (A-theme)", () => {
   });
 
   it("A2-entity: malformed-entry for entity layer contains snapshot with recognizable fragment", () => {
-    // sourceMemoryIds is null → throws during iteration inside try block
-    const broken = { ...ent({ id: "entity/p/broken" }), sourceMemoryIds: null as unknown as string[] };
+    // relatedEntities is an object with a throwing iterator — after Array.isArray guard passes (array-like)
+    // We use a Proxy to make Array.isArray return true but iteration throws
+    const throwingArr = new Proxy([], {
+      get(target, prop) {
+        if (prop === Symbol.iterator) return function() { throw new TypeError("corrupt iterator"); };
+        return (target as Record<string | symbol, unknown>)[prop];
+      },
+    });
+    const broken = { ...ent({ id: "entity/p/broken" }), relatedEntities: throwingArr as unknown as string[] };
     const r = lintMemory(emptyMemoryIndex(), eidx(broken), emptyQaIndex(), opts);
     const mf = r.issues.find((f) => f.check === "malformed-entry" && f.layer === "entity");
     expect(mf).toBeTruthy();
@@ -321,8 +328,8 @@ describe("lintMemory — corrupt-but-parseable index (A-theme)", () => {
   });
 
   it("A2-qa: malformed-entry for qa layer contains snapshot with recognizable fragment", () => {
-    // sourceMemoryIds is null → throws during iteration inside try block
-    const broken = { ...qa({ id: "qa/p/broken" }), sourceMemoryIds: null as unknown as string[] };
+    // scope is null → e.scope.startsWith("project:") throws inside try block (after array guards pass)
+    const broken = { ...qa({ id: "qa/p/broken" }), scope: null as unknown as string };
     const r = lintMemory(emptyMemoryIndex(), emptyEntityIndex(), qidx(broken), opts);
     const mf = r.issues.find((f) => f.check === "malformed-entry" && f.layer === "qa");
     expect(mf).toBeTruthy();
@@ -483,5 +490,49 @@ describe("lintMemory — corrupt-but-truthy referential targets", () => {
     const r = lintMemory(mIdx, emptyEntityIndex(), emptyQaIndex(), opts);
     expect(r.issues.find((f) => f.check === "superseded-conflict" && f.id === "semantic/p/a")).toBeTruthy();
     expect(r.issues.find((f) => f.check === "dangling-supersedes" && f.id === "semantic/p/a")).toBeFalsy();
+  });
+});
+
+describe("lintMemory — Fix: non-string supersedes / sourceMemoryIds / relatedEntities guard", () => {
+  it("memory: supersedes:123 → NO dangling-supersedes, NO superseded-conflict, no throw", () => {
+    const e = mem({ id: "semantic/p/a", supersedes: 123 as unknown as string });
+    const r = lintMemory(idxOf(e), emptyEntityIndex(), emptyQaIndex(), opts);
+    expect(() => lintMemory(idxOf(e), emptyEntityIndex(), emptyQaIndex(), opts)).not.toThrow();
+    const dangles = r.issues.filter((f) => f.check === "dangling-supersedes" && f.id === "semantic/p/a");
+    const conflicts = r.issues.filter((f) => f.check === "superseded-conflict" && f.id === "semantic/p/a");
+    expect(dangles).toHaveLength(0);
+    expect(conflicts).toHaveLength(0);
+  });
+
+  it("entity: sourceMemoryIds:['good-missing', 123] → exactly ONE entity-dangling-sourceMemoryId for good-missing; refs contains only strings", () => {
+    // "good-missing" is absent from memory index, 123 is a non-string element that must be skipped
+    const mIdx = idxOf(); // empty — so "good-missing" is absent
+    const e = ent({ id: "entity/p/X", sourceMemoryIds: ["good-missing", 123 as unknown as string] });
+    const r = lintMemory(mIdx, eidx(e), emptyQaIndex(), opts);
+    const findings = r.issues.filter((f) => f.check === "entity-dangling-sourceMemoryId" && f.id === "entity/p/X");
+    expect(findings).toHaveLength(1);
+    expect(findings[0].refs).toEqual(["good-missing"]);
+    // all refs across all findings must be strings
+    for (const f of r.issues) {
+      for (const ref of f.refs ?? []) {
+        expect(typeof ref).toBe("string");
+      }
+    }
+  });
+
+  it("qa: relatedEntities:[456, 'ent-missing'] → exactly ONE qa-unknown-relatedEntity for ent-missing; all refs are strings", () => {
+    // 456 is a non-string element and must be skipped; "ent-missing" is absent from entity index
+    const eIdx = emptyEntityIndex(); // empty — so "ent-missing" is absent
+    const q = qa({ id: "qa/p/x", relatedEntities: [456 as unknown as string, "ent-missing"] });
+    const r = lintMemory(emptyMemoryIndex(), eIdx, qidx(q), opts);
+    const findings = r.issues.filter((f) => f.check === "qa-unknown-relatedEntity" && f.id === "qa/p/x");
+    expect(findings).toHaveLength(1);
+    expect(findings[0].refs).toEqual(["ent-missing"]);
+    // all refs across all findings must be strings
+    for (const f of r.issues) {
+      for (const ref of f.refs ?? []) {
+        expect(typeof ref).toBe("string");
+      }
+    }
   });
 });

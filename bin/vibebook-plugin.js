@@ -11802,7 +11802,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
           });
         }
       }
-      if (e.supersedes !== null && !validEntryExists(memoryIdx.entries, e.supersedes)) {
+      if (typeof e.supersedes === "string" && !validEntryExists(memoryIdx.entries, e.supersedes)) {
         issues.push({
           check: "dangling-supersedes",
           severity: "error",
@@ -11812,7 +11812,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
           refs: [e.supersedes]
         });
       }
-      if (e.supersedes !== null && validEntryExists(memoryIdx.entries, e.supersedes)) {
+      if (typeof e.supersedes === "string" && validEntryExists(memoryIdx.entries, e.supersedes)) {
         const target = memoryIdx.entries[e.supersedes];
         if (target.status === "active") {
           issues.push({
@@ -11899,28 +11899,34 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   const entEntries = safeValues(entityIdx.entries).filter((e) => inScope(e.scope, opts.project));
   for (const e of entEntries) {
     try {
-      for (const mid of e.sourceMemoryIds) {
-        if (!validEntryExists(memoryIdx.entries, mid)) {
-          issues.push({
-            check: "entity-dangling-sourceMemoryId",
-            severity: "warning",
-            layer: "entity",
-            id: e.id,
-            detail: `sourceMemoryId not in memory index`,
-            refs: [mid]
-          });
+      if (Array.isArray(e.sourceMemoryIds)) {
+        for (const mid of e.sourceMemoryIds) {
+          if (typeof mid !== "string") continue;
+          if (!validEntryExists(memoryIdx.entries, mid)) {
+            issues.push({
+              check: "entity-dangling-sourceMemoryId",
+              severity: "warning",
+              layer: "entity",
+              id: e.id,
+              detail: `sourceMemoryId not in memory index`,
+              refs: [mid]
+            });
+          }
         }
       }
-      for (const rid of e.relatedEntities) {
-        if (!validEntryExists(entityIdx.entries, rid)) {
-          issues.push({
-            check: "entity-unknown-relatedEntity",
-            severity: "warning",
-            layer: "entity",
-            id: e.id,
-            detail: `relatedEntity not in entity index`,
-            refs: [rid]
-          });
+      if (Array.isArray(e.relatedEntities)) {
+        for (const rid of e.relatedEntities) {
+          if (typeof rid !== "string") continue;
+          if (!validEntryExists(entityIdx.entries, rid)) {
+            issues.push({
+              check: "entity-unknown-relatedEntity",
+              severity: "warning",
+              layer: "entity",
+              id: e.id,
+              detail: `relatedEntity not in entity index`,
+              refs: [rid]
+            });
+          }
         }
       }
     } catch {
@@ -11937,28 +11943,34 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   const qaEntries = safeValues(qaIdx.entries).filter((e) => inScope(e.scope, opts.project));
   for (const e of qaEntries) {
     try {
-      for (const mid of e.sourceMemoryIds) {
-        if (!validEntryExists(memoryIdx.entries, mid)) {
-          issues.push({
-            check: "qa-dangling-sourceMemoryId",
-            severity: "warning",
-            layer: "qa",
-            id: e.id,
-            detail: `sourceMemoryId not in memory index`,
-            refs: [mid]
-          });
+      if (Array.isArray(e.sourceMemoryIds)) {
+        for (const mid of e.sourceMemoryIds) {
+          if (typeof mid !== "string") continue;
+          if (!validEntryExists(memoryIdx.entries, mid)) {
+            issues.push({
+              check: "qa-dangling-sourceMemoryId",
+              severity: "warning",
+              layer: "qa",
+              id: e.id,
+              detail: `sourceMemoryId not in memory index`,
+              refs: [mid]
+            });
+          }
         }
       }
-      for (const rid of e.relatedEntities) {
-        if (!validEntryExists(entityIdx.entries, rid)) {
-          issues.push({
-            check: "qa-unknown-relatedEntity",
-            severity: "warning",
-            layer: "qa",
-            id: e.id,
-            detail: `relatedEntity not in entity index`,
-            refs: [rid]
-          });
+      if (Array.isArray(e.relatedEntities)) {
+        for (const rid of e.relatedEntities) {
+          if (typeof rid !== "string") continue;
+          if (!validEntryExists(entityIdx.entries, rid)) {
+            issues.push({
+              check: "qa-unknown-relatedEntity",
+              severity: "warning",
+              layer: "qa",
+              id: e.id,
+              detail: `relatedEntity not in entity index`,
+              refs: [rid]
+            });
+          }
         }
       }
       const expectProject = e.scope.startsWith("project:") ? e.scope.slice("project:".length) : null;
