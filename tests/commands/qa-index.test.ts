@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { qaWriteCmd } from "../../src/commands/qa-write.js";
@@ -19,7 +19,6 @@ afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: tru
 describe("qaIndexCmd", () => {
   it("rebuilds index.qa.json from memory/qa/ markdown", async () => {
     const inputPath = join(home, "in.json");
-    const { writeFileSync } = await import("node:fs");
     writeFileSync(inputPath, JSON.stringify([{ entry: { scope: "project:p", project: "p",
       question: "How do I build?", answerSummary: "npm build", kind: "operational", tags: [],
       sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
@@ -32,5 +31,23 @@ describe("qaIndexCmd", () => {
     const e = Object.values(idx.entries)[0];
     expect(e.question).toBe("How do I build?");
     expect(e.path.startsWith("memory/qa/p/")).toBe(true);
+  });
+
+  it("cold-start: memory/qa/ absent → indexed: 0, no throw", async () => {
+    // Fresh repo: no memory/qa/ dir, no index written
+    const home2 = mkdtempSync(join(tmpdir(), "qa-index-empty-"));
+    const repo2 = join(home2, ".vibebook", "session-repo");
+    mkdirSync(repo2, { recursive: true });
+    vi.stubEnv("HOME", home2);
+    try {
+      const r = await qaIndexCmd();
+      expect(r.indexed).toBe(0);
+      // Index file must exist and be an empty-index shape
+      const idx = loadQaIndex(repo2);
+      expect(Object.keys(idx.entries)).toHaveLength(0);
+    } finally {
+      vi.stubEnv("HOME", home); // restore outer beforeEach HOME
+      rmSync(home2, { recursive: true, force: true });
+    }
   });
 });

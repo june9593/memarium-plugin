@@ -26,13 +26,36 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); rmSync(home, { recur
 describe("qaQueryCmd", () => {
   it("emits ranked metadata (question/answerSummary/path), not the body", async () => {
     const idx = emptyQaIndex();
-    upsertQa(idx, entry({ id: "qa/p/build", question: "How do I build", answerSummary: "npm build", tags: ["build"] }));
+    upsertQa(idx, entry({ id: "qa/p/build", question: "How do I build", answerSummary: "npm build",
+      tags: ["build"], path: "memory/qa/p/build.md" }));
     saveQaIndex(repo, idx);
     await qaQueryCmd({ cwd: "/whatever/p", q: "build" });
     const payload = JSON.parse(out.join(""));
     expect(payload.qa[0].entry.id).toBe("qa/p/build");
     expect(payload.qa[0].entry.answerSummary).toBe("npm build");
-    expect(payload.qa[0].entry.path).toBe("memory/qa/p/x.md");
+    expect(payload.qa[0].entry.path).toBe("memory/qa/p/build.md");
     expect(payload.qa[0].entry).not.toHaveProperty("body");
+  });
+
+  it("kind filter: returns only entries matching requested kind", async () => {
+    const idx = emptyQaIndex();
+    upsertQa(idx, entry({ id: "qa/p/decided", kind: "decision", question: "Which DB",
+      answerSummary: "postgres", path: "memory/qa/p/decided.md" }));
+    upsertQa(idx, entry({ id: "qa/p/broken", kind: "troubleshooting", question: "Why crash",
+      answerSummary: "oom", path: "memory/qa/p/broken.md" }));
+    saveQaIndex(repo, idx);
+    await qaQueryCmd({ cwd: "/whatever/p", kind: "decision" });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.qa).toHaveLength(1);
+    expect(payload.qa[0].entry.id).toBe("qa/p/decided");
+    expect(payload.qa[0].entry.kind).toBe("decision");
+  });
+
+  it("no index file: does not throw and emits empty qa array", async () => {
+    // repo exists but no index.qa.json was ever written
+    await expect(qaQueryCmd({ cwd: "/whatever/p" })).resolves.toBeUndefined();
+    const payload = JSON.parse(out.join(""));
+    expect(Array.isArray(payload.qa)).toBe(true);
+    expect(payload.qa).toHaveLength(0);
   });
 });
