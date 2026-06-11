@@ -137,6 +137,28 @@ export function lintMemory(
     }
   }
 
+  const clusterMin = opts.clusterMin ?? 2;
+  const epis = active.filter((e) => e.type === "episodic");
+  const byEntity = new Map<string, MemoryEntry[]>();
+  for (const e of epis) {
+    for (const tok of e.entities) {
+      const key = `${e.project ?? "_global"}::${tok.toLowerCase()}`;
+      const arr = byEntity.get(key) ?? [];
+      arr.push(e);
+      byEntity.set(key, arr);
+    }
+  }
+  const seenClusters = new Set<string>();
+  for (const group of byEntity.values()) {
+    const ids = [...new Set(group.map((e) => e.id))].sort();
+    if (ids.length < clusterMin) continue;
+    const sig = ids.join("|");
+    if (seenClusters.has(sig)) continue;
+    seenClusters.add(sig);
+    suggestions.push({ check: "promotion-candidate", severity: "info", layer: "memory",
+      id: ids[0], detail: `${ids.length} episodic entries share an entity — consider promoting a stable fact to semantic/procedural (agent decides)`, refs: ids });
+  }
+
   return {
     generatedAt: opts.generatedAt ?? opts.now,
     counts: { issues: issues.length, suggestions: suggestions.length },

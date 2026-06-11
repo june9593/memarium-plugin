@@ -137,3 +137,22 @@ describe("lintMemory — qa checks", () => {
     expect(r.issues.map((f) => f.check)).not.toContain("qa-scope-leak");
   });
 });
+
+describe("lintMemory — suggestions (promotion-candidate)", () => {
+  it("clusters >=clusterMin active episodic in same project sharing entities → suggestion, NOT issue", () => {
+    const e1 = mem({ id: "episodic/p/1", type: "episodic", entities: ["shortId", "uuidv7"], updatedAt: "2026-06-10" });
+    const e2 = mem({ id: "episodic/p/2", type: "episodic", entities: ["shortId", "collision"], updatedAt: "2026-06-10" });
+    const r = run(idxOf(e1, e2));
+    const s = r.suggestions.find((x) => x.check === "promotion-candidate");
+    expect(s).toBeTruthy();
+    expect(s!.layer).toBe("memory");
+    expect(s!.refs!.slice().sort()).toEqual(["episodic/p/1", "episodic/p/2"]);
+    expect(r.issues.map((x) => x.check)).not.toContain("promotion-candidate");
+  });
+  it("single episodic or no shared entities → no suggestion", () => {
+    const e1 = mem({ id: "episodic/p/1", type: "episodic", entities: ["a"], updatedAt: "2026-06-10" });
+    expect(run(idxOf(e1)).suggestions).toHaveLength(0);
+    const e2 = mem({ id: "episodic/p/2", type: "episodic", entities: ["b"], updatedAt: "2026-06-10" });
+    expect(run(idxOf(e1, e2)).suggestions).toHaveLength(0);
+  });
+});
