@@ -86,3 +86,25 @@ describe("lintMemory — duplicate-like", () => {
     expect(checks(run(idxOf(c, d)))).not.toContain("duplicate-like");
   });
 });
+
+import type { EntityPage } from "../../src/entity/types.js";
+function ent(over: Partial<EntityPage>): EntityPage {
+  return { id: over.id ?? "entity/p/X", kind: "concept", scope: over.scope ?? "project:p",
+    project: over.project ?? "p", title: over.title ?? "X", aliases: [],
+    sourceMemoryIds: over.sourceMemoryIds ?? [], sourceSessions: [], sourceFiles: [],
+    relatedEntities: over.relatedEntities ?? [], path: "memory/entities/p/X.md",
+    createdAt: "2026-06-11", updatedAt: "2026-06-11" };
+}
+function eidx(...pages: EntityPage[]) { return { version: 1 as const, entries: Object.fromEntries(pages.map((p) => [p.id, p])) }; }
+
+describe("lintMemory — entity checks", () => {
+  it("entity-dangling-sourceMemoryId + entity-unknown-relatedEntity", () => {
+    const mIdx = idxOf(mem({ id: "semantic/p/real" }));
+    const e = ent({ id: "entity/p/X", sourceMemoryIds: ["semantic/p/real", "semantic/p/ghost"], relatedEntities: ["entity/p/Y"] });
+    const r = lintMemory(mIdx, eidx(e), emptyQaIndex(), opts);
+    const cs = r.issues.map((f) => f.check);
+    expect(cs).toContain("entity-dangling-sourceMemoryId");
+    expect(cs).toContain("entity-unknown-relatedEntity");
+    expect(r.issues.filter((f) => f.check === "entity-dangling-sourceMemoryId")).toHaveLength(1);
+  });
+});

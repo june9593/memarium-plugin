@@ -98,6 +98,23 @@ export function lintMemory(
     }
   }
 
+  const entEntries = Object.values(entityIdx.entries)
+    .filter((e) => inScope(e.scope, e.project, opts.project));
+  for (const e of entEntries) {
+    for (const mid of e.sourceMemoryIds) {
+      if (!memoryIdx.entries[mid]) {
+        issues.push({ check: "entity-dangling-sourceMemoryId", severity: "warning", layer: "entity",
+          id: e.id, detail: `sourceMemoryId not in memory index`, refs: [mid] });
+      }
+    }
+    for (const rid of e.relatedEntities) {
+      if (!entityIdx.entries[rid]) {
+        issues.push({ check: "entity-unknown-relatedEntity", severity: "warning", layer: "entity",
+          id: e.id, detail: `relatedEntity not in entity index`, refs: [rid] });
+      }
+    }
+  }
+
   return {
     generatedAt: opts.generatedAt ?? opts.now,
     counts: { issues: issues.length, suggestions: suggestions.length },
