@@ -10558,9 +10558,37 @@ var init_gate = __esm({
   }
 });
 
+// src/qa/path-guard.ts
+import { lstatSync } from "node:fs";
+import { join as join10, relative as relative2, sep } from "node:path";
+function assertNoSymlinkedComponent(repoPath, targetAbs, label) {
+  const rel = relative2(repoPath, targetAbs);
+  if (rel === "" || rel === ".." || rel.startsWith(".." + sep)) return;
+  let cur = repoPath;
+  for (const seg of rel.split(sep)) {
+    if (!seg) continue;
+    cur = join10(cur, seg);
+    let st;
+    try {
+      st = lstatSync(cur);
+    } catch (e) {
+      if (e.code === "ENOENT") return;
+      throw e;
+    }
+    if (st.isSymbolicLink()) {
+      throw new Error(`${label}: refusing to operate through a symlinked path component (symlink guard): ${seg}`);
+    }
+  }
+}
+var init_path_guard = __esm({
+  "src/qa/path-guard.ts"() {
+    "use strict";
+  }
+});
+
 // src/memory/apply.ts
 import { existsSync as existsSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync7, writeFileSync as writeFileSync6 } from "node:fs";
-import { dirname as dirname4, join as join10, resolve as resolve2, sep } from "node:path";
+import { dirname as dirname4, join as join11, resolve as resolve2, sep as sep2 } from "node:path";
 function normalizeRel(p2) {
   return p2.split("\\").join("/");
 }
@@ -10568,7 +10596,7 @@ function applyMemoryItems(repoPath, items) {
   const idx = loadMemoryIndex(repoPath);
   let written = 0, superseded = 0;
   const paths = [];
-  const memRoot = resolve2(join10(repoPath, "memory"));
+  const memRoot = resolve2(join11(repoPath, "memory"));
   for (const { entry, body } of items) {
     const canonical = canonicalMemoryPath(entry);
     if (entry.path && normalizeRel(entry.path) !== canonical) {
@@ -10577,20 +10605,25 @@ function applyMemoryItems(repoPath, items) {
       );
     }
     entry.path = canonical;
-    const abs = resolve2(join10(repoPath, entry.path));
-    if (abs !== memRoot && !abs.startsWith(memRoot + sep)) {
+    const abs = resolve2(join11(repoPath, entry.path));
+    if (abs !== memRoot && !abs.startsWith(memRoot + sep2)) {
       throw new Error(`memory apply: refusing to write outside memory/: ${entry.path}`);
     }
     if (typeof entry.supersedes === "string" && idx.entries[entry.supersedes]) {
       const target = idx.entries[entry.supersedes];
       target.status = "superseded";
       superseded++;
-      const tabs = resolve2(join10(repoPath, target.path));
-      if (existsSync8(tabs)) {
-        const md = readFileSync7(tabs, "utf8").replace(/^status: .*$/m, "status: superseded");
-        writeFileSync6(tabs, md);
+      const tCanon = canonicalMemoryPath(target);
+      const tabs = resolve2(join11(repoPath, tCanon));
+      if (tabs === memRoot || tabs.startsWith(memRoot + sep2)) {
+        assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
+        if (existsSync8(tabs)) {
+          const md = readFileSync7(tabs, "utf8").replace(/^status: .*$/m, "status: superseded");
+          writeFileSync6(tabs, md);
+        }
       }
     }
+    assertNoSymlinkedComponent(repoPath, abs, "memory apply");
     mkdirSync7(dirname4(abs), { recursive: true });
     writeFileSync6(abs, renderMemoryMarkdown(entry, body));
     upsertMemory(idx, entry);
@@ -10606,6 +10639,7 @@ var init_apply = __esm({
     init_index_store2();
     init_render();
     init_gate();
+    init_path_guard();
   }
 });
 
@@ -10699,7 +10733,7 @@ __export(memory_index_exports, {
   memoryIndexCmd: () => memoryIndexCmd
 });
 import { existsSync as existsSync10, readFileSync as readFileSync9, readdirSync as readdirSync2 } from "node:fs";
-import { join as join11, relative as relative2 } from "node:path";
+import { join as join12, relative as relative3 } from "node:path";
 function walkMd(dir) {
   const out = [];
   const stack = [dir];
@@ -10712,7 +10746,7 @@ function walkMd(dir) {
       continue;
     }
     for (const e of entries) {
-      const p2 = join11(cur, e.name);
+      const p2 = join12(cur, e.name);
       if (e.isDirectory()) stack.push(p2);
       else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
     }
@@ -10721,15 +10755,15 @@ function walkMd(dir) {
 }
 async function memoryIndexCmd() {
   const cfg = readPluginConfig();
-  const memRoot = join11(cfg.repoPath, "memory");
+  const memRoot = join12(cfg.repoPath, "memory");
   const idx = emptyMemoryIndex();
   let indexed = 0;
   if (existsSync10(memRoot)) {
     for (const abs of walkMd(memRoot)) {
-      if (abs.includes(`${join11("memory", "_primer")}/`)) continue;
+      if (abs.includes(`${join12("memory", "_primer")}/`)) continue;
       const entry = parseMemoryMarkdown(readFileSync9(abs, "utf8"));
       if (!entry) continue;
-      entry.path = relative2(cfg.repoPath, abs);
+      entry.path = relative3(cfg.repoPath, abs);
       upsertMemory(idx, entry);
       indexed++;
     }
@@ -10863,7 +10897,7 @@ __export(memory_query_exports, {
   memoryQueryCmd: () => memoryQueryCmd
 });
 import { mkdirSync as mkdirSync8, writeFileSync as writeFileSync7 } from "node:fs";
-import { dirname as dirname5, join as join12 } from "node:path";
+import { dirname as dirname5, join as join13 } from "node:path";
 function isType(s) {
   const ok = ["core", "semantic", "episodic", "procedural", "working", "artifact"];
   return s && ok.includes(s) ? s : null;
@@ -10885,7 +10919,7 @@ async function memoryQueryCmd(opts) {
   let primer = "";
   if (project) {
     primer = renderPrimer(project, entries);
-    const abs = join12(cfg.repoPath, "memory", "_primer", `${project}.md`);
+    const abs = join13(cfg.repoPath, "memory", "_primer", `${project}.md`);
     mkdirSync8(dirname5(abs), { recursive: true });
     writeFileSync7(abs, primer);
   }
@@ -10925,14 +10959,14 @@ __export(memory_primer_exports, {
   memoryPrimerCmd: () => memoryPrimerCmd
 });
 import { existsSync as existsSync11, readFileSync as readFileSync10 } from "node:fs";
-import { join as join13 } from "node:path";
+import { join as join14 } from "node:path";
 async function memoryPrimerCmd(opts) {
   try {
     const cfg = readPluginConfig();
     const cwd = opts.cwd ?? process.cwd();
     const project = resolveProjectFromCwd(cwd, cfg.repoPath);
     if (!project) return;
-    const fileP = join13(cfg.repoPath, "memory", "_primer", `${project}.md`);
+    const fileP = join14(cfg.repoPath, "memory", "_primer", `${project}.md`);
     if (existsSync11(fileP)) {
       process.stdout.write(readFileSync10(fileP, "utf8"));
       return;
@@ -10968,9 +11002,9 @@ var init_types2 = __esm({
 
 // src/entity/index-store.ts
 import { existsSync as existsSync12, mkdirSync as mkdirSync9, readFileSync as readFileSync11, writeFileSync as writeFileSync8 } from "node:fs";
-import { dirname as dirname6, join as join14 } from "node:path";
+import { dirname as dirname6, join as join15 } from "node:path";
 function loadEntityIndex(repoRoot) {
-  const p2 = join14(repoRoot, ENTITY_INDEX_REL);
+  const p2 = join15(repoRoot, ENTITY_INDEX_REL);
   if (!existsSync12(p2)) return emptyEntityIndex();
   try {
     const parsed = JSON.parse(readFileSync11(p2, "utf8"));
@@ -10981,7 +11015,7 @@ function loadEntityIndex(repoRoot) {
   }
 }
 function saveEntityIndex(repoRoot, idx) {
-  const p2 = join14(repoRoot, ENTITY_INDEX_REL);
+  const p2 = join15(repoRoot, ENTITY_INDEX_REL);
   mkdirSync9(dirname6(p2), { recursive: true });
   writeFileSync8(p2, JSON.stringify(idx, null, 2) + "\n");
 }
@@ -11042,7 +11076,7 @@ __export(entity_write_exports, {
   entityWriteCmd: () => entityWriteCmd
 });
 import { existsSync as existsSync13, mkdirSync as mkdirSync10, readFileSync as readFileSync12, realpathSync, writeFileSync as writeFileSync9 } from "node:fs";
-import { dirname as dirname7, join as join15, resolve as resolve3, sep as sep2 } from "node:path";
+import { dirname as dirname7, join as join16, resolve as resolve3, sep as sep3 } from "node:path";
 function entityPath(e) {
   const scopeDir = e.project ?? "_global";
   const slug = e.id.split("/").pop() ?? e.id;
@@ -11059,17 +11093,17 @@ async function entityWriteCmd(opts) {
   const paths = [];
   for (const { entry, body } of items) {
     if (!entry.path) entry.path = entityPath(entry);
-    const entRoot = resolve3(join15(cfg.repoPath, "memory", "entities"));
+    const entRoot = resolve3(join16(cfg.repoPath, "memory", "entities"));
     mkdirSync10(entRoot, { recursive: true });
     const memRoot = entRoot;
-    const abs = resolve3(join15(cfg.repoPath, entry.path));
-    if (abs !== memRoot && !abs.startsWith(memRoot + sep2)) {
+    const abs = resolve3(join16(cfg.repoPath, entry.path));
+    if (abs !== memRoot && !abs.startsWith(memRoot + sep3)) {
       throw new Error(`entity-write: refusing to write outside memory/entities/: ${entry.path}`);
     }
     mkdirSync10(dirname7(abs), { recursive: true });
     const realParent = realpathSync(dirname7(abs));
     const realRoot = realpathSync(entRoot);
-    if (realParent !== realRoot && !realParent.startsWith(realRoot + sep2)) {
+    if (realParent !== realRoot && !realParent.startsWith(realRoot + sep3)) {
       throw new Error(`entity-write: refusing to write outside memory/entities/ (symlink guard): ${entry.path}`);
     }
     const resolvedBody = body;
@@ -11146,7 +11180,7 @@ __export(entity_index_exports, {
   entityIndexCmd: () => entityIndexCmd
 });
 import { existsSync as existsSync14, readFileSync as readFileSync13, readdirSync as readdirSync3 } from "node:fs";
-import { join as join16, relative as relative3 } from "node:path";
+import { join as join17, relative as relative4 } from "node:path";
 function walkMd2(dir) {
   const out = [];
   const stack = [dir];
@@ -11159,7 +11193,7 @@ function walkMd2(dir) {
       continue;
     }
     for (const e of entries) {
-      const p2 = join16(cur, e.name);
+      const p2 = join17(cur, e.name);
       if (e.isDirectory()) stack.push(p2);
       else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
     }
@@ -11168,14 +11202,14 @@ function walkMd2(dir) {
 }
 async function entityIndexCmd() {
   const cfg = readPluginConfig();
-  const entitiesRoot = join16(cfg.repoPath, "memory", "entities");
+  const entitiesRoot = join17(cfg.repoPath, "memory", "entities");
   const idx = emptyEntityIndex();
   let indexed = 0;
   if (existsSync14(entitiesRoot)) {
     for (const abs of walkMd2(entitiesRoot)) {
       const entry = parseEntityMarkdown(readFileSync13(abs, "utf8"));
       if (!entry) continue;
-      entry.path = relative3(cfg.repoPath, abs);
+      entry.path = relative4(cfg.repoPath, abs);
       upsertEntity(idx, entry);
       indexed++;
     }
@@ -11253,7 +11287,7 @@ __export(entity_query_exports, {
   entityQueryCmd: () => entityQueryCmd
 });
 import { existsSync as existsSync15, readFileSync as readFileSync14, realpathSync as realpathSync2 } from "node:fs";
-import { join as join17, resolve as resolve4, sep as sep3 } from "node:path";
+import { join as join18, resolve as resolve4, sep as sep4 } from "node:path";
 function isKind(s) {
   const ok = ["file", "symbol", "api", "concept", "person"];
   return s && ok.includes(s) ? s : null;
@@ -11303,20 +11337,20 @@ async function entityQueryCmd(opts) {
     }));
     payload.referencingMemories = referencingMemories;
     const nameSlug = entityName.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    const entRoot = resolve4(join17(cfg.repoPath, "memory", "entities"));
+    const entRoot = resolve4(join18(cfg.repoPath, "memory", "entities"));
     const matchedEntities = entries.filter((e) => isEligibleEntity(e, project)).filter((e) => {
       const titleMatch = e.title.toLowerCase() === entityName;
       const aliasMatch = (Array.isArray(e.aliases) ? e.aliases : []).some((a) => typeof a === "string" && a.toLowerCase() === entityName);
       const slugMatch = nameSlug.length > 0 && e.id.toLowerCase().endsWith("/" + nameSlug);
       return titleMatch || aliasMatch || slugMatch;
     }).map((e) => {
-      const abs = resolve4(join17(cfg.repoPath, e.path));
-      const inRoot = abs === entRoot || abs.startsWith(entRoot + sep3);
+      const abs = resolve4(join18(cfg.repoPath, e.path));
+      const inRoot = abs === entRoot || abs.startsWith(entRoot + sep4);
       let body = "";
       if (inRoot && existsSync15(abs)) {
         const realRoot = existsSync15(entRoot) ? realpathSync2(entRoot) : entRoot;
         const real = realpathSync2(abs);
-        if (real === realRoot || real.startsWith(realRoot + sep3)) {
+        if (real === realRoot || real.startsWith(realRoot + sep4)) {
           body = readFileSync14(abs, "utf8");
         }
       }
@@ -11352,9 +11386,9 @@ var init_types3 = __esm({
 
 // src/qa/index-store.ts
 import { existsSync as existsSync16, mkdirSync as mkdirSync11, readFileSync as readFileSync15, writeFileSync as writeFileSync10 } from "node:fs";
-import { dirname as dirname8, join as join18 } from "node:path";
+import { dirname as dirname8, join as join19 } from "node:path";
 function loadQaIndex(repoRoot) {
-  const p2 = join18(repoRoot, QA_INDEX_REL);
+  const p2 = join19(repoRoot, QA_INDEX_REL);
   if (!existsSync16(p2)) return emptyQaIndex();
   try {
     const parsed = JSON.parse(readFileSync15(p2, "utf8"));
@@ -11365,7 +11399,7 @@ function loadQaIndex(repoRoot) {
   }
 }
 function saveQaIndex(repoRoot, idx) {
-  const p2 = join18(repoRoot, QA_INDEX_REL);
+  const p2 = join19(repoRoot, QA_INDEX_REL);
   mkdirSync11(dirname8(p2), { recursive: true });
   writeFileSync10(p2, JSON.stringify(idx, null, 2) + "\n");
 }
@@ -11442,34 +11476,6 @@ var init_id = __esm({
   "src/qa/id.ts"() {
     "use strict";
     UNSAFE2 = /[\\/:*?"'<>|\s.,;!()[\]{}@#$%^&+=`~]+/g;
-  }
-});
-
-// src/qa/path-guard.ts
-import { lstatSync } from "node:fs";
-import { join as join19, relative as relative4, sep as sep4 } from "node:path";
-function assertNoSymlinkedComponent(repoPath, targetAbs, label) {
-  const rel = relative4(repoPath, targetAbs);
-  if (rel === "" || rel === ".." || rel.startsWith(".." + sep4)) return;
-  let cur = repoPath;
-  for (const seg of rel.split(sep4)) {
-    if (!seg) continue;
-    cur = join19(cur, seg);
-    let st;
-    try {
-      st = lstatSync(cur);
-    } catch (e) {
-      if (e.code === "ENOENT") return;
-      throw e;
-    }
-    if (st.isSymbolicLink()) {
-      throw new Error(`${label}: refusing to operate through a symlinked path component (symlink guard): ${seg}`);
-    }
-  }
-}
-var init_path_guard = __esm({
-  "src/qa/path-guard.ts"() {
-    "use strict";
   }
 });
 
@@ -12283,6 +12289,7 @@ async function memoryProposeCmd(opts) {
   }
   const paths = [];
   for (const { entry, body, rationale, sourceSession } of items) {
+    entry.path = canonicalMemoryPath(entry);
     const tKey = targetKey(entry);
     const p2 = {
       proposalId: flatTargetKey(tKey),

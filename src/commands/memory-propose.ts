@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadMemoryIndex } from "../memory/index-store.js";
-import { isGatedChange, targetKey, deriveAction } from "../memory/gate.js";
+import { isGatedChange, targetKey, deriveAction, canonicalMemoryPath } from "../memory/gate.js";
 import { writeProposal, flatTargetKey, type MemoryProposal } from "../memory/proposal-store.js";
 import type { MemoryEntry } from "../memory/types.js";
 
@@ -29,6 +29,7 @@ export async function memoryProposeCmd(opts: MemoryProposeOptions): Promise<Memo
 
   const paths: string[] = [];
   for (const { entry, body, rationale, sourceSession } of items) {
+    entry.path = canonicalMemoryPath(entry); // paths are non-authoritative; normalize so the queued item is always approvable
     const tKey = targetKey(entry);
     const p: MemoryProposal = {
       proposalId: flatTargetKey(tKey),

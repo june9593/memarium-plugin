@@ -3,6 +3,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "./index-store.js";
 import { renderMemoryMarkdown } from "./render.js";
 import { canonicalMemoryPath } from "./gate.js";
+import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 import type { MemoryEntry } from "./types.js";
 
 export interface MemoryApplyItem { entry: MemoryEntry; body: string; }
@@ -45,13 +46,20 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
       const target = idx.entries[entry.supersedes];
       target.status = "superseded";
       superseded++;
-      const tabs = resolve(join(repoPath, target.path));
-      if (existsSync(tabs)) {
-        const md = readFileSync(tabs, "utf8").replace(/^status: .*$/m, "status: superseded");
-        writeFileSync(tabs, md);
+      // Derive the target's md path canonically (don't trust the stored path),
+      // then apply the same traversal + symlink guards as the entry we write.
+      const tCanon = canonicalMemoryPath(target);
+      const tabs = resolve(join(repoPath, tCanon));
+      if (tabs === memRoot || tabs.startsWith(memRoot + sep)) {
+        assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
+        if (existsSync(tabs)) {
+          const md = readFileSync(tabs, "utf8").replace(/^status: .*$/m, "status: superseded");
+          writeFileSync(tabs, md);
+        }
       }
     }
 
+    assertNoSymlinkedComponent(repoPath, abs, "memory apply");
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, renderMemoryMarkdown(entry, body));
     upsertMemory(idx, entry);

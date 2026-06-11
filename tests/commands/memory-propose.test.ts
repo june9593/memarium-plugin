@@ -63,4 +63,28 @@ describe("memoryProposeCmd", () => {
     const { memoryProposeCmd } = await import("../../src/commands/memory-propose.js");
     await expect(memoryProposeCmd({ inputPath: input })).rejects.toThrow(/memory-write/);
   });
+
+  it("canonicalizes a wrong entry.path so the queued proposal is approvable", async () => {
+    const input = join(home, "wrongpath.json");
+    writeFileSync(input, JSON.stringify([{
+      entry: {
+        id: "core/yue-workflow", type: "core", scope: "global", project: null,
+        title: "wf", summary: "s", path: "memory/STALE/wrong.md",
+        status: "active", confidence: 0.9, importance: 5,
+        createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
+        sourceSessions: [], sourceCommits: [], sourceFiles: [],
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+      },
+      body: "b",
+    }]));
+    const { memoryProposeCmd } = await import("../../src/commands/memory-propose.js");
+    await memoryProposeCmd({ inputPath: input });
+    const { readProposal } = await import("../../src/memory/proposal-store.js");
+    const p = readProposal(repo, "core/yue-workflow");
+    expect(p?.proposal.entry.path).toBe("memory/core/_global/yue-workflow.md");
+    // and approve succeeds (no canonical-path mismatch)
+    const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
+    const r = await memoryApproveCmd({ id: "core/yue-workflow" });
+    expect(r.applied).toBe(1);
+  });
 });
