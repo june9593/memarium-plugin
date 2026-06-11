@@ -17,16 +17,32 @@ describe("plugin-cli memory subcommands", () => {
   });
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); rmSync(fakeHome, { recursive: true, force: true }); });
 
-  it("memory-write is dispatchable and writes a file", async () => {
+  it("memory-write is dispatchable and writes a file (non-gated entry)", async () => {
+    // v4: memory-write rejects gated changes (core/procedural/pinned). Use a
+    // non-gated semantic entry to exercise CLI dispatch + the write path.
     const input = join(fakeHome, "m.json");
     writeFileSync(input, JSON.stringify([{ entry: {
-      id: "core/_global/r", type: "core", scope: "global", project: null,
-      title: "rule", summary: "x", status: "active", confidence: 1, importance: 5,
+      id: "semantic/_global/r", type: "semantic", scope: "global", project: null,
+      title: "fact", summary: "x", status: "active", confidence: 1, importance: 5,
       createdAt: "2026-06-09", updatedAt: "2026-06-09", validFrom: null, validTo: null,
       sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
       entities: [], originDevice: null, accessCount: 0, lastAccess: null }, body: "b" }]));
     const { run } = await import("../../src/plugin-cli.js");
     await run(["node", "vibebook-plugin", "memory-write", "--input", input]);
-    expect(existsSync(join(repo, "memory/core/_global/r.md"))).toBe(true);
+    expect(existsSync(join(repo, "memory/semantic/_global/r.md"))).toBe(true);
+  });
+
+  it("memory-write CLI rejects a gated (core) entry", async () => {
+    const input = join(fakeHome, "g.json");
+    writeFileSync(input, JSON.stringify([{ entry: {
+      id: "core/r", type: "core", scope: "global", project: null,
+      title: "rule", summary: "x", status: "active", confidence: 1, importance: 5,
+      createdAt: "2026-06-09", updatedAt: "2026-06-09", validFrom: null, validTo: null,
+      sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
+      entities: [], originDevice: null, accessCount: 0, lastAccess: null }, body: "b" }]));
+    const { run } = await import("../../src/plugin-cli.js");
+    await expect(run(["node", "vibebook-plugin", "memory-write", "--input", input]))
+      .rejects.toThrow(/memory-propose/);
+    expect(existsSync(join(repo, "memory/core/_global/r.md"))).toBe(false);
   });
 });
