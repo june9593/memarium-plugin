@@ -201,6 +201,51 @@ describe("qaWriteCmd", () => {
     expect(existsSync(join(external, "q-8e35c2cd.md"))).toBe(false);
   });
 
+  it("trims leading/trailing space from scope-derived project: 'project: p' → slug 'p'", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project: p", project: " p",
+      question: "What is the build command?", answerSummary: "npm run build", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    const r = await qaWriteCmd({ inputPath });
+    expect(r.written).toBe(1);
+    // After trim, the project slug is "p", so the file lives under memory/qa/p/
+    expect(r.paths[0].startsWith("memory/qa/p/")).toBe(true);
+    // Must NOT be under the untrimmed " p" directory
+    expect(r.paths[0]).not.toContain("/ p/");
+    const idx = loadQaIndex(repo);
+    const ids = Object.keys(idx.entries);
+    expect(ids).toHaveLength(1);
+    expect(idx.entries[ids[0]].project).toBe("p");
+  });
+
+  it("rejects internal-space project slug: 'project:a b' (space not trimmed away)", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project:a b", project: "a b",
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
+  it("rejects Windows-invalid '*' in project slug: 'project:a*b'", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project:a*b", project: "a*b",
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
+  it("rejects colon in project slug: 'project:a:b'", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project:a:b", project: "a:b",
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
   it("refuses to write when the target .md already exists as a symlink (leaf symlink guard)", async () => {
     const mkInput = () => writeInput([{ entry: { scope: "project:p", project: "p",
       question: "How do I build the project?", answerSummary: "npm build", kind: "operational",

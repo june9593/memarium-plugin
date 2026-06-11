@@ -12,9 +12,11 @@ function isUnder(child: string, parent: string): boolean {
   return child === parent || child.startsWith(parent + sep);
 }
 
-/** Returns true when a project slug is safe to use as a single path component. */
+/** Returns true when a project slug is safe to use as a single path component.
+ *  Strict allowlist: only A-Z a-z 0-9 . _ - are permitted (no spaces, no Windows-
+ *  reserved chars, no path separators, no NUL, no dot-only segments). */
 function isSafeProjectSlug(p: string): boolean {
-  return p.length > 0 && !p.includes("/") && !p.includes("\\") && !p.includes("\0") && p !== "." && p !== "..";
+  return /^[A-Za-z0-9._-]+$/.test(p) && p !== "." && p !== "..";
 }
 
 export interface QaWriteOptions { inputPath?: string; }
@@ -45,7 +47,7 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
     // scope is authoritative for project membership: derive project from it so
     // id/path (project-based) and scorer eligibility (scope-based) can't disagree.
     entry.project = entry.scope.startsWith("project:")
-      ? entry.scope.slice("project:".length)
+      ? entry.scope.slice("project:".length).trim()
       : null;
     if (entry.project !== null && !isSafeProjectSlug(entry.project)) {
       throw new Error(`qa-write: invalid project slug in scope ${JSON.stringify(entry.scope)}`);

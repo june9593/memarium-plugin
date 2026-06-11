@@ -11430,7 +11430,7 @@ function isUnder(child, parent) {
   return child === parent || child.startsWith(parent + sep5);
 }
 function isSafeProjectSlug(p2) {
-  return p2.length > 0 && !p2.includes("/") && !p2.includes("\\") && !p2.includes("\0") && p2 !== "." && p2 !== "..";
+  return /^[A-Za-z0-9._-]+$/.test(p2) && p2 !== "." && p2 !== "..";
 }
 function qaPath(e) {
   const scopeDir = e.project ?? "_global";
@@ -11449,7 +11449,7 @@ async function qaWriteCmd(opts) {
   for (const { entry, body } of items) {
     entry.question = normalizeSingleLine(entry.question);
     entry.answerSummary = normalizeSingleLine(entry.answerSummary);
-    entry.project = entry.scope.startsWith("project:") ? entry.scope.slice("project:".length) : null;
+    entry.project = entry.scope.startsWith("project:") ? entry.scope.slice("project:".length).trim() : null;
     if (entry.project !== null && !isSafeProjectSlug(entry.project)) {
       throw new Error(`qa-write: invalid project slug in scope ${JSON.stringify(entry.scope)}`);
     }
