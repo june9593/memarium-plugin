@@ -95,4 +95,16 @@ describe("qaWriteCmd", () => {
     await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/symlink guard/);
     expect(existsSync(join(evil, "qa"))).toBe(false);
   });
+
+  it("refuses to write through a symlinked scope subdir memory/qa/<scope> (symlink guard)", async () => {
+    const external = join(home, "external-scope"); mkdirSync(external, { recursive: true });
+    mkdirSync(join(repo, "memory", "qa"), { recursive: true });
+    symlinkSync(external, join(repo, "memory", "qa", "p"));
+    const inputPath = writeInput([{ entry: { id: "qa/p/x", path: "memory/qa/p/x.md",
+      scope: "project:p", project: "p", question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/symlink guard/);
+    expect(existsSync(join(external, "x.md"))).toBe(false);
+  });
 });

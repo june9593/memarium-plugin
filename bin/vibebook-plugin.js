@@ -11449,12 +11449,12 @@ async function qaWriteCmd(opts) {
     if (!entry.id) entry.id = qaId(entry.scope, entry.project, entry.question);
     if (!entry.path) entry.path = qaPath(entry);
     const qaRoot = resolve5(join20(cfg.repoPath, "memory", "qa"));
-    assertNoSymlinkedComponent(cfg.repoPath, qaRoot, "qa-write");
-    mkdirSync12(qaRoot, { recursive: true });
     const abs = resolve5(join20(cfg.repoPath, entry.path));
+    assertNoSymlinkedComponent(cfg.repoPath, dirname9(abs), "qa-write");
     if (abs !== qaRoot && !abs.startsWith(qaRoot + sep5)) {
       throw new Error(`qa-write: refusing to write outside memory/qa/: ${entry.path}`);
     }
+    mkdirSync12(qaRoot, { recursive: true });
     const realRepo = realpathSync3(cfg.repoPath);
     const realRoot = realpathSync3(qaRoot);
     if (!isUnder(realRoot, realRepo)) {

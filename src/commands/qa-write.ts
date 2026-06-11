@@ -41,14 +41,15 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
     if (!entry.path) entry.path = qaPath(entry);
 
     const qaRoot = resolve(join(cfg.repoPath, "memory", "qa"));
-
-    assertNoSymlinkedComponent(cfg.repoPath, qaRoot, "qa-write");
-
-    mkdirSync(qaRoot, { recursive: true });
     const abs = resolve(join(cfg.repoPath, entry.path));
+
+    assertNoSymlinkedComponent(cfg.repoPath, dirname(abs), "qa-write");
+
     if (abs !== qaRoot && !abs.startsWith(qaRoot + sep)) {
       throw new Error(`qa-write: refusing to write outside memory/qa/: ${entry.path}`);
     }
+
+    mkdirSync(qaRoot, { recursive: true });
 
     // Symlink guard: before creating the parent dir, verify that qaRoot itself is
     // not a symlink pointing outside the repo's memory/ directory.  We check
