@@ -187,6 +187,15 @@ export async function run(argv: string[]) {
       await memoryDiffCmd({ id: o.id, json: o.json });
     });
 
+  program.command("memory-approve")
+    .description("Apply a pending local memory proposal to live memory, delete the proposal, and refresh affected primers.")
+    .requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/yue-workflow)")
+    .action(async (o: { id: string }) => {
+      const { memoryApproveCmd } = await import("./commands/memory-approve.js");
+      const r = await memoryApproveCmd({ id: o.id });
+      console.log(JSON.stringify(r));
+    });
+
   program
     .command("recall")
     .description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.")
