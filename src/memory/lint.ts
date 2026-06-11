@@ -40,7 +40,40 @@ export function lintMemory(
   const issues: LintFinding[] = [];
   const suggestions: LintFinding[] = [];
 
-  // checks added in later sub-tasks
+  const memEntries = Object.values(memoryIdx.entries)
+    .filter((e) => inScope(e.scope, e.project, opts.project));
+
+  const daysBetween = (a: string, b: string): number =>
+    (Date.parse(a) - Date.parse(b)) / 86400000;
+
+  for (const e of memEntries) {
+    if (e.status === "active" && e.validTo !== null && e.validTo <= opts.now) {
+      issues.push({ check: "expired", severity: "warning", layer: "memory", id: e.id,
+        detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})` });
+    }
+    if (e.supersedes !== null && !memoryIdx.entries[e.supersedes]) {
+      issues.push({ check: "dangling-supersedes", severity: "error", layer: "memory", id: e.id,
+        detail: `supersedes a memory not in the index`, refs: [e.supersedes] });
+    }
+    if (e.supersedes !== null) {
+      const target = memoryIdx.entries[e.supersedes];
+      if (target && target.status === "active") {
+        issues.push({ check: "superseded-conflict", severity: "error", layer: "memory", id: e.id,
+          detail: `supersedes ${target.id} but that target is still status=active`, refs: [target.id] });
+      }
+    }
+    const exemptProvenance = e.type === "core" || e.status === "pinned";
+    if (!exemptProvenance &&
+        e.sourceSessions.length === 0 && e.sourceCommits.length === 0 && e.sourceFiles.length === 0) {
+      issues.push({ check: "missing-provenance", severity: "warning", layer: "memory", id: e.id,
+        detail: `no sourceSessions/sourceCommits/sourceFiles — origin not traceable` });
+    }
+    if (e.status === "active" && (e.type === "episodic" || e.type === "working") &&
+        daysBetween(opts.now, e.updatedAt) > opts.staleDays) {
+      issues.push({ check: "stale-candidate", severity: "info", layer: "memory", id: e.id,
+        detail: `${e.type} not updated in >${opts.staleDays}d (updatedAt=${e.updatedAt})` });
+    }
+  }
 
   return {
     generatedAt: opts.generatedAt ?? opts.now,
