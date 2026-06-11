@@ -178,6 +178,15 @@ export async function run(argv: string[]) {
       console.log(JSON.stringify(r));
     });
 
+  program.command("memory-diff")
+    .description("Read-only: show pending local memory proposals as a diff vs current live memory. Never writes.")
+    .option("--id <targetKey>", "show only the proposal for this target (e.g. core/yue-workflow)")
+    .option("--json", "emit a structured JSON array instead of a human report")
+    .action(async (o: { id?: string; json?: boolean }) => {
+      const { memoryDiffCmd } = await import("./commands/memory-diff.js");
+      await memoryDiffCmd({ id: o.id, json: o.json });
+    });
+
   program
     .command("recall")
     .description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.")
