@@ -196,6 +196,15 @@ export async function run(argv: string[]) {
       console.log(JSON.stringify(r));
     });
 
+  program.command("memory-reject")
+    .description("Discard a pending local memory proposal without applying it.")
+    .requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/yue-workflow)")
+    .action(async (o: { id: string }) => {
+      const { memoryRejectCmd } = await import("./commands/memory-reject.js");
+      const r = await memoryRejectCmd({ id: o.id });
+      console.log(JSON.stringify(r));
+    });
+
   program
     .command("recall")
     .description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.")
