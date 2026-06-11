@@ -11545,6 +11545,7 @@ function parseQuoted(v) {
   return t2;
 }
 function parseQaMarkdown(md) {
+  md = md.replace(/\r\n/g, "\n");
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
   const fm = {};

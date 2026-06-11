@@ -32,6 +32,7 @@ function parseQuoted(v: string): string {
 /** Inverse of renderQaMarkdown: parse frontmatter (body ignored) → QaEntry.
  *  `path` is left "" — the caller fills it from the file path. */
 export function parseQaMarkdown(md: string): QaEntry | null {
+  md = md.replace(/\r\n/g, "\n");
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
   const fm: Record<string, string> = {};

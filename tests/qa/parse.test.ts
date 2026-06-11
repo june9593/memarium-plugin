@@ -46,4 +46,12 @@ describe("parseQaMarkdown", () => {
     expect(parsed).not.toBeNull();
     expect(parsed!.project).toBeNull();
   });
+  it("parses CRLF line endings (Windows/autocrlf checkout)", () => {
+    const e = entry();
+    const lf = renderQaMarkdown(e, "body text");
+    const crlf = lf.replace(/\n/g, "\r\n");
+    const parsed = parseQaMarkdown(crlf);
+    expect(parsed).not.toBeNull();
+    expect({ ...parsed!, path: e.path }).toEqual(e);
+  });
 });
