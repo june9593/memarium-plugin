@@ -13,12 +13,13 @@ function safeValues<T>(rec: unknown): T[] {
   );
 }
 
-/** Returns true only when rec[id] is a non-null, non-array object with a string id field (a valid index entry).
- *  A truthy-but-corrupt value (string, number, array, or empty object without a string id) returns false. */
+/** Returns true only when rec[id] is a non-null, non-array object whose id field equals the lookup key.
+ *  A truthy-but-corrupt value (string, number, array, empty object, or object with a mismatched id) returns false.
+ *  An id/key mismatch is itself a corruption — treat the entry as not a valid target. */
 function validEntryExists(rec: unknown, id: string): boolean {
   if (!rec || typeof rec !== "object" || Array.isArray(rec)) return false;
   const v = (rec as Record<string, unknown>)[id];
-  return v !== null && typeof v === "object" && !Array.isArray(v) && typeof (v as { id?: unknown }).id === "string";
+  return v !== null && typeof v === "object" && !Array.isArray(v) && (v as { id?: unknown }).id === id;
 }
 
 export interface LintFinding {

@@ -431,4 +431,31 @@ describe("lintMemory — corrupt-but-truthy referential targets", () => {
     const r3 = lintMemory(emptyMemoryIndex(), eIdx2, qidx(q), opts);
     expect(r3.issues.find((f) => f.check === "qa-unknown-relatedEntity")).toBeFalsy();
   });
+
+  it("id/key mismatch: entries['B'].id !== 'B' → dangling-supersedes IS flagged, superseded-conflict NOT flagged", () => {
+    // entries["B"] is an object but its id field is "DIFFERENT" — corruption, not a valid target
+    const mIdx = {
+      version: 1 as const,
+      entries: {
+        "semantic/p/a": mem({ id: "semantic/p/a", supersedes: "B" }),
+        "B": mem({ id: "DIFFERENT" }),
+      },
+    };
+    const r = lintMemory(mIdx, emptyEntityIndex(), emptyQaIndex(), opts);
+    expect(r.issues.find((f) => f.check === "dangling-supersedes" && f.id === "semantic/p/a")).toBeTruthy();
+    expect(r.issues.find((f) => f.check === "superseded-conflict" && f.id === "semantic/p/a")).toBeFalsy();
+  });
+
+  it("id/key match positive control: entries['B'].id === 'B' + status:active → superseded-conflict IS flagged, dangling-supersedes NOT", () => {
+    const mIdx = {
+      version: 1 as const,
+      entries: {
+        "semantic/p/a": mem({ id: "semantic/p/a", supersedes: "B" }),
+        "B": mem({ id: "B", status: "active" }),
+      },
+    };
+    const r = lintMemory(mIdx, emptyEntityIndex(), emptyQaIndex(), opts);
+    expect(r.issues.find((f) => f.check === "superseded-conflict" && f.id === "semantic/p/a")).toBeTruthy();
+    expect(r.issues.find((f) => f.check === "dangling-supersedes" && f.id === "semantic/p/a")).toBeFalsy();
+  });
 });
