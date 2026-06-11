@@ -44,7 +44,8 @@ export interface LintOptions {
   clusterMin?: number;
 }
 
-function inScope(scope: string, cwdProject: string | null): boolean {
+/** scope is `unknown` because it comes from an untrusted (possibly corrupt) index at runtime. */
+function inScope(scope: unknown, cwdProject: string | null): boolean {
   if (typeof scope !== "string") return cwdProject === null; // malformed scope: only in whole-store mode
   if (cwdProject === null) return true;
   if (scope === "global" || scope === "user") return true;
