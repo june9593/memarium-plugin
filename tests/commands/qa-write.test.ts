@@ -325,4 +325,72 @@ describe("qaWriteCmd", () => {
       createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
     await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid scope/);
   });
+
+  // Windows reserved device names + trailing-dot protection
+  it("rejects Windows reserved device name CON (exact case)", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project:CON", project: "CON",
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
+  it("rejects Windows reserved device name nul (lowercase)", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project:nul", project: "nul",
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
+  it("rejects Windows reserved device name COM1", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project:COM1", project: "COM1",
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
+  it("rejects Windows reserved device name CON.txt (reserved basename before dot)", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project:CON.txt", project: "CON.txt",
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
+  it("rejects trailing-dot project slug: 'project:foo.'", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project:foo.", project: "foo.",
+      question: "q", answerSummary: "a", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
+  });
+
+  it("accepts 'project:console' — contains 'con' but is NOT a reserved name", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project:console", project: "console",
+      question: "What is the console command?", answerSummary: "Use console.log", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    const r = await qaWriteCmd({ inputPath });
+    expect(r.written).toBe(1);
+    expect(r.paths[0].startsWith("memory/qa/console/")).toBe(true);
+  });
+
+  it("accepts 'project:com10' — com10 is NOT a reserved name (only com1-9 are)", async () => {
+    const inputPath = writeInput([{ entry: {
+      scope: "project:com10", project: "com10",
+      question: "What is com10?", answerSummary: "Not reserved", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    const r = await qaWriteCmd({ inputPath });
+    expect(r.written).toBe(1);
+    expect(r.paths[0].startsWith("memory/qa/com10/")).toBe(true);
+  });
 });

@@ -15,8 +15,14 @@ function isUnder(child: string, parent: string): boolean {
 /** Returns true when a project slug is safe to use as a single path component.
  *  Strict allowlist: only A-Z a-z 0-9 . _ - are permitted (no spaces, no Windows-
  *  reserved chars, no path separators, no NUL, no dot-only segments). */
+const WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
 function isSafeProjectSlug(p: string): boolean {
-  return /^[A-Za-z0-9._-]+$/.test(p) && p !== "." && p !== "..";
+  if (!/^[A-Za-z0-9._-]+$/.test(p)) return false;   // charset (also excludes spaces, : * ? etc.)
+  if (p === "." || p === "..") return false;          // dot segments
+  if (p.endsWith(".")) return false;                  // trailing dot (invalid on Windows)
+  if (WIN_RESERVED.test(p.split(".")[0])) return false; // reserved device names (incl. CON.txt form)
+  return true;
 }
 
 export interface QaWriteOptions { inputPath?: string; }

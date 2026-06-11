@@ -11427,7 +11427,11 @@ function isUnder(child, parent) {
   return child === parent || child.startsWith(parent + sep5);
 }
 function isSafeProjectSlug(p2) {
-  return /^[A-Za-z0-9._-]+$/.test(p2) && p2 !== "." && p2 !== "..";
+  if (!/^[A-Za-z0-9._-]+$/.test(p2)) return false;
+  if (p2 === "." || p2 === "..") return false;
+  if (p2.endsWith(".")) return false;
+  if (WIN_RESERVED.test(p2.split(".")[0])) return false;
+  return true;
 }
 function qaPath(e) {
   const scopeDir = e.project ?? "_global";
@@ -11497,6 +11501,7 @@ async function qaWriteCmd(opts) {
   saveQaIndex(cfg.repoPath, idx);
   return { written, paths };
 }
+var WIN_RESERVED;
 var init_qa_write = __esm({
   "src/commands/qa-write.ts"() {
     "use strict";
@@ -11505,6 +11510,7 @@ var init_qa_write = __esm({
     init_render3();
     init_id();
     init_path_guard();
+    WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
   }
 });
 
