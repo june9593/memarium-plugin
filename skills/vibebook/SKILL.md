@@ -691,6 +691,31 @@ For each qualifying pair, build an item and call `qa-write` with JSON shaped lik
 
 Run `vibebook-plugin qa-write --input <that-json-file>`. The CLI derives the stable `id`/`path`, normalizes `question`/`answerSummary` to single lines, writes `memory/qa/<project|_global>/<slug>.md`, and updates `.vibebook/index.qa.json`. Re-asking a known question upserts (refines) the existing page — do not fork. **If nothing qualifies, write nothing and move on.**
 
+### Step P7.8 — Consolidate (memory health + conservative promotion)
+
+After P7.5–P7.7, run the read-only diagnostic and act on it CONSERVATIVELY:
+
+```bash
+vibebook-plugin memory-lint --cwd "$(pwd)" --json
+```
+
+The report has `issues[]` (objective integrity defects) and `suggestions[]` (semantic-judgment candidates). Read it together with this session's new memories and the existing memory.
+
+Act on only a FEW high-confidence items — prefer writing nothing over writing noise. All writes go through `memory-write` (it flips a superseded target's status automatically). Do NOT batch-fix.
+
+- **episodic→semantic / repeated→procedural** (from `suggestions[]`): when a fact is repeatedly confirmed/stable, write a new `semantic` (or `procedural`) memory. **By default KEEP the source episodic** — it is the evidence / chronicle pointer. Only `supersedes` the episodic when it is a low-value duplicate pointer AND the new memory carries its `sourceSessions` / provenance forward.
+- **contradiction / expired**: when a new fact contradicts or replaces an old memory, write the new one with `supersedes: <old-id>`.
+- **duplicate-like** (`issues[]`): if you agree, keep one and `supersedes` the redundant one.
+- Anything you're not confident about → leave it; mention it as a suggestion in your digest summary and write nothing.
+
+**Refresh the primer if you wrote any primer-affecting memory.** If this step wrote or superseded any `core` / `semantic` / `procedural` memory, refresh the SessionStart primer at the end:
+
+```bash
+vibebook-plugin memory-query --cwd "$(pwd)" >/dev/null
+```
+
+(This is the digest WRITE path and is allowed to refresh `_primer/<project>.md` — it does NOT contradict the lint read-only invariant; only consolidation refreshes, and only after it actually wrote primer-affecting memory.)
+
 ### Step P8 — Done
 
 Print a one-line summary:

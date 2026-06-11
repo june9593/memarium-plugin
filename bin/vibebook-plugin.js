@@ -11739,6 +11739,259 @@ var init_qa_query = __esm({
   }
 });
 
+// src/memory/lint.ts
+function inScope(scope, project, cwdProject) {
+  if (cwdProject === null) return true;
+  if (scope === "global" || scope === "user") return true;
+  return project === cwdProject;
+}
+function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
+  const issues = [];
+  const suggestions = [];
+  const memEntries = Object.values(memoryIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
+  for (const e of memEntries) {
+    if (e.status === "active" && e.validTo !== null && e.validTo <= opts.now) {
+      issues.push({
+        check: "expired",
+        severity: "warning",
+        layer: "memory",
+        id: e.id,
+        detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})`
+      });
+    }
+    if (e.supersedes !== null && !memoryIdx.entries[e.supersedes]) {
+      issues.push({
+        check: "dangling-supersedes",
+        severity: "error",
+        layer: "memory",
+        id: e.id,
+        detail: `supersedes a memory not in the index`,
+        refs: [e.supersedes]
+      });
+    }
+    if (e.supersedes !== null) {
+      const target = memoryIdx.entries[e.supersedes];
+      if (target && target.status === "active") {
+        issues.push({
+          check: "superseded-conflict",
+          severity: "error",
+          layer: "memory",
+          id: e.id,
+          detail: `supersedes ${target.id} but that target is still status=active`,
+          refs: [target.id]
+        });
+      }
+    }
+    const exemptProvenance = e.type === "core" || e.status === "pinned";
+    if (!exemptProvenance && e.sourceSessions.length === 0 && e.sourceCommits.length === 0 && e.sourceFiles.length === 0) {
+      issues.push({
+        check: "missing-provenance",
+        severity: "warning",
+        layer: "memory",
+        id: e.id,
+        detail: `no sourceSessions/sourceCommits/sourceFiles \u2014 origin not traceable`
+      });
+    }
+    if (e.status === "active" && (e.type === "episodic" || e.type === "working")) {
+      const age = daysBetween(opts.now, e.updatedAt);
+      if (!isFinite(age)) {
+        issues.push({
+          check: "malformed-date",
+          severity: "warning",
+          layer: "memory",
+          id: e.id,
+          detail: `unparseable updatedAt=${JSON.stringify(e.updatedAt)}`
+        });
+      } else if (age > opts.staleDays) {
+        issues.push({
+          check: "stale-candidate",
+          severity: "info",
+          layer: "memory",
+          id: e.id,
+          detail: `${e.type} not updated in >${opts.staleDays}d (updatedAt=${e.updatedAt})`
+        });
+      }
+    }
+  }
+  const dupThreshold = opts.dupThreshold ?? 0.6;
+  const active = memEntries.filter((e) => e.status === "active");
+  for (let i2 = 0; i2 < active.length; i2++) {
+    for (let j2 = i2 + 1; j2 < active.length; j2++) {
+      const a = active[i2], b2 = active[j2];
+      if (a.type !== b2.type || a.scope !== b2.scope || a.project !== b2.project) continue;
+      const sim = jaccard(tokenize4(`${a.title} ${a.summary}`), tokenize4(`${b2.title} ${b2.summary}`));
+      if (sim >= dupThreshold) {
+        const pair = [a.id, b2.id].slice().sort();
+        issues.push({
+          check: "duplicate-like",
+          severity: "info",
+          layer: "memory",
+          id: pair[0],
+          detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`,
+          refs: pair
+        });
+      }
+    }
+  }
+  const entEntries = Object.values(entityIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
+  for (const e of entEntries) {
+    for (const mid of e.sourceMemoryIds) {
+      if (!memoryIdx.entries[mid]) {
+        issues.push({
+          check: "entity-dangling-sourceMemoryId",
+          severity: "warning",
+          layer: "entity",
+          id: e.id,
+          detail: `sourceMemoryId not in memory index`,
+          refs: [mid]
+        });
+      }
+    }
+    for (const rid of e.relatedEntities) {
+      if (!entityIdx.entries[rid]) {
+        issues.push({
+          check: "entity-unknown-relatedEntity",
+          severity: "warning",
+          layer: "entity",
+          id: e.id,
+          detail: `relatedEntity not in entity index`,
+          refs: [rid]
+        });
+      }
+    }
+  }
+  const qaEntries = Object.values(qaIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
+  for (const e of qaEntries) {
+    for (const mid of e.sourceMemoryIds) {
+      if (!memoryIdx.entries[mid]) {
+        issues.push({
+          check: "qa-dangling-sourceMemoryId",
+          severity: "warning",
+          layer: "qa",
+          id: e.id,
+          detail: `sourceMemoryId not in memory index`,
+          refs: [mid]
+        });
+      }
+    }
+    for (const rid of e.relatedEntities) {
+      if (!entityIdx.entries[rid]) {
+        issues.push({
+          check: "qa-unknown-relatedEntity",
+          severity: "warning",
+          layer: "qa",
+          id: e.id,
+          detail: `relatedEntity not in entity index`,
+          refs: [rid]
+        });
+      }
+    }
+    const expectProject = e.scope.startsWith("project:") ? e.scope.slice("project:".length) : null;
+    if (expectProject !== e.project) {
+      issues.push({
+        check: "qa-scope-leak",
+        severity: "error",
+        layer: "qa",
+        id: e.id,
+        detail: `scope=${e.scope} implies project=${JSON.stringify(expectProject)} but stored project=${JSON.stringify(e.project)}`
+      });
+    }
+  }
+  const clusterMin = opts.clusterMin ?? 2;
+  const epis = active.filter((e) => e.type === "episodic");
+  const byEntity = /* @__PURE__ */ new Map();
+  for (const e of epis) {
+    for (const tok of e.entities) {
+      const key = `${e.project ?? "_global"}::${tok.toLowerCase()}`;
+      const arr4 = byEntity.get(key) ?? [];
+      arr4.push(e);
+      byEntity.set(key, arr4);
+    }
+  }
+  const seenClusters = /* @__PURE__ */ new Set();
+  for (const group of byEntity.values()) {
+    const ids = [...new Set(group.map((e) => e.id))].sort();
+    if (ids.length < clusterMin) continue;
+    const sig = ids.join("|");
+    if (seenClusters.has(sig)) continue;
+    seenClusters.add(sig);
+    suggestions.push({
+      check: "promotion-candidate",
+      severity: "info",
+      layer: "memory",
+      id: ids[0],
+      detail: `${ids.length} episodic entries share an entity \u2014 consider promoting a stable fact to semantic/procedural (agent decides)`,
+      refs: ids
+    });
+  }
+  return {
+    generatedAt: opts.generatedAt ?? opts.now,
+    counts: { issues: issues.length, suggestions: suggestions.length },
+    issues,
+    suggestions
+  };
+}
+var tokenize4, jaccard, daysBetween;
+var init_lint = __esm({
+  "src/memory/lint.ts"() {
+    "use strict";
+    tokenize4 = (s) => new Set(s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1));
+    jaccard = (a, b2) => {
+      if (a.size === 0 && b2.size === 0) return 0;
+      let inter = 0;
+      for (const t2 of a) if (b2.has(t2)) inter++;
+      return inter / (a.size + b2.size - inter);
+    };
+    daysBetween = (a, b2) => (Date.parse(a) - Date.parse(b2)) / 864e5;
+  }
+});
+
+// src/commands/memory-lint.ts
+var memory_lint_exports = {};
+__export(memory_lint_exports, {
+  memoryLintCmd: () => memoryLintCmd
+});
+function humanReport(r2) {
+  const lines = [];
+  lines.push(`# memory-lint \u2014 ${r2.counts.issues} issue(s), ${r2.counts.suggestions} suggestion(s)`);
+  const group = (title, fs) => {
+    if (fs.length === 0) return;
+    lines.push(`
+## ${title}`);
+    for (const f of fs) {
+      lines.push(`- [${f.severity}] ${f.layer}/${f.check} \u2014 ${f.id}: ${f.detail}` + (f.refs && f.refs.length ? ` (refs: ${f.refs.join(", ")})` : ""));
+    }
+  };
+  group("Issues", r2.issues);
+  group("Suggestions", r2.suggestions);
+  if (r2.counts.issues === 0 && r2.counts.suggestions === 0) lines.push("\n\u2713 clean");
+  return lines.join("\n") + "\n";
+}
+async function memoryLintCmd(opts) {
+  const cfg = readPluginConfig();
+  const cwd = opts.cwd ?? process.cwd();
+  const project = resolveProjectFromCwd(cwd, cfg.repoPath);
+  const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const report = lintMemory(
+    loadMemoryIndex(cfg.repoPath),
+    loadEntityIndex(cfg.repoPath),
+    loadQaIndex(cfg.repoPath),
+    { now, staleDays: opts.staleDays ?? 90, project, generatedAt: now }
+  );
+  process.stdout.write(opts.json ? JSON.stringify(report, null, 2) + "\n" : humanReport(report));
+}
+var init_memory_lint = __esm({
+  "src/commands/memory-lint.ts"() {
+    "use strict";
+    init_plugin_config();
+    init_project_resolve();
+    init_index_store2();
+    init_index_store3();
+    init_index_store4();
+    init_lint();
+  }
+});
+
 // src/commands/recall.ts
 var recall_exports = {};
 __export(recall_exports, {
@@ -13508,6 +13761,10 @@ async function run(argv) {
   program2.command("qa-query").description("Load distilled Q&A for the cwd's project, score, and emit ranked Q&A (index-only, read-only).").option("--cwd <path>", "working directory to resolve the project from").option("--q <text>", "free-text query").option("--kind <kind>", "filter by qa kind (compound|troubleshooting|decision|operational)").action(async (o2) => {
     const { qaQueryCmd: qaQueryCmd2 } = await Promise.resolve().then(() => (init_qa_query(), qa_query_exports));
     await qaQueryCmd2(o2);
+  });
+  program2.command("memory-lint").description("Read-only integrity diagnostic across memory/entity/qa indexes (never writes). --json for structured output.").option("--cwd <path>", "scope findings to this project (+ global/user)").option("--json", "emit the structured LintReport JSON instead of a human report").option("--stale-days <n>", "age threshold for stale episodic/working (default 90)", (v) => parseInt(v, 10)).action(async (o2) => {
+    const { memoryLintCmd: memoryLintCmd2 } = await Promise.resolve().then(() => (init_memory_lint(), memory_lint_exports));
+    await memoryLintCmd2({ cwd: o2.cwd, json: o2.json, staleDays: o2.staleDays });
   });
   program2.command("recall").description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.").option("--cwd <path>", "infer project from this cwd").option("--project <slug>", "force a specific project slug").option("--topic <slug>", "stage 2: list chronicles in this topic").action(async (opts) => {
     const { recallCmd: recallCmd2 } = await Promise.resolve().then(() => (init_recall(), recall_exports));
