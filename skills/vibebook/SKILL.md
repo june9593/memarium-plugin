@@ -655,6 +655,42 @@ fact with a lifecycle).
 
 Skip this step entirely if the session produced no durable entity worth a page.
 
+### Step P7.7 — Distill Q&A (`qa/` answer layer)
+
+After typed memory (P7.5) and entity wiki (P7.6), scan THIS session for high-reuse question→answer pairs worth filing as `qa/` pages. **Conservative — prefer writing nothing over writing noise.**
+
+Write a Q&A page ONLY when ALL four hold:
+1. the **user actually asked** the question (not a fact you inferred),
+2. it was **resolved within the session**,
+3. the answer has **reuse value** ("you'll genuinely ask this again"),
+4. it has **clear sources** (chronicle / commit / memory id / session id).
+
+Only these kinds qualify: **compound questions, troubleshooting conclusions, decision rationale, operational routes.** Do NOT rewrite ordinary facts into Q&A form — those belong in typed memory (P7.5) or entity pages (P7.6). A qa page references memories/entities/chronicles via its structured fields; it never duplicates their content.
+
+For each qualifying pair, build an item and call `qa-write` with JSON shaped like:
+
+```json
+[{
+  "entry": {
+    "scope": "project:<slug>",
+    "project": "<slug>",
+    "question": "<the user's question, single line>",
+    "answerSummary": "<one-line gist of the answer>",
+    "kind": "operational",
+    "tags": ["..."],
+    "sources": ["chronicle:<id>", "commit:<sha>"],
+    "sourceMemoryIds": ["<memory id>"],
+    "sourceSessions": ["<session id>"],
+    "relatedEntities": ["entity/<...>"],
+    "createdAt": "<YYYY-MM-DD>",
+    "updatedAt": "<YYYY-MM-DD>"
+  },
+  "body": "<the full reusable answer in markdown — multiple paragraphs OK>"
+}]
+```
+
+Run `vibebook-plugin qa-write --input <that-json-file>`. The CLI derives the stable `id`/`path`, normalizes `question`/`answerSummary` to single lines, writes `memory/qa/<project|_global>/<slug>.md`, and updates `.vibebook/index.qa.json`. Re-asking a known question upserts (refines) the existing page — do not fork. **If nothing qualifies, write nothing and move on.**
+
 ### Step P8 — Done
 
 Print a one-line summary:

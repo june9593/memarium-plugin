@@ -61,6 +61,7 @@ export function scoreEntities(entries: EntityPage[], q: EntityQuery): ScoredEnti
 function recencyBoost(updatedAt: string, now: string): number {
   const days = (Date.parse(now) - Date.parse(updatedAt)) / 86400000;
   if (!isFinite(days)) return 0;
+  if (days < 0) return 0;
   if (days <= 7) return 2;
   if (days <= 30) return 1;
   return 0;

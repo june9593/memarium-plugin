@@ -132,6 +132,33 @@ export async function run(argv: string[]) {
       await entityQueryCmd(o);
     });
 
+  program.command("qa-write")
+    .description("Write distilled Q&A .md pages + update .vibebook/index.qa.json from an agent JSON payload.")
+    .option("--input <path>", "path to qa pages JSON")
+    .action(async (o: { input?: string }) => {
+      const { qaWriteCmd } = await import("./commands/qa-write.js");
+      const r = await qaWriteCmd({ inputPath: o.input });
+      process.stdout.write(JSON.stringify(r, null, 2) + "\n");
+    });
+
+  program.command("qa-index")
+    .description("Rebuild .vibebook/index.qa.json from memory/qa/ markdown.")
+    .action(async () => {
+      const { qaIndexCmd } = await import("./commands/qa-index.js");
+      const r = await qaIndexCmd();
+      process.stdout.write(JSON.stringify(r, null, 2) + "\n");
+    });
+
+  program.command("qa-query")
+    .description("Load distilled Q&A for the cwd's project, score, and emit ranked Q&A (index-only, read-only).")
+    .option("--cwd <path>", "working directory to resolve the project from")
+    .option("--q <text>", "free-text query")
+    .option("--kind <kind>", "filter by qa kind (compound|troubleshooting|decision|operational)")
+    .action(async (o: { cwd?: string; q?: string; kind?: string }) => {
+      const { qaQueryCmd } = await import("./commands/qa-query.js");
+      await qaQueryCmd(o);
+    });
+
   program
     .command("recall")
     .description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.")
