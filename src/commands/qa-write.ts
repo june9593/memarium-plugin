@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadQaIndex, saveQaIndex, upsertQa } from "../qa/index-store.js";
@@ -85,6 +85,17 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
       throw new Error(`qa-write: refusing to write outside memory/qa/ (symlink guard): ${entry.path}`);
     }
 
+    // Leaf guard: if the target file already exists as a symlink, refuse —
+    // writeFileSync would follow it and write content outside the repo. A
+    // regular existing file is a normal upsert (overwrite in place); a missing
+    // file (ENOENT) is a fresh write.
+    let leafStat;
+    try { leafStat = lstatSync(abs); } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    }
+    if (leafStat?.isSymbolicLink()) {
+      throw new Error(`qa-write: refusing to write through a symlinked target file (symlink guard): ${entry.path}`);
+    }
     writeFileSync(abs, renderQaMarkdown(entry, body));
     upsertQa(idx, entry);
     written++;

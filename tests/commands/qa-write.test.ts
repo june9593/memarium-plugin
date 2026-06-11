@@ -200,4 +200,21 @@ describe("qaWriteCmd", () => {
     await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/symlink guard/);
     expect(existsSync(join(external, "q-8e35c2cd.md"))).toBe(false);
   });
+
+  it("refuses to write when the target .md already exists as a symlink (leaf symlink guard)", async () => {
+    const mkInput = () => writeInput([{ entry: { scope: "project:p", project: "p",
+      question: "How do I build the project?", answerSummary: "npm build", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "first" }]);
+    // First write creates the real .md and tells us its derived path.
+    const r1 = await qaWriteCmd({ inputPath: mkInput() });
+    const abs = join(repo, r1.paths[0]);
+    // Replace it with a symlink to an external target.
+    const evil = join(home, "evil-target.md");
+    rmSync(abs);
+    if (!trySymlink(evil, abs)) return; // symlinks unsupported → skip
+    // Second write (upsert, same question → same derived path) must refuse.
+    await expect(qaWriteCmd({ inputPath: mkInput() })).rejects.toThrow(/symlink guard/);
+    expect(existsSync(evil)).toBe(false); // content was NOT written through the symlink
+  });
 });

@@ -11424,7 +11424,7 @@ var qa_write_exports = {};
 __export(qa_write_exports, {
   qaWriteCmd: () => qaWriteCmd
 });
-import { existsSync as existsSync16, mkdirSync as mkdirSync12, readFileSync as readFileSync15, realpathSync as realpathSync3, writeFileSync as writeFileSync11 } from "node:fs";
+import { existsSync as existsSync16, lstatSync as lstatSync2, mkdirSync as mkdirSync12, readFileSync as readFileSync15, realpathSync as realpathSync3, writeFileSync as writeFileSync11 } from "node:fs";
 import { dirname as dirname9, join as join20, resolve as resolve5, sep as sep5 } from "node:path";
 function isUnder(child, parent) {
   return child === parent || child.startsWith(parent + sep5);
@@ -11471,6 +11471,15 @@ async function qaWriteCmd(opts) {
     const realParent = realpathSync3(dirname9(abs));
     if (!isUnder(realParent, realRoot)) {
       throw new Error(`qa-write: refusing to write outside memory/qa/ (symlink guard): ${entry.path}`);
+    }
+    let leafStat;
+    try {
+      leafStat = lstatSync2(abs);
+    } catch (e) {
+      if (e.code !== "ENOENT") throw e;
+    }
+    if (leafStat?.isSymbolicLink()) {
+      throw new Error(`qa-write: refusing to write through a symlinked target file (symlink guard): ${entry.path}`);
     }
     writeFileSync11(abs, renderQaMarkdown(entry, body));
     upsertQa(idx, entry);
