@@ -11740,6 +11740,12 @@ var init_qa_query = __esm({
 });
 
 // src/memory/lint.ts
+function safeValues(rec) {
+  if (!rec || typeof rec !== "object" || Array.isArray(rec)) return [];
+  return Object.values(rec).filter(
+    (v) => v !== null && typeof v === "object"
+  );
+}
 function inScope(scope, project, cwdProject) {
   if (cwdProject === null) return true;
   if (scope === "global" || scope === "user") return true;
@@ -11749,80 +11755,99 @@ function inScope(scope, project, cwdProject) {
 function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   const issues = [];
   const suggestions = [];
-  const memEntries = Object.values(memoryIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
+  const memEntries = safeValues(memoryIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
   for (const e of memEntries) {
-    if (e.status === "active" && e.validTo !== null) {
-      const ts = Date.parse(e.validTo);
-      if (!isFinite(ts)) {
-        issues.push({
-          check: "malformed-date",
-          severity: "warning",
-          layer: "memory",
-          id: e.id,
-          detail: `unparseable validTo=${JSON.stringify(e.validTo)}`
-        });
-      } else if (new Date(ts).toISOString().slice(0, 10) <= opts.now) {
-        issues.push({
-          check: "expired",
-          severity: "warning",
-          layer: "memory",
-          id: e.id,
-          detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})`
-        });
+    try {
+      if (e.status === "active" && e.validTo !== null) {
+        const ts = Date.parse(e.validTo);
+        let vDate = null;
+        if (isFinite(ts)) {
+          try {
+            vDate = new Date(ts).toISOString().slice(0, 10);
+          } catch {
+            vDate = null;
+          }
+        }
+        if (vDate === null) {
+          issues.push({
+            check: "malformed-date",
+            severity: "warning",
+            layer: "memory",
+            id: e.id,
+            detail: `unparseable validTo=${JSON.stringify(e.validTo)}`
+          });
+        } else if (vDate <= opts.now) {
+          issues.push({
+            check: "expired",
+            severity: "warning",
+            layer: "memory",
+            id: e.id,
+            detail: `active memory expired at validTo=${e.validTo} (now ${opts.now})`
+          });
+        }
       }
-    }
-    if (e.supersedes !== null && !memoryIdx.entries[e.supersedes]) {
-      issues.push({
-        check: "dangling-supersedes",
-        severity: "error",
-        layer: "memory",
-        id: e.id,
-        detail: `supersedes a memory not in the index`,
-        refs: [e.supersedes]
-      });
-    }
-    if (e.supersedes !== null) {
-      const target = memoryIdx.entries[e.supersedes];
-      if (target && target.status === "active") {
+      if (e.supersedes !== null && !memoryIdx.entries[e.supersedes]) {
         issues.push({
-          check: "superseded-conflict",
+          check: "dangling-supersedes",
           severity: "error",
           layer: "memory",
           id: e.id,
-          detail: `supersedes ${target.id} but that target is still status=active`,
-          refs: [target.id]
+          detail: `supersedes a memory not in the index`,
+          refs: [e.supersedes]
         });
       }
-    }
-    const exemptProvenance = e.type === "core" || e.status === "pinned";
-    if (!exemptProvenance && e.sourceSessions.length === 0 && e.sourceCommits.length === 0 && e.sourceFiles.length === 0) {
-      issues.push({
-        check: "missing-provenance",
-        severity: "warning",
-        layer: "memory",
-        id: e.id,
-        detail: `no sourceSessions/sourceCommits/sourceFiles \u2014 origin not traceable`
-      });
-    }
-    if (e.status === "active" && (e.type === "episodic" || e.type === "working")) {
-      const age = daysBetween(opts.now, e.updatedAt);
-      if (!isFinite(age)) {
+      if (e.supersedes !== null) {
+        const target = memoryIdx.entries[e.supersedes];
+        if (target && target.status === "active") {
+          issues.push({
+            check: "superseded-conflict",
+            severity: "error",
+            layer: "memory",
+            id: e.id,
+            detail: `supersedes ${target.id} but that target is still status=active`,
+            refs: [target.id]
+          });
+        }
+      }
+      const exemptProvenance = e.type === "core" || e.status === "pinned";
+      if (!exemptProvenance && e.sourceSessions.length === 0 && e.sourceCommits.length === 0 && e.sourceFiles.length === 0) {
         issues.push({
-          check: "malformed-date",
+          check: "missing-provenance",
           severity: "warning",
           layer: "memory",
           id: e.id,
-          detail: `unparseable updatedAt=${JSON.stringify(e.updatedAt)}`
-        });
-      } else if (age > opts.staleDays) {
-        issues.push({
-          check: "stale-candidate",
-          severity: "info",
-          layer: "memory",
-          id: e.id,
-          detail: `${e.type} not updated in >${opts.staleDays}d (updatedAt=${e.updatedAt})`
+          detail: `no sourceSessions/sourceCommits/sourceFiles \u2014 origin not traceable`
         });
       }
+      if (e.status === "active" && (e.type === "episodic" || e.type === "working")) {
+        const age = daysBetween(opts.now, e.updatedAt);
+        if (!isFinite(age)) {
+          issues.push({
+            check: "malformed-date",
+            severity: "warning",
+            layer: "memory",
+            id: e.id,
+            detail: `unparseable updatedAt=${JSON.stringify(e.updatedAt)}`
+          });
+        } else if (age > opts.staleDays) {
+          issues.push({
+            check: "stale-candidate",
+            severity: "info",
+            layer: "memory",
+            id: e.id,
+            detail: `${e.type} not updated in >${opts.staleDays}d (updatedAt=${e.updatedAt})`
+          });
+        }
+      }
+    } catch {
+      const eid = e && typeof e.id === "string" ? e.id : "<unknown>";
+      issues.push({
+        check: "malformed-entry",
+        severity: "error",
+        layer: "memory",
+        id: eid,
+        detail: "entry has unexpected field types and was skipped"
+      });
     }
   }
   const dupThreshold = opts.dupThreshold ?? 0.6;
@@ -11830,83 +11855,108 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   const activeTokens = active.map((e) => tokenize4(`${e.title} ${e.summary}`));
   for (let i2 = 0; i2 < active.length; i2++) {
     for (let j2 = i2 + 1; j2 < active.length; j2++) {
-      const a = active[i2], b2 = active[j2];
-      if (a.type !== b2.type || a.scope !== b2.scope || a.project !== b2.project) continue;
-      const sim = jaccard(activeTokens[i2], activeTokens[j2]);
-      if (sim >= dupThreshold) {
-        const pair = [a.id, b2.id].slice().sort();
-        issues.push({
-          check: "duplicate-like",
-          severity: "info",
-          layer: "memory",
-          id: pair[0],
-          detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`,
-          refs: pair
-        });
+      try {
+        const a = active[i2], b2 = active[j2];
+        if (a.type !== b2.type || a.scope !== b2.scope || a.project !== b2.project) continue;
+        const sim = jaccard(activeTokens[i2], activeTokens[j2]);
+        if (sim >= dupThreshold) {
+          const pair = [a.id, b2.id].slice().sort();
+          issues.push({
+            check: "duplicate-like",
+            severity: "info",
+            layer: "memory",
+            id: pair[0],
+            detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`,
+            refs: pair
+          });
+        }
+      } catch {
       }
     }
   }
-  const entEntries = Object.values(entityIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
+  const entEntries = safeValues(entityIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
   for (const e of entEntries) {
-    for (const mid of e.sourceMemoryIds) {
-      if (!memoryIdx.entries[mid]) {
-        issues.push({
-          check: "entity-dangling-sourceMemoryId",
-          severity: "warning",
-          layer: "entity",
-          id: e.id,
-          detail: `sourceMemoryId not in memory index`,
-          refs: [mid]
-        });
+    try {
+      for (const mid of e.sourceMemoryIds) {
+        if (!memoryIdx.entries[mid]) {
+          issues.push({
+            check: "entity-dangling-sourceMemoryId",
+            severity: "warning",
+            layer: "entity",
+            id: e.id,
+            detail: `sourceMemoryId not in memory index`,
+            refs: [mid]
+          });
+        }
       }
-    }
-    for (const rid of e.relatedEntities) {
-      if (!entityIdx.entries[rid]) {
-        issues.push({
-          check: "entity-unknown-relatedEntity",
-          severity: "warning",
-          layer: "entity",
-          id: e.id,
-          detail: `relatedEntity not in entity index`,
-          refs: [rid]
-        });
+      for (const rid of e.relatedEntities) {
+        if (!entityIdx.entries[rid]) {
+          issues.push({
+            check: "entity-unknown-relatedEntity",
+            severity: "warning",
+            layer: "entity",
+            id: e.id,
+            detail: `relatedEntity not in entity index`,
+            refs: [rid]
+          });
+        }
       }
+    } catch {
+      const eid = e && typeof e.id === "string" ? e.id : "<unknown>";
+      issues.push({
+        check: "malformed-entry",
+        severity: "error",
+        layer: "entity",
+        id: eid,
+        detail: "entry has unexpected field types and was skipped"
+      });
     }
   }
-  const qaEntries = Object.values(qaIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
+  const qaEntries = safeValues(qaIdx.entries).filter((e) => inScope(e.scope, e.project, opts.project));
   for (const e of qaEntries) {
-    for (const mid of e.sourceMemoryIds) {
-      if (!memoryIdx.entries[mid]) {
+    try {
+      for (const mid of e.sourceMemoryIds) {
+        if (!memoryIdx.entries[mid]) {
+          issues.push({
+            check: "qa-dangling-sourceMemoryId",
+            severity: "warning",
+            layer: "qa",
+            id: e.id,
+            detail: `sourceMemoryId not in memory index`,
+            refs: [mid]
+          });
+        }
+      }
+      for (const rid of e.relatedEntities) {
+        if (!entityIdx.entries[rid]) {
+          issues.push({
+            check: "qa-unknown-relatedEntity",
+            severity: "warning",
+            layer: "qa",
+            id: e.id,
+            detail: `relatedEntity not in entity index`,
+            refs: [rid]
+          });
+        }
+      }
+      const expectProject = e.scope.startsWith("project:") ? e.scope.slice("project:".length) : null;
+      if (expectProject !== e.project) {
         issues.push({
-          check: "qa-dangling-sourceMemoryId",
-          severity: "warning",
+          check: "qa-scope-leak",
+          severity: "error",
           layer: "qa",
           id: e.id,
-          detail: `sourceMemoryId not in memory index`,
-          refs: [mid]
+          detail: `scope=${e.scope} implies project=${JSON.stringify(expectProject)} but stored project=${JSON.stringify(e.project)}`
         });
       }
-    }
-    for (const rid of e.relatedEntities) {
-      if (!entityIdx.entries[rid]) {
-        issues.push({
-          check: "qa-unknown-relatedEntity",
-          severity: "warning",
-          layer: "qa",
-          id: e.id,
-          detail: `relatedEntity not in entity index`,
-          refs: [rid]
-        });
-      }
-    }
-    const expectProject = e.scope.startsWith("project:") ? e.scope.slice("project:".length) : null;
-    if (expectProject !== e.project) {
+    } catch {
+      const eid = e && typeof e.id === "string" ? e.id : "<unknown>";
       issues.push({
-        check: "qa-scope-leak",
+        check: "malformed-entry",
         severity: "error",
         layer: "qa",
-        id: e.id,
-        detail: `scope=${e.scope} implies project=${JSON.stringify(expectProject)} but stored project=${JSON.stringify(e.project)}`
+        id: eid,
+        detail: "entry has unexpected field types and was skipped"
       });
     }
   }
@@ -11914,6 +11964,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   const epis = active.filter((e) => e.type === "episodic");
   const byEntity = /* @__PURE__ */ new Map();
   for (const e of epis) {
+    if (!Array.isArray(e.entities)) continue;
     for (const tok of e.entities) {
       const key = `${e.project ?? "_global"}::${tok.toLowerCase()}`;
       const arr4 = byEntity.get(key) ?? [];
@@ -12017,12 +12068,13 @@ function humanReport(r2) {
 }
 async function memoryLintCmd(opts) {
   const cfg = readPluginConfig();
-  const cwd = opts.cwd ?? process.cwd();
   let project = null;
-  try {
-    project = resolveProjectFromCwd(cwd, cfg.repoPath);
-  } catch {
-    project = null;
+  if (opts.cwd) {
+    try {
+      project = resolveProjectFromCwd(opts.cwd, cfg.repoPath);
+    } catch {
+      project = null;
+    }
   }
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const report = lintMemory(
@@ -13825,7 +13877,7 @@ async function run(argv) {
     const { qaQueryCmd: qaQueryCmd2 } = await Promise.resolve().then(() => (init_qa_query(), qa_query_exports));
     await qaQueryCmd2(o2);
   });
-  program2.command("memory-lint").description("Read-only integrity diagnostic across memory/entity/qa indexes (never writes). --json for structured output.").option("--cwd <path>", "scope findings to this project (+ global/user)").option("--json", "emit the structured LintReport JSON instead of a human report").option("--stale-days <n>", "age threshold for stale episodic/working (default 90)", (v) => parseInt(v, 10)).action(async (o2) => {
+  program2.command("memory-lint").description("Read-only integrity diagnostic across memory/entity/qa indexes (never writes). --json for structured output.").option("--cwd <path>", "scope findings to the project at this path (+ global/user); default: lint the whole store").option("--json", "emit the structured LintReport JSON instead of a human report").option("--stale-days <n>", "age threshold for stale episodic/working (default 90)", (v) => parseInt(v, 10)).action(async (o2) => {
     const { memoryLintCmd: memoryLintCmd2 } = await Promise.resolve().then(() => (init_memory_lint(), memory_lint_exports));
     await memoryLintCmd2({ cwd: o2.cwd, json: o2.json, staleDays: o2.staleDays });
   });

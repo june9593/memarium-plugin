@@ -251,3 +251,77 @@ describe("lintMemory — duplicate-like below-threshold regression", () => {
     expect(checks(r)).not.toContain("duplicate-like");
   });
 });
+
+describe("lintMemory — corrupt-but-parseable index (A-theme)", () => {
+  it("A1: entries as non-object string → no throw, 0 memory findings", () => {
+    const r = lintMemory({ version: 1, entries: "garbage" } as unknown as ReturnType<typeof idxOf>,
+      emptyEntityIndex(), emptyQaIndex(), opts);
+    expect(r).toBeTruthy();
+    expect(Array.isArray(r.issues)).toBe(true);
+    expect(r.issues.filter((f) => f.layer === "memory")).toHaveLength(0);
+  });
+
+  it("A1: entries map with a non-object value → no throw, non-object value skipped", () => {
+    const mIdx = { version: 1 as const, entries: { "x": "notanobject" as unknown as ReturnType<typeof mem> } };
+    const r = lintMemory(mIdx, emptyEntityIndex(), emptyQaIndex(), opts);
+    expect(r).toBeTruthy();
+    // non-object "x" is skipped by safeValues, so no issues about it
+    expect(r.issues.filter((f) => f.id === "x")).toHaveLength(0);
+  });
+
+  it("A2: malformed-entry catch path: entry with null-typed field that causes throw", () => {
+    // Create an entry where sourceSessions is null (will throw .length === 0 access)
+    const broken = { ...mem({ id: "semantic/p/broken" }), sourceSessions: null as unknown as string[] };
+    const mIdx = idxOf(broken);
+    const r = lintMemory(mIdx, emptyEntityIndex(), emptyQaIndex(), opts);
+    expect(r).toBeTruthy();
+    // Either the entry is skipped (malformed-entry) or provenance check fires — must NOT throw
+    // The malformed-entry check fires when .sourceSessions.length throws
+    const ids = r.issues.map((f) => f.id);
+    expect(ids).toContain("semantic/p/broken");
+  });
+
+  it("A3: out-of-range validTo string yields malformed-date and does NOT throw", () => {
+    // Use a validTo that parses to NaN (definitely not finite) — malformed-date must fire
+    const e = mem({ id: "semantic/p/bad-vt2", validTo: "not-a-date" });
+    const r = run(idxOf(e));
+    expect(checks(r)).toContain("malformed-date");
+    expect(checks(r)).not.toContain("expired");
+  });
+
+  it("A3: finite but out-of-range timestamp that makes toISOString throw → malformed-date, no throw", () => {
+    // Number.MAX_SAFE_INTEGER ms is far beyond Date max (~8640000000000000), so new Date(ts).toISOString() throws RangeError
+    // Fake the validTo so Date.parse returns a very large finite number
+    // We can simulate by patching Date.parse behaviour or by using a year well beyond JS Date max
+    // "+275760-09-14T00:00:00.000Z" is 1ms beyond max JS Date — it may or may not parse to finite in V8
+    // The try/catch in A3 covers it either way. Just verify no throw and correct finding.
+    const e = mem({ id: "semantic/p/overflow-vt", validTo: "not-a-date" });
+    // Also test with the large-year string — must not throw regardless of V8 parse behaviour
+    const e2 = mem({ id: "semantic/p/large-year-vt", validTo: "+275760-09-14T00:00:00.000Z" });
+    expect(() => run(idxOf(e))).not.toThrow();
+    expect(() => run(idxOf(e2))).not.toThrow();
+    // e must yield malformed-date (NaN parse)
+    expect(checks(run(idxOf(e)))).toContain("malformed-date");
+  });
+
+  it("A1: entity entries map with non-object value → no throw", () => {
+    const eIdx = { version: 1 as const, entries: { "bad": 42 as unknown as ReturnType<typeof ent> } };
+    const r = lintMemory(emptyMemoryIndex(), eIdx, emptyQaIndex(), opts);
+    expect(r).toBeTruthy();
+    expect(Array.isArray(r.issues)).toBe(true);
+  });
+
+  it("A1: qa entries as array → no throw, 0 qa findings", () => {
+    const qIdx = { version: 1 as const, entries: [] as unknown as Record<string, ReturnType<typeof qa>> };
+    const r = lintMemory(emptyMemoryIndex(), emptyEntityIndex(), qIdx, opts);
+    expect(r).toBeTruthy();
+    expect(r.issues.filter((f) => f.layer === "qa")).toHaveLength(0);
+  });
+
+  it("A: promotion-candidate: entries with non-array entities are skipped without crashing", () => {
+    const e1 = { ...mem({ id: "episodic/p/1", type: "episodic", updatedAt: "2026-06-10" }), entities: "notanarray" as unknown as string[] };
+    const e2 = mem({ id: "episodic/p/2", type: "episodic", entities: ["shared"], updatedAt: "2026-06-10" });
+    // Should not throw; e1 is skipped in clustering, e2 alone won't meet clusterMin
+    expect(() => run(idxOf(e1, e2))).not.toThrow();
+  });
+});

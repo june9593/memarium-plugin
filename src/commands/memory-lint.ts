@@ -54,9 +54,10 @@ function humanReport(r: LintReport): string {
  *  memory-query — that writes _primer). Never mutates the repo. Exit 0. */
 export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
   const cfg = readPluginConfig();
-  const cwd = opts.cwd ?? process.cwd();
   let project: string | null = null;
-  try { project = resolveProjectFromCwd(cwd, cfg.repoPath); } catch { project = null; }
+  if (opts.cwd) {
+    try { project = resolveProjectFromCwd(opts.cwd, cfg.repoPath); } catch { project = null; }
+  }
   const now = new Date().toISOString().slice(0, 10);
   const report = lintMemory(
     loadMemoryIndex(cfg.repoPath),
