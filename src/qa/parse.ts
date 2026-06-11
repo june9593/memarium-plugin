@@ -17,6 +17,13 @@ function parseScalar(v: string): string | null {
   const t = v.trim();
   return t === "null" ? null : t;
 }
+function parseQuoted(v: string): string {
+  const t = v.trim();
+  if (t.startsWith('"')) {
+    try { const p = JSON.parse(t); if (typeof p === "string") return p; } catch { /* fall through */ }
+  }
+  return t; // legacy/unquoted fallback
+}
 
 /** Inverse of renderQaMarkdown: parse frontmatter (body ignored) → QaEntry.
  *  `path` is left "" — the caller fills it from the file path. */
@@ -34,8 +41,8 @@ export function parseQaMarkdown(md: string): QaEntry | null {
     id: fm.id,
     scope: fm.scope ?? "",
     project: parseScalar(fm.project ?? "null"),
-    question: fm.question ?? "",
-    answerSummary: fm.answerSummary ?? "",
+    question: parseQuoted(fm.question ?? ""),
+    answerSummary: parseQuoted(fm.answerSummary ?? ""),
     kind: fm.kind as QaKind,
     tags: parseArr(fm.tags ?? "[]"),
     sources: parseArr(fm.sources ?? "[]"),

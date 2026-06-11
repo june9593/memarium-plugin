@@ -37,6 +37,11 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
   for (const { entry, body } of items) {
     entry.question = normalizeSingleLine(entry.question);
     entry.answerSummary = normalizeSingleLine(entry.answerSummary);
+    // scope is authoritative for project membership: derive project from it so
+    // id/path (project-based) and scorer eligibility (scope-based) can't disagree.
+    entry.project = entry.scope.startsWith("project:")
+      ? entry.scope.slice("project:".length)
+      : null;
     // CLI is authoritative for identity: always derive id/path from the
     // canonical question + scope/project, ignoring any agent-provided id/path.
     // This keeps the deterministic-slug + upsert-dedup contract stable

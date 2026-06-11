@@ -41,8 +41,8 @@ describe("qaWriteCmd", () => {
     const abs = join(repo, r.paths[0]);
     expect(r.paths[0].startsWith("memory/qa/p/")).toBe(true);
     const md = readFileSync(abs, "utf8");
-    expect(md).toContain("question: How do I build?");
-    expect(md).toContain("answerSummary: Run npm build.");
+    expect(md).toContain(`question: "How do I build?"`);
+    expect(md).toContain(`answerSummary: "Run npm build."`);
     expect(md).toContain("Full answer\nwith multiple\nlines.");
     const idx = loadQaIndex(repo);
     const ids = Object.keys(idx.entries);
@@ -60,8 +60,10 @@ describe("qaWriteCmd", () => {
     expect(Object.keys(loadQaIndex(repo).entries)).toHaveLength(1);
   });
 
-  it("refuses to write when a malicious project escapes memory/qa (derived-path traversal)", async () => {
-    const inputPath = writeInput([{ entry: { scope: "project:x", project: "../../etc",
+  it("refuses to write when a malicious scope escapes memory/qa (derived-path traversal via scope)", async () => {
+    // scope is authoritative: project is derived from scope, so the escape vector
+    // must be in scope. "project:../../etc" → derived project = "../../etc" → path escapes.
+    const inputPath = writeInput([{ entry: { scope: "project:../../etc", project: "anything",
       question: "q", answerSummary: "a", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
       createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
@@ -82,6 +84,38 @@ describe("qaWriteCmd", () => {
     expect(ids).toHaveLength(1);
     expect(ids[0]).not.toBe("qa/p/STALE");           // derived id, not the stale one
     expect(ids[0].startsWith("qa/p/")).toBe(true);
+  });
+
+  it("scope is authoritative: inconsistent scope/project → project derived from scope", async () => {
+    // Case 1: scope=global, project="p" → derived project=null, id/path under _global
+    const input1 = writeInput([{ entry: {
+      scope: "global", project: "p",
+      question: "What is the meaning of life?", answerSummary: "42", kind: "decision",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    const r1 = await qaWriteCmd({ inputPath: input1 });
+    expect(r1.paths[0].startsWith("memory/qa/_global/")).toBe(true);
+    const idx1 = loadQaIndex(repo);
+    const id1 = Object.keys(idx1.entries)[0];
+    expect(id1.startsWith("qa/_global/")).toBe(true);
+    expect(idx1.entries[id1].project).toBeNull();
+
+    // Case 2: scope="project:p", project="q" → derived project="p", id/path under p, not q
+    const input2 = writeInput([{ entry: {
+      scope: "project:p", project: "q",
+      question: "How do I build?", answerSummary: "npm run build", kind: "operational",
+      tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
+    const r2 = await qaWriteCmd({ inputPath: input2 });
+    expect(r2.paths[0].startsWith("memory/qa/p/")).toBe(true);
+    expect(r2.paths[0]).not.toContain("/q/");
+    const idx2 = loadQaIndex(repo);
+    const ids2 = Object.keys(idx2.entries);
+    // Find the entry we just wrote (the one for "How do I build?")
+    const id2 = ids2.find((id) => id.startsWith("qa/p/"))!;
+    expect(id2).toBeDefined();
+    expect(idx2.entries[id2].project).toBe("p");
+    expect(idx2.entries[id2].project).not.toBe("q");
   });
 
   it("refuses to write through a symlinked qa dir (symlink guard)", async () => {

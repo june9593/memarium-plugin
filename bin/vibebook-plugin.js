@@ -11338,8 +11338,8 @@ function renderQaMarkdown(entry, body) {
     `id: ${entry.id}`,
     `scope: ${entry.scope}`,
     `project: ${scalar3(entry.project)}`,
-    `question: ${entry.question}`,
-    `answerSummary: ${entry.answerSummary}`,
+    `question: ${JSON.stringify(entry.question)}`,
+    `answerSummary: ${JSON.stringify(entry.answerSummary)}`,
     `kind: ${entry.kind}`,
     `tags: ${arr3(entry.tags)}`,
     `sources: ${arr3(entry.sources)}`,
@@ -11446,6 +11446,7 @@ async function qaWriteCmd(opts) {
   for (const { entry, body } of items) {
     entry.question = normalizeSingleLine(entry.question);
     entry.answerSummary = normalizeSingleLine(entry.answerSummary);
+    entry.project = entry.scope.startsWith("project:") ? entry.scope.slice("project:".length) : null;
     entry.id = qaId(entry.scope, entry.project, entry.question);
     entry.path = qaPath(entry);
     const qaRoot = resolve5(join20(cfg.repoPath, "memory", "qa"));
@@ -11501,6 +11502,17 @@ function parseScalar3(v) {
   const t2 = v.trim();
   return t2 === "null" ? null : t2;
 }
+function parseQuoted(v) {
+  const t2 = v.trim();
+  if (t2.startsWith('"')) {
+    try {
+      const p2 = JSON.parse(t2);
+      if (typeof p2 === "string") return p2;
+    } catch {
+    }
+  }
+  return t2;
+}
 function parseQaMarkdown(md) {
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
@@ -11515,8 +11527,8 @@ function parseQaMarkdown(md) {
     id: fm.id,
     scope: fm.scope ?? "",
     project: parseScalar3(fm.project ?? "null"),
-    question: fm.question ?? "",
-    answerSummary: fm.answerSummary ?? "",
+    question: parseQuoted(fm.question ?? ""),
+    answerSummary: parseQuoted(fm.answerSummary ?? ""),
     kind: fm.kind,
     tags: parseArr3(fm.tags ?? "[]"),
     sources: parseArr3(fm.sources ?? "[]"),
