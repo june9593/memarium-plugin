@@ -611,6 +611,18 @@ Then run a query to refresh the project primer:
 
     "$VBP" memory-query --cwd "$(pwd)" >/dev/null
 
+**v4 gate — long-term memory goes through review, not direct writes.** A change
+is *gated* if the entry is `core` or `procedural`, has `status: pinned`, OR it
+edits/supersedes an existing core/procedural/pinned memory. Put gated items in a
+SEPARATE JSON array and call `memory-propose` instead of `memory-write` (same
+`{ entry, body }` items, plus optional `rationale` / `sourceSession`); they queue
+locally for human review rather than landing live. Non-gated items (`semantic`,
+`episodic`, `working`, `artifact`) use `memory-write` as above. If you call
+`memory-write` with a gated item it errors with "use memory-propose" — re-route
+that item. **Never approve your own proposals.** After proposing, tell the user:
+"Proposed N core/procedural/pinned memory change(s) — review with `memory-diff`,
+apply with `memory-approve --id <targetKey>`."
+
 Be conservative: a few high-value memories beat many trivial ones. Don't
 duplicate what's already in the index (it was loaded at session start via
 `/vibebook-context`).
@@ -701,20 +713,22 @@ vibebook-plugin memory-lint --cwd "$(pwd)" --json
 
 The report has `issues[]` (objective integrity defects) and `suggestions[]` (semantic-judgment candidates). Read it together with this session's new memories and the existing memory.
 
-Act on only a FEW high-confidence items — prefer writing nothing over writing noise. All writes go through `memory-write` (it flips a superseded target's status automatically). Do NOT batch-fix.
+Act on only a FEW high-confidence items — prefer writing nothing over writing noise. Non-gated writes go through `memory-write` (it flips a superseded target's status automatically). **Gated changes — any `core`/`procedural`/pinned memory, or anything that supersedes one — go through `memory-propose`**, which queues them for human review (`memory-diff` / `memory-approve`); consolidation cannot silently rewrite long-term memory. Do NOT batch-fix.
 
 - **episodic→semantic / repeated→procedural** (from `suggestions[]`): when a fact is repeatedly confirmed/stable, write a new `semantic` (or `procedural`) memory. **By default KEEP the source episodic** — it is the evidence / chronicle pointer. Only `supersedes` the episodic when it is a low-value duplicate pointer AND the new memory carries its `sourceSessions` / provenance forward.
 - **contradiction / expired**: when a new fact contradicts or replaces an old memory, write the new one with `supersedes: <old-id>`.
 - **duplicate-like** (`issues[]`): if you agree, keep one and `supersedes` the redundant one.
 - Anything you're not confident about → leave it; mention it as a suggestion in your digest summary and write nothing.
 
-**Refresh the primer if you wrote any primer-affecting memory.** If this step wrote or superseded any `core` / `semantic` / `procedural` memory, refresh the SessionStart primer at the end:
+Any of the above that produces a `core`/`procedural`/pinned memory — or that supersedes one — is a **gated change**: route it through `memory-propose`, not `memory-write`. (Promoting an episodic into an ordinary `semantic` is non-gated and writes directly; promoting into a `procedural` playbook is gated and gets proposed.)
+
+**Refresh the primer if you wrote any primer-affecting memory via `memory-write`.** If this step actually wrote a non-gated primer-affecting memory (a `semantic`), refresh the SessionStart primer at the end:
 
 ```bash
 vibebook-plugin memory-query --cwd "$(pwd)" >/dev/null
 ```
 
-(This is the digest WRITE path and is allowed to refresh `_primer/<project>.md` — it does NOT contradict the lint read-only invariant; only consolidation refreshes, and only after it actually wrote primer-affecting memory.)
+(This is the digest WRITE path and is allowed to refresh `_primer/<project>.md` — it does NOT contradict the lint read-only invariant; only consolidation refreshes, and only after it actually wrote primer-affecting memory. **Gated changes you only *proposed* do NOT refresh the primer** — `memory-approve` refreshes it when the human applies them.)
 
 ### Step P8 — Done
 

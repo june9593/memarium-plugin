@@ -169,6 +169,42 @@ export async function run(argv: string[]) {
       await memoryLintCmd({ cwd: o.cwd, json: o.json, staleDays: o.staleDays });
     });
 
+  program.command("memory-propose")
+    .description("Queue a gated (core/procedural/pinned) memory change as a local proposal instead of writing it. Reads an --input JSON array of {entry, body, rationale?, sourceSession?}.")
+    .requiredOption("--input <path>", "JSON file: array of { entry, body, rationale?, sourceSession? }")
+    .action(async (o: { input: string }) => {
+      const { memoryProposeCmd } = await import("./commands/memory-propose.js");
+      const r = await memoryProposeCmd({ inputPath: o.input });
+      console.log(JSON.stringify(r));
+    });
+
+  program.command("memory-diff")
+    .description("Read-only: show pending local memory proposals as a diff vs current live memory. Never writes.")
+    .option("--id <targetKey>", "show only the proposal for this target (e.g. core/yue-workflow)")
+    .option("--json", "emit a structured JSON array instead of a human report")
+    .action(async (o: { id?: string; json?: boolean }) => {
+      const { memoryDiffCmd } = await import("./commands/memory-diff.js");
+      await memoryDiffCmd({ id: o.id, json: o.json });
+    });
+
+  program.command("memory-approve")
+    .description("Apply a pending local memory proposal to live memory, delete the proposal, and refresh affected primers.")
+    .requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/yue-workflow)")
+    .action(async (o: { id: string }) => {
+      const { memoryApproveCmd } = await import("./commands/memory-approve.js");
+      const r = await memoryApproveCmd({ id: o.id });
+      console.log(JSON.stringify(r));
+    });
+
+  program.command("memory-reject")
+    .description("Discard a pending local memory proposal without applying it.")
+    .requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/yue-workflow)")
+    .action(async (o: { id: string }) => {
+      const { memoryRejectCmd } = await import("./commands/memory-reject.js");
+      const r = await memoryRejectCmd({ id: o.id });
+      console.log(JSON.stringify(r));
+    });
+
   program
     .command("recall")
     .description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.")
