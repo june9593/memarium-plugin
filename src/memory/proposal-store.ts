@@ -57,9 +57,9 @@ function fileFor(repoPath: string, idOrKey: string): string {
 
 export function writeProposal(repoPath: string, p: MemoryProposal): string {
   const dir = proposalsDir(repoPath);
-  guardQueuePath(dir);
-  mkdirSync(dir, { recursive: true });
   const file = join(dir, `${flatTargetKey(p.targetKey)}.json`);
+  guardQueuePath(file); // guards dir components AND the leaf (a symlinked <target>.json is refused)
+  mkdirSync(dir, { recursive: true });
   writeFileSync(file, JSON.stringify(p, null, 2) + "\n");
   return file;
 }
@@ -81,7 +81,9 @@ export function listProposals(repoPath: string): MemoryProposal[] {
   const out: MemoryProposal[] = [];
   for (const name of readdirSync(dir)) {
     if (!name.endsWith(".json")) continue;
-    try { out.push(JSON.parse(readFileSync(join(dir, name), "utf8")) as MemoryProposal); }
+    const file = join(dir, name);
+    guardQueuePath(file); // refuse a symlinked proposal file loudly (outside the parse try/catch)
+    try { out.push(JSON.parse(readFileSync(file, "utf8")) as MemoryProposal); }
     catch { /* skip corrupt proposal file */ }
   }
   return out;

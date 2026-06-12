@@ -49,7 +49,7 @@ export function deriveAction(entry: MemoryEntry, live: MemoryIndex["entries"]): 
 /** A single path segment must be non-empty and contain no separators or `..`,
  *  so an untrusted value can't traverse out of its intended directory. */
 function safeSegment(seg: string, label: string): string {
-  if (seg.length === 0 || seg.includes("/") || seg.includes("\\") || seg.includes("..") || seg.includes("\0")) {
+  if (seg.length === 0 || seg === "." || seg.includes("/") || seg.includes("\\") || seg.includes("..") || seg.includes("\0")) {
     throw new Error(`memory path: unsafe ${label} segment ${JSON.stringify(seg)}`);
   }
   return seg;

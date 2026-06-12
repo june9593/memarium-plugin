@@ -10553,7 +10553,7 @@ function deriveAction(entry, live) {
   return "create";
 }
 function safeSegment(seg, label) {
-  if (seg.length === 0 || seg.includes("/") || seg.includes("\\") || seg.includes("..") || seg.includes("\0")) {
+  if (seg.length === 0 || seg === "." || seg.includes("/") || seg.includes("\\") || seg.includes("..") || seg.includes("\0")) {
     throw new Error(`memory path: unsafe ${label} segment ${JSON.stringify(seg)}`);
   }
   return seg;
@@ -12255,9 +12255,9 @@ function fileFor(repoPath, idOrKey) {
 }
 function writeProposal(repoPath, p2) {
   const dir = proposalsDir(repoPath);
-  guardQueuePath(dir);
-  mkdirSync13(dir, { recursive: true });
   const file = join23(dir, `${flatTargetKey(p2.targetKey)}.json`);
+  guardQueuePath(file);
+  mkdirSync13(dir, { recursive: true });
   writeFileSync12(file, JSON.stringify(p2, null, 2) + "\n");
   return file;
 }
@@ -12283,8 +12283,10 @@ function listProposals(repoPath) {
   const out = [];
   for (const name of readdirSync5(dir)) {
     if (!name.endsWith(".json")) continue;
+    const file = join23(dir, name);
+    guardQueuePath(file);
     try {
-      out.push(JSON.parse(readFileSync19(join23(dir, name), "utf8")));
+      out.push(JSON.parse(readFileSync19(file, "utf8")));
     } catch {
     }
   }

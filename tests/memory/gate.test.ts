@@ -98,4 +98,7 @@ describe("canonicalMemoryPath", () => {
     expect(() => canonicalMemoryPath(mk({ project: "../escape" }))).toThrow(/unsafe project/i);
     expect(() => canonicalMemoryPath(mk({ id: "semantic/.." }))).toThrow(/unsafe slug/i);
   });
+  it('rejects a literal "." segment (keeps canonical paths stable)', () => {
+    expect(() => canonicalMemoryPath(mk({ project: "." }))).toThrow(/unsafe project/i);
+  });
 });

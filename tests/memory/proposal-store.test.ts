@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync, existsSync, symlinkSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, symlinkSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MemoryProposal } from "../../src/memory/proposal-store.js";
@@ -87,5 +87,25 @@ describe("proposal-store", () => {
     mkdirSync(join(home, ".vibebook"), { recursive: true });
     symlinkSync(outside, join(home, ".vibebook", "local-proposals"));
     expect(() => writeProposal(repo, prop())).toThrow(/symlink guard/i);
+  });
+
+  it("refuses to write through a symlinked proposal file (leaf symlink guard)", async () => {
+    const { writeProposal, proposalsDir } = await import("../../src/memory/proposal-store.js");
+    const dir = proposalsDir(repo);
+    mkdirSync(dir, { recursive: true });
+    const outside = join(home, "evil.json");
+    writeFileSync(outside, "x\n");
+    symlinkSync(outside, join(dir, "core__yue-workflow.json"));
+    expect(() => writeProposal(repo, prop())).toThrow(/symlink guard/i);
+  });
+
+  it("refuses to list through a symlinked proposal file (leaf symlink guard)", async () => {
+    const { listProposals, proposalsDir } = await import("../../src/memory/proposal-store.js");
+    const dir = proposalsDir(repo);
+    mkdirSync(dir, { recursive: true });
+    const outside = join(home, "evil2.json");
+    writeFileSync(outside, '{"x":1}\n');
+    symlinkSync(outside, join(dir, "core__leak.json"));
+    expect(() => listProposals(repo)).toThrow(/symlink guard/i);
   });
 });
