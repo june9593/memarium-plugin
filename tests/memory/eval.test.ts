@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { recallAtK, precisionAtK, mrr } from "../../src/memory/eval.js";
-import { runEvalCase } from "../../src/memory/eval.js";
+import { runEvalCase, runEval } from "../../src/memory/eval.js";
 import { CORPUS } from "../fixtures/eval/corpus.js";
 import { CASES } from "../fixtures/eval/cases.js";
 
@@ -40,4 +40,22 @@ describe("retrieval eval — per-case hard assertions (CI gate)", () => {
       expect(r.pass, `${c.name} — ${r.detail}`).toBe(true);
     });
   }
+});
+
+describe("runEval aggregate", () => {
+  it("reports totals, excludes abstention from means, and computes abstentionAccuracy", () => {
+    const report = runEval(CORPUS, CASES);
+    expect(report.total).toBe(CASES.length);
+    expect(report.passed).toBe(CASES.length);      // all cases pass on the shipped corpus
+    expect(report.failed).toBe(0);
+    expect(report.abstentionTotal).toBe(2);         // cross-project + abstention cases
+    expect(report.abstentionAccuracy).toBe(1);
+    expect(report.scoredCases).toBe(CASES.length - 2);
+    expect(report.meanRecallAtK).toBeGreaterThan(0);
+    console.info("[memory-v5 eval]", JSON.stringify({
+      passed: report.passed, total: report.total,
+      meanRecallAtK: report.meanRecallAtK, meanMrr: report.meanMrr,
+      abstentionAccuracy: report.abstentionAccuracy, byCategory: report.byCategory,
+    }, null, 2));
+  });
 });

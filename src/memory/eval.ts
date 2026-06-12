@@ -168,3 +168,36 @@ export function runEvalCase(corpus: EvalCorpus, c: EvalCase): CaseResult {
     goldHit, exclusionOk, abstainOk, pass, detail,
   };
 }
+
+export function runEval(corpus: EvalCorpus, cases: EvalCase[]): EvalReport {
+  const results = cases.map((c) => runEvalCase(corpus, c));
+  const passed = results.filter((r) => r.pass).length;
+
+  // Abstention cases (empty gold) are excluded from the retrieval-quality means
+  // and reported as their own accuracy instead.
+  const scored = results.filter((_, i) => !cases[i].expectAbstain);
+  const abstain = results.filter((_, i) => cases[i].expectAbstain);
+  const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+
+  const cats: EvalCategory[] = ["memory", "qa", "entity", "primer"];
+  const byCategory = {} as EvalReport["byCategory"];
+  for (const cat of cats) {
+    const inCat = results.filter((r) => r.category === cat);
+    byCategory[cat] = {
+      total: inCat.length,
+      passed: inCat.filter((r) => r.pass).length,
+      meanRecallAtK: mean(inCat.map((r) => r.recallAtK)),
+    };
+  }
+
+  return {
+    total: results.length, passed, failed: results.length - passed,
+    scoredCases: scored.length,
+    meanRecallAtK: mean(scored.map((r) => r.recallAtK)),
+    meanPrecisionAtK: mean(scored.map((r) => r.precisionAtK)),
+    meanMrr: mean(scored.map((r) => r.mrr)),
+    abstentionTotal: abstain.length,
+    abstentionAccuracy: abstain.length ? abstain.filter((r) => r.pass).length / abstain.length : 1,
+    byCategory, results,
+  };
+}
