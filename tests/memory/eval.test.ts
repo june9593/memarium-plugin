@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { recallAtK, precisionAtK, mrr } from "../../src/memory/eval.js";
+import { runEvalCase } from "../../src/memory/eval.js";
 import { CORPUS } from "../fixtures/eval/corpus.js";
+import { CASES } from "../fixtures/eval/cases.js";
 
 describe("metric helpers", () => {
   it("recallAtK: fraction of gold within top-k", () => {
@@ -29,4 +31,13 @@ describe("eval corpus invariants", () => {
     const titles = CORPUS.memory.map((m) => m.title);
     expect(new Set(titles).size).toBe(titles.length);
   });
+});
+
+describe("retrieval eval — per-case hard assertions (CI gate)", () => {
+  for (const c of CASES) {
+    it(c.name, () => {
+      const r = runEvalCase(CORPUS, c);
+      expect(r.pass, `${c.name} — ${r.detail}`).toBe(true);
+    });
+  }
 });
