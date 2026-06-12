@@ -52,6 +52,9 @@ describe("runEval aggregate", () => {
     expect(report.abstentionAccuracy).toBe(1);
     expect(report.scoredCases).toBe(CASES.length - 2);
     expect(report.meanRecallAtK).toBeGreaterThan(0);
+    // per-category mean excludes abstention (memory has 6 cases incl. 2 abstain → 4 scored, all recall 1)
+    expect(report.byCategory.memory.meanRecallAtK).toBe(1);
+    expect(report.byCategory.memory.total).toBe(6);
     console.info("[memory-v5 eval]", JSON.stringify({
       passed: report.passed, total: report.total,
       meanRecallAtK: report.meanRecallAtK, meanMrr: report.meanMrr,
