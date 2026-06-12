@@ -11,6 +11,9 @@ export async function memoryRejectCmd(opts: MemoryRejectOptions): Promise<Memory
   if (!prop) {
     throw new Error(`memory-reject: no pending proposal for "${opts.id}"`);
   }
-  const path = deleteProposal(cfg.repoPath, prop.targetKey) ?? "";
+  const path = deleteProposal(cfg.repoPath, prop.targetKey);
+  if (!path) {
+    throw new Error(`memory-reject: proposal "${prop.targetKey}" could not be removed from the queue`);
+  }
   return { rejected: 1, path };
 }

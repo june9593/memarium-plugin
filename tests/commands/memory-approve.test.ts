@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -77,5 +77,18 @@ describe("memoryApproveCmd", () => {
   it("throws on an unknown proposal id", async () => {
     const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
     await expect(memoryApproveCmd({ id: "core/nope" })).rejects.toThrow(/no pending proposal/i);
+  });
+
+  it("refreshPrimers refuses to delete through a symlinked _primer (symlink guard)", async () => {
+    await seed(); // global-scope core/y (project: null → touches all primers)
+    const outside = join(home, "outside");
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, "edge.md"), "external\n");
+    mkdirSync(join(repo, "memory"), { recursive: true });
+    symlinkSync(outside, join(repo, "memory", "_primer"));
+    const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
+    await expect(memoryApproveCmd({ id: "core/y" })).rejects.toThrow(/symlink guard/i);
+    // the file outside the repo must NOT have been deleted
+    expect(existsSync(join(outside, "edge.md"))).toBe(true);
   });
 });

@@ -78,7 +78,11 @@ export async function memoryDiffCmd(opts: MemoryDiffOptions): Promise<void> {
     }
     const views = proposals.map((p) => buildView(p, idx.entries[p.targetKey]));
     console.log(opts.json ? JSON.stringify(views, null, 2) : human(views).trimEnd());
-  } catch {
-    if (opts.json) console.log("[]");
+  } catch (e) {
+    // Read-only + non-fatal: never throw. But surface a clear message instead
+    // of silently printing nothing, so a real misconfiguration is visible.
+    if (opts.json) { console.log("[]"); return; }
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`memory-diff: unable to read proposals (${msg})`);
   }
 }

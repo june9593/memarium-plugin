@@ -12379,8 +12379,13 @@ async function memoryDiffCmd(opts) {
     }
     const views = proposals.map((p2) => buildView(p2, idx.entries[p2.targetKey]));
     console.log(opts.json ? JSON.stringify(views, null, 2) : human(views).trimEnd());
-  } catch {
-    if (opts.json) console.log("[]");
+  } catch (e) {
+    if (opts.json) {
+      console.log("[]");
+      return;
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`memory-diff: unable to read proposals (${msg})`);
   }
 }
 var FIELDS;
@@ -12418,10 +12423,10 @@ function refreshPrimers(repoPath, entry) {
   if (!existsSync22(dir)) return [];
   const deleted = [];
   const del = (file) => {
-    if (existsSync22(file)) {
-      rmSync2(file);
-      deleted.push(file);
-    }
+    if (!existsSync22(file)) return;
+    assertNoSymlinkedComponent(repoPath, file, "memory-approve");
+    rmSync2(file);
+    deleted.push(file);
   };
   if (entry.project) {
     del(join24(dir, `${entry.project}.md`));
@@ -12436,8 +12441,13 @@ async function memoryApproveCmd(opts) {
   const prop = readProposal(cfg.repoPath, opts.id);
   if (!prop) throw new Error(`memory-approve: no pending proposal for "${opts.id}"`);
   const report = applyMemoryItems(cfg.repoPath, [prop.proposal]);
-  const path = deleteProposal(cfg.repoPath, prop.targetKey) ?? "";
   const primersRefreshed = refreshPrimers(cfg.repoPath, prop.proposal.entry);
+  const path = deleteProposal(cfg.repoPath, prop.targetKey);
+  if (!path) {
+    throw new Error(
+      `memory-approve: applied "${prop.targetKey}" to live memory, but its proposal could not be removed from the queue \u2014 remove it manually`
+    );
+  }
   return {
     applied: 1,
     written: report.written,
@@ -12452,6 +12462,7 @@ var init_memory_approve = __esm({
     init_plugin_config();
     init_apply();
     init_proposal_store();
+    init_path_guard();
   }
 });
 
@@ -12467,7 +12478,10 @@ async function memoryRejectCmd(opts) {
   if (!prop) {
     throw new Error(`memory-reject: no pending proposal for "${opts.id}"`);
   }
-  const path = deleteProposal(cfg.repoPath, prop.targetKey) ?? "";
+  const path = deleteProposal(cfg.repoPath, prop.targetKey);
+  if (!path) {
+    throw new Error(`memory-reject: proposal "${prop.targetKey}" could not be removed from the queue`);
+  }
   return { rejected: 1, path };
 }
 var init_memory_reject = __esm({
