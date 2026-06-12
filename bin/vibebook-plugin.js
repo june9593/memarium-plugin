@@ -12211,9 +12211,15 @@ import { createHash as createHash2 } from "node:crypto";
 import { existsSync as existsSync20, mkdirSync as mkdirSync13, readFileSync as readFileSync19, readdirSync as readdirSync5, rmSync, writeFileSync as writeFileSync12 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import { join as join23, resolve as resolve6 } from "node:path";
+function vibebookHome() {
+  return join23(homedir3(), ".vibebook");
+}
 function proposalsDir(repoPath) {
   const repoHash = createHash2("sha256").update(resolve6(repoPath)).digest("hex").slice(0, 12);
-  return join23(homedir3(), ".vibebook", "local-proposals", repoHash);
+  return join23(vibebookHome(), "local-proposals", repoHash);
+}
+function guardQueuePath(targetAbs) {
+  assertNoSymlinkedComponent(vibebookHome(), targetAbs, "proposal-store");
 }
 function flatTargetKey(targetKey2) {
   if (targetKey2.includes("__")) {
@@ -12231,6 +12237,7 @@ function fileFor(repoPath, idOrKey) {
 }
 function writeProposal(repoPath, p2) {
   const dir = proposalsDir(repoPath);
+  guardQueuePath(dir);
   mkdirSync13(dir, { recursive: true });
   const file = join23(dir, `${flatTargetKey(p2.targetKey)}.json`);
   writeFileSync12(file, JSON.stringify(p2, null, 2) + "\n");
@@ -12243,6 +12250,7 @@ function readProposal(repoPath, idOrKey) {
   } catch {
     return null;
   }
+  guardQueuePath(file);
   if (!existsSync20(file)) return null;
   try {
     return JSON.parse(readFileSync19(file, "utf8"));
@@ -12252,6 +12260,7 @@ function readProposal(repoPath, idOrKey) {
 }
 function listProposals(repoPath) {
   const dir = proposalsDir(repoPath);
+  guardQueuePath(dir);
   if (!existsSync20(dir)) return [];
   const out = [];
   for (const name of readdirSync5(dir)) {
@@ -12270,6 +12279,7 @@ function deleteProposal(repoPath, idOrKey) {
   } catch {
     return null;
   }
+  guardQueuePath(file);
   if (!existsSync20(file)) return null;
   rmSync(file);
   return file;
@@ -12277,6 +12287,7 @@ function deleteProposal(repoPath, idOrKey) {
 var init_proposal_store = __esm({
   "src/memory/proposal-store.ts"() {
     "use strict";
+    init_path_guard();
   }
 });
 

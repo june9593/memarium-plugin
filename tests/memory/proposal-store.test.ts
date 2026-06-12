@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, symlinkSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MemoryProposal } from "../../src/memory/proposal-store.js";
@@ -78,5 +78,14 @@ describe("proposal-store", () => {
     const { readProposal, deleteProposal } = await import("../../src/memory/proposal-store.js");
     expect(readProposal(repo, "core/nope")).toBeNull();
     expect(deleteProposal(repo, "core/nope")).toBeNull();
+  });
+
+  it("refuses to operate through a symlinked local-proposals dir (symlink guard)", async () => {
+    const { writeProposal } = await import("../../src/memory/proposal-store.js");
+    const outside = join(home, "evil");
+    mkdirSync(outside, { recursive: true });
+    mkdirSync(join(home, ".vibebook"), { recursive: true });
+    symlinkSync(outside, join(home, ".vibebook", "local-proposals"));
+    expect(() => writeProposal(repo, prop())).toThrow(/symlink guard/i);
   });
 });
