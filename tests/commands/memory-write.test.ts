@@ -198,4 +198,18 @@ describe("memoryWriteCmd", () => {
     await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow(/invalid type/i);
     expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(false);
   });
+
+  it("gated-change error names the canonical target key for supersede cases", async () => {
+    // gated (core) entry that supersedes another id → targetKey is the superseded id
+    const input = join(fakeHome, "rep.json");
+    writeFileSync(input, JSON.stringify([{ entry: {
+      id: "core/new", type: "core", scope: "global", project: null,
+      title: "t", summary: "s", status: "active", confidence: 1, importance: 5,
+      createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
+      sourceSessions: [], sourceCommits: [], sourceFiles: [],
+      supersedes: "semantic/p/old", entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+    }, body: "b" }]));
+    const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
+    await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow(/semantic\/p\/old/);
+  });
 });

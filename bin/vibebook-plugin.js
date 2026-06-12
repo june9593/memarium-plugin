@@ -10684,10 +10684,8 @@ async function memoryWriteCmd(opts) {
   const idx = loadMemoryIndex(cfg.repoPath);
   for (const { entry } of items) {
     if (isGatedChange(entry, idx.entries)) {
-      const sup = supersedesId(entry);
-      const target = sup && isGated(idx.entries[sup]) ? sup : entry.id;
       throw new Error(
-        `memory-write: refusing gated change targeting "${target}" (core/procedural/pinned, or it edits/supersedes one) \u2014 use memory-propose`
+        `memory-write: refusing gated change targeting "${targetKey(entry)}" (core/procedural/pinned, or it edits/supersedes one) \u2014 use memory-propose`
       );
     }
   }
@@ -12400,9 +12398,8 @@ function human(views) {
       lines.push("fields:");
       for (const c3 of v.fieldChanges) lines.push(`  - ${c3.field}: ${c3.old ?? "\u2205"} \u2192 ${c3.new ?? "\u2205"}`);
     }
-    lines.push("body:");
-    if (v.oldBody) lines.push(`  old: ${v.oldBody}`);
-    lines.push(`  new (${v.newBody.split("\n").length} line(s)):`);
+    if (v.oldBody) lines.push(`current live entry: ${v.oldBody}  (body not shown \u2014 read the .md to compare)`);
+    lines.push(`proposed body (${v.newBody.split("\n").length} line(s)):`);
     lines.push(v.newBody.split("\n").map((l) => `    ${l}`).join("\n"));
     lines.push(`
 \u2192 apply: memory-approve --id ${v.targetKey}   |   discard: memory-reject --id ${v.targetKey}

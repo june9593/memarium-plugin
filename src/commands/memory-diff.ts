@@ -13,7 +13,7 @@ interface DiffView {
   rationale: string | null;
   sourceSession: string | null;
   fieldChanges: FieldChange[];
-  oldBody: string | null;
+  oldBody: string | null;   // reference to the current live entry's file (NOT its body text); null on pure create
   newBody: string;
 }
 
@@ -54,17 +54,17 @@ function human(views: DiffView[]): string {
       lines.push("fields:");
       for (const c of v.fieldChanges) lines.push(`  - ${c.field}: ${c.old ?? "∅"} → ${c.new ?? "∅"}`);
     }
-    lines.push("body:");
-    if (v.oldBody) lines.push(`  old: ${v.oldBody}`);
-    lines.push(`  new (${v.newBody.split("\n").length} line(s)):`);
+    if (v.oldBody) lines.push(`current live entry: ${v.oldBody}  (body not shown — read the .md to compare)`);
+    lines.push(`proposed body (${v.newBody.split("\n").length} line(s)):`);
     lines.push(v.newBody.split("\n").map((l) => `    ${l}`).join("\n"));
     lines.push(`\n→ apply: memory-approve --id ${v.targetKey}   |   discard: memory-reject --id ${v.targetKey}\n`);
   }
   return lines.join("\n") + "\n";
 }
 
-/** Read-only. Lists pending proposals (one if --id) with a field-level + body
- *  diff against the CURRENT live entry. Never writes; exit 0 always. */
+/** Read-only. Lists pending proposals (one if --id): a field-level diff against
+ *  the CURRENT live entry, plus the proposed body and a reference (path) to the
+ *  current live entry — NOT a line-by-line body diff. Never writes; exit 0 always. */
 export async function memoryDiffCmd(opts: MemoryDiffOptions): Promise<void> {
   try {
     const cfg = readPluginConfig();
