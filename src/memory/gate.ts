@@ -7,6 +7,13 @@ export function isGated(e: MemoryEntry | undefined | null): boolean {
   return e.type === "core" || e.type === "procedural" || e.status === "pinned";
 }
 
+/** The id this change supersedes, or null. Treats a non-string OR empty string
+ *  as "no supersede target" so an empty value can't ripple into invalid
+ *  targetKeys / proposal ids / paths. */
+export function supersedesId(entry: MemoryEntry): string | null {
+  return typeof entry.supersedes === "string" && entry.supersedes.length > 0 ? entry.supersedes : null;
+}
+
 /** Gate the *change*, not just the proposed entry: the proposed entry, the live
  *  entry it overwrites in place, and the live entry it supersedes are all
  *  considered. Closes the supersede-bypass (a non-gated entry that supersedes a
@@ -14,21 +21,23 @@ export function isGated(e: MemoryEntry | undefined | null): boolean {
 export function isGatedChange(entry: MemoryEntry, live: MemoryIndex["entries"]): boolean {
   if (isGated(entry)) return true;
   if (isGated(live[entry.id])) return true;
-  if (typeof entry.supersedes === "string" && isGated(live[entry.supersedes])) return true;
+  const sup = supersedesId(entry);
+  if (sup && isGated(live[sup])) return true;
   return false;
 }
 
 /** The live memory a change lands on / mutates. Replace targets the superseded
  *  memory; create/update target the entry's own id. */
 export function targetKey(entry: MemoryEntry): string {
-  return (typeof entry.supersedes === "string" && entry.supersedes) || entry.id;
+  return supersedesId(entry) ?? entry.id;
 }
 
 export type MemoryAction = "create" | "update" | "replace";
 
 /** Re-derived from the live index (authoritative) for display in proposals/diffs. */
 export function deriveAction(entry: MemoryEntry, live: MemoryIndex["entries"]): MemoryAction {
-  if (typeof entry.supersedes === "string" && live[entry.supersedes]) return "replace";
+  const sup = supersedesId(entry);
+  if (sup && live[sup]) return "replace";
   if (live[entry.id]) return "update";
   return "create";
 }

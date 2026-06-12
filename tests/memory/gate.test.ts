@@ -45,6 +45,10 @@ describe("isGatedChange", () => {
   it("ignores a non-string supersedes", () => {
     expect(isGatedChange(mk({ supersedes: 123 as unknown as string }), {})).toBe(false);
   });
+  it("ignores an empty-string supersedes", () => {
+    const live = { "core/y": mk({ id: "core/y", type: "core" }) };
+    expect(isGatedChange(mk({ id: "semantic/p/z", supersedes: "" }), live)).toBe(false);
+  });
   it("false for a pure non-gated change", () => {
     expect(isGatedChange(mk({ id: "semantic/p/z" }), {})).toBe(false);
   });
@@ -59,6 +63,9 @@ describe("targetKey", () => {
   });
   it("= id when supersedes is non-string", () => {
     expect(targetKey(mk({ id: "core/y", supersedes: 5 as unknown as string }))).toBe("core/y");
+  });
+  it("= id when supersedes is an empty string", () => {
+    expect(targetKey(mk({ id: "core/y", supersedes: "" }))).toBe("core/y");
   });
 });
 

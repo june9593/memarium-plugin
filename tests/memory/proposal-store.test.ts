@@ -36,6 +36,7 @@ describe("proposal-store", () => {
     expect(flatTargetKey("core/yue-workflow")).toBe("core__yue-workflow");
     expect(() => flatTargetKey("../escape")).toThrow();
     expect(() => flatTargetKey("a/../b")).toThrow();
+    expect(() => flatTargetKey("core/a__b")).toThrow(/__/);
   });
 
   it("write → read → list → delete round-trip", async () => {

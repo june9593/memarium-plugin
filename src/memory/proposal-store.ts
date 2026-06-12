@@ -25,6 +25,11 @@ export function proposalsDir(repoPath: string): string {
 
 /** Filesystem-safe queue key. Flattens "/" → "__" and rejects any traversal. */
 export function flatTargetKey(targetKey: string): string {
+  // Reject keys that already contain "__" so the "/"→"__" flattening stays
+  // one-to-one (otherwise core/a/b and core/a__b would collide on disk).
+  if (targetKey.includes("__")) {
+    throw new Error(`proposal-store: target key may not contain "__": ${JSON.stringify(targetKey)}`);
+  }
   const flat = targetKey.split("/").join("__");
   if (flat.includes("..") || flat.includes("/") || flat.includes("\\") || flat.length === 0) {
     throw new Error(`proposal-store: unsafe target key ${JSON.stringify(targetKey)}`);

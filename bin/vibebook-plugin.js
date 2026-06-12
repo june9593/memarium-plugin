@@ -10533,17 +10533,22 @@ function isGated(e) {
   if (!e || typeof e !== "object") return false;
   return e.type === "core" || e.type === "procedural" || e.status === "pinned";
 }
+function supersedesId(entry) {
+  return typeof entry.supersedes === "string" && entry.supersedes.length > 0 ? entry.supersedes : null;
+}
 function isGatedChange(entry, live) {
   if (isGated(entry)) return true;
   if (isGated(live[entry.id])) return true;
-  if (typeof entry.supersedes === "string" && isGated(live[entry.supersedes])) return true;
+  const sup = supersedesId(entry);
+  if (sup && isGated(live[sup])) return true;
   return false;
 }
 function targetKey(entry) {
-  return typeof entry.supersedes === "string" && entry.supersedes || entry.id;
+  return supersedesId(entry) ?? entry.id;
 }
 function deriveAction(entry, live) {
-  if (typeof entry.supersedes === "string" && live[entry.supersedes]) return "replace";
+  const sup = supersedesId(entry);
+  if (sup && live[sup]) return "replace";
   if (live[entry.id]) return "update";
   return "create";
 }
@@ -10658,8 +10663,10 @@ async function memoryWriteCmd(opts) {
   const idx = loadMemoryIndex(cfg.repoPath);
   for (const { entry } of items) {
     if (isGatedChange(entry, idx.entries)) {
+      const sup = supersedesId(entry);
+      const target = sup && isGated(idx.entries[sup]) ? sup : entry.id;
       throw new Error(
-        `memory-write: refusing gated change to "${entry.id}" (core/procedural/pinned, or it edits/supersedes one) \u2014 use memory-propose`
+        `memory-write: refusing gated change targeting "${target}" (core/procedural/pinned, or it edits/supersedes one) \u2014 use memory-propose`
       );
     }
   }
@@ -12206,6 +12213,9 @@ function proposalsDir(repoPath) {
   return join23(homedir3(), ".vibebook", "local-proposals", repoHash);
 }
 function flatTargetKey(targetKey2) {
+  if (targetKey2.includes("__")) {
+    throw new Error(`proposal-store: target key may not contain "__": ${JSON.stringify(targetKey2)}`);
+  }
   const flat = targetKey2.split("/").join("__");
   if (flat.includes("..") || flat.includes("/") || flat.includes("\\") || flat.length === 0) {
     throw new Error(`proposal-store: unsafe target key ${JSON.stringify(targetKey2)}`);

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadMemoryIndex } from "../memory/index-store.js";
 import { applyMemoryItems, type MemoryApplyItem } from "../memory/apply.js";
-import { isGatedChange } from "../memory/gate.js";
+import { isGatedChange, isGated, supersedesId } from "../memory/gate.js";
 import type { MemoryEntry } from "../memory/types.js";
 
 export interface MemoryWriteOptions { inputPath?: string; }
@@ -22,8 +22,10 @@ export async function memoryWriteCmd(opts: MemoryWriteOptions): Promise<MemoryWr
   // batch before writing anything. Gated changes must go through memory-propose.
   for (const { entry } of items) {
     if (isGatedChange(entry, idx.entries)) {
+      const sup = supersedesId(entry);
+      const target = sup && isGated(idx.entries[sup]) ? sup : entry.id;
       throw new Error(
-        `memory-write: refusing gated change to "${entry.id}" (core/procedural/pinned, or it edits/supersedes one) — use memory-propose`,
+        `memory-write: refusing gated change targeting "${target}" (core/procedural/pinned, or it edits/supersedes one) — use memory-propose`,
       );
     }
   }
