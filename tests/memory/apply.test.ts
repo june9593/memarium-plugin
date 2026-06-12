@@ -64,13 +64,16 @@ describe("applyMemoryItems", () => {
     expect(existsSync(join(repo, "memory/core/_global/good.md"))).toBe(false);
   });
 
-  it("traversal guard fires when the canonical path escapes memory/ (untrusted type)", async () => {
+  it("rejects an untrusted type before it can escape memory/ (type validation)", async () => {
     const { applyMemoryItems } = await import("../../src/memory/apply.js");
-    // A malicious `type` makes canonicalMemoryPath itself escape memory/, so the
-    // canonical-path check passes (no supplied path) and the under-memory/
-    // traversal guard is the layer that must catch it.
     const evil = mk({ id: "x/pwn", type: "../../etc" as unknown as MemoryEntry["type"], project: null, path: "" });
-    expect(() => applyMemoryItems(repo, [{ entry: evil, body: "b" }]))
-      .toThrow(/refusing to write outside memory\//);
+    expect(() => applyMemoryItems(repo, [{ entry: evil, body: "b" }])).toThrow(/invalid type/i);
+  });
+
+  it("rejects a non-gated entry whose type traverses into the core/ tree (no bypass)", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const evil = mk({ id: "x/yue-workflow", type: "semantic/../core" as unknown as MemoryEntry["type"], project: null, path: "" });
+    expect(() => applyMemoryItems(repo, [{ entry: evil, body: "evil" }])).toThrow(/invalid type/i);
+    expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(false);
   });
 });

@@ -1,4 +1,8 @@
-import type { MemoryEntry, MemoryIndex } from "./types.js";
+import type { MemoryEntry, MemoryIndex, MemoryType } from "./types.js";
+
+const MEMORY_TYPES: ReadonlySet<MemoryType> = new Set<MemoryType>([
+  "core", "semantic", "episodic", "procedural", "working", "artifact",
+]);
 
 /** A memory is "gated" if it shapes long-term agent behavior: core, procedural,
  *  or anything explicitly pinned. Rule-type semantic is gated by pinning it. */
@@ -42,10 +46,24 @@ export function deriveAction(entry: MemoryEntry, live: MemoryIndex["entries"]): 
   return "create";
 }
 
+/** A single path segment must be non-empty and contain no separators or `..`,
+ *  so an untrusted value can't traverse out of its intended directory. */
+function safeSegment(seg: string, label: string): string {
+  if (seg.length === 0 || seg.includes("/") || seg.includes("\\") || seg.includes("..") || seg.includes("\0")) {
+    throw new Error(`memory path: unsafe ${label} segment ${JSON.stringify(seg)}`);
+  }
+  return seg;
+}
+
 /** Canonical repo-relative path derived purely from {type, project, id}.
- *  Agent-supplied paths are NOT authoritative — see applyMemoryItems. */
+ *  Agent-supplied paths are NOT authoritative. Validates each segment so a
+ *  crafted type/project/slug (untrusted JSON) cannot traverse into another
+ *  type's tree (e.g. a non-gated `type: "semantic/../core"` reaching core/). */
 export function canonicalMemoryPath(entry: MemoryEntry): string {
-  const scopeDir = entry.project ?? "_global";
-  const slug = entry.id.split("/").pop() ?? entry.id;
+  if (!MEMORY_TYPES.has(entry.type)) {
+    throw new Error(`memory path: invalid type ${JSON.stringify(entry.type)} (not a MemoryType)`);
+  }
+  const scopeDir = safeSegment(entry.project ?? "_global", "project");
+  const slug = safeSegment(entry.id.split("/").pop() ?? entry.id, "slug");
   return `memory/${entry.type}/${scopeDir}/${slug}.md`;
 }

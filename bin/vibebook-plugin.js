@@ -10552,14 +10552,32 @@ function deriveAction(entry, live) {
   if (live[entry.id]) return "update";
   return "create";
 }
+function safeSegment(seg, label) {
+  if (seg.length === 0 || seg.includes("/") || seg.includes("\\") || seg.includes("..") || seg.includes("\0")) {
+    throw new Error(`memory path: unsafe ${label} segment ${JSON.stringify(seg)}`);
+  }
+  return seg;
+}
 function canonicalMemoryPath(entry) {
-  const scopeDir = entry.project ?? "_global";
-  const slug = entry.id.split("/").pop() ?? entry.id;
+  if (!MEMORY_TYPES.has(entry.type)) {
+    throw new Error(`memory path: invalid type ${JSON.stringify(entry.type)} (not a MemoryType)`);
+  }
+  const scopeDir = safeSegment(entry.project ?? "_global", "project");
+  const slug = safeSegment(entry.id.split("/").pop() ?? entry.id, "slug");
   return `memory/${entry.type}/${scopeDir}/${slug}.md`;
 }
+var MEMORY_TYPES;
 var init_gate = __esm({
   "src/memory/gate.ts"() {
     "use strict";
+    MEMORY_TYPES = /* @__PURE__ */ new Set([
+      "core",
+      "semantic",
+      "episodic",
+      "procedural",
+      "working",
+      "artifact"
+    ]);
   }
 });
 

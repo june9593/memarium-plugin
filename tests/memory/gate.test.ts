@@ -90,4 +90,12 @@ describe("canonicalMemoryPath", () => {
     expect(canonicalMemoryPath(mk({ id: "semantic/edge-memvc/spool", type: "semantic", project: "edge-memvc" })))
       .toBe("memory/semantic/edge-memvc/spool.md");
   });
+  it("rejects an invalid type (closes the type-traversal bypass)", () => {
+    expect(() => canonicalMemoryPath(mk({ type: "semantic/../core" as unknown as MemoryEntry["type"] })))
+      .toThrow(/invalid type/i);
+  });
+  it("rejects unsafe project / slug segments", () => {
+    expect(() => canonicalMemoryPath(mk({ project: "../escape" }))).toThrow(/unsafe project/i);
+    expect(() => canonicalMemoryPath(mk({ id: "semantic/.." }))).toThrow(/unsafe slug/i);
+  });
 });

@@ -184,4 +184,18 @@ describe("memoryWriteCmd", () => {
     const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
     await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow(/does not match canonical/);
   });
+
+  it("rejects a non-gated entry whose type traverses into core/ (no bypass via memory-write)", async () => {
+    const input = join(fakeHome, "trav.json");
+    writeFileSync(input, JSON.stringify([{ entry: {
+      id: "x/yue-workflow", type: "semantic/../core", scope: "global", project: null,
+      title: "t", summary: "s", status: "active", confidence: 0.5, importance: 1,
+      createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
+      sourceSessions: [], sourceCommits: [], sourceFiles: [],
+      supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+    }, body: "evil" }]));
+    const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
+    await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow(/invalid type/i);
+    expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(false);
+  });
 });
