@@ -10599,27 +10599,31 @@ function normalizeRel(p2) {
 }
 function applyMemoryItems(repoPath, items) {
   const idx = loadMemoryIndex(repoPath);
-  let written = 0, superseded = 0;
-  const paths = [];
   const memRoot = resolve2(join11(repoPath, "memory"));
-  for (const { entry, body } of items) {
+  const planned = items.map(({ entry, body }) => {
     const canonical = canonicalMemoryPath(entry);
     if (entry.path && normalizeRel(entry.path) !== canonical) {
       throw new Error(
         `memory apply: entry.path "${entry.path}" does not match canonical path for ${entry.id} ("${canonical}")`
       );
     }
-    entry.path = canonical;
-    const abs = resolve2(join11(repoPath, entry.path));
+    const abs = resolve2(join11(repoPath, canonical));
     if (abs !== memRoot && !abs.startsWith(memRoot + sep2)) {
-      throw new Error(`memory apply: refusing to write outside memory/: ${entry.path}`);
+      throw new Error(`memory apply: refusing to write outside memory/: ${canonical}`);
     }
-    if (typeof entry.supersedes === "string" && idx.entries[entry.supersedes]) {
-      const target = idx.entries[entry.supersedes];
+    assertNoSymlinkedComponent(repoPath, abs, "memory apply");
+    return { entry, body, canonical, abs };
+  });
+  let written = 0, superseded = 0;
+  const paths = [];
+  for (const { entry, body, canonical, abs } of planned) {
+    entry.path = canonical;
+    const sup = supersedesId(entry);
+    if (sup && idx.entries[sup]) {
+      const target = idx.entries[sup];
       target.status = "superseded";
       superseded++;
-      const tCanon = canonicalMemoryPath(target);
-      const tabs = resolve2(join11(repoPath, tCanon));
+      const tabs = resolve2(join11(repoPath, canonicalMemoryPath(target)));
       if (tabs === memRoot || tabs.startsWith(memRoot + sep2)) {
         assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
         if (existsSync8(tabs)) {
@@ -10628,12 +10632,11 @@ function applyMemoryItems(repoPath, items) {
         }
       }
     }
-    assertNoSymlinkedComponent(repoPath, abs, "memory apply");
     mkdirSync7(dirname4(abs), { recursive: true });
     writeFileSync6(abs, renderMemoryMarkdown(entry, body));
     upsertMemory(idx, entry);
     written++;
-    paths.push(entry.path);
+    paths.push(canonical);
   }
   saveMemoryIndex(repoPath, idx);
   return { written, superseded, paths };
@@ -12431,6 +12434,7 @@ import { join as join24 } from "node:path";
 function refreshPrimers(repoPath, entry) {
   const dir = join24(repoPath, "memory", "_primer");
   if (!existsSync22(dir)) return [];
+  assertNoSymlinkedComponent(repoPath, dir, "memory-approve");
   const deleted = [];
   const del = (file) => {
     if (!existsSync22(file)) return;

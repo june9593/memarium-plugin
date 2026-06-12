@@ -54,6 +54,16 @@ describe("applyMemoryItems", () => {
     expect(oldMd).toMatch(/^status: superseded$/m);
   });
 
+  it("preflight: a bad item aborts the batch before ANY item is written", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    expect(() => applyMemoryItems(repo, [
+      { entry: mk({ id: "core/good", title: "g" }), body: "g" },
+      { entry: mk({ id: "semantic/p/bad", type: "semantic", project: "p", path: "memory/core/_global/evil.md" }), body: "x" },
+    ])).toThrow(/does not match canonical/);
+    // the good (first) item must NOT have been written — validation precedes writes
+    expect(existsSync(join(repo, "memory/core/_global/good.md"))).toBe(false);
+  });
+
   it("traversal guard fires when the canonical path escapes memory/ (untrusted type)", async () => {
     const { applyMemoryItems } = await import("../../src/memory/apply.js");
     // A malicious `type` makes canonicalMemoryPath itself escape memory/, so the

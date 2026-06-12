@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "./index-store.js";
 import { renderMemoryMarkdown } from "./render.js";
-import { canonicalMemoryPath } from "./gate.js";
+import { canonicalMemoryPath, supersedesId } from "./gate.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 import type { MemoryEntry } from "./types.js";
 
@@ -13,43 +13,47 @@ function normalizeRel(p: string): string {
   return p.split("\\").join("/");
 }
 
-/** Gate-agnostic write primitive. Canonicalizes + validates each entry's path
- *  (agent paths are NOT authoritative), supersede-flips targets, renders md,
- *  upserts the index, and saves. Knows NOTHING about the gate — both
- *  memory-write (with a gate pre-check) and memory-approve (no pre-check) call
- *  this. */
+/** Gate-agnostic write primitive. Validates every item's path up front
+ *  (canonical match, under-memory/, symlink guard) BEFORE writing anything, so
+ *  a bad item can't leave earlier items written to disk but missing from the
+ *  index. Then supersede-flips targets, renders md, upserts, and saves once.
+ *  Knows NOTHING about the gate — both memory-write (with a gate pre-check) and
+ *  memory-approve (no pre-check) call this. Paths are derived, never trusted. */
 export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): MemoryApplyReport {
   const idx = loadMemoryIndex(repoPath);
-  let written = 0, superseded = 0;
-  const paths: string[] = [];
   const memRoot = resolve(join(repoPath, "memory"));
 
-  for (const { entry, body } of items) {
-    // Path is derived, never trusted: reject a mismatched supplied path so a
-    // non-gated entry cannot overwrite a gated file by pointing path at it.
+  // Preflight: validate ALL items before any write.
+  const planned = items.map(({ entry, body }) => {
     const canonical = canonicalMemoryPath(entry);
     if (entry.path && normalizeRel(entry.path) !== canonical) {
       throw new Error(
         `memory apply: entry.path "${entry.path}" does not match canonical path for ${entry.id} ("${canonical}")`,
       );
     }
+    const abs = resolve(join(repoPath, canonical));
+    if (abs !== memRoot && !abs.startsWith(memRoot + sep)) {
+      throw new Error(`memory apply: refusing to write outside memory/: ${canonical}`);
+    }
+    assertNoSymlinkedComponent(repoPath, abs, "memory apply");
+    return { entry, body, canonical, abs };
+  });
+
+  // Write phase (every item validated above).
+  let written = 0, superseded = 0;
+  const paths: string[] = [];
+  for (const { entry, body, canonical, abs } of planned) {
     entry.path = canonical;
 
-    // Defense-in-depth traversal guard on the final canonical path.
-    const abs = resolve(join(repoPath, entry.path));
-    if (abs !== memRoot && !abs.startsWith(memRoot + sep)) {
-      throw new Error(`memory apply: refusing to write outside memory/: ${entry.path}`);
-    }
-
     // v3 supersede-flip: mark the replaced entry superseded in index + its md.
-    if (typeof entry.supersedes === "string" && idx.entries[entry.supersedes]) {
-      const target = idx.entries[entry.supersedes];
+    // Derive the target md path canonically (don't trust the stored path) and
+    // guard it the same way as the entry we write.
+    const sup = supersedesId(entry);
+    if (sup && idx.entries[sup]) {
+      const target = idx.entries[sup];
       target.status = "superseded";
       superseded++;
-      // Derive the target's md path canonically (don't trust the stored path),
-      // then apply the same traversal + symlink guards as the entry we write.
-      const tCanon = canonicalMemoryPath(target);
-      const tabs = resolve(join(repoPath, tCanon));
+      const tabs = resolve(join(repoPath, canonicalMemoryPath(target)));
       if (tabs === memRoot || tabs.startsWith(memRoot + sep)) {
         assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
         if (existsSync(tabs)) {
@@ -59,12 +63,11 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
       }
     }
 
-    assertNoSymlinkedComponent(repoPath, abs, "memory apply");
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, renderMemoryMarkdown(entry, body));
     upsertMemory(idx, entry);
     written++;
-    paths.push(entry.path);
+    paths.push(canonical);
   }
   saveMemoryIndex(repoPath, idx);
   return { written, superseded, paths };

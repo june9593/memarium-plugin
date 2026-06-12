@@ -20,6 +20,9 @@ export interface MemoryApproveReport {
 function refreshPrimers(repoPath: string, entry: MemoryEntry): string[] {
   const dir = join(repoPath, "memory", "_primer");
   if (!existsSync(dir)) return [];
+  // Guard the directory itself before any readdir/walk, so a symlinked
+  // memory/ or _primer/ is never enumerated or followed.
+  assertNoSymlinkedComponent(repoPath, dir, "memory-approve");
   const deleted: string[] = [];
   const del = (file: string) => {
     if (!existsSync(file)) return;
