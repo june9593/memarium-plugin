@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { recallAtK, precisionAtK, mrr } from "../../src/memory/eval.js";
+import { CORPUS } from "../fixtures/eval/corpus.js";
 
 describe("metric helpers", () => {
   it("recallAtK: fraction of gold within top-k", () => {
@@ -20,5 +21,12 @@ describe("metric helpers", () => {
     expect(mrr(["x", "a"], ["a"])).toBe(0.5);
     expect(mrr(["x", "y"], ["a"])).toBe(0); // no hit
     expect(mrr(["a"], [])).toBe(0);
+  });
+});
+
+describe("eval corpus invariants", () => {
+  it("memory titles are unique (primer reverse-lookup requires it)", () => {
+    const titles = CORPUS.memory.map((m) => m.title);
+    expect(new Set(titles).size).toBe(titles.length);
   });
 });
