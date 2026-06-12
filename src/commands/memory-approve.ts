@@ -13,16 +13,14 @@ export interface MemoryApproveReport {
   primersRefreshed: string[]; path: string;
 }
 
-/** Invalidate the cached primer(s) the approved entry affects. SessionStart /
- *  memory-query live-render until the next digest rewrites the cache. The
- *  affected project is derived from entry.scope (authoritative): a
- *  "project:<slug>" scope touches that one primer; "global"/"user" (or an
- *  unknown/unsafe scope) touches all. Guards each delete with the symlink check
+/** Invalidate the cached primer(s) the approved entry affects. Only an explicit
+ *  "project:<slug>" scope targets a single primer; anything else (global / user
+ *  / unknown / malformed scope) invalidates ALL primers — matching the
+ *  whole-store treatment elsewhere. Guards each delete with the symlink check
  *  and validates the derived slug so a crafted scope can't escape _primer/. */
 function refreshPrimers(repoPath: string, entry: MemoryEntry): string[] {
   const dir = join(repoPath, "memory", "_primer");
   if (!existsSync(dir)) return [];
-  // Guard the directory itself before any readdir/walk.
   assertNoSymlinkedComponent(repoPath, dir, "memory-approve");
   const deleted: string[] = [];
   const del = (file: string) => {
@@ -36,16 +34,10 @@ function refreshPrimers(repoPath: string, entry: MemoryEntry): string[] {
   };
 
   const scope = typeof entry.scope === "string" ? entry.scope : "";
-  let project: string | null;
-  if (scope.startsWith("project:")) project = scope.slice("project:".length);
-  else if (scope === "global" || scope === "user") project = null;
-  else project = typeof entry.project === "string" ? entry.project : null;
-
+  const project = scope.startsWith("project:") ? scope.slice("project:".length) : null;
   if (project && isSafePathSegment(project)) {
     del(join(dir, `${project}.md`));
   } else {
-    // global/user scope, or an unknown/unsafe project → clear all primers
-    // (safe: only touches _primer/*.md, and primers regenerate on next digest).
     deleteAll();
   }
   return deleted;
@@ -60,17 +52,18 @@ export async function memoryApproveCmd(opts: MemoryApproveOptions): Promise<Memo
   // Controlled apply: call the gate-agnostic primitive directly (no gate
   // pre-check). This is the ONLY caller permitted to apply a gated change.
   const report = applyMemoryItems(cfg.repoPath, [prop.proposal]);
-  const primersRefreshed = refreshPrimers(cfg.repoPath, prop.proposal.entry);
 
-  // Don't mask a cleanup failure: the change is applied, but if the proposal
-  // can't be removed from the queue the user must know (it would otherwise
-  // keep showing as "pending" in memory-diff).
+  // Dequeue BEFORE refreshing primers: if primer refresh throws (e.g. a
+  // symlinked _primer trips the guard), the proposal is already removed so a
+  // re-approve can't reapply the change.
   const path = deleteProposal(cfg.repoPath, prop.targetKey);
   if (!path) {
     throw new Error(
       `memory-approve: applied "${prop.targetKey}" to live memory, but its proposal could not be removed from the queue — remove it manually`,
     );
   }
+
+  const primersRefreshed = refreshPrimers(cfg.repoPath, prop.proposal.entry);
 
   return {
     applied: 1, written: report.written, superseded: report.superseded,

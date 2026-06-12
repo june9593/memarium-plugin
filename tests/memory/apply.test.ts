@@ -91,4 +91,16 @@ describe("applyMemoryItems", () => {
     // the good (first) item must NOT have been written — preflight precedes writes
     expect(existsSync(join(repo, "memory/core/_global/good.md"))).toBe(false);
   });
+
+  it("supersedes an entry created earlier in the SAME batch", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    applyMemoryItems(repo, [
+      { entry: mk({ id: "core/a", title: "a" }), body: "a" },
+      { entry: mk({ id: "core/b", title: "b", supersedes: "core/a" }), body: "b" },
+    ]);
+    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    expect(idx.entries["core/a"].status).toBe("superseded");
+    expect(idx.entries["core/b"].status).toBe("active");
+    expect(readFileSync(join(repo, "memory/core/_global/a.md"), "utf8")).toMatch(/^status: superseded$/m);
+  });
 });

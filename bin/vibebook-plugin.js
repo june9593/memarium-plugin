@@ -10621,7 +10621,9 @@ function normalizeRel(p2) {
 function applyMemoryItems(repoPath, items) {
   const idx = loadMemoryIndex(repoPath);
   const memRoot = resolve2(join11(repoPath, "memory"));
-  const planned = items.map(({ entry, body }) => {
+  const willExist = { ...idx.entries };
+  const planned = [];
+  for (const { entry, body } of items) {
     const canonical = canonicalMemoryPath(entry);
     if (entry.path && normalizeRel(entry.path) !== canonical) {
       throw new Error(
@@ -10635,24 +10637,25 @@ function applyMemoryItems(repoPath, items) {
     assertNoSymlinkedComponent(repoPath, abs, "memory apply");
     let supersede = null;
     const sup = supersedesId(entry);
-    if (sup && idx.entries[sup]) {
-      const target = idx.entries[sup];
+    if (sup && willExist[sup]) {
+      const target = willExist[sup];
       const tabs = resolve2(join11(repoPath, canonicalMemoryPath(target)));
       let mdPath = null;
       if (tabs === memRoot || tabs.startsWith(memRoot + sep2)) {
         assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
         mdPath = tabs;
       }
-      supersede = { target, mdPath };
+      supersede = { targetId: sup, mdPath };
     }
-    return { entry, body, canonical, abs, supersede };
-  });
+    planned.push({ entry, body, canonical, abs, supersede });
+    willExist[entry.id] = entry;
+  }
   let written = 0, superseded = 0;
   const paths = [];
   for (const { entry, body, canonical, abs, supersede } of planned) {
     entry.path = canonical;
-    if (supersede) {
-      supersede.target.status = "superseded";
+    if (supersede && idx.entries[supersede.targetId]) {
+      idx.entries[supersede.targetId].status = "superseded";
       superseded++;
       if (supersede.mdPath && existsSync8(supersede.mdPath)) {
         const md = readFileSync7(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
@@ -12483,10 +12486,7 @@ function refreshPrimers(repoPath, entry) {
     for (const name of readdirSync6(dir)) if (name.endsWith(".md")) del(join24(dir, name));
   };
   const scope = typeof entry.scope === "string" ? entry.scope : "";
-  let project;
-  if (scope.startsWith("project:")) project = scope.slice("project:".length);
-  else if (scope === "global" || scope === "user") project = null;
-  else project = typeof entry.project === "string" ? entry.project : null;
+  const project = scope.startsWith("project:") ? scope.slice("project:".length) : null;
   if (project && isSafePathSegment(project)) {
     del(join24(dir, `${project}.md`));
   } else {
@@ -12500,13 +12500,13 @@ async function memoryApproveCmd(opts) {
   const prop = readProposal(cfg.repoPath, opts.id);
   if (!prop) throw new Error(`memory-approve: no pending proposal for "${opts.id}"`);
   const report = applyMemoryItems(cfg.repoPath, [prop.proposal]);
-  const primersRefreshed = refreshPrimers(cfg.repoPath, prop.proposal.entry);
   const path = deleteProposal(cfg.repoPath, prop.targetKey);
   if (!path) {
     throw new Error(
       `memory-approve: applied "${prop.targetKey}" to live memory, but its proposal could not be removed from the queue \u2014 remove it manually`
     );
   }
+  const primersRefreshed = refreshPrimers(cfg.repoPath, prop.proposal.entry);
   return {
     applied: 1,
     written: report.written,

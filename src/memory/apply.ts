@@ -18,24 +18,25 @@ interface PlannedItem {
   body: string;
   canonical: string;
   abs: string;
-  // The live entry this supersedes (already in the index), if any. `mdPath` is
-  // the on-disk md to flip to status:superseded, or null when the target's
-  // canonical path is not under memory/ (flip the index status only).
-  supersede: { target: MemoryEntry; mdPath: string | null } | null;
+  // The id this supersedes (live OR an earlier same-batch item), plus the md to
+  // flip to status:superseded (null when that path isn't safely under memory/).
+  supersede: { targetId: string; mdPath: string | null } | null;
 }
 
 /** Gate-agnostic write primitive. Validates EVERYTHING up front — each new
- *  entry's path AND each supersede target's path (resolved canonically from the
- *  live entry, which can itself throw if that entry is malformed) — BEFORE any
- *  write, so a bad item or a corrupt supersede target can't leave earlier items
- *  written to disk but missing from the index. Paths are derived, never trusted.
+ *  entry's path AND each supersede target's path — BEFORE any write, so a bad
+ *  item or corrupt supersede target can't leave earlier items written but
+ *  missing from the index. Preflight is order-aware: an item may supersede an
+ *  entry created earlier in the same batch. Paths are derived, never trusted.
  *  Knows NOTHING about the gate. */
 export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): MemoryApplyReport {
   const idx = loadMemoryIndex(repoPath);
   const memRoot = resolve(join(repoPath, "memory"));
 
-  // Preflight: validate ALL items (and their supersede targets) before any write.
-  const planned: PlannedItem[] = items.map(({ entry, body }) => {
+  // Entries that will exist as we go: live index + earlier same-batch items.
+  const willExist: Record<string, MemoryEntry> = { ...idx.entries };
+  const planned: PlannedItem[] = [];
+  for (const { entry, body } of items) {
     const canonical = canonicalMemoryPath(entry);
     if (entry.path && normalizeRel(entry.path) !== canonical) {
       throw new Error(
@@ -48,32 +49,31 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     }
     assertNoSymlinkedComponent(repoPath, abs, "memory apply");
 
-    // Resolve the supersede target's md path here (in preflight) so the write
-    // phase can never throw from canonicalMemoryPath(target) mid-batch.
-    let supersede: { target: MemoryEntry; mdPath: string | null } | null = null;
+    let supersede: { targetId: string; mdPath: string | null } | null = null;
     const sup = supersedesId(entry);
-    if (sup && idx.entries[sup]) {
-      const target = idx.entries[sup];
+    if (sup && willExist[sup]) {
+      const target = willExist[sup];
       const tabs = resolve(join(repoPath, canonicalMemoryPath(target))); // may throw here (preflight)
       let mdPath: string | null = null;
       if (tabs === memRoot || tabs.startsWith(memRoot + sep)) {
         assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
         mdPath = tabs;
       }
-      supersede = { target, mdPath };
+      supersede = { targetId: sup, mdPath };
     }
 
-    return { entry, body, canonical, abs, supersede };
-  });
+    planned.push({ entry, body, canonical, abs, supersede });
+    willExist[entry.id] = entry; // visible to later items in this batch
+  }
 
-  // Write phase (everything validated above; no canonical-path computation here).
+  // Write phase (every path validated above; no canonical-path computation here).
   let written = 0, superseded = 0;
   const paths: string[] = [];
   for (const { entry, body, canonical, abs, supersede } of planned) {
     entry.path = canonical;
 
-    if (supersede) {
-      supersede.target.status = "superseded";
+    if (supersede && idx.entries[supersede.targetId]) {
+      idx.entries[supersede.targetId].status = "superseded";
       superseded++;
       if (supersede.mdPath && existsSync(supersede.mdPath)) {
         const md = readFileSync(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");

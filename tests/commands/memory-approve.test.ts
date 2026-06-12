@@ -90,5 +90,21 @@ describe("memoryApproveCmd", () => {
     expect(existsSync(join(repo, "memory/_primer/edge-memvc.md"))).toBe(false);
     expect(existsSync(join(repo, "memory/_primer/keep.md"))).toBe(true);
   });
+
+  it("symlink-_primer: refreshPrimers throws symlink guard; proposal already dequeued (dequeue-before-refresh)", async () => {
+    // set up: _primer is a symlink → refreshPrimers should throw
+    const outside = join(home, "outside-primer");
+    mkdirSync(outside, { recursive: true });
+    mkdirSync(join(repo, "memory"), { recursive: true });
+    try { symlinkSync(outside, join(repo, "memory/_primer")); }
+    catch { return; } // skip if symlinks unsupported on this fs
+    await seed();
+    const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
+    // the apply succeeds; dequeue fires; then refreshPrimers throws
+    await expect(memoryApproveCmd({ id: "core/y" })).rejects.toThrow(/symlink guard/);
+    // proposal must be gone (dequeued before the throw)
+    const { listProposals } = await import("../../src/memory/proposal-store.js");
+    expect(listProposals(repo).length).toBe(0);
+  });
 });
 
