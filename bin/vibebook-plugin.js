@@ -10552,8 +10552,11 @@ function deriveAction(entry, live) {
   if (live[entry.id]) return "update";
   return "create";
 }
+function isSafePathSegment(seg) {
+  return seg.length > 0 && seg !== "." && !seg.includes("/") && !seg.includes("\\") && !seg.includes("..") && !seg.includes("\0");
+}
 function safeSegment(seg, label) {
-  if (seg.length === 0 || seg === "." || seg.includes("/") || seg.includes("\\") || seg.includes("..") || seg.includes("\0")) {
+  if (!isSafePathSegment(seg)) {
     throw new Error(`memory path: unsafe ${label} segment ${JSON.stringify(seg)}`);
   }
   return seg;
@@ -12279,7 +12282,7 @@ function listProposals(repoPath) {
   guardQueuePath(dir);
   if (!existsSync20(dir)) return [];
   const out = [];
-  for (const name of readdirSync5(dir)) {
+  for (const name of readdirSync5(dir).sort()) {
     if (!name.endsWith(".json")) continue;
     const file = join23(dir, name);
     guardQueuePath(file);
@@ -12470,10 +12473,18 @@ function refreshPrimers(repoPath, entry) {
     rmSync2(file);
     deleted.push(file);
   };
-  if (entry.project) {
-    del(join24(dir, `${entry.project}.md`));
-  } else {
+  const deleteAll = () => {
     for (const name of readdirSync6(dir)) if (name.endsWith(".md")) del(join24(dir, name));
+  };
+  const scope = typeof entry.scope === "string" ? entry.scope : "";
+  let project;
+  if (scope.startsWith("project:")) project = scope.slice("project:".length);
+  else if (scope === "global" || scope === "user") project = null;
+  else project = typeof entry.project === "string" ? entry.project : null;
+  if (project && isSafePathSegment(project)) {
+    del(join24(dir, `${project}.md`));
+  } else {
+    deleteAll();
   }
   return deleted;
 }
@@ -12505,6 +12516,7 @@ var init_memory_approve = __esm({
     init_apply();
     init_proposal_store();
     init_path_guard();
+    init_gate();
   }
 });
 

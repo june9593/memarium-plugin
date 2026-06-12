@@ -79,7 +79,7 @@ export function listProposals(repoPath: string): MemoryProposal[] {
   guardQueuePath(dir);
   if (!existsSync(dir)) return [];
   const out: MemoryProposal[] = [];
-  for (const name of readdirSync(dir)) {
+  for (const name of readdirSync(dir).sort()) {
     if (!name.endsWith(".json")) continue;
     const file = join(dir, name);
     guardQueuePath(file); // refuse a symlinked proposal file loudly (outside the parse try/catch)

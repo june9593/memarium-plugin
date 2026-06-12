@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isGated, isGatedChange, targetKey, deriveAction, canonicalMemoryPath } from "../../src/memory/gate.js";
+import { isGated, isGatedChange, targetKey, deriveAction, canonicalMemoryPath, isSafePathSegment } from "../../src/memory/gate.js";
 import type { MemoryEntry } from "../../src/memory/types.js";
 
 function mk(over: Partial<MemoryEntry> = {}): MemoryEntry {
@@ -100,5 +100,15 @@ describe("canonicalMemoryPath", () => {
   });
   it('rejects a literal "." segment (keeps canonical paths stable)', () => {
     expect(() => canonicalMemoryPath(mk({ project: "." }))).toThrow(/unsafe project/i);
+  });
+});
+
+describe("isSafePathSegment", () => {
+  it("accepts a normal slug, rejects traversal/separators/dot", () => {
+    expect(isSafePathSegment("edge-memvc")).toBe(true);
+    expect(isSafePathSegment("..")).toBe(false);
+    expect(isSafePathSegment(".")).toBe(false);
+    expect(isSafePathSegment("a/b")).toBe(false);
+    expect(isSafePathSegment("")).toBe(false);
   });
 });

@@ -46,10 +46,15 @@ export function deriveAction(entry: MemoryEntry, live: MemoryIndex["entries"]): 
   return "create";
 }
 
-/** A single path segment must be non-empty and contain no separators or `..`,
- *  so an untrusted value can't traverse out of its intended directory. */
+/** True iff `seg` is a single safe path segment (non-empty, no separators, no
+ *  `.`/`..`, no NUL) — i.e. it can't traverse out of its intended directory. */
+export function isSafePathSegment(seg: string): boolean {
+  return seg.length > 0 && seg !== "." && !seg.includes("/") && !seg.includes("\\") && !seg.includes("..") && !seg.includes("\0");
+}
+
+/** Throwing variant used to build canonical paths. */
 function safeSegment(seg: string, label: string): string {
-  if (seg.length === 0 || seg === "." || seg.includes("/") || seg.includes("\\") || seg.includes("..") || seg.includes("\0")) {
+  if (!isSafePathSegment(seg)) {
     throw new Error(`memory path: unsafe ${label} segment ${JSON.stringify(seg)}`);
   }
   return seg;

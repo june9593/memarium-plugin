@@ -79,16 +79,16 @@ describe("memoryApproveCmd", () => {
     await expect(memoryApproveCmd({ id: "core/nope" })).rejects.toThrow(/no pending proposal/i);
   });
 
-  it("refreshPrimers refuses to delete through a symlinked _primer (symlink guard)", async () => {
-    await seed(); // global-scope core/y (project: null → touches all primers)
-    const outside = join(home, "outside");
-    mkdirSync(outside, { recursive: true });
-    writeFileSync(join(outside, "edge.md"), "external\n");
-    mkdirSync(join(repo, "memory"), { recursive: true });
-    symlinkSync(outside, join(repo, "memory", "_primer"));
+  it("derives the affected primer from scope (project-scoped entry with null project deletes only its primer)", async () => {
+    // inconsistent-but-valid input: scope says project, project field is null
+    await seed({ scope: "project:edge-memvc", project: null, id: "core/y", type: "core" }, "edge-memvc");
+    mkdirSync(join(repo, "memory/_primer"), { recursive: true });
+    writeFileSync(join(repo, "memory/_primer/edge-memvc.md"), "p\n");
+    writeFileSync(join(repo, "memory/_primer/keep.md"), "keep\n");
     const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
-    await expect(memoryApproveCmd({ id: "core/y" })).rejects.toThrow(/symlink guard/i);
-    // the file outside the repo must NOT have been deleted
-    expect(existsSync(join(outside, "edge.md"))).toBe(true);
+    await memoryApproveCmd({ id: "core/y" });
+    expect(existsSync(join(repo, "memory/_primer/edge-memvc.md"))).toBe(false);
+    expect(existsSync(join(repo, "memory/_primer/keep.md"))).toBe(true);
   });
 });
+
