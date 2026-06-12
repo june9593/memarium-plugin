@@ -76,4 +76,19 @@ describe("applyMemoryItems", () => {
     expect(() => applyMemoryItems(repo, [{ entry: evil, body: "evil" }])).toThrow(/invalid type/i);
     expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(false);
   });
+
+  it("preflight: a malformed supersede target aborts the batch before ANY write", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const { saveMemoryIndex } = await import("../../src/memory/index-store.js");
+    // seed a malformed live entry (invalid type) that a new item will supersede
+    saveMemoryIndex(repo, { version: 1, entries: {
+      "weird/x": { ...mk({ id: "weird/x" }), type: "not-a-type" as unknown as MemoryEntry["type"] },
+    } } as never);
+    expect(() => applyMemoryItems(repo, [
+      { entry: mk({ id: "core/good", title: "g" }), body: "g" },
+      { entry: mk({ id: "core/new2", supersedes: "weird/x" }), body: "n" },
+    ])).toThrow(/invalid type/i);
+    // the good (first) item must NOT have been written — preflight precedes writes
+    expect(existsSync(join(repo, "memory/core/_global/good.md"))).toBe(false);
+  });
 });

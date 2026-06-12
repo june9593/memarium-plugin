@@ -10633,24 +10633,30 @@ function applyMemoryItems(repoPath, items) {
       throw new Error(`memory apply: refusing to write outside memory/: ${canonical}`);
     }
     assertNoSymlinkedComponent(repoPath, abs, "memory apply");
-    return { entry, body, canonical, abs };
-  });
-  let written = 0, superseded = 0;
-  const paths = [];
-  for (const { entry, body, canonical, abs } of planned) {
-    entry.path = canonical;
+    let supersede = null;
     const sup = supersedesId(entry);
     if (sup && idx.entries[sup]) {
       const target = idx.entries[sup];
-      target.status = "superseded";
-      superseded++;
       const tabs = resolve2(join11(repoPath, canonicalMemoryPath(target)));
+      let mdPath = null;
       if (tabs === memRoot || tabs.startsWith(memRoot + sep2)) {
         assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
-        if (existsSync8(tabs)) {
-          const md = readFileSync7(tabs, "utf8").replace(/^status: .*$/m, "status: superseded");
-          writeFileSync6(tabs, md);
-        }
+        mdPath = tabs;
+      }
+      supersede = { target, mdPath };
+    }
+    return { entry, body, canonical, abs, supersede };
+  });
+  let written = 0, superseded = 0;
+  const paths = [];
+  for (const { entry, body, canonical, abs, supersede } of planned) {
+    entry.path = canonical;
+    if (supersede) {
+      supersede.target.status = "superseded";
+      superseded++;
+      if (supersede.mdPath && existsSync8(supersede.mdPath)) {
+        const md = readFileSync7(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
+        writeFileSync6(supersede.mdPath, md);
       }
     }
     mkdirSync7(dirname4(abs), { recursive: true });

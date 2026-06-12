@@ -13,18 +13,29 @@ function normalizeRel(p: string): string {
   return p.split("\\").join("/");
 }
 
-/** Gate-agnostic write primitive. Validates every item's path up front
- *  (canonical match, under-memory/, symlink guard) BEFORE writing anything, so
- *  a bad item can't leave earlier items written to disk but missing from the
- *  index. Then supersede-flips targets, renders md, upserts, and saves once.
- *  Knows NOTHING about the gate — both memory-write (with a gate pre-check) and
- *  memory-approve (no pre-check) call this. Paths are derived, never trusted. */
+interface PlannedItem {
+  entry: MemoryEntry;
+  body: string;
+  canonical: string;
+  abs: string;
+  // The live entry this supersedes (already in the index), if any. `mdPath` is
+  // the on-disk md to flip to status:superseded, or null when the target's
+  // canonical path is not under memory/ (flip the index status only).
+  supersede: { target: MemoryEntry; mdPath: string | null } | null;
+}
+
+/** Gate-agnostic write primitive. Validates EVERYTHING up front — each new
+ *  entry's path AND each supersede target's path (resolved canonically from the
+ *  live entry, which can itself throw if that entry is malformed) — BEFORE any
+ *  write, so a bad item or a corrupt supersede target can't leave earlier items
+ *  written to disk but missing from the index. Paths are derived, never trusted.
+ *  Knows NOTHING about the gate. */
 export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): MemoryApplyReport {
   const idx = loadMemoryIndex(repoPath);
   const memRoot = resolve(join(repoPath, "memory"));
 
-  // Preflight: validate ALL items before any write.
-  const planned = items.map(({ entry, body }) => {
+  // Preflight: validate ALL items (and their supersede targets) before any write.
+  const planned: PlannedItem[] = items.map(({ entry, body }) => {
     const canonical = canonicalMemoryPath(entry);
     if (entry.path && normalizeRel(entry.path) !== canonical) {
       throw new Error(
@@ -36,30 +47,37 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
       throw new Error(`memory apply: refusing to write outside memory/: ${canonical}`);
     }
     assertNoSymlinkedComponent(repoPath, abs, "memory apply");
-    return { entry, body, canonical, abs };
-  });
 
-  // Write phase (every item validated above).
-  let written = 0, superseded = 0;
-  const paths: string[] = [];
-  for (const { entry, body, canonical, abs } of planned) {
-    entry.path = canonical;
-
-    // v3 supersede-flip: mark the replaced entry superseded in index + its md.
-    // Derive the target md path canonically (don't trust the stored path) and
-    // guard it the same way as the entry we write.
+    // Resolve the supersede target's md path here (in preflight) so the write
+    // phase can never throw from canonicalMemoryPath(target) mid-batch.
+    let supersede: { target: MemoryEntry; mdPath: string | null } | null = null;
     const sup = supersedesId(entry);
     if (sup && idx.entries[sup]) {
       const target = idx.entries[sup];
-      target.status = "superseded";
-      superseded++;
-      const tabs = resolve(join(repoPath, canonicalMemoryPath(target)));
+      const tabs = resolve(join(repoPath, canonicalMemoryPath(target))); // may throw here (preflight)
+      let mdPath: string | null = null;
       if (tabs === memRoot || tabs.startsWith(memRoot + sep)) {
         assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
-        if (existsSync(tabs)) {
-          const md = readFileSync(tabs, "utf8").replace(/^status: .*$/m, "status: superseded");
-          writeFileSync(tabs, md);
-        }
+        mdPath = tabs;
+      }
+      supersede = { target, mdPath };
+    }
+
+    return { entry, body, canonical, abs, supersede };
+  });
+
+  // Write phase (everything validated above; no canonical-path computation here).
+  let written = 0, superseded = 0;
+  const paths: string[] = [];
+  for (const { entry, body, canonical, abs, supersede } of planned) {
+    entry.path = canonical;
+
+    if (supersede) {
+      supersede.target.status = "superseded";
+      superseded++;
+      if (supersede.mdPath && existsSync(supersede.mdPath)) {
+        const md = readFileSync(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
+        writeFileSync(supersede.mdPath, md);
       }
     }
 
