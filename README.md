@@ -1,24 +1,94 @@
-# vibebook plugin
+# vibebook — a local, auditable **Memory OS** for AI coding agents
 
 [English](#english) · [中文](#中文)
 
-**📖 Project page:** https://june9593.github.io/vibebook-plugin/
+**📖 Project page:** https://june9593.github.io/vibebook-plugin/ · **npm CLI (optional sync):** https://github.com/june9593/vibebook
+
+> vibebook turns your AI coding sessions into a **durable, typed, queryable memory** that every future session starts from — not just a log of what happened, but a layered *Memory OS*: typed memory, an entity wiki, distilled Q&A, health linting, a human-review gate for long-term memory, and a retrieval-quality eval harness.
+>
+> **Markdown-first. Local. Git-syncable. Fully auditable.** No cloud, no vector database, and **no LLM in the storage/retrieval layer** — all writing happens in-session via skills; the CLI is pure I/O.
+
+---
+
+## Architecture at a glance
+
+**Digest → memory → recall** (how a session becomes context the next session starts with):
+
+```mermaid
+flowchart LR
+  subgraph Sources
+    A[Claude Code sessions]
+    B[VS Code Copilot Chat]
+  end
+  A & B -->|extract| SP[raw_sessions/*.md<br/>spool]
+  SP -->|/vibebook digest<br/>in-session agent| D{Distill}
+  D --> CH[chronicles + topics]
+  D --> M[typed memory<br/>6 types]
+  D --> E[entity wiki]
+  D --> Q[distilled Q&A]
+  M & E & Q --> IDX[(.vibebook/index.*.json)]
+  IDX -->|SessionStart hook| P[project primer<br/>auto-loaded]
+  IDX -->|/vibebook-context| R[layered recall<br/>BM25-lite scorer]
+```
+
+**The memory-PR gate** (v4 self-evolution — long-term memory cannot change without review):
+
+```mermaid
+flowchart TD
+  X[digest / consolidation wants to change memory] --> G{gated change?<br/>core / procedural / pinned<br/>or supersedes one}
+  G -->|no| W[memory-write → live]
+  G -->|yes| PP[memory-propose<br/>→ local review queue]
+  PP --> DI[memory-diff<br/>human reviews the diff]
+  DI -->|approve| AP[memory-approve<br/>→ apply live + refresh primer]
+  DI -->|reject| RJ[memory-reject → discard]
+```
 
 ---
 
 ## English
 
-Claude Code plugin that turns your past AI coding sessions into a
-searchable book of decisions, dead ends, and fixes — so future-you
-doesn't re-derive what past-you already figured out.
+### What it is
 
-Want to know what you tried last time you debugged a particular crash?
-Why you picked one library over another? Whether you've already explored
-some idea? Run `/vibebook` once a week to digest your sessions; run
-`/vibebook-recall` before any non-trivial task to surface what's
-relevant.
+A Claude Code plugin that gives an AI coding agent **long-term memory it can trust**. Run `/vibebook` to digest your sessions into per-project chronicles **and** a typed memory store; a SessionStart hook then auto-loads a compact *primer* so every new session begins already knowing the project's rules, setup, facts, and gotchas — instead of re-deriving them every time.
 
-Self-contained — no extra CLI, no cloud service, your data stays local.
+Self-contained: no extra CLI required, no cloud service, your data stays local and human-readable.
+
+### The Memory OS (built in layers)
+
+| Layer | What it adds |
+|---|---|
+| **v1 — typed memory** | Six memory types (`core` / `semantic` / `episodic` / `procedural` / `working` / `artifact`), a per-project **primer**, a JSON index, and a relevance scorer. |
+| **v2 — primer + entities** | A **SessionStart hook** that auto-injects the primer; an **entity wiki** (one living page per file / symbol / API / concept / person). |
+| **qa — distilled Q&A** | A `qa/` answer layer: durable question→answer pairs (compound questions, troubleshooting conclusions, decision rationale, operational routes). |
+| **v3 — lint + consolidation** | `memory-lint`, a read-only health check (expired / dangling-supersede / duplicate-like / missing-provenance / stale), plus a conservative consolidation step at digest time. |
+| **v4 — self-evolution gate** | A **"memory-PR"** flow: changes to long-term `core` / `procedural` / pinned memory can't be written directly — the agent must `memory-propose`; a human reviews with `memory-diff` and applies with `memory-approve` (or `memory-reject`). One bad summary can't silently poison long-term behavior. |
+| **v5 — retrieval eval** | A deterministic, LLM-free eval harness (LongMemEval-style) that gates recall quality in CI — proving memory surfaces the *right* context, with zero runtime footprint. |
+
+### Why it's designed this way — prior art & lineage
+
+vibebook is deliberately grounded in published research and a clear set of trade-offs, not invented from scratch:
+
+| Design choice | Based on / informed by | Why |
+|---|---|---|
+| **Typed memory** (working / episodic / semantic / procedural …) | **CoALA** — *Cognitive Architectures for Language Agents* (Sumers, Yao, Narasimhan, Griffiths, 2023) | A principled memory taxonomy from cognitive science, rather than one undifferentiated blob. |
+| **Relevance scorer** = recency + importance + relevance | **Generative Agents** (Park et al., 2023) — the memory-stream retrieval function | A simple, explainable, well-validated ranking signal. |
+| **Retrieval-quality eval** | **LongMemEval** (Wu et al., 2024) — long-term memory benchmark for chat assistants | You can't improve what you don't measure; abilities (info-extraction, multi-session, temporal, knowledge-update, abstention) are tested explicitly. |
+| **Markdown-first, local, git-synced, no vector DB** | A deliberate counter-position to vector/graph memory stacks like **mem0**, **Letta / MemGPT**, **Zep / Graphiti**, **A-MEM** | Auditability and ownership: memory is human-readable, diff-able, and version-controlled. The cost — lexical (BM25-lite) retrieval — is a known trade-off (see [Limitations](#limitations--roadmap)). |
+| **Memory-PR governance gate** | (novel) — most memory frameworks let the agent self-edit long-term memory freely | Governance: long-term, behavior-shaping memory changes get human review before they persist. |
+| **Entity wiki + distilled Q&A** | Personal-knowledge-base / Zettelkasten practice (linked atomic notes) | A reverse-index synthesis layer on top of episodic chronicles. |
+
+> **Honest positioning:** the taxonomy, scorer, governance gate, and eval harness are aligned with — and in places ahead of — mainstream agent-memory tooling. The one intentional gap is **lexical-only retrieval** (no embeddings/graph); see the roadmap below for how we plan to close it without giving up auditability.
+
+### Commands & skills
+
+**Skills (slash commands — the everyday surface):**
+- **`/vibebook`** — digest synced sessions into per-project chronicles + topics, and author typed memory + entity wiki + distilled Q&A (with a conservative consolidation pass).
+- **`/vibebook-context`** — load this project's memory at the start of work: *Core rules / Procedures & gotchas / Project facts / Episodes / Conflicts / Entities / Past Q&A / Pending memory proposals.*
+- **`/vibebook-recall`** — three-stage progressive recall of past chronicles & topics (topic list → frontmatter → bodies).
+- **SessionStart hook** — auto-injects the project primer so a new session starts informed.
+
+**Underlying `bin/vibebook-plugin.js` subcommands** (the skills call these; pure I/O, no LLM):
+`memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `catalog-regen` · `site` · `list-projects` · `prepare` · `publish`.
 
 ### Install
 
@@ -27,123 +97,100 @@ Self-contained — no extra CLI, no cloud service, your data stays local.
 /plugin install vibebook
 ```
 
-That's it. Open any Claude Code session and run `/vibebook` to digest
-your local sessions, or `/vibebook-recall` to surface past notes.
-
-### What it does
-
-- **`/vibebook`** — Walks `~/.claude/projects/...jsonl` and your VS Code
-  Copilot Chat history, then digests each session into per-project
-  artifacts under `~/.vibebook/session-repo/book/<project>/`:
-  - **chronicles** — one per work thread, AI-first frontmatter
-    (`files_touched`, `commits`, `decisions`, `blockers`, `next_steps`,
-    `status`) plus a 4-section body (Context / What worked / Dead ends
-    / Open questions).
-  - **topics** — one per subsystem, cross-references the chronicles
-    that contributed.
-
-  Auto-detects project from cwd; in non-project dirs it asks before
-  doing a full sweep. When [memex](https://github.com/iamtouchskyer/memex)
-  is installed, atomic insight cards are delegated to `/memex-retro`.
-
-- **`/vibebook-recall`** — Three-stage progressive recall before new
-  work. Stage 1 returns a topic list (~5 KB). Stage 2 (drill into a
-  topic) returns chronicle frontmatter without bodies. Stage 3 reads
-  the bodies you actually need. Cheap to invoke, fast to navigate,
-  designed for AI agents to consume before exploring code.
-
-- **Static-site rendering** (optional) — Run
-  `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js site serve` to browse
-  your book locally as HTML, or `... site build` to produce a
-  deployable static site. Uses the bundled Astro template under
-  `site-template/`.
-
-The plugin reads `~/.claude/projects/...jsonl` directly. No external
-service, no separate sync needed.
+Open any Claude Code session and run `/vibebook` to digest your local sessions; a new session afterward auto-loads the project primer.
 
 ### Cross-device sync (optional)
 
-To carry your sessions across multiple machines, install the optional
-**vibebook** npm CLI:
+To carry sessions **and** memory across machines, install the optional **vibebook** npm CLI:
 
 ```sh
 npm i -g vibebook
 vibebook init
 ```
 
-It syncs `~/.vibebook/session-repo/` to a private GitHub repo across
-your devices. Plugin and CLI share the same spool path with
-sessionId-keyed entries — install one, both, or neither.
-
-The CLI also lets you **resume a session on another machine**:
+It syncs `~/.vibebook/session-repo/` (sessions, chronicles, **and** the `memory/` layer) to a private GitHub repo, aggregating across devices on the `main` branch. The CLI also resumes a session on another machine:
 
 ```sh
-vibebook list-sessions --since 1d   # find the sessionId you want
-vibebook resume <sessionId>         # copies jsonl into ~/.claude/projects/
-                                    # and prints `claude --resume <id>`
+vibebook list-sessions --since 1d   # find the sessionId
+vibebook resume <sessionId>         # copies jsonl into ~/.claude/projects/ + prints `claude --resume <id>`
 ```
 
-For cross-user-home machines (e.g. `/Users/alice` on laptop A vs
-`/Users/bob` on laptop B), configure a one-time path map:
-
-```sh
-vibebook config --map-path /Users/alice=/Users/bob
-```
-
-See https://github.com/june9593/vibebook for the npm CLI.
+> **Note:** the memory layer (`memory/` + its indexes) syncs only with CLI **≥ 0.8.6**. The plugin and CLI share the same spool path; install one, both, or neither. npm CLI: https://github.com/june9593/vibebook
 
 ### Files written
 
-- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` — rendered session, single file with YAML frontmatter (manifest_version: 1 + tools_used / commits / files_touched) + a `# Table of Contents` block + the body. Resume reads this directly via the chunked path; no `.raw.json` or `.jsonl` sibling since 0.2.0.
-- `~/.vibebook/session-repo/book/<project>/{chronicle,topics}/*.md` — digested book
-- `~/.vibebook/session-repo/.vibebook/index.json` — per-session entry index
-- `~/.vibebook/session-repo/.vibebook/index.book.json` — chronicle/topic catalog
-- `~/.vibebook/.plugin-state.json` — plugin's onboarding state (one-time tip flag)
+- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` — rendered session (single `.md`: YAML frontmatter w/ `manifest_version: 1` + `tools_used` / `commits` / `files_touched`, a Table-of-Contents block, then the body).
+- `~/.vibebook/session-repo/book/<project>/{chronicle,topics}/*.md` — digested book.
+- `~/.vibebook/session-repo/memory/{<type>,entities,qa,_primer}/...` — the Memory OS store.
+- `~/.vibebook/session-repo/.vibebook/index.{json,book,memory,entity,qa}.json` — indexes.
+- `~/.vibebook/local-proposals/<repoHash>/*.json` — **local-only** memory-PR queue (never synced).
 
-The plugin **does not** create or modify `.git/` or any of the npm
-CLI's config files (`config.json`, `passphrase`, `repo-salt.json`,
-`.gitattributes`) — those are owned by the optional npm CLI when
-present.
+The plugin **does not** create or modify `.git/` or the npm CLI's config files — those are owned by the optional CLI.
+
+### Limitations & roadmap
+
+- **Lexical-only retrieval (the known gap).** Recall ranks by keyword overlap + scope + recency + importance, so a *semantically* related but *lexically* different query can under-recall. Planned: an **optional local embedding index** used only for recall ranking (markdown stays the source of truth — never "vector-only"), validated against the v5 eval harness before adoption.
+- **Codex as a third session source** — adapter in progress.
+- **End-to-end answer-quality eval** (no-context vs recalled-context) — a documented follow-up to the v5 retrieval eval.
 
 ### Repo layout
 
-- `skills/` — `/vibebook` and `/vibebook-recall` skill files (the
-  in-session prompts that drive the LLM through digest + recall)
-- `commands/` — slash command thin wrappers
-- `hooks/` — `Stop` hook that nudges the user to run `/vibebook` at
-  end of session
-- `bin/vibebook-plugin.js` — bundled CLI invoked by the skills
-  (single esbuild output, all deps inlined; not on user PATH)
-- `src/` — TypeScript source for the bundled CLI
-- `site-template/` — Astro template for the optional local book site
-- `docs/` — Astro source for this repo's GitHub Pages
-- `tests/` — vitest suite covering the bundled CLI; run
-  `npm install && npx vitest run` if you're contributing
+- `skills/` — `/vibebook`, `/vibebook-context`, `/vibebook-recall` skill files (in-session prompts).
+- `commands/` — slash-command thin wrappers · `hooks/` — SessionStart primer + Stop nudge.
+- `bin/vibebook-plugin.js` — bundled CLI invoked by the skills (single esbuild output; not on PATH).
+- `src/` — TypeScript source · `tests/` — vitest suite (`npm install && npx vitest run`).
+- `site-template/` — Astro template for the optional local book site · `docs/` — GitHub Pages source.
 
 ### Contributing
 
-PRs welcome. Open an issue first for anything beyond a typo or a
-small bug fix — design changes touch a written spec and benefit from
-discussion before implementation.
-
-### License
-
-MIT
+PRs welcome. Open an issue first for anything beyond a typo — design changes are spec-driven and benefit from discussion. **License: MIT.**
 
 ---
 
 ## 中文
 
-Claude Code 插件,把你过去的 AI 编程会话整理成一本可检索的笔记 —
-记录决定、死胡同和修复方案 — 让未来的你不必重新摸索过去的你
-已经搞清楚的东西。
+### 这是什么
 
-想知道上次调那个 crash 试过什么?为什么选了这个库而不是另一个?
-某个想法是不是已经探索过了?每周跑一次 `/vibebook` 整理你的会话;
-做任何不平凡的任务前跑一次 `/vibebook-recall` 把相关的过去工作
-翻出来。
+一个 Claude Code 插件,给 AI 编程 agent 一套**可信赖的长期记忆**。跑 `/vibebook` 把会话整理成按项目分组的 chronicle,**同时**生成一套有类型的记忆;之后 SessionStart hook 会自动加载一份精简的 *primer*,让每个新会话一开始就知道这个项目的规则、配置、事实和坑 —— 而不是每次都重新摸索。
 
-独立运行 — 不需要额外 CLI,不需要云服务,数据全部留在本地。
+独立运行:不需要额外 CLI、不需要云服务,数据全部留在本地、人类可读。
+
+### Memory OS(分层构建)
+
+| 层 | 加了什么 |
+|---|---|
+| **v1 — typed memory** | 六种记忆类型(`core` / `semantic` / `episodic` / `procedural` / `working` / `artifact`)、按项目的 **primer**、JSON 索引、相关性打分器。 |
+| **v2 — primer + 实体** | **SessionStart hook** 自动注入 primer;**entity wiki**(每个文件 / 符号 / API / 概念 / 人一份活页)。 |
+| **qa — 精炼问答** | `qa/` 答案层:可复用的问→答对(复合问题、排障结论、决策理由、操作路径)。 |
+| **v3 — lint + 整合** | `memory-lint` 只读健康检查(过期 / 悬挂 supersede / 疑似重复 / 缺出处 / 陈旧),以及 digest 时的保守整合。 |
+| **v4 — 自进化门禁** | **"memory-PR"** 流程:长期 `core` / `procedural` / pinned 记忆不能直接写 —— agent 必须 `memory-propose`;人用 `memory-diff` 审、用 `memory-approve` 落库(或 `memory-reject`)。一条坏 summary 无法静默污染长期行为。 |
+| **v5 — 召回评估** | 确定性、不调 LLM 的 eval harness(LongMemEval 风格),在 CI 里把召回质量当门禁 —— 证明记忆能把*对的*上下文摆到面前,零运行时开销。 |
+
+### 为什么这么设计 —— 参考的论文与 repo
+
+vibebook 刻意建立在公开研究和清晰的取舍之上,而不是凭空发明:
+
+| 设计选择 | 参考 / 受启发于 | 为什么 |
+|---|---|---|
+| **typed memory**(working / episodic / semantic / procedural …) | **CoALA** — *Cognitive Architectures for Language Agents*(2023) | 来自认知科学的记忆分类法,而不是一坨无差别的 blob。 |
+| **打分器** = recency + importance + relevance | **Generative Agents**(Park 等, 2023)的 memory-stream 召回函数 | 简单、可解释、被验证过的排序信号。 |
+| **召回质量评估** | **LongMemEval**(Wu 等, 2024)长期记忆基准 | 不度量就无法改进;信息抽取/多会话/时序/知识更新/弃答这些能力被显式测试。 |
+| **markdown 优先、本地、git 同步、不用向量库** | 对 **mem0**、**Letta / MemGPT**、**Zep / Graphiti**、**A-MEM** 这类向量/图记忆栈的刻意反向选择 | 可审计、可拥有:记忆人类可读、可 diff、可版本控制。代价是词法(BM25-lite)召回 —— 一个已知取舍(见[局限](#局限与路线图))。 |
+| **memory-PR 治理门禁** | (新)—— 多数记忆框架让 agent 自由自改长期记忆 | 治理:会长期影响行为的记忆改动落库前先经人审。 |
+| **entity wiki + 精炼 Q&A** | 个人知识库 / Zettelkasten 实践(链接式原子笔记) | 在 episodic chronicle 之上的反向索引综合层。 |
+
+> **如实定位:** 分类法、打分器、治理门禁、评估 harness 与主流 agent 记忆工具持平,有些地方还领先。唯一刻意的缺口是**纯词法召回**(没有 embedding / 图);路线图里写了如何在不放弃可审计的前提下补上它。
+
+### 命令与 skills
+
+**Skills(斜杠命令 —— 日常入口):**
+- **`/vibebook`** —— 把会话整理成 chronicle + topic,并生成 typed memory + entity wiki + 精炼 Q&A(带保守整合)。
+- **`/vibebook-context`** —— 工作开始时加载本项目记忆:核心规则 / 操作与坑 / 项目事实 / 片段 / 冲突 / 实体 / 历史 Q&A / 待审记忆提案。
+- **`/vibebook-recall`** —— 三阶段渐进召回历史 chronicle 与 topic(topic 列表 → frontmatter → 正文)。
+- **SessionStart hook** —— 自动注入项目 primer,新会话一开始就有底。
+
+**底层 `bin/vibebook-plugin.js` 子命令**(skills 调用;纯 I/O,不调 LLM):
+`memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `catalog-regen` · `site` · `list-projects` · `prepare` · `publish`。
 
 ### 安装
 
@@ -152,99 +199,50 @@ Claude Code 插件,把你过去的 AI 编程会话整理成一本可检索的笔
 /plugin install vibebook
 ```
 
-就这样。开任何一个 Claude Code 会话,跑 `/vibebook` 整理本机会话,
-或者 `/vibebook-recall` 翻过去的笔记。
-
-### 它做什么
-
-- **`/vibebook`** — 扫描 `~/.claude/projects/...jsonl` 和 VS Code
-  Copilot Chat 历史,把每个会话整理成两类按项目分组的产物,放在
-  `~/.vibebook/session-repo/book/<project>/`:
-  - **chronicles** — 一个工作线一份,带 AI 优先的 frontmatter
-    (`files_touched`、`commits`、`decisions`、`blockers`、
-    `next_steps`、`status`)加四段式正文(Context / What worked /
-    Dead ends / Open questions)。
-  - **topics** — 一个子系统一份,反向链接到贡献的 chronicle。
-
-  根据 cwd 自动判断项目;在非项目目录里会问你要不要做全量整理。
-  装了 [memex](https://github.com/iamtouchskyer/memex) 时,原子化
-  insight 卡片会交给 `/memex-retro`。
-
-- **`/vibebook-recall`** — 开始新工作之前的三阶段渐进式 recall。
-  第一阶段返回 topic 列表(约 5 KB)。第二阶段(钻进某个 topic)
-  返回 chronicle 的 frontmatter,不含正文。第三阶段读真正需要的
-  那几篇 chronicle。调用代价低、检索快,专门设计成 AI agent 在
-  探索代码前能廉价消费的形式。
-
-- **静态站点渲染(可选)** — 跑
-  `${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js site serve` 在
-  本地以 HTML 浏览你的笔记本,或者 `... site build` 生成可发布
-  的静态站点。用 `site-template/` 下打包好的 Astro 模板。
-
-插件直接读 `~/.claude/projects/...jsonl`,无需外部服务,无需单独
-同步。
+开任何 Claude Code 会话跑 `/vibebook` 整理本机会话;之后新会话会自动加载项目 primer。
 
 ### 跨设备同步(可选)
 
-要把会话带到多台机器之间,装可选的 **vibebook** npm CLI:
+要把会话**和记忆**带到多台机器,装可选的 **vibebook** npm CLI:
 
 ```sh
 npm i -g vibebook
 vibebook init
 ```
 
-它把 `~/.vibebook/session-repo/` 同步到一个私有 GitHub repo。
-插件和 CLI 在同一个 spool 路径上协作,条目用 sessionId 做 key —
-装其中一个、两个都装、或者都不装,按你需要选。
-
-CLI 还可以**在另一台机器上 resume 某个会话**:
+它把 `~/.vibebook/session-repo/`(会话、chronicle、**以及** `memory/` 层)同步到私有 GitHub repo,并在 `main` 分支跨设备聚合。CLI 也能在另一台机器 resume 会话:
 
 ```sh
-vibebook list-sessions --since 1d   # 找到要 resume 的 sessionId
-vibebook resume <sessionId>         # 把 jsonl 复制到 ~/.claude/projects/
-                                    # 并打印 `claude --resume <id>`
+vibebook list-sessions --since 1d
+vibebook resume <sessionId>
 ```
 
-如果两台机器 home 目录不一样(比如 A 笔记本是 `/Users/alice`,
-B 笔记本是 `/Users/bob`),配置一次 path map:
-
-```sh
-vibebook config --map-path /Users/alice=/Users/bob
-```
-
-npm CLI 在 https://github.com/june9593/vibebook。
+> **注意:** 记忆层(`memory/` 及其索引)只在 CLI **≥ 0.8.6** 时同步。插件与 CLI 共享同一 spool 路径;装一个、两个、或都不装都行。npm CLI:https://github.com/june9593/vibebook
 
 ### 写到哪里
 
-- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` — 渲染过的会话，单个文件包含 YAML frontmatter(manifest_version: 1 + tools_used / commits / files_touched) + `# Table of Contents` 区块 + 正文。resume 通过 chunked 路径直接读这个文件；自 0.2.0 起不再写 `.raw.json` 或 `.jsonl` 副本。
-- `~/.vibebook/session-repo/book/<project>/{chronicle,topics}/*.md` — 整理出来的笔记本
-- `~/.vibebook/session-repo/.vibebook/index.json` — 单会话条目索引
-- `~/.vibebook/session-repo/.vibebook/index.book.json` — chronicle / topic 目录
-- `~/.vibebook/.plugin-state.json` — 插件自己的 onboarding 状态(首次提示标记)
+- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` —— 渲染过的会话(单 `.md`:YAML frontmatter + 目录块 + 正文)。
+- `~/.vibebook/session-repo/book/<project>/{chronicle,topics}/*.md` —— 整理出的笔记本。
+- `~/.vibebook/session-repo/memory/{<type>,entities,qa,_primer}/...` —— Memory OS 存储。
+- `~/.vibebook/session-repo/.vibebook/index.{json,book,memory,entity,qa}.json` —— 索引。
+- `~/.vibebook/local-proposals/<repoHash>/*.json` —— **仅本地**的 memory-PR 队列(从不同步)。
 
-插件**不会**创建或修改 `.git/` 或可选 npm CLI 的任何配置文件
-(`config.json`、`passphrase`、`repo-salt.json`、`.gitattributes`)
-— 那些是装了 npm CLI 才有的领地。
+插件**不会**创建或修改 `.git/` 或 npm CLI 的配置文件 —— 那些归可选 CLI 管。
+
+### 局限与路线图
+
+- **纯词法召回(已知缺口)。** 召回靠关键词重叠 + scope + recency + importance 排序,所以语义相关但词面不同的查询可能漏召回。计划:加一个**可选的本地 embedding 索引**,只用于召回排序(markdown 仍是唯一真相源,绝不"纯向量"),上线前用 v5 eval harness 实测验证。
+- **Codex 作为第三个会话源** —— adapter 进行中。
+- **端到端答案质量评估**(无上下文 vs 召回上下文)—— v5 召回评估之后的后续项。
 
 ### 仓库布局
 
-- `skills/` — `/vibebook` 和 `/vibebook-recall` 的 skill 文件
-  (驱动 LLM 走 digest + recall 的 in-session prompt)
-- `commands/` — slash command 薄壳
-- `hooks/` — 会话结束 `Stop` hook,提醒用户跑 `/vibebook`
-- `bin/vibebook-plugin.js` — skill 调用的打包 CLI(单个 esbuild
-  输出,依赖全部 inline;不进用户 PATH)
-- `src/` — 打包 CLI 的 TypeScript 源码
-- `site-template/` — 可选本地笔记站点的 Astro 模板
-- `docs/` — 本仓库 GitHub Pages 的 Astro 源
-- `tests/` — 覆盖打包 CLI 的 vitest 测试;贡献时跑
-  `npm install && npx vitest run`
+- `skills/` —— `/vibebook`、`/vibebook-context`、`/vibebook-recall` 的 skill 文件。
+- `commands/` —— slash 命令薄壳 · `hooks/` —— SessionStart primer + Stop 提醒。
+- `bin/vibebook-plugin.js` —— skill 调用的打包 CLI(单 esbuild 输出;不进 PATH)。
+- `src/` —— TypeScript 源 · `tests/` —— vitest(`npm install && npx vitest run`)。
+- `site-template/` —— 本地笔记站点的 Astro 模板 · `docs/` —— GitHub Pages 源。
 
 ### 贡献
 
-PR 欢迎。typo 或小 bug 之外的改动,先开 issue 讨论 — 设计层面的
-改动牵涉到写过的 spec,先沟通再动手最省事。
-
-### 许可证
-
-MIT
+欢迎 PR。typo 之外的改动先开 issue 讨论 —— 设计层改动是 spec 驱动的。**许可证:MIT。**
