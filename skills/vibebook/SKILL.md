@@ -1,13 +1,17 @@
 ---
 name: vibebook
-description: Digest already-synced raw_sessions into per-project book artifacts (chronicle / topics). Triggers on `/vibebook`. Two modes auto-selected by cwd — project-mode (cwd ≠ session-repo, digests just the matching project) or global-mode (cwd = session-repo, fan-out one subagent per pending project then regen catalog). Per-project isolated.
+description: Digest already-synced raw_sessions into TWO things per project — a book (chronicle / topics) AND a typed Memory OS (typed memory, entity wiki, distilled Q&A). Triggers on `/vibebook`. Two modes auto-selected by cwd — project-mode (cwd ≠ session-repo, digests just the matching project) or global-mode (cwd = session-repo, fan-out one subagent per pending project then regen catalog). Per-project isolated. The digest is NOT complete when the book is published — it is complete only after the Memory OS layer is written.
 ---
 
-# /vibebook — write your book
+# /vibebook — digest sessions into a book + Memory OS
 
 This skill walks the **in-session Claude** (you) through digesting the user's
-already-synced AI coding sessions into three per-project book artifacts. Pure
-mechanical CLI handles I/O (`"$VBP" prepare` / `"$VBP" publish` /
+already-synced AI coding sessions into TWO things per project: **(1) a book**
+(chronicles + topics, Steps P1–P7) and **(2) a typed Memory OS** (typed memory,
+entity wiki, distilled Q&A, consolidate — Steps P7.5–P7.8). **Both halves are
+required.** The digest is NOT complete when the book is published; it is complete
+only after the Memory OS layer is written. Pure mechanical CLI handles I/O
+(`"$VBP" prepare` / `"$VBP" publish` / `"$VBP" memory-write` /
 `"$VBP" list-projects` / `"$VBP" catalog-regen`); the LLM work —
 segmentation + writing — is yours, in this conversation, with full context.
 
@@ -585,10 +589,21 @@ warning, fix in a follow-up batch (`"$VBP" publish` is idempotent — already-
 inserted chronicles refuse via threadId collision, so you can re-run with
 just the new artifacts).
 
-### Step P7.5 — Distill typed memory
+> ⚠️ **`publish` is NOT the end of the digest.** The book (chronicles + topics)
+> is only HALF of what `/vibebook` produces. The `publish` commit + push just
+> lands the book layer — the **Memory OS layer (typed memory / entities / Q&A)
+> is still unwritten**. You MUST continue through **Steps P7.5–P7.8** before
+> Step P8. Do **not** print a summary, say "done", or stop here just because
+> the book was published and pushed.
 
-After chronicles/topics are published, distill durable typed memory for this
-project so future sessions start informed. Write a JSON array to
+### Step P7.5 — Distill typed memory (REQUIRED — do not stop after publish)
+
+**Mandatory, not optional.** This is the half of `/vibebook` that makes a new
+session start *already knowing* the project (its rules, facts, gotchas). After
+publish lands the book, you MUST distill durable typed memory for this project.
+You may still write *nothing* if truly nothing durable emerged — but you must
+run the step and consciously decide, **never skip it by treating publish as the
+end**. Write a JSON array to
 `/tmp/vibebook-memory.json` where each item is `{ entry, body }`:
 
 - **core** — never-forget rules (rare; e.g. release/workflow rules). scope
@@ -732,12 +747,23 @@ vibebook-plugin memory-query --cwd "$(pwd)" >/dev/null
 
 ### Step P8 — Done
 
-Print a one-line summary:
+**Before printing the summary, verify you actually ran the FULL digest, not just
+the book.** If you have not completed Steps P7.5–P7.8 (typed memory → entity wiki
+→ Q&A → consolidate), go back and do them now — a digest that stops at `publish`
+is incomplete and leaves the Memory OS unwritten.
+
+Print a one-line-per-layer summary:
 
 ```
 ✓ Published to book/<project>/: N chronicles, M topics.
+✓ Memory: A typed (core/semantic/procedural/episodic), B entities, C Q&A pages.
+✓ Consolidated: D promoted/superseded, E proposals queued for review (memory-diff).
 ✓ Pushed to <device-branch>.
 ```
+
+(If a memory layer wrote nothing this round, say so explicitly — e.g.
+`Memory: 0 (nothing durable this round)` — so it's clear the step *ran* and chose
+to write nothing, rather than being skipped.)
 
 That's it for project-mode. The user can now `cd ~/.vibebook/session-repo && claude → /vibebook`
 later to do a global sweep across all projects.
