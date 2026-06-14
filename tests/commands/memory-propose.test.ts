@@ -64,6 +64,15 @@ describe("memoryProposeCmd", () => {
     await expect(memoryProposeCmd({ inputPath: input })).rejects.toThrow(/memory-write/);
   });
 
+  it("report returns targetKeys and proposedEntryIds aligned with paths", async () => {
+    const { memoryProposeCmd } = await import("../../src/commands/memory-propose.js");
+    const r = await memoryProposeCmd({ inputPath: gatedInput() });
+    expect(r.proposed).toBe(1);
+    expect(r.paths.length).toBe(1);
+    expect(r.targetKeys).toEqual(["core/yue-workflow"]);
+    expect(r.proposedEntryIds).toEqual(["core/yue-workflow"]);
+  });
+
   it("canonicalizes a wrong entry.path so the queued proposal is approvable", async () => {
     const input = join(home, "wrongpath.json");
     writeFileSync(input, JSON.stringify([{

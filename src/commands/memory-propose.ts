@@ -6,7 +6,7 @@ import { writeProposal, flatTargetKey, type MemoryProposal } from "../memory/pro
 import type { MemoryEntry } from "../memory/types.js";
 
 export interface MemoryProposeOptions { inputPath?: string; }
-export interface MemoryProposeReport { proposed: number; paths: string[] }
+export interface MemoryProposeReport { proposed: number; paths: string[]; targetKeys: string[]; proposedEntryIds: string[] }
 
 interface InputItem { entry: MemoryEntry; body: string; rationale?: string; sourceSession?: string; }
 
@@ -28,6 +28,8 @@ export async function memoryProposeCmd(opts: MemoryProposeOptions): Promise<Memo
   }
 
   const paths: string[] = [];
+  const targetKeys: string[] = [];
+  const proposedEntryIds: string[] = [];
   for (const { entry, body, rationale, sourceSession } of items) {
     entry.path = canonicalMemoryPath(entry); // paths are non-authoritative; normalize so the queued item is always approvable
     const tKey = targetKey(entry);
@@ -42,6 +44,8 @@ export async function memoryProposeCmd(opts: MemoryProposeOptions): Promise<Memo
       proposal: { entry, body },
     };
     paths.push(writeProposal(cfg.repoPath, p));
+    targetKeys.push(tKey);
+    proposedEntryIds.push(entry.id);
   }
-  return { proposed: items.length, paths };
+  return { proposed: items.length, paths, targetKeys, proposedEntryIds };
 }
