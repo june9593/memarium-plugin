@@ -43,23 +43,38 @@ describe("memoryDiffCmd", () => {
     });
   }
 
-  it("renders a create diff (no live target)", async () => {
+  it("default list (create): scannable, no ∅, no body, shows targetKey + summary", async () => {
     await seedProposal("create");
     const { memoryDiffCmd } = await import("../../src/commands/memory-diff.js");
     await memoryDiffCmd({});
     const out = logs.join("\n");
-    expect(out).toMatch(/core\/y/);
-    expect(out).toMatch(/create/);
+    expect(out).toMatch(/core\/y/);          // exact targetKey
+    expect(out).toMatch(/\(create\)/);
+    expect(out).toMatch(/new/);              // entry.summary
+    expect(out).not.toContain("∅");          // no field-dump noise for creates
+    expect(out).not.toContain("new body");   // body never in the default list
+    expect(out).not.toMatch(/changes:/);     // create shows no changed-field line
   });
 
-  it("renders an update diff with changed fields", async () => {
+  it("default list (update): shows changed field NAMES, no old→new, no body", async () => {
     await seedProposal("update");
     const { memoryDiffCmd } = await import("../../src/commands/memory-diff.js");
     await memoryDiffCmd({});
     const out = logs.join("\n");
-    expect(out).toMatch(/title/);
-    expect(out).toMatch(/old title/);
-    expect(out).toMatch(/new title/);
+    expect(out).toMatch(/core\/y/);
+    expect(out).toMatch(/changes: .*title/); // changed field name appears
+    expect(out).not.toContain("old title");  // old→new moved to --id detail
+    expect(out).not.toContain("new body");   // body never in the default list
+  });
+
+  it("default list is ASCII (no emoji type icons)", async () => {
+    await seedProposal("create");
+    const { memoryDiffCmd } = await import("../../src/commands/memory-diff.js");
+    await memoryDiffCmd({});
+    const out = logs.join("\n");
+    // no emoji / pictographic chars; ASCII labels like [core] only
+    expect(out).not.toMatch(/\p{Extended_Pictographic}/u);
+    expect(out).toMatch(/\[core\]/);
   });
 
   it("--json emits a structured array", async () => {
