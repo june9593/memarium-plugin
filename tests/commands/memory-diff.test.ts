@@ -116,6 +116,29 @@ describe("memoryDiffCmd", () => {
     expect(parsed[0].display.changedFields).toEqual([]);
   });
 
+  it("--id (update): shows old→new and full body and approve/reject hints", async () => {
+    await seedProposal("update");
+    const { memoryDiffCmd } = await import("../../src/commands/memory-diff.js");
+    await memoryDiffCmd({ id: "core/y" });
+    const out = logs.join("\n");
+    expect(out).toContain("old title");          // old→new only in detail mode
+    expect(out).toContain("new title");
+    expect(out).toContain("new body");           // full body shown here
+    expect(out).toContain("core/y");             // exact targetKey
+    expect(out).toMatch(/memory-approve --id core\/y/);
+    expect(out).toMatch(/memory-reject --id core\/y/);
+  });
+
+  it("--id (create): shows full body, no ∅, with approve/reject hints", async () => {
+    await seedProposal("create");
+    const { memoryDiffCmd } = await import("../../src/commands/memory-diff.js");
+    await memoryDiffCmd({ id: "core/y" });
+    const out = logs.join("\n");
+    expect(out).toContain("new body");
+    expect(out).not.toContain("∅");
+    expect(out).toMatch(/memory-approve --id core\/y/);
+  });
+
   it("is read-only: writes nothing to memory/ or the index", async () => {
     await seedProposal("update");
     const before = JSON.parse((await import("node:fs")).readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
