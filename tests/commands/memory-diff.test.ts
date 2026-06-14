@@ -72,6 +72,35 @@ describe("memoryDiffCmd", () => {
     expect(parsed[0].fieldChanges.some((c: { field: string }) => c.field === "title")).toBe(true);
   });
 
+  it("--json includes a display block with human-facing fields", async () => {
+    await seedProposal("update");
+    const { memoryDiffCmd } = await import("../../src/commands/memory-diff.js");
+    await memoryDiffCmd({ json: true });
+    const parsed = JSON.parse(logs.join("\n"));
+    const d = parsed[0].display;
+    expect(d.targetKey).toBe("core/y");
+    expect(d.type).toBe("core");
+    expect(d.title).toBe("new title");
+    expect(d.summary).toBe("new");
+    expect(d.action).toBe("update");
+    expect(d.changedFields).toContain("title");
+    expect(d.changedFields).toContain("summary");
+    expect(typeof d.bodyLineCount).toBe("number");
+    expect(typeof d.bodyPreview).toBe("string");
+    // backward-compat: fieldChanges + newBody still present
+    expect(parsed[0].fieldChanges.some((c: { field: string }) => c.field === "title")).toBe(true);
+    expect(parsed[0].newBody).toBe("new body");
+  });
+
+  it("--json display.changedFields is empty for a create", async () => {
+    await seedProposal("create");
+    const { memoryDiffCmd } = await import("../../src/commands/memory-diff.js");
+    await memoryDiffCmd({ json: true });
+    const parsed = JSON.parse(logs.join("\n"));
+    expect(parsed[0].display.action).toBe("create");
+    expect(parsed[0].display.changedFields).toEqual([]);
+  });
+
   it("is read-only: writes nothing to memory/ or the index", async () => {
     await seedProposal("update");
     const before = JSON.parse((await import("node:fs")).readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));

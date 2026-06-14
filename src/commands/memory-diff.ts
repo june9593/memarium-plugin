@@ -6,6 +6,23 @@ import type { MemoryEntry } from "../memory/types.js";
 export interface MemoryDiffOptions { id?: string; json?: boolean; }
 
 interface FieldChange { field: string; old: string | null; new: string | null; }
+interface DiffDisplay {
+  targetKey: string;
+  proposedEntryId: string;
+  action: MemoryProposal["action"];
+  type: string;
+  title: string;
+  summary: string;
+  scope: string;
+  status: string;
+  importance: number;
+  confidence: number;
+  rationale: string | null;
+  sourceSession: string | null;
+  changedFields: string[];   // [] for create
+  bodyLineCount: number;
+  bodyPreview: string;       // first 3 lines, capped at 240 chars
+}
 interface DiffView {
   targetKey: string;
   proposedEntryId: string;
@@ -13,8 +30,9 @@ interface DiffView {
   rationale: string | null;
   sourceSession: string | null;
   fieldChanges: FieldChange[];
-  oldBody: string | null;   // reference to the current live entry's file (NOT its body text); null on pure create
+  oldBody: string | null;   // reference to current live entry's file path (NOT its body); null on create
   newBody: string;
+  display: DiffDisplay;
 }
 
 const FIELDS: (keyof MemoryEntry)[] = [
@@ -26,6 +44,11 @@ function str(v: unknown): string | null {
   return v === null || v === undefined ? null : String(v);
 }
 
+function bodyPreview(body: string): string {
+  const first3 = body.split("\n").slice(0, 3).join("\n");
+  return first3.length <= 240 ? first3 : first3.slice(0, 240);
+}
+
 function buildView(p: MemoryProposal, live: MemoryEntry | undefined): DiffView {
   const proposed = p.proposal.entry;
   const changes: FieldChange[] = [];
@@ -34,10 +57,30 @@ function buildView(p: MemoryProposal, live: MemoryEntry | undefined): DiffView {
     const newV = str(proposed[f]);
     if (oldV !== newV) changes.push({ field: String(f), old: oldV, new: newV });
   }
+  const isCreate = p.action === "create" || !live;
+  const body = p.proposal.body;
+  const display: DiffDisplay = {
+    targetKey: p.targetKey,
+    proposedEntryId: p.proposedEntryId,
+    action: p.action,
+    type: String(proposed.type),
+    title: proposed.title,
+    summary: proposed.summary,
+    scope: String(proposed.scope),
+    status: String(proposed.status),
+    importance: proposed.importance,
+    confidence: proposed.confidence,
+    rationale: p.rationale,
+    sourceSession: p.sourceSession,
+    changedFields: isCreate ? [] : changes.map((c) => c.field),
+    bodyLineCount: body.split("\n").length,
+    bodyPreview: bodyPreview(body),
+  };
   return {
     targetKey: p.targetKey, proposedEntryId: p.proposedEntryId, action: p.action,
     rationale: p.rationale, sourceSession: p.sourceSession,
-    fieldChanges: changes, oldBody: live ? `(current: ${live.path})` : null, newBody: p.proposal.body,
+    fieldChanges: changes, oldBody: live ? `(current: ${live.path})` : null, newBody: body,
+    display,
   };
 }
 
