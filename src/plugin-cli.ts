@@ -260,6 +260,13 @@ export async function run(argv: string[]) {
       await firstRunCmd();
     });
 
+  program.command("serve-mcp")
+    .description("Run the vibebook MCP server over stdio (used by the plugin's .mcp.json; not for manual use).")
+    .action(async () => {
+      const { startMcpServer } = await import("./mcp-server.js");
+      await startMcpServer();
+    });
+
   program
     .command("orchestrate <mode>")
     .description("Plugin's autonomy entry: scan local jsonl into spool, then yield to caller. Modes: project | global")

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "vibebook": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js", "serve-mcp"]
+    }
+  }
+}
