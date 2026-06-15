@@ -14431,7 +14431,7 @@ async function run(argv) {
   program2.command("finalize").description("Ensure the session-repo is a git repo, commit all plugin-written paths (raw_sessions/book/memory/index), and push if a remote is configured. Never stages foreign files.").option("--no-push", "commit locally only; never push even if a remote is configured").action(async (o2) => {
     const { finalizeCmd: finalizeCmd2 } = await Promise.resolve().then(() => (init_finalize(), finalize_exports));
     const r2 = await finalizeCmd2({ noPush: o2.push === false });
-    console.log(JSON.stringify(r2));
+    process.stdout.write(JSON.stringify(r2, null, 2) + "\n");
   });
   program2.command("memory-write").description("Write typed-memory .md files + update the memory index from an agent JSON payload.").option("--input <path>", "path to memory entries JSON").action(async (opts) => {
     const { memoryWriteCmd: memoryWriteCmd2 } = await Promise.resolve().then(() => (init_memory_write(), memory_write_exports));

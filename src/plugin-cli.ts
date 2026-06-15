@@ -71,7 +71,7 @@ export async function run(argv: string[]) {
     .action(async (o: { push?: boolean }) => {
       const { finalizeCmd } = await import("./commands/finalize.js");
       const r = await finalizeCmd({ noPush: o.push === false });
-      console.log(JSON.stringify(r));
+      process.stdout.write(JSON.stringify(r, null, 2) + "\n");
     });
 
   program
