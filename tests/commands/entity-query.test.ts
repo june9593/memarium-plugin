@@ -651,7 +651,6 @@ describe("entityQueryCmd", () => {
       const { buildEntityQueryPayload } = await import("../../src/commands/entity-query.js");
       const payload = await buildEntityQueryPayload({ cwd: "/work/edge-memvc" });
       // Shape checks
-      expect(typeof payload.project).toBeDefined();
       expect(payload.project).toBe("edge-memvc");
       expect(Array.isArray(payload.entities)).toBe(true);
       // Must NOT have printed anything

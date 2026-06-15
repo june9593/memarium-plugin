@@ -7,19 +7,9 @@
 // (T6 just rewrites the binary name + path).
 
 import { Command } from "commander";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-
-function readPackageVersion(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  for (const rel of ["../package.json", "../../package.json", "../../../package.json"]) {
-    try {
-      return JSON.parse(readFileSync(resolve(here, rel), "utf8")).version as string;
-    } catch { /* try next */ }
-  }
-  return "0.0.0-unknown";
-}
+import { resolve } from "node:path";
+import { readPackageVersion } from "./version.js";
 
 export async function run(argv: string[]) {
   const program = new Command();

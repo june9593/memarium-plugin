@@ -130,7 +130,9 @@ function renderDetail(v: DiffView): string {
 
 /** Read-only. Returns pending proposals as DiffView[] (one if --id): a field-level diff against
  *  the CURRENT live entry, plus the proposed body and a reference (path) to the
- *  current live entry — NOT a line-by-line body diff. Never writes; exit 0 always. */
+ *  current live entry — NOT a line-by-line body diff. Never writes. May throw on
+ *  a config/index read error — callers handle it: `memoryDiffCmd` wraps this in a
+ *  try/catch (stays exit-0), and the MCP layer surfaces errors at the tool boundary. */
 export async function buildMemoryDiffViews(opts: MemoryDiffOptions): Promise<DiffView[]> {
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);

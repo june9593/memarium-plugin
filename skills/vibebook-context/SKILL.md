@@ -64,10 +64,11 @@ This returns:
 ## Step 1.6 — Past Q&A (`qa/` answer layer)
 
 After Entities, surface distilled Q&A relevant to the task. Call the `qa_query`
-MCP tool with `{ "project_dir": "<cwd>" }` (the tool scores against the user's
-ask keywords automatically); read its structured JSON result.
+MCP tool with `{ "project_dir": "<cwd>", "q": "<keywords from the user's ask>" }`
+(pass the user's ask keywords as `q` — the scorer ranks by relevance to it);
+read its structured JSON result.
 (Fallback: if the `qa_query` MCP tool isn't available or errors, fall back to running
-`vibebook-plugin qa-query --cwd "$(pwd)" --q "<keywords from the user's ask>"` via Bash.)
+`"$VBP" qa-query --cwd "$(pwd)" --q "<keywords from the user's ask>"` via Bash.)
 
 This is **index-only** — it returns ranked `{ question, answerSummary, kind, path }` (NOT the full answer). Present the top matches as a short "Past Q&A" list (question + answerSummary). If the user wants the full answer, Read the `.md` at `path`. Keep this separate from the memory recall list — it is its own light scorer, not part of the BM25 memory ranking.
 

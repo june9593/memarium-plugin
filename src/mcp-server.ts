@@ -13,6 +13,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { readPackageVersion } from "./version.js";
 
 // Core imports
 import { buildMemoryQueryPayload } from "./commands/memory-query.js";
@@ -202,7 +203,7 @@ export const TOOLS: Array<{
 export async function startMcpServer(): Promise<void> {
   const server = new McpServer({
     name: "vibebook",
-    version: "0.10.0",
+    version: readPackageVersion(),
   });
 
   for (const t of TOOLS) {

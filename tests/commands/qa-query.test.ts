@@ -77,7 +77,7 @@ describe("qaQueryCmd", () => {
     const payload = await buildQaQueryPayload({ cwd: "/whatever/p", q: "build" });
 
     // Shape checks
-    expect(typeof payload.project).not.toBeUndefined();
+    expect(payload.project).toBeTruthy();
     expect(Array.isArray(payload.qa)).toBe(true);
     expect(payload.qa.length).toBe(1);
     expect(payload.qa[0].entry.id).toBe("qa/p/build");
