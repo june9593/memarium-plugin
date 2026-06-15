@@ -99,4 +99,33 @@ describe("memoryQueryCmd", () => {
     const supersededItem = payload.conflicts.find((x: any) => x.entry.id === "semantic/edge-memvc/old");
     expect(supersededItem.whyRecalled).toBe("superseded");
   });
+
+  it("buildMemoryQueryPayload returns the same structured object memoryQueryCmd prints", async () => {
+    const { buildMemoryQueryPayload, memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    // Call the core directly — it must return the payload object (not print it)
+    const payload = await buildMemoryQueryPayload({ cwd: "/work/edge-memvc" });
+    // Shape checks
+    expect(typeof payload.project).toBe("string");
+    expect(payload.project).toBe("edge-memvc");
+    expect(Array.isArray(payload.core)).toBe(true);
+    expect(Array.isArray(payload.semantic)).toBe(true);
+    expect(Array.isArray(payload.procedures)).toBe(true);
+    expect(Array.isArray(payload.episodes)).toBe(true);
+    expect(Array.isArray(payload.working)).toBe(true);
+    expect(Array.isArray(payload.conflicts)).toBe(true);
+    expect(Array.isArray(payload.artifacts)).toBe(true);
+    expect(typeof payload.primer).toBe("string");
+    expect(typeof payload.meta).toBe("object");
+    // Core returns the object, doesn't print
+    expect(stdout.join("")).toBe("");
+
+    // Now confirm memoryQueryCmd prints the EXACT same JSON
+    stdout.length = 0;
+    await memoryQueryCmd({ cwd: "/work/edge-memvc" });
+    const printed = JSON.parse(stdout.join(""));
+    // Key fields must match
+    expect(printed.project).toBe(payload.project);
+    expect(printed.core.map((x: any) => x.entry.id)).toEqual(payload.core.map((x: any) => x.entry.id));
+    expect(printed.meta).toEqual(payload.meta);
+  });
 });

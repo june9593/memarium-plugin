@@ -14,7 +14,7 @@ function isType(s: string | undefined): MemoryType | null {
   return s && ok.includes(s) ? (s as MemoryType) : null;
 }
 
-export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
+export async function buildMemoryQueryPayload(opts: MemoryQueryOptions) {
   const cfg = readPluginConfig();
   const cwd = opts.cwd ?? process.cwd();
   const project = resolveProjectFromCwd(cwd, cfg.repoPath);
@@ -48,7 +48,7 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
         : "time-bounded",
     }));
 
-  const payload = {
+  return {
     project,
     primer,
     core: byType("core"),
@@ -60,5 +60,9 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
     artifacts: byType("artifact"),
     meta: { total: scored.length, project },
   };
+}
+
+export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
+  const payload = await buildMemoryQueryPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
 }
