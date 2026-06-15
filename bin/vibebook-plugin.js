@@ -35058,7 +35058,7 @@ function resolveCwd(projectDir) {
 async function startMcpServer() {
   const server = new McpServer({
     name: "vibebook",
-    version: "0.9.0"
+    version: "0.10.0"
   });
   for (const t2 of TOOLS) {
     server.tool(

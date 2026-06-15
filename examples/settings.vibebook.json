@@ -1,0 +1,26 @@
+{
+  "//": "SUGGESTED Claude Code permissions for the vibebook plugin's MCP tools (Phase 1, read-only).",
+  "//1": "Copy the permissions into your PROJECT .claude/settings.json (or ~/.claude/settings.json if you want it global).",
+  "//2": "Read-only tools are allowed (no prompt). The four high-risk tools are listed under ask so they ALWAYS prompt — ask overrides allow in Claude Code (deny -> ask -> allow, first match wins).",
+  "//3": "Phase 1 only ships the 9 read-only tools; the ask entries are forward-looking (those tools arrive in Phase 2/3) and are harmless to list now.",
+  "//4": "Verify the exact tool identifier in the /mcp panel after installing — it should be mcp__plugin_vibebook_vibebook__<tool>.",
+  "permissions": {
+    "allow": [
+      "mcp__plugin_vibebook_vibebook__memory_query",
+      "mcp__plugin_vibebook_vibebook__memory_primer",
+      "mcp__plugin_vibebook_vibebook__memory_diff",
+      "mcp__plugin_vibebook_vibebook__memory_lint",
+      "mcp__plugin_vibebook_vibebook__qa_query",
+      "mcp__plugin_vibebook_vibebook__entity_query",
+      "mcp__plugin_vibebook_vibebook__list_projects",
+      "mcp__plugin_vibebook_vibebook__prepare",
+      "mcp__plugin_vibebook_vibebook__recall"
+    ],
+    "ask": [
+      "mcp__plugin_vibebook_vibebook__memory_approve",
+      "mcp__plugin_vibebook_vibebook__memory_reject",
+      "mcp__plugin_vibebook_vibebook__finalize",
+      "mcp__plugin_vibebook_vibebook__publish"
+    ]
+  }
+}

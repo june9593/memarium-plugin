@@ -202,7 +202,7 @@ export const TOOLS: Array<{
 export async function startMcpServer(): Promise<void> {
   const server = new McpServer({
     name: "vibebook",
-    version: "0.9.0",
+    version: "0.10.0",
   });
 
   for (const t of TOOLS) {
