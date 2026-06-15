@@ -249,13 +249,25 @@ export async function fastForwardBranch(
 /** Ensure localPath is a git repo WITHOUT requiring a remote. mkdir + git init
  *  if absent (self-contained mode — no `vibebook init` / clone needed). Does
  *  NOT configure a remote; an existing origin (from npm `vibebook init`) is
- *  left as-is. */
+ *  left as-is. Sets a LOCAL fallback commit identity only when no git identity
+ *  resolves (containers / fresh machines with no global config) so the first
+ *  commit can't fail with "Author identity unknown"; an existing global/user
+ *  identity is never clobbered. */
 export async function ensureLocalRepo(localPath: string): Promise<{ git: SimpleGit; initialized: boolean }> {
   const path = resolve(expandHome(localPath));
   let initialized = false;
   if (!existsSync(join(path, ".git"))) {
     mkdirSync(path, { recursive: true });
-    await simpleGit(path).init();
+    const g = simpleGit(path);
+    await g.init();
+    const hasIdentity = await g
+      .raw(["config", "user.email"])
+      .then((s) => s.trim().length > 0)
+      .catch(() => false);
+    if (!hasIdentity) {
+      await g.addConfig("user.email", "vibebook@localhost");
+      await g.addConfig("user.name", "vibebook");
+    }
     initialized = true;
   }
   return { git: simpleGit(path), initialized };

@@ -787,8 +787,8 @@ This ensures the repo exists (inits it if this is a self-contained, npm-CLI-less
 setup), commits everything this digest wrote — `raw_sessions/`, `book/`,
 `memory/`, and the `.vibebook/index*.json` files — and auto-pushes if a remote
 is configured. It only stages vibebook's own paths, never foreign files. Read
-its JSON report (`committed`, `pushed`, `branch`, `remote`) to fill the summary
-line below.
+its JSON report (`committed`, `staged`, `pushed`, `branch`, `remote`) to fill the
+summary line below — `staged` is the number of files committed (the `<N>` below).
 
 Print a one-line-per-layer summary:
 

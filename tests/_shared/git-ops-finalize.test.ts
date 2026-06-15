@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +7,7 @@ import { simpleGit } from "simple-git";
 describe("ensureLocalRepo + commitWhitelist", () => {
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "vbp-gitops-")); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  afterEach(() => { vi.unstubAllEnvs(); rmSync(dir, { recursive: true, force: true }); });
 
   it("ensureLocalRepo inits a non-git dir without a remote", async () => {
     const { ensureLocalRepo } = await import("../../src/_shared/git-ops.js");
@@ -26,6 +26,19 @@ describe("ensureLocalRepo + commitWhitelist", () => {
     const { ensureLocalRepo } = await import("../../src/_shared/git-ops.js");
     const { initialized } = await ensureLocalRepo(repo);
     expect(initialized).toBe(false);
+  });
+
+  it("ensureLocalRepo sets a fallback identity when no global git identity exists", async () => {
+    // Suppress global + system git config so the repo truly has no identity,
+    // simulating a fresh container / machine. The fallback must kick in so the
+    // first commit can't fail with "Author identity unknown".
+    vi.stubEnv("GIT_CONFIG_GLOBAL", "/dev/null");
+    vi.stubEnv("GIT_CONFIG_SYSTEM", "/dev/null");
+    const { ensureLocalRepo } = await import("../../src/_shared/git-ops.js");
+    const repo = join(dir, "repo");
+    const { git } = await ensureLocalRepo(repo);
+    const email = (await git.raw(["config", "user.email"])).trim();
+    expect(email).toBe("vibebook@localhost");
   });
 
   it("commitWhitelist stages only the listed paths (not foreign files), commits, no push", async () => {

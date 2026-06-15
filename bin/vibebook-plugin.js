@@ -9855,7 +9855,13 @@ async function ensureLocalRepo(localPath) {
   let initialized = false;
   if (!existsSync5(join6(path, ".git"))) {
     mkdirSync3(path, { recursive: true });
-    await simpleGit(path).init();
+    const g = simpleGit(path);
+    await g.init();
+    const hasIdentity = await g.raw(["config", "user.email"]).then((s) => s.trim().length > 0).catch(() => false);
+    if (!hasIdentity) {
+      await g.addConfig("user.email", "vibebook@localhost");
+      await g.addConfig("user.name", "vibebook");
+    }
     initialized = true;
   }
   return { git: simpleGit(path), initialized };
