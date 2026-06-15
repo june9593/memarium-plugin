@@ -58,6 +58,48 @@ describe("finalizeCmd", () => {
     expect(tracked).toContain("raw_sessions/claude/p/2026-06-15/s.md");
   });
 
+  it("never commits a foreign file even if it was already staged before finalize", async () => {
+    // P1: git commit (no pathspec) would sweep in ALL staged files. A foreign
+    // file staged before finalize must stay out of the commit.
+    writeConfig({});
+    mkdirSync(repo, { recursive: true });
+    const g = simpleGit(repo);
+    await g.init(["-b", "main"]);
+    await g.addConfig("user.email", "t@t").addConfig("user.name", "t");
+    writeFileSync(join(repo, "foreign-staged.txt"), "pre-staged foreign");
+    await g.add(["foreign-staged.txt"]); // already in the index before finalize
+    seedSpool();
+    const { finalizeCmd } = await import("../../src/commands/finalize.js");
+    const r = await finalizeCmd({});
+    expect(r.committed).toBe(true);
+    const inHead = (await simpleGit(repo).raw(["show", "--name-only", "--format=", "HEAD"])).trim().split("\n");
+    expect(inHead).toContain("raw_sessions/claude/p/2026-06-15/s.md");
+    expect(inHead).not.toContain("foreign-staged.txt");
+    // the foreign file is left staged (not lost), just never committed
+    const stillStaged = (await simpleGit(repo).raw(["diff", "--cached", "--name-only"])).trim().split("\n");
+    expect(stillStaged).toContain("foreign-staged.txt");
+  });
+
+  it("commits entity + qa markdown AND their indexes", async () => {
+    // P1: entity-write / qa-write update .vibebook/index.entity.json and
+    // .vibebook/index.qa.json; merge-books needs them. They must be committed.
+    writeConfig({});
+    seedSpool();
+    mkdirSync(join(repo, "memory/entities/p"), { recursive: true });
+    writeFileSync(join(repo, "memory/entities/p/foo.md"), "# foo\n");
+    mkdirSync(join(repo, "memory/qa/p"), { recursive: true });
+    writeFileSync(join(repo, "memory/qa/p/q.md"), "# q\n");
+    writeFileSync(join(repo, ".vibebook/index.entity.json"), "{}\n");
+    writeFileSync(join(repo, ".vibebook/index.qa.json"), "{}\n");
+    const { finalizeCmd } = await import("../../src/commands/finalize.js");
+    await finalizeCmd({});
+    const tracked = (await simpleGit(repo).raw(["ls-files"])).trim().split("\n");
+    expect(tracked).toContain("memory/entities/p/foo.md");
+    expect(tracked).toContain("memory/qa/p/q.md");
+    expect(tracked).toContain(".vibebook/index.entity.json");
+    expect(tracked).toContain(".vibebook/index.qa.json");
+  });
+
   it("resolves a repoPath containing ~ consistently (whitelist still found)", async () => {
     // cfg.repoPath with a literal ~ must be expanded for BOTH the init and the
     // whitelist existsSync checks, else nothing would be staged. HOME is stubbed

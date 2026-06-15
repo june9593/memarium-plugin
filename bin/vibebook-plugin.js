@@ -9872,10 +9872,15 @@ async function commitWhitelist(git, repoPath, message, candidatePaths, opts, onP
   onProgress?.(`git add (${existing.length} whitelist paths)...`);
   await git.add(existing);
   const status = await git.status();
-  if (status.staged.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
-  onProgress?.(`git commit (${status.staged.length} staged)...`);
-  await git.commit(message);
-  const staged = status.staged.length;
+  const underWhitelist = (f) => existing.some((w) => {
+    const ww = w.replace(/\/+$/, "");
+    return f === ww || f.startsWith(ww + "/");
+  });
+  const stagedWhitelist = status.staged.filter(underWhitelist);
+  if (stagedWhitelist.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
+  onProgress?.(`git commit (${stagedWhitelist.length} whitelist paths)...`);
+  await git.commit(message, existing);
+  const staged = stagedWhitelist.length;
   if (!opts.push) return { committed: true, pushed: false, staged, branch: opts.branch };
   try {
     await fastForwardBranch(git, opts.branch, onProgress);
@@ -10526,7 +10531,9 @@ var init_finalize = __esm({
       "memory",
       ".vibebook/index.json",
       ".vibebook/index.book.json",
-      ".vibebook/index.memory.json"
+      ".vibebook/index.memory.json",
+      ".vibebook/index.entity.json",
+      ".vibebook/index.qa.json"
     ];
   }
 });

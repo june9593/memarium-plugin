@@ -12,6 +12,8 @@ const WHITELIST = [
   ".vibebook/index.json",
   ".vibebook/index.book.json",
   ".vibebook/index.memory.json",
+  ".vibebook/index.entity.json",
+  ".vibebook/index.qa.json",
 ];
 
 export interface FinalizeOptions { noPush?: boolean; }

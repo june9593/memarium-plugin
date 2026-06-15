@@ -275,11 +275,12 @@ export async function ensureLocalRepo(localPath: string): Promise<{ git: SimpleG
 
 export interface FinalizeResult { committed: boolean; pushed: boolean; staged: number; branch: string; }
 
-/** Stage an explicit whitelist (only the paths that actually exist under
- *  repoPath), commit if anything got staged, and optionally push the current
- *  branch. NEVER `git add -A` — foreign files outside the whitelist are never
- *  touched. Push failures (offline / no upstream) are swallowed: committed
- *  stays true, pushed becomes false. */
+/** Commit an explicit whitelist (only the paths that actually exist under
+ *  repoPath), and optionally push the current branch. NEVER `git add -A`, and
+ *  the commit uses the whitelist as an explicit pathspec so a foreign file that
+ *  was ALREADY staged before this call is neither committed nor counted — only
+ *  whitelist paths ever land in the commit. Push failures (offline / no
+ *  upstream) are swallowed: committed stays true, pushed becomes false. */
 export async function commitWhitelist(
   git: SimpleGit,
   repoPath: string,
@@ -293,10 +294,19 @@ export async function commitWhitelist(
   onProgress?.(`git add (${existing.length} whitelist paths)...`);
   await git.add(existing);
   const status = await git.status();
-  if (status.staged.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
-  onProgress?.(`git commit (${status.staged.length} staged)...`);
-  await git.commit(message);
-  const staged = status.staged.length;
+  // Count ONLY staged paths that fall inside the whitelist — a foreign file
+  // staged before finalize must neither block (false "nothing to commit") nor
+  // ride along.
+  const underWhitelist = (f: string) =>
+    existing.some((w) => { const ww = w.replace(/\/+$/, ""); return f === ww || f.startsWith(ww + "/"); });
+  const stagedWhitelist = status.staged.filter(underWhitelist);
+  if (stagedWhitelist.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
+  onProgress?.(`git commit (${stagedWhitelist.length} whitelist paths)...`);
+  // Commit ONLY the whitelist pathspecs. `git commit -- <pathspec>` records the
+  // working-tree content of those paths and IGNORES any other staged entries,
+  // so a pre-staged foreign file stays staged but is never committed.
+  await git.commit(message, existing);
+  const staged = stagedWhitelist.length;
   if (!opts.push) return { committed: true, pushed: false, staged, branch: opts.branch };
   try {
     await fastForwardBranch(git, opts.branch, onProgress);
