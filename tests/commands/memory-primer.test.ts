@@ -93,4 +93,39 @@ describe("memoryPrimerCmd", () => {
     // Should print the pre-written file verbatim, not re-render from index
     expect(stdout.join("")).toBe(prewritten);
   });
+
+  it("buildMemoryPrimer returns the primer string without printing it", async () => {
+    const { buildMemoryPrimer, memoryPrimerCmd } = await import("../../src/commands/memory-primer.js");
+    // Core must return the string
+    const result = await buildMemoryPrimer({ cwd: "/work/edge-memvc" });
+    expect(typeof result).toBe("string");
+    expect(result).toContain("# Project memory: edge-memvc");
+    expect(result).toContain("never npm publish");
+    // Core must NOT print anything
+    expect(stdout.join("")).toBe("");
+
+    // Cmd must print the exact same string
+    stdout.length = 0;
+    await memoryPrimerCmd({ cwd: "/work/edge-memvc" });
+    expect(stdout.join("")).toBe(result);
+  });
+
+  it("buildMemoryPrimer returns empty string when cwd resolves to no project", async () => {
+    const { buildMemoryPrimer } = await import("../../src/commands/memory-primer.js");
+    const result = await buildMemoryPrimer({ cwd: "/no/such/project" });
+    expect(result).toBe("");
+    expect(stdout.join("")).toBe("");
+  });
+
+  it("buildMemoryPrimer returns pre-written _primer content when it exists", async () => {
+    const primerDir = join(repo, "memory", "_primer");
+    mkdirSync(primerDir, { recursive: true });
+    const prewritten = "# Project memory: edge-memvc\n\nPre-written.\n";
+    writeFileSync(join(primerDir, "edge-memvc.md"), prewritten);
+
+    const { buildMemoryPrimer } = await import("../../src/commands/memory-primer.js");
+    const result = await buildMemoryPrimer({ cwd: "/work/edge-memvc" });
+    expect(result).toBe(prewritten);
+    expect(stdout.join("")).toBe("");
+  });
 });
