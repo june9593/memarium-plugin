@@ -9850,6 +9850,48 @@ ${msg}`
     );
   }
 }
+async function ensureLocalRepo(localPath) {
+  const path = resolve(expandHome(localPath));
+  let initialized = false;
+  if (!existsSync5(join6(path, ".git"))) {
+    mkdirSync3(path, { recursive: true });
+    const g = simpleGit(path);
+    await g.init();
+    const hasIdentity = await g.raw(["config", "user.email"]).then((s) => s.trim().length > 0).catch(() => false);
+    if (!hasIdentity) {
+      await g.addConfig("user.email", "vibebook@localhost");
+      await g.addConfig("user.name", "vibebook");
+    }
+    initialized = true;
+  }
+  return { git: simpleGit(path), initialized, path };
+}
+async function commitWhitelist(git, repoPath, message, candidatePaths, opts, onProgress) {
+  const existing = candidatePaths.filter((p2) => existsSync5(join6(repoPath, p2)));
+  if (existing.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
+  onProgress?.(`git add (${existing.length} whitelist paths)...`);
+  await git.add(existing);
+  const status = await git.status();
+  const underWhitelist = (f) => existing.some((w) => {
+    const ww = w.replace(/\/+$/, "");
+    return f === ww || f.startsWith(ww + "/");
+  });
+  const stagedWhitelist = status.staged.filter(underWhitelist);
+  if (stagedWhitelist.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
+  onProgress?.(`git commit (${stagedWhitelist.length} whitelist paths)...`);
+  await git.commit(message, existing);
+  const staged = stagedWhitelist.length;
+  if (!opts.push) return { committed: true, pushed: false, staged, branch: opts.branch };
+  try {
+    await fastForwardBranch(git, opts.branch, onProgress);
+  } catch (e) {
+    onProgress?.(`push skipped (could not sync): ${e.message}`);
+    return { committed: true, pushed: false, staged, branch: opts.branch };
+  }
+  const cwd = await git.revparse(["--show-toplevel"]).then((s) => s.trim());
+  const r2 = await pushWithProgress(cwd, opts.branch);
+  return { committed: true, pushed: r2.ok, staged, branch: opts.branch };
+}
 var SECRET_BLOCK_RE;
 var init_git_ops = __esm({
   "src/_shared/git-ops.ts"() {
@@ -10435,6 +10477,64 @@ var init_publish = __esm({
     init_git_ops();
     init_book_catalog();
     init_wikilinks();
+  }
+});
+
+// src/commands/finalize.ts
+var finalize_exports = {};
+__export(finalize_exports, {
+  finalizeCmd: () => finalizeCmd
+});
+async function finalizeCmd(opts = {}) {
+  const cfg = readPluginConfig();
+  try {
+    const { git, initialized, path: repoPath } = await ensureLocalRepo(cfg.repoPath);
+    let branch = cfg.deviceBranch || "main";
+    try {
+      const b2 = (await git.raw(["symbolic-ref", "--short", "HEAD"])).trim();
+      if (b2) branch = b2;
+    } catch {
+    }
+    let remote = !!cfg.repoUrl;
+    if (remote) {
+      try {
+        const remotes = await git.getRemotes(false);
+        remote = remotes.some((r3) => r3.name === "origin");
+      } catch {
+        remote = false;
+      }
+    }
+    const r2 = await commitWhitelist(
+      git,
+      repoPath,
+      "vibebook: finalize digest (raw_sessions + book + memory)",
+      WHITELIST,
+      { push: remote && !opts.noPush, branch },
+      (s) => console.error(source_default.gray(`  ${s}`))
+    );
+    return { initialized, committed: r2.committed, pushed: r2.pushed, staged: r2.staged, branch: r2.branch, remote };
+  } catch (e) {
+    console.error(source_default.red(`finalize: ${e instanceof Error ? e.message : String(e)}`));
+    return { initialized: false, committed: false, pushed: false, staged: 0, branch: "", remote: false };
+  }
+}
+var WHITELIST;
+var init_finalize = __esm({
+  "src/commands/finalize.ts"() {
+    "use strict";
+    init_source();
+    init_plugin_config();
+    init_git_ops();
+    WHITELIST = [
+      "raw_sessions",
+      "book",
+      "memory",
+      ".vibebook/index.json",
+      ".vibebook/index.book.json",
+      ".vibebook/index.memory.json",
+      ".vibebook/index.entity.json",
+      ".vibebook/index.qa.json"
+    ];
   }
 });
 
@@ -14327,6 +14427,11 @@ async function run(argv) {
       noCatalog: opts.catalog === false
     });
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+  });
+  program2.command("finalize").description("Ensure the session-repo is a git repo, commit all plugin-written paths (raw_sessions/book/memory/index), and push if a remote is configured. Never stages foreign files.").option("--no-push", "commit locally only; never push even if a remote is configured").action(async (o2) => {
+    const { finalizeCmd: finalizeCmd2 } = await Promise.resolve().then(() => (init_finalize(), finalize_exports));
+    const r2 = await finalizeCmd2({ noPush: o2.push === false });
+    process.stdout.write(JSON.stringify(r2, null, 2) + "\n");
   });
   program2.command("memory-write").description("Write typed-memory .md files + update the memory index from an agent JSON payload.").option("--input <path>", "path to memory entries JSON").action(async (opts) => {
     const { memoryWriteCmd: memoryWriteCmd2 } = await Promise.resolve().then(() => (init_memory_write(), memory_write_exports));

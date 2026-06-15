@@ -65,6 +65,15 @@ export async function run(argv: string[]) {
       process.stdout.write(JSON.stringify(report, null, 2) + "\n");
     });
 
+  program.command("finalize")
+    .description("Ensure the session-repo is a git repo, commit all plugin-written paths (raw_sessions/book/memory/index), and push if a remote is configured. Never stages foreign files.")
+    .option("--no-push", "commit locally only; never push even if a remote is configured")
+    .action(async (o: { push?: boolean }) => {
+      const { finalizeCmd } = await import("./commands/finalize.js");
+      const r = await finalizeCmd({ noPush: o.push === false });
+      process.stdout.write(JSON.stringify(r, null, 2) + "\n");
+    });
+
   program
     .command("memory-write")
     .description("Write typed-memory .md files + update the memory index from an agent JSON payload.")

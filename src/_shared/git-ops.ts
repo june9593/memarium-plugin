@@ -245,3 +245,76 @@ export async function fastForwardBranch(
     );
   }
 }
+
+/** Ensure localPath is a git repo WITHOUT requiring a remote. mkdir + git init
+ *  if absent (self-contained mode — no `vibebook init` / clone needed). Does
+ *  NOT configure a remote; an existing origin (from npm `vibebook init`) is
+ *  left as-is. Sets a LOCAL fallback commit identity only when no git identity
+ *  resolves (containers / fresh machines with no global config) so the first
+ *  commit can't fail with "Author identity unknown"; an existing global/user
+ *  identity is never clobbered. */
+export async function ensureLocalRepo(localPath: string): Promise<{ git: SimpleGit; initialized: boolean; path: string }> {
+  const path = resolve(expandHome(localPath));
+  let initialized = false;
+  if (!existsSync(join(path, ".git"))) {
+    mkdirSync(path, { recursive: true });
+    const g = simpleGit(path);
+    await g.init();
+    const hasIdentity = await g
+      .raw(["config", "user.email"])
+      .then((s) => s.trim().length > 0)
+      .catch(() => false);
+    if (!hasIdentity) {
+      await g.addConfig("user.email", "vibebook@localhost");
+      await g.addConfig("user.name", "vibebook");
+    }
+    initialized = true;
+  }
+  return { git: simpleGit(path), initialized, path };
+}
+
+export interface FinalizeResult { committed: boolean; pushed: boolean; staged: number; branch: string; }
+
+/** Commit an explicit whitelist (only the paths that actually exist under
+ *  repoPath), and optionally push the current branch. NEVER `git add -A`, and
+ *  the commit uses the whitelist as an explicit pathspec so a foreign file that
+ *  was ALREADY staged before this call is neither committed nor counted — only
+ *  whitelist paths ever land in the commit. Push failures (offline / no
+ *  upstream) are swallowed: committed stays true, pushed becomes false. */
+export async function commitWhitelist(
+  git: SimpleGit,
+  repoPath: string,
+  message: string,
+  candidatePaths: string[],
+  opts: { push: boolean; branch: string },
+  onProgress?: (s: string) => void,
+): Promise<FinalizeResult> {
+  const existing = candidatePaths.filter((p) => existsSync(join(repoPath, p)));
+  if (existing.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
+  onProgress?.(`git add (${existing.length} whitelist paths)...`);
+  await git.add(existing);
+  const status = await git.status();
+  // Count ONLY staged paths that fall inside the whitelist — a foreign file
+  // staged before finalize must neither block (false "nothing to commit") nor
+  // ride along.
+  const underWhitelist = (f: string) =>
+    existing.some((w) => { const ww = w.replace(/\/+$/, ""); return f === ww || f.startsWith(ww + "/"); });
+  const stagedWhitelist = status.staged.filter(underWhitelist);
+  if (stagedWhitelist.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
+  onProgress?.(`git commit (${stagedWhitelist.length} whitelist paths)...`);
+  // Commit ONLY the whitelist pathspecs. `git commit -- <pathspec>` records the
+  // working-tree content of those paths and IGNORES any other staged entries,
+  // so a pre-staged foreign file stays staged but is never committed.
+  await git.commit(message, existing);
+  const staged = stagedWhitelist.length;
+  if (!opts.push) return { committed: true, pushed: false, staged, branch: opts.branch };
+  try {
+    await fastForwardBranch(git, opts.branch, onProgress);
+  } catch (e) {
+    onProgress?.(`push skipped (could not sync): ${(e as Error).message}`);
+    return { committed: true, pushed: false, staged, branch: opts.branch };
+  }
+  const cwd = await git.revparse(["--show-toplevel"]).then((s) => s.trim());
+  const r = await pushWithProgress(cwd, opts.branch);
+  return { committed: true, pushed: r.ok, staged, branch: opts.branch };
+}

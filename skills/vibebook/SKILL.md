@@ -778,14 +778,31 @@ the book.** If you have not completed Steps P7.5–P7.8 (typed memory → entity
 → Q&A → consolidate), go back and do them now — a digest that stops at `publish`
 is incomplete and leaves the Memory OS unwritten.
 
+**Finalize — commit the whole round (REQUIRED).** Before printing the summary,
+run the closing commit so the session-repo is never left half-committed:
+
+    "$VBP" finalize
+
+This ensures the repo exists (inits it if this is a self-contained, npm-CLI-less
+setup), commits everything this digest wrote — `raw_sessions/`, `book/`,
+`memory/`, and the `.vibebook/index*.json` files — and auto-pushes if a remote
+is configured. It only stages vibebook's own paths, never foreign files. Read
+its JSON report (`committed`, `staged`, `pushed`, `branch`, `remote`) to fill the
+summary line below — `staged` is the number of files committed (the `<N>` below).
+
 Print a one-line-per-layer summary:
 
 ```
 ✓ Published to book/<project>/: N chronicles, M topics.
 ✓ Memory: A typed (core/semantic/procedural/episodic), B entities, C Q&A pages.
 ✓ Consolidated: D promoted/superseded, E proposals queued for review (surfaced above — approve/reject now or later; digest is complete either way).
-✓ Pushed to <device-branch>.
+✓ Finalized: committed <N> files to session-repo (pushed to <branch> | local-only, no remote).
 ```
+
+(Render the Finalized line from `finalize`'s JSON report: if `committed:false`,
+say "nothing new to commit"; if `pushed:false` but `remote:true`, say
+"committed; push deferred (offline) — will sync next run"; if `remote:false`,
+say "local-only, no remote".)
 
 (If a memory layer wrote nothing this round, say so explicitly — e.g.
 `Memory: 0 (nothing durable this round)` — so it's clear the step *ran* and chose
