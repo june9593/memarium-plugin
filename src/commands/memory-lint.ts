@@ -53,7 +53,7 @@ function humanReport(r: LintReport): string {
 
 /** Read-only diagnostic. Reads and parses each index file once, lints all three layers,
  *  then prepends any corrupt-index findings. Never mutates the repo. Exit 0. */
-export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
+export async function buildMemoryLintReport(opts: MemoryLintOptions): Promise<LintReport> {
   const cfg = readPluginConfig();
   let project: string | null = null;
   if (opts.cwd) {
@@ -72,5 +72,12 @@ export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
     report.issues = [...corrupt, ...report.issues];
     report.counts = { issues: report.issues.length, suggestions: report.suggestions.length };
   }
+  return report;
+}
+
+/** Read-only diagnostic. Reads and parses each index file once, lints all three layers,
+ *  then prepends any corrupt-index findings. Never mutates the repo. Exit 0. */
+export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
+  const report = await buildMemoryLintReport(opts);
   process.stdout.write(opts.json ? JSON.stringify(report, null, 2) + "\n" : humanReport(report));
 }

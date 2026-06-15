@@ -175,4 +175,32 @@ describe("memoryLintCmd", () => {
     // q-scoped entry must NOT appear
     expect(ids).not.toContain("semantic/q/mp");
   });
+
+  describe("buildMemoryLintReport", () => {
+    it("returns a LintReport object without printing", async () => {
+      const { buildMemoryLintReport } = await import("../../src/commands/memory-lint.js");
+      const report = await buildMemoryLintReport({ json: true });
+      expect(typeof report).toBe("object");
+      expect(Array.isArray(report.issues)).toBe(true);
+      expect(Array.isArray(report.suggestions)).toBe(true);
+      expect(typeof report.counts).toBe("object");
+      expect(typeof report.counts.issues).toBe("number");
+      expect(typeof report.counts.suggestions).toBe("number");
+      // Must NOT have printed anything
+      expect(out.join("")).toBe("");
+    });
+
+    it("returned report has same counts as --json output from memoryLintCmd", async () => {
+      writeTwoProjectMemory();
+      const { buildMemoryLintReport } = await import("../../src/commands/memory-lint.js");
+      const report = await buildMemoryLintReport({ json: true });
+      // Confirm it finds issues (the missing-provenance findings)
+      expect(report.counts.issues).toBeGreaterThan(0);
+      // Now run the Cmd and confirm the printed JSON matches
+      out.length = 0;
+      await memoryLintCmd({ json: true });
+      const printed = JSON.parse(out.join(""));
+      expect(printed.counts).toEqual(report.counts);
+    });
+  });
 });
