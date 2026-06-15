@@ -6,6 +6,23 @@ import type { MemoryEntry } from "../memory/types.js";
 export interface MemoryDiffOptions { id?: string; json?: boolean; }
 
 interface FieldChange { field: string; old: string | null; new: string | null; }
+interface DiffDisplay {
+  targetKey: string;
+  proposedEntryId: string;
+  action: MemoryProposal["action"];
+  type: string;
+  title: string;
+  summary: string;
+  scope: string;
+  status: string;
+  importance: number;
+  confidence: number;
+  rationale: string | null;
+  sourceSession: string | null;
+  changedFields: string[];   // [] for create
+  bodyLineCount: number;
+  bodyPreview: string;       // first 3 lines, capped at 240 chars
+}
 interface DiffView {
   targetKey: string;
   proposedEntryId: string;
@@ -13,8 +30,9 @@ interface DiffView {
   rationale: string | null;
   sourceSession: string | null;
   fieldChanges: FieldChange[];
-  oldBody: string | null;   // reference to the current live entry's file (NOT its body text); null on pure create
+  oldBody: string | null;   // reference to current live entry's file path (NOT its body); null on create
   newBody: string;
+  display: DiffDisplay;
 }
 
 const FIELDS: (keyof MemoryEntry)[] = [
@@ -26,6 +44,11 @@ function str(v: unknown): string | null {
   return v === null || v === undefined ? null : String(v);
 }
 
+function bodyPreview(body: string): string {
+  const first3 = body.split("\n").slice(0, 3).join("\n");
+  return first3.length <= 240 ? first3 : first3.slice(0, 240);
+}
+
 function buildView(p: MemoryProposal, live: MemoryEntry | undefined): DiffView {
   const proposed = p.proposal.entry;
   const changes: FieldChange[] = [];
@@ -34,32 +57,75 @@ function buildView(p: MemoryProposal, live: MemoryEntry | undefined): DiffView {
     const newV = str(proposed[f]);
     if (oldV !== newV) changes.push({ field: String(f), old: oldV, new: newV });
   }
+  const isCreate = p.action === "create" || !live;
+  const body = p.proposal.body;
+  const display: DiffDisplay = {
+    targetKey: p.targetKey,
+    proposedEntryId: p.proposedEntryId,
+    action: p.action,
+    type: String(proposed.type),
+    title: proposed.title,
+    summary: proposed.summary,
+    scope: String(proposed.scope),
+    status: String(proposed.status),
+    importance: proposed.importance,
+    confidence: proposed.confidence,
+    rationale: p.rationale,
+    sourceSession: p.sourceSession,
+    changedFields: isCreate ? [] : changes.map((c) => c.field),
+    bodyLineCount: body.split("\n").length,
+    bodyPreview: bodyPreview(body),
+  };
   return {
     targetKey: p.targetKey, proposedEntryId: p.proposedEntryId, action: p.action,
     rationale: p.rationale, sourceSession: p.sourceSession,
-    fieldChanges: changes, oldBody: live ? `(current: ${live.path})` : null, newBody: p.proposal.body,
+    fieldChanges: changes, oldBody: live ? `(current: ${live.path})` : null, newBody: body,
+    display,
   };
 }
 
-function human(views: DiffView[]): string {
-  if (views.length === 0) return "No pending memory proposals.\n";
-  const lines: string[] = [`# ${views.length} pending memory proposal(s)\n`];
-  for (const v of views) {
-    lines.push(`## ${v.targetKey}  [${v.action}]  (proposes ${v.proposedEntryId})`);
-    if (v.rationale) lines.push(`rationale: ${v.rationale}`);
-    if (v.sourceSession) lines.push(`source: ${v.sourceSession}`);
-    if (v.fieldChanges.length === 0) {
-      lines.push("(no field changes vs current live entry — may be stale; consider memory-reject)");
-    } else {
-      lines.push("fields:");
-      for (const c of v.fieldChanges) lines.push(`  - ${c.field}: ${c.old ?? "∅"} → ${c.new ?? "∅"}`);
-    }
-    if (v.oldBody) lines.push(`current live entry: ${v.oldBody}  (body not shown — read the .md to compare)`);
-    lines.push(`proposed body (${v.newBody.split("\n").length} line(s)):`);
-    lines.push(v.newBody.split("\n").map((l) => `    ${l}`).join("\n"));
-    lines.push(`\n→ apply: memory-approve --id ${v.targetKey}   |   discard: memory-reject --id ${v.targetKey}\n`);
+function typeLabel(d: DiffDisplay): string {
+  return d.status === "pinned" ? `[${d.type}] [pinned]` : `[${d.type}]`;
+}
+
+/** Default mode: scannable, one proposal per 3 short lines. No body, no ∅. */
+function renderList(views: DiffView[]): string {
+  if (views.length === 0) return "No pending memory proposals.";
+  const lines: string[] = [
+    `${views.length} pending memory proposal(s) — review before approving (do NOT blind-approve)`,
+    "",
+  ];
+  views.forEach((v, i) => {
+    const d = v.display;
+    const changes = d.changedFields.length ? ` · changes: ${d.changedFields.join(", ")}` : "";
+    lines.push(`[${i + 1}] ${typeLabel(d)} ${d.targetKey} (${d.action}${changes})`);
+    lines.push(`    ${d.summary}`);
+    const src = d.sourceSession ? `src ${d.sourceSession} · ` : "";
+    lines.push(`    ${src}imp ${d.importance}`);
+  });
+  lines.push("");
+  lines.push("Full body: memory-diff --id <targetKey>");
+  lines.push("Apply: memory-approve --id <targetKey> (one at a time) · Discard: memory-reject --id <targetKey>");
+  return lines.join("\n");
+}
+
+/** --id mode: one proposal in full — body + (for updates) old→new field changes. */
+function renderDetail(v: DiffView): string {
+  const d = v.display;
+  const lines: string[] = [
+    `${typeLabel(d)} ${d.targetKey} (${d.action})`,
+    `src ${d.sourceSession ?? "—"} · imp ${d.importance} · conf ${d.confidence}`,
+  ];
+  if (d.rationale) lines.push(`rationale: ${d.rationale}`);
+  if (d.action !== "create" && v.fieldChanges.length) {
+    lines.push("changes:");
+    for (const c of v.fieldChanges) lines.push(`  ${c.field}: ${c.old ?? "(none)"} → ${c.new ?? "(none)"}`);
   }
-  return lines.join("\n") + "\n";
+  lines.push("--- proposed body ---");
+  lines.push(v.newBody.split("\n").map((l) => `    ${l}`).join("\n"));
+  lines.push("");
+  lines.push(`Apply: memory-approve --id ${d.targetKey} · Discard: memory-reject --id ${d.targetKey}`);
+  return lines.join("\n");
 }
 
 /** Read-only. Lists pending proposals (one if --id): a field-level diff against
@@ -77,7 +143,9 @@ export async function memoryDiffCmd(opts: MemoryDiffOptions): Promise<void> {
       proposals = listProposals(cfg.repoPath);
     }
     const views = proposals.map((p) => buildView(p, idx.entries[p.targetKey]));
-    console.log(opts.json ? JSON.stringify(views, null, 2) : human(views).trimEnd());
+    if (opts.json) { console.log(JSON.stringify(views, null, 2)); return; }
+    if (opts.id) { console.log(views.length ? renderDetail(views[0]) : "No pending memory proposals."); return; }
+    console.log(renderList(views));
   } catch (e) {
     // Read-only + non-fatal: never throw. But surface a clear message instead
     // of silently printing nothing, so a real misconfiguration is visible.

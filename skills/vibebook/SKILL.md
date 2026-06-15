@@ -634,9 +634,35 @@ SEPARATE JSON array and call `memory-propose` instead of `memory-write` (same
 locally for human review rather than landing live. Non-gated items (`semantic`,
 `episodic`, `working`, `artifact`) use `memory-write` as above. If you call
 `memory-write` with a gated item it errors with "use memory-propose" — re-route
-that item. **Never approve your own proposals.** After proposing, tell the user:
-"Proposed N core/procedural/pinned memory change(s) — review with `memory-diff`,
-apply with `memory-approve --id <targetKey>`."
+that item. **Never approve your own proposals.**
+
+**Surface proposals for review — required, but NON-BLOCKING.** After
+`memory-propose`, the digest is not done, but it must NOT stop and wait for the
+user. Save the `targetKeys` the propose report returned, run
+`"$VBP" memory-diff --json`, and present the proposals IN CHAT in your own words.
+Do NOT echo the raw CLI output — a Bash tool result gets collapsed (needs
+Ctrl+O); an assistant message stays visible. Render a tiered summary:
+
+- A numbered, one-line-per-proposal table covering ONLY this round's new
+  proposals (filter `memory-diff --json` by the saved `targetKeys`). Each row:
+  `[n] [<type>] <exact targetKey> — <one-line plain-language summary> · src <session>`.
+  Keep the number→targetKey map for this turn so the user can say "approve 1, 3".
+- If the local queue holds OTHER (older) proposals, add ONE line:
+  "另有 N 条旧 proposal,可让我展开" — do not enumerate them.
+- Inline the FULL body for at most 1–3 of the most consequential proposals.
+  Priority: core/pinned `update`/`replace` > procedural `update`/`replace` >
+  high-importance `create` (importance ≥ 4). For the rest say "say 'show <n>' to
+  see its full text" (run `"$VBP" memory-diff --id <targetKey>` on request).
+- Do NOT offer or default to "approve all", and do NOT attach an approval
+  recommendation — state the proposals and stop.
+
+Then tell the user (this does NOT block the digest from finishing): "These
+core/procedural/pinned changes are queued for your review — reply e.g.
+`approve 1, 3 · reject 2` now, or review later." Only when the user names
+numbers do you map them to targetKeys and run, one at a time,
+`"$VBP" memory-approve --id <targetKey>` or `"$VBP" memory-reject --id <targetKey>`.
+If the user says "approve all", first restate the exact targetKey list and ask
+them to confirm — never blind-approve.
 
 Be conservative: a few high-value memories beat many trivial ones. Don't
 duplicate what's already in the index (it was loaded at session start via
@@ -757,7 +783,7 @@ Print a one-line-per-layer summary:
 ```
 ✓ Published to book/<project>/: N chronicles, M topics.
 ✓ Memory: A typed (core/semantic/procedural/episodic), B entities, C Q&A pages.
-✓ Consolidated: D promoted/superseded, E proposals queued for review (memory-diff).
+✓ Consolidated: D promoted/superseded, E proposals queued for review (surfaced above — approve/reject now or later; digest is complete either way).
 ✓ Pushed to <device-branch>.
 ```
 

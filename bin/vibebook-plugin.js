@@ -12342,6 +12342,8 @@ async function memoryProposeCmd(opts) {
     }
   }
   const paths = [];
+  const targetKeys = [];
+  const proposedEntryIds = [];
   for (const { entry, body, rationale, sourceSession } of items) {
     entry.path = canonicalMemoryPath(entry);
     const tKey = targetKey(entry);
@@ -12356,8 +12358,10 @@ async function memoryProposeCmd(opts) {
       proposal: { entry, body }
     };
     paths.push(writeProposal(cfg.repoPath, p2));
+    targetKeys.push(tKey);
+    proposedEntryIds.push(entry.id);
   }
-  return { proposed: items.length, paths };
+  return { proposed: items.length, paths, targetKeys, proposedEntryIds };
 }
 var init_memory_propose = __esm({
   "src/commands/memory-propose.ts"() {
@@ -12377,6 +12381,10 @@ __export(memory_diff_exports, {
 function str(v) {
   return v === null || v === void 0 ? null : String(v);
 }
+function bodyPreview(body) {
+  const first3 = body.split("\n").slice(0, 3).join("\n");
+  return first3.length <= 240 ? first3 : first3.slice(0, 240);
+}
 function buildView(p2, live) {
   const proposed = p2.proposal.entry;
   const changes = [];
@@ -12385,6 +12393,25 @@ function buildView(p2, live) {
     const newV = str(proposed[f]);
     if (oldV !== newV) changes.push({ field: String(f), old: oldV, new: newV });
   }
+  const isCreate = p2.action === "create" || !live;
+  const body = p2.proposal.body;
+  const display = {
+    targetKey: p2.targetKey,
+    proposedEntryId: p2.proposedEntryId,
+    action: p2.action,
+    type: String(proposed.type),
+    title: proposed.title,
+    summary: proposed.summary,
+    scope: String(proposed.scope),
+    status: String(proposed.status),
+    importance: proposed.importance,
+    confidence: proposed.confidence,
+    rationale: p2.rationale,
+    sourceSession: p2.sourceSession,
+    changedFields: isCreate ? [] : changes.map((c3) => c3.field),
+    bodyLineCount: body.split("\n").length,
+    bodyPreview: bodyPreview(body)
+  };
   return {
     targetKey: p2.targetKey,
     proposedEntryId: p2.proposedEntryId,
@@ -12393,31 +12420,48 @@ function buildView(p2, live) {
     sourceSession: p2.sourceSession,
     fieldChanges: changes,
     oldBody: live ? `(current: ${live.path})` : null,
-    newBody: p2.proposal.body
+    newBody: body,
+    display
   };
 }
-function human(views) {
-  if (views.length === 0) return "No pending memory proposals.\n";
-  const lines = [`# ${views.length} pending memory proposal(s)
-`];
-  for (const v of views) {
-    lines.push(`## ${v.targetKey}  [${v.action}]  (proposes ${v.proposedEntryId})`);
-    if (v.rationale) lines.push(`rationale: ${v.rationale}`);
-    if (v.sourceSession) lines.push(`source: ${v.sourceSession}`);
-    if (v.fieldChanges.length === 0) {
-      lines.push("(no field changes vs current live entry \u2014 may be stale; consider memory-reject)");
-    } else {
-      lines.push("fields:");
-      for (const c3 of v.fieldChanges) lines.push(`  - ${c3.field}: ${c3.old ?? "\u2205"} \u2192 ${c3.new ?? "\u2205"}`);
-    }
-    if (v.oldBody) lines.push(`current live entry: ${v.oldBody}  (body not shown \u2014 read the .md to compare)`);
-    lines.push(`proposed body (${v.newBody.split("\n").length} line(s)):`);
-    lines.push(v.newBody.split("\n").map((l) => `    ${l}`).join("\n"));
-    lines.push(`
-\u2192 apply: memory-approve --id ${v.targetKey}   |   discard: memory-reject --id ${v.targetKey}
-`);
+function typeLabel(d) {
+  return d.status === "pinned" ? `[${d.type}] [pinned]` : `[${d.type}]`;
+}
+function renderList(views) {
+  if (views.length === 0) return "No pending memory proposals.";
+  const lines = [
+    `${views.length} pending memory proposal(s) \u2014 review before approving (do NOT blind-approve)`,
+    ""
+  ];
+  views.forEach((v, i2) => {
+    const d = v.display;
+    const changes = d.changedFields.length ? ` \xB7 changes: ${d.changedFields.join(", ")}` : "";
+    lines.push(`[${i2 + 1}] ${typeLabel(d)} ${d.targetKey} (${d.action}${changes})`);
+    lines.push(`    ${d.summary}`);
+    const src = d.sourceSession ? `src ${d.sourceSession} \xB7 ` : "";
+    lines.push(`    ${src}imp ${d.importance}`);
+  });
+  lines.push("");
+  lines.push("Full body: memory-diff --id <targetKey>");
+  lines.push("Apply: memory-approve --id <targetKey> (one at a time) \xB7 Discard: memory-reject --id <targetKey>");
+  return lines.join("\n");
+}
+function renderDetail(v) {
+  const d = v.display;
+  const lines = [
+    `${typeLabel(d)} ${d.targetKey} (${d.action})`,
+    `src ${d.sourceSession ?? "\u2014"} \xB7 imp ${d.importance} \xB7 conf ${d.confidence}`
+  ];
+  if (d.rationale) lines.push(`rationale: ${d.rationale}`);
+  if (d.action !== "create" && v.fieldChanges.length) {
+    lines.push("changes:");
+    for (const c3 of v.fieldChanges) lines.push(`  ${c3.field}: ${c3.old ?? "(none)"} \u2192 ${c3.new ?? "(none)"}`);
   }
-  return lines.join("\n") + "\n";
+  lines.push("--- proposed body ---");
+  lines.push(v.newBody.split("\n").map((l) => `    ${l}`).join("\n"));
+  lines.push("");
+  lines.push(`Apply: memory-approve --id ${d.targetKey} \xB7 Discard: memory-reject --id ${d.targetKey}`);
+  return lines.join("\n");
 }
 async function memoryDiffCmd(opts) {
   try {
@@ -12431,7 +12475,15 @@ async function memoryDiffCmd(opts) {
       proposals = listProposals(cfg.repoPath);
     }
     const views = proposals.map((p2) => buildView(p2, idx.entries[p2.targetKey]));
-    console.log(opts.json ? JSON.stringify(views, null, 2) : human(views).trimEnd());
+    if (opts.json) {
+      console.log(JSON.stringify(views, null, 2));
+      return;
+    }
+    if (opts.id) {
+      console.log(views.length ? renderDetail(views[0]) : "No pending memory proposals.");
+      return;
+    }
+    console.log(renderList(views));
   } catch (e) {
     if (opts.json) {
       console.log("[]");
