@@ -20,9 +20,11 @@ If `$VBP` is empty, tell the user to `/plugin install vibebook` and stop.
 
 ## Step 1 — Query memory for the cwd's project
 
-```bash
-"$VBP" memory-query --cwd "$(pwd)"
-```
+Call the `memory_query` MCP tool with `{ "project_dir": "<cwd>" }`; read its
+structured JSON result.
+(Fallback: if the `memory_query` MCP tool isn't available or errors (older plugin
+install, or MCP server not started), fall back to running
+`"$VBP" memory-query --cwd "$(pwd)"` via Bash.)
 
 Read the JSON payload:
 - `primer` — the compact per-project rollup. **Read this first; treat it as
@@ -39,20 +41,18 @@ Read the JSON payload:
 ## Step 1.5 — Browse the entity wiki (knowledge base)
 
 The project also has an **entity wiki** — living pages per file / symbol / API /
-concept / person, aggregating what's known about each across sessions:
-
-```bash
-"$VBP" entity-query --cwd "$(pwd)"
-```
+concept / person, aggregating what's known about each across sessions: call the
+`entity_query` MCP tool with `{ "project_dir": "<cwd>" }`; read its structured
+JSON result.
+(Fallback: if the `entity_query` MCP tool isn't available or errors, fall back to
+running `"$VBP" entity-query --cwd "$(pwd)"` via Bash.)
 
 Read the `entities` array (ranked, each with `whyMatched`). These are
 reference pages — don't load them all; `Read` an entity's `entry.path` only
 when the task is about that entity. If the user's task names a specific thing,
-look it up directly:
-
-```bash
-"$VBP" entity-query --cwd "$(pwd)" --entity "<file/symbol/concept>"
-```
+look it up directly by calling the `entity_query` MCP tool with
+`{ "project_dir": "<cwd>", "entity": "<file/symbol/concept>" }`.
+(Fallback: `"$VBP" entity-query --cwd "$(pwd)" --entity "<file/symbol/concept>"` via Bash.)
 
 This returns:
 - `matchedEntities`: array of `{ entry, body }` — entity pages whose `title` or
@@ -63,22 +63,21 @@ This returns:
 
 ## Step 1.6 — Past Q&A (`qa/` answer layer)
 
-After Entities, surface distilled Q&A relevant to the task. Run:
-
-```bash
-vibebook-plugin qa-query --cwd "$(pwd)" --q "<keywords from the user's ask>"
-```
+After Entities, surface distilled Q&A relevant to the task. Call the `qa_query`
+MCP tool with `{ "project_dir": "<cwd>" }` (the tool scores against the user's
+ask keywords automatically); read its structured JSON result.
+(Fallback: if the `qa_query` MCP tool isn't available or errors, fall back to running
+`vibebook-plugin qa-query --cwd "$(pwd)" --q "<keywords from the user's ask>"` via Bash.)
 
 This is **index-only** — it returns ranked `{ question, answerSummary, kind, path }` (NOT the full answer). Present the top matches as a short "Past Q&A" list (question + answerSummary). If the user wants the full answer, Read the `.md` at `path`. Keep this separate from the memory recall list — it is its own light scorer, not part of the BM25 memory ranking.
 
 ## Step 1.7 — Pending memory proposals (`memory-diff`)
 
 Long-term memory changes (`core` / `procedural` / pinned) captured by past digests
-are not applied automatically — they wait in a local review queue. Surface them:
-
-```bash
-"$VBP" memory-diff
-```
+are not applied automatically — they wait in a local review queue. Surface them
+by calling the `memory_diff` MCP tool with `{}`; read its structured result.
+(Fallback: if the `memory_diff` MCP tool isn't available or errors, fall back to
+running `"$VBP" memory-diff` via Bash.)
 
 This is **read-only**. If there are pending proposals, present them briefly
 (target, action, changed fields). The user applies one with
@@ -88,11 +87,9 @@ user's decision.
 
 ## Step 2 — Optionally narrow
 
-If the user's task has clear keywords, pass them:
-
-```bash
-"$VBP" memory-query --cwd "$(pwd)" --q "<task keywords>"
-```
+If the user's task has clear keywords, pass them by calling the `memory_query`
+MCP tool with `{ "project_dir": "<cwd>", "q": "<task keywords>" }`.
+(Fallback: `"$VBP" memory-query --cwd "$(pwd)" --q "<task keywords>"` via Bash.)
 
 ## Step 3 — Use it explicitly
 

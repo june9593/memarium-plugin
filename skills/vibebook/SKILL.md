@@ -94,9 +94,8 @@ into the spool. Idempotent. Read the JSON output:
 
 Then run `list-projects` for the mode-detection table:
 
-```bash
-"$VBP" list-projects
-```
+Call the `list_projects` MCP tool with `{}`; read its structured JSON result.
+(Fallback: if the `list_projects` MCP tool isn't available or errors (older plugin install, or MCP server not started), fall back to running `"$VBP" list-projects` via Bash.)
 
 Read `meta.isInSessionRepo` and `meta.sessionRepoPath` in the output.
 
@@ -116,9 +115,8 @@ matching section below. Do not try to guess; trust `list-projects`.
 
 ### Step P1 — Prepare for cwd's project
 
-```bash
-"$VBP" prepare --cwd "$(pwd)"
-```
+Call the `prepare` MCP tool with `{ "project_dir": "<cwd>" }` (or equivalently pass `pwd` as the value); read its structured JSON result.
+(Fallback: if the `prepare` MCP tool isn't available or errors (older plugin install, or MCP server not started), fall back to running `"$VBP" prepare --cwd "$(pwd)"` via Bash.)
 
 If this errors with `no synced sessions found for cwd '...'`, the spool
 has no sessions matching the current cwd's project. Tell them which
@@ -622,9 +620,8 @@ retrieval). Set `importance` 0-5 and `confidence` 0-1. Then:
     "$VBP" memory-write --input /tmp/vibebook-memory.json
 
 This writes `memory/<type>/...` md + updates `.vibebook/index.memory.json`.
-Then run a query to refresh the project primer:
-
-    "$VBP" memory-query --cwd "$(pwd)" >/dev/null
+Then call the `memory_query` MCP tool with `{ "project_dir": "<cwd>" }` to refresh the project primer; discard the result (it rewrites `_primer/<project>.md` as a side-effect).
+(Fallback: if the `memory_query` MCP tool isn't available or errors, fall back to running `"$VBP" memory-query --cwd "$(pwd)" >/dev/null` via Bash.)
 
 **v4 gate — long-term memory goes through review, not direct writes.** A change
 is *gated* if the entry is `core` or `procedural`, has `status: pinned`, OR it
@@ -636,11 +633,20 @@ locally for human review rather than landing live. Non-gated items (`semantic`,
 `memory-write` with a gated item it errors with "use memory-propose" — re-route
 that item. **Never approve your own proposals.**
 
+> **Note — write/high-risk commands stay on the CLI this phase.** `memory-write`,
+> `memory-propose`, `memory-approve`, `memory-reject`, `entity-write`, `qa-write`,
+> `memory-index`, `entity-index`, `qa-index`, `catalog-regen`, `publish`, `finalize`,
+> and `orchestrate` are not exposed as MCP tools in Phase 1; they run exclusively
+> via `"$VBP" <cmd>` (Bash). Only the 9 read-only tools listed below are MCP-first.
+
 **Surface proposals for review — required, but NON-BLOCKING.** After
 `memory-propose`, the digest is not done, but it must NOT stop and wait for the
-user. Save the `targetKeys` the propose report returned, run
-`"$VBP" memory-diff --json`, and present the proposals IN CHAT in your own words.
-Do NOT echo the raw CLI output — a Bash tool result gets collapsed (needs
+user. Save the `targetKeys` the propose report returned, then call the `memory_diff`
+MCP tool with `{}` (or `{ "id": "<targetKey>" }` to surface a single proposal's full
+text), and present the proposals IN CHAT in your own words.
+(Fallback: if the `memory_diff` MCP tool isn't available or errors, fall back to
+running `"$VBP" memory-diff --json` (or `"$VBP" memory-diff --id <targetKey>`) via Bash.)
+Do NOT echo the raw output — a Bash tool result gets collapsed (needs
 Ctrl+O); an assistant message stays visible. Render a tiered summary:
 
 - A numbered, one-line-per-proposal table covering ONLY this round's new
@@ -652,7 +658,7 @@ Ctrl+O); an assistant message stays visible. Render a tiered summary:
 - Inline the FULL body for at most 1–3 of the most consequential proposals.
   Priority: core/pinned `update`/`replace` > procedural `update`/`replace` >
   high-importance `create` (importance ≥ 4). For the rest say "say 'show <n>' to
-  see its full text" (run `"$VBP" memory-diff --id <targetKey>` on request).
+  see its full text" (call the `memory_diff` MCP tool with `{ "id": "<targetKey>" }` on request; Fallback: `"$VBP" memory-diff --id <targetKey>` via Bash).
 - Do NOT offer or default to "approve all", and do NOT attach an approval
   recommendation — state the proposals and stop.
 
@@ -679,9 +685,11 @@ fact with a lifecycle).
 1. Pick the few entities this session is genuinely *about* (e.g. a core file
    you changed, an API you learned, a recurring concept). Be conservative —
    one page per real entity, not per mention.
-2. For each, pull existing context so you update rather than overwrite:
-
-       "$VBP" entity-query --cwd "$(pwd)" --entity "<name>"
+2. For each, pull existing context so you update rather than overwrite: call the
+   `entity_query` MCP tool with `{ "project_dir": "<cwd>", "entity": "<name>" }`;
+   read its structured JSON result.
+   (Fallback: if the `entity_query` MCP tool isn't available or errors, fall back to
+   running `"$VBP" entity-query --cwd "$(pwd)" --entity "<name>"` via Bash.)
 
    This returns three things in the JSON payload:
    - `matchedEntities`: array of `{ entry, body }` — entity pages whose `title`
@@ -746,11 +754,11 @@ Run `vibebook-plugin qa-write --input <that-json-file>`. The CLI derives the sta
 
 ### Step P7.8 — Consolidate (memory health + conservative promotion)
 
-After P7.5–P7.7, run the read-only diagnostic and act on it CONSERVATIVELY:
-
-```bash
-vibebook-plugin memory-lint --cwd "$(pwd)" --json
-```
+After P7.5–P7.7, run the read-only diagnostic and act on it CONSERVATIVELY: call
+the `memory_lint` MCP tool with `{ "project_dir": "<cwd>" }`; read its structured
+JSON result.
+(Fallback: if the `memory_lint` MCP tool isn't available or errors, fall back to
+running `"$VBP" memory-lint --cwd "$(pwd)" --json` via Bash.)
 
 The report has `issues[]` (objective integrity defects) and `suggestions[]` (semantic-judgment candidates). Read it together with this session's new memories and the existing memory.
 
@@ -765,9 +773,8 @@ Any of the above that produces a `core`/`procedural`/pinned memory — or that s
 
 **Refresh the primer if you wrote any primer-affecting memory via `memory-write`.** If this step actually wrote a non-gated primer-affecting memory (a `semantic`), refresh the SessionStart primer at the end:
 
-```bash
-vibebook-plugin memory-query --cwd "$(pwd)" >/dev/null
-```
+Call the `memory_query` MCP tool with `{ "project_dir": "<cwd>" }` to refresh the SessionStart primer (discard the result).
+(Fallback: if the `memory_query` MCP tool isn't available or errors, fall back to running `"$VBP" memory-query --cwd "$(pwd)" >/dev/null` via Bash.)
 
 (This is the digest WRITE path and is allowed to refresh `_primer/<project>.md` — it does NOT contradict the lint read-only invariant; only consolidation refreshes, and only after it actually wrote primer-affecting memory. **Gated changes you only *proposed* do NOT refresh the primer** — `memory-approve` refreshes it when the human applies them.)
 
@@ -821,7 +828,7 @@ work using the same project-mode flow.
 
 ### Step G1 — Triage
 
-`"$VBP" list-projects` already ran in Step 0. Show the user the table:
+The `list_projects` MCP tool (or its Bash fallback `"$VBP" list-projects`) already ran in Step 0. Show the user the table:
 
 ```
 project              total  pending  chronicles  topics  cards  lastTouched
@@ -941,8 +948,8 @@ This regenerates `book/index.md`, `book/_meta/timeline.md`, and
 
 ## Things you should always do
 
-- ✅ Run `"$VBP" list-projects` FIRST to detect mode.
-- ✅ In project-mode, derive project from cwd (`"$VBP" prepare --cwd`).
+- ✅ Call the `list_projects` MCP tool (or `"$VBP" list-projects`) FIRST to detect mode.
+- ✅ In project-mode, derive project from cwd (call the `prepare` MCP tool with `{ "project_dir": "<cwd>" }`, or fall back to `"$VBP" prepare --cwd`).
 - ✅ Default to one-thread-per-session; merge only when continuous.
 - ✅ Be conservative with SKIP — write the chronicle if in any doubt.
 - ✅ Use Read / Glob / Grep to inspect existing book/ before writing topics.

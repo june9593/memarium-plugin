@@ -33,11 +33,10 @@ work. So we walk from coarse to fine:
 
 ## Step 1 — Stage 1: topic list
 
-Run this **first**, in the user's current cwd:
-
-```bash
-"$VBP" recall --cwd "$(pwd)"
-```
+Run this **first**, in the user's current cwd: call the `recall` MCP tool with
+`{ "project_dir": "<cwd>" }`; read its structured JSON result.
+(Fallback: if the `recall` MCP tool isn't available or errors (older plugin install,
+or MCP server not started), fall back to running `"$VBP" recall --cwd "$(pwd)"` via Bash.)
 
 The output is a JSON payload like:
 
@@ -99,11 +98,11 @@ it now — those are atomic and quick.
 
 ## Step 3 — Stage 2: chronicles for the chosen topic
 
-For each picked topic, fetch its chronicles:
-
-```bash
-"$VBP" recall --cwd "$(pwd)" --topic <topic-slug>
-```
+For each picked topic, fetch its chronicles: call the `recall` MCP tool with
+`{ "project_dir": "<cwd>", "project": "<project-slug>", "topic": "<topic-slug>" }`
+(pass `project` + `topic` together); read its structured JSON result.
+(Fallback: if the `recall` MCP tool isn't available or errors, fall back to running
+`"$VBP" recall --cwd "$(pwd)" --topic <topic-slug>` via Bash.)
 
 Output:
 
@@ -178,7 +177,7 @@ When you reply to the user:
 - The user's request has nothing to do with code in this repo (e.g.
   asking you to format JSON, write an essay, debug a config).
 - The user explicitly says "ignore my notes" or "fresh start".
-- `"$VBP" recall` errors with "no synced sessions for cwd" — the user
+- The `recall` MCP tool (or its Bash fallback `"$VBP" recall`) errors with "no synced sessions for cwd" — the user
   hasn't synced this project. Fall back to normal exploration; don't
   pester them to sync.
 - You're being asked the same question for the second time in one
