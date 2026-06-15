@@ -147,4 +147,38 @@ describe("memoryDiffCmd", () => {
     const after = JSON.parse((await import("node:fs")).readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
     expect(after).toEqual(before);
   });
+
+  it("buildMemoryDiffViews returns DiffView[] without printing", async () => {
+    await seedProposal("update");
+    const { buildMemoryDiffViews } = await import("../../src/commands/memory-diff.js");
+    const views = await buildMemoryDiffViews({});
+    // Must return an array of DiffView objects
+    expect(Array.isArray(views)).toBe(true);
+    expect(views.length).toBe(1);
+    const v = views[0];
+    expect(v.targetKey).toBe("core/y");
+    expect(v.action).toBe("update");
+    expect(Array.isArray(v.fieldChanges)).toBe(true);
+    expect(typeof v.newBody).toBe("string");
+    expect(v.display).toBeDefined();
+    expect(v.display.targetKey).toBe("core/y");
+    // Must NOT have printed anything
+    expect(logs.join("")).toBe("");
+  });
+
+  it("buildMemoryDiffViews with --id returns single-element array for matching proposal", async () => {
+    await seedProposal("create");
+    const { buildMemoryDiffViews } = await import("../../src/commands/memory-diff.js");
+    const views = await buildMemoryDiffViews({ id: "core/y" });
+    expect(Array.isArray(views)).toBe(true);
+    expect(views.length).toBe(1);
+    expect(views[0].action).toBe("create");
+  });
+
+  it("buildMemoryDiffViews returns empty array when no proposals exist", async () => {
+    const { buildMemoryDiffViews } = await import("../../src/commands/memory-diff.js");
+    const views = await buildMemoryDiffViews({});
+    expect(Array.isArray(views)).toBe(true);
+    expect(views.length).toBe(0);
+  });
 });

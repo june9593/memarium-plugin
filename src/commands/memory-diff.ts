@@ -128,21 +128,28 @@ function renderDetail(v: DiffView): string {
   return lines.join("\n");
 }
 
+/** Read-only. Returns pending proposals as DiffView[] (one if --id): a field-level diff against
+ *  the CURRENT live entry, plus the proposed body and a reference (path) to the
+ *  current live entry — NOT a line-by-line body diff. Never writes; exit 0 always. */
+export async function buildMemoryDiffViews(opts: MemoryDiffOptions): Promise<DiffView[]> {
+  const cfg = readPluginConfig();
+  const idx = loadMemoryIndex(cfg.repoPath);
+  let proposals: MemoryProposal[];
+  if (opts.id) {
+    const one = readProposal(cfg.repoPath, opts.id);
+    proposals = one ? [one] : [];
+  } else {
+    proposals = listProposals(cfg.repoPath);
+  }
+  return proposals.map((p) => buildView(p, idx.entries[p.targetKey]));
+}
+
 /** Read-only. Lists pending proposals (one if --id): a field-level diff against
  *  the CURRENT live entry, plus the proposed body and a reference (path) to the
  *  current live entry — NOT a line-by-line body diff. Never writes; exit 0 always. */
 export async function memoryDiffCmd(opts: MemoryDiffOptions): Promise<void> {
   try {
-    const cfg = readPluginConfig();
-    const idx = loadMemoryIndex(cfg.repoPath);
-    let proposals: MemoryProposal[];
-    if (opts.id) {
-      const one = readProposal(cfg.repoPath, opts.id);
-      proposals = one ? [one] : [];
-    } else {
-      proposals = listProposals(cfg.repoPath);
-    }
-    const views = proposals.map((p) => buildView(p, idx.entries[p.targetKey]));
+    const views = await buildMemoryDiffViews(opts);
     if (opts.json) { console.log(JSON.stringify(views, null, 2)); return; }
     if (opts.id) { console.log(views.length ? renderDetail(views[0]) : "No pending memory proposals."); return; }
     console.log(renderList(views));
