@@ -15,9 +15,9 @@ function isKind(s: string | undefined): QaKind | null {
   return s && ok.includes(s as QaKind) ? (s as QaKind) : null;
 }
 
-/** Read-only, index-only: reads .vibebook/index.qa.json, scores, emits ranked
+/** Read-only, index-only: reads .vibebook/index.qa.json, scores, returns ranked
  *  metadata + path. Never opens the .md bodies (so no read guard needed). */
-export async function qaQueryCmd(opts: QaQueryOptions): Promise<void> {
+export async function buildQaQueryPayload(opts: QaQueryOptions) {
   const cfg = readPluginConfig();
   const cwd = opts.cwd ?? process.cwd();
   const project = resolveProjectFromCwd(cwd, cfg.repoPath);
@@ -44,5 +44,12 @@ export async function qaQueryCmd(opts: QaQueryOptions): Promise<void> {
     score: s.score,
     whyMatched: s.whyMatched,
   }));
-  process.stdout.write(JSON.stringify({ project, qa: compact }, null, 2) + "\n");
+  return { project, qa: compact };
+}
+
+/** Read-only, index-only: reads .vibebook/index.qa.json, scores, emits ranked
+ *  metadata + path. Never opens the .md bodies (so no read guard needed). */
+export async function qaQueryCmd(opts: QaQueryOptions): Promise<void> {
+  const payload = await buildQaQueryPayload(opts);
+  process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
 }

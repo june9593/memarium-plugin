@@ -66,4 +66,41 @@ describe("qaQueryCmd", () => {
     expect(Array.isArray(payload.qa)).toBe(true);
     expect(payload.qa).toHaveLength(0);
   });
+
+  it("buildQaQueryPayload returns the structured payload without printing", async () => {
+    const idx = emptyQaIndex();
+    upsertQa(idx, entry({ id: "qa/p/build", question: "How do I build", answerSummary: "npm build",
+      tags: ["build"], path: "memory/qa/p/build.md" }));
+    saveQaIndex(repo, idx);
+
+    const { buildQaQueryPayload } = await import("../../src/commands/qa-query.js");
+    const payload = await buildQaQueryPayload({ cwd: "/whatever/p", q: "build" });
+
+    // Shape checks
+    expect(typeof payload.project).not.toBeUndefined();
+    expect(Array.isArray(payload.qa)).toBe(true);
+    expect(payload.qa.length).toBe(1);
+    expect(payload.qa[0].entry.id).toBe("qa/p/build");
+    expect(payload.qa[0].entry.answerSummary).toBe("npm build");
+    expect(typeof payload.qa[0].score).toBe("number");
+
+    // Core must NOT have printed anything
+    expect(out.join("")).toBe("");
+  });
+
+  it("buildQaQueryPayload output matches what qaQueryCmd prints", async () => {
+    const idx = emptyQaIndex();
+    upsertQa(idx, entry({ id: "qa/p/ops", question: "How to deploy", answerSummary: "push + tag",
+      path: "memory/qa/p/ops.md" }));
+    saveQaIndex(repo, idx);
+
+    const { buildQaQueryPayload } = await import("../../src/commands/qa-query.js");
+    const payload = await buildQaQueryPayload({ cwd: "/whatever/p" });
+
+    out.length = 0;
+    await qaQueryCmd({ cwd: "/whatever/p" });
+    const printed = JSON.parse(out.join(""));
+
+    expect(printed.qa.map((x: any) => x.entry.id)).toEqual(payload.qa.map((x: any) => x.entry.id));
+  });
 });
