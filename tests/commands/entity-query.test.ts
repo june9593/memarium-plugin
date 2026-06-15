@@ -645,4 +645,41 @@ describe("entityQueryCmd", () => {
     // must not disclose secret content
     expect(JSON.stringify(payload)).not.toContain(secretContent);
   });
+
+  describe("buildEntityQueryPayload", () => {
+    it("returns structured payload without printing", async () => {
+      const { buildEntityQueryPayload } = await import("../../src/commands/entity-query.js");
+      const payload = await buildEntityQueryPayload({ cwd: "/work/edge-memvc" });
+      // Shape checks
+      expect(typeof payload.project).toBeDefined();
+      expect(payload.project).toBe("edge-memvc");
+      expect(Array.isArray(payload.entities)).toBe(true);
+      // Must NOT have printed anything
+      expect(stdout.join("")).toBe("");
+    });
+
+    it("includes referencingMemories and matchedEntities when --entity passed", async () => {
+      const { buildEntityQueryPayload } = await import("../../src/commands/entity-query.js");
+      const payload = await buildEntityQueryPayload({ cwd: "/work/edge-memvc", entity: "SpoolWriter" });
+      expect(Array.isArray(payload.referencingMemories)).toBe(true);
+      expect(Array.isArray(payload.matchedEntities)).toBe(true);
+      const ids = (payload.referencingMemories as Array<{ id: string }>).map((x) => x.id);
+      expect(ids).toContain("semantic/edge-memvc/spool");
+      expect(stdout.join("")).toBe("");
+    });
+
+    it("output matches what entityQueryCmd prints", async () => {
+      const { buildEntityQueryPayload, entityQueryCmd } = await import("../../src/commands/entity-query.js");
+      const payload = await buildEntityQueryPayload({ cwd: "/work/edge-memvc" });
+      stdout.length = 0;
+      await entityQueryCmd({ cwd: "/work/edge-memvc" });
+      const printed = JSON.parse(stdout.join(""));
+      expect(printed.project).toBe(payload.project);
+      expect(
+        (printed.entities as Array<{ entry: { id: string } }>).map((x) => x.entry.id),
+      ).toEqual(
+        (payload.entities as Array<{ entry: { id: string } }>).map((x) => x.entry.id),
+      );
+    });
+  });
 });

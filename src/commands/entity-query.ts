@@ -50,7 +50,7 @@ interface MatchedEntity {
   body: string;
 }
 
-export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
+export async function buildEntityQueryPayload(opts: EntityQueryOptions) {
   const cfg = readPluginConfig();
   const cwd = opts.cwd ?? process.cwd();
   const project = resolveProjectFromCwd(cwd, cfg.repoPath);
@@ -125,5 +125,10 @@ export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
     payload.matchedEntities = matchedEntities;
   }
 
+  return payload;
+}
+
+export async function entityQueryCmd(opts: EntityQueryOptions): Promise<void> {
+  const payload = await buildEntityQueryPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
 }
