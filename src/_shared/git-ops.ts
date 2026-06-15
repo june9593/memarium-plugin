@@ -245,3 +245,54 @@ export async function fastForwardBranch(
     );
   }
 }
+
+/** Ensure localPath is a git repo WITHOUT requiring a remote. mkdir + git init
+ *  if absent (self-contained mode — no `vibebook init` / clone needed). Does
+ *  NOT configure a remote; an existing origin (from npm `vibebook init`) is
+ *  left as-is. */
+export async function ensureLocalRepo(localPath: string): Promise<{ git: SimpleGit; initialized: boolean }> {
+  const path = resolve(expandHome(localPath));
+  let initialized = false;
+  if (!existsSync(join(path, ".git"))) {
+    mkdirSync(path, { recursive: true });
+    await simpleGit(path).init();
+    initialized = true;
+  }
+  return { git: simpleGit(path), initialized };
+}
+
+export interface FinalizeResult { committed: boolean; pushed: boolean; staged: number; branch: string; }
+
+/** Stage an explicit whitelist (only the paths that actually exist under
+ *  repoPath), commit if anything got staged, and optionally push the current
+ *  branch. NEVER `git add -A` — foreign files outside the whitelist are never
+ *  touched. Push failures (offline / no upstream) are swallowed: committed
+ *  stays true, pushed becomes false. */
+export async function commitWhitelist(
+  git: SimpleGit,
+  repoPath: string,
+  message: string,
+  candidatePaths: string[],
+  opts: { push: boolean; branch: string },
+  onProgress?: (s: string) => void,
+): Promise<FinalizeResult> {
+  const existing = candidatePaths.filter((p) => existsSync(join(repoPath, p)));
+  if (existing.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
+  onProgress?.(`git add (${existing.length} whitelist paths)...`);
+  await git.add(existing);
+  const status = await git.status();
+  if (status.staged.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
+  onProgress?.(`git commit (${status.staged.length} staged)...`);
+  await git.commit(message);
+  const staged = status.staged.length;
+  if (!opts.push) return { committed: true, pushed: false, staged, branch: opts.branch };
+  try {
+    await fastForwardBranch(git, opts.branch, onProgress);
+  } catch (e) {
+    onProgress?.(`push skipped (could not sync): ${(e as Error).message}`);
+    return { committed: true, pushed: false, staged, branch: opts.branch };
+  }
+  const cwd = await git.revparse(["--show-toplevel"]).then((s) => s.trim());
+  const r = await pushWithProgress(cwd, opts.branch);
+  return { committed: true, pushed: r.ok, staged, branch: opts.branch };
+}
