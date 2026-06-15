@@ -9864,7 +9864,7 @@ async function ensureLocalRepo(localPath) {
     }
     initialized = true;
   }
-  return { git: simpleGit(path), initialized };
+  return { git: simpleGit(path), initialized, path };
 }
 async function commitWhitelist(git, repoPath, message, candidatePaths, opts, onProgress) {
   const existing = candidatePaths.filter((p2) => existsSync5(join6(repoPath, p2)));
@@ -10483,7 +10483,7 @@ __export(finalize_exports, {
 async function finalizeCmd(opts = {}) {
   const cfg = readPluginConfig();
   try {
-    const { git, initialized } = await ensureLocalRepo(cfg.repoPath);
+    const { git, initialized, path: repoPath } = await ensureLocalRepo(cfg.repoPath);
     let branch = cfg.deviceBranch || "main";
     try {
       const b2 = (await git.raw(["symbolic-ref", "--short", "HEAD"])).trim();
@@ -10501,7 +10501,7 @@ async function finalizeCmd(opts = {}) {
     }
     const r2 = await commitWhitelist(
       git,
-      cfg.repoPath,
+      repoPath,
       "vibebook: finalize digest (raw_sessions + book + memory)",
       WHITELIST,
       { push: remote && !opts.noPush, branch },

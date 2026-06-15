@@ -31,7 +31,7 @@ export interface FinalizeReport {
 export async function finalizeCmd(opts: FinalizeOptions = {}): Promise<FinalizeReport> {
   const cfg = readPluginConfig();
   try {
-    const { git, initialized } = await ensureLocalRepo(cfg.repoPath);
+    const { git, initialized, path: repoPath } = await ensureLocalRepo(cfg.repoPath);
 
     // Current branch (works on an unborn HEAD via symbolic-ref). Never switch
     // branches — committing on the current branch avoids a dirty-tree checkout.
@@ -53,7 +53,7 @@ export async function finalizeCmd(opts: FinalizeOptions = {}): Promise<FinalizeR
 
     const r = await commitWhitelist(
       git,
-      cfg.repoPath,
+      repoPath,
       "vibebook: finalize digest (raw_sessions + book + memory)",
       WHITELIST,
       { push: remote && !opts.noPush, branch },

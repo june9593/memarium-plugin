@@ -253,7 +253,7 @@ export async function fastForwardBranch(
  *  resolves (containers / fresh machines with no global config) so the first
  *  commit can't fail with "Author identity unknown"; an existing global/user
  *  identity is never clobbered. */
-export async function ensureLocalRepo(localPath: string): Promise<{ git: SimpleGit; initialized: boolean }> {
+export async function ensureLocalRepo(localPath: string): Promise<{ git: SimpleGit; initialized: boolean; path: string }> {
   const path = resolve(expandHome(localPath));
   let initialized = false;
   if (!existsSync(join(path, ".git"))) {
@@ -270,7 +270,7 @@ export async function ensureLocalRepo(localPath: string): Promise<{ git: SimpleG
     }
     initialized = true;
   }
-  return { git: simpleGit(path), initialized };
+  return { git: simpleGit(path), initialized, path };
 }
 
 export interface FinalizeResult { committed: boolean; pushed: boolean; staged: number; branch: string; }

@@ -58,6 +58,19 @@ describe("finalizeCmd", () => {
     expect(tracked).toContain("raw_sessions/claude/p/2026-06-15/s.md");
   });
 
+  it("resolves a repoPath containing ~ consistently (whitelist still found)", async () => {
+    // cfg.repoPath with a literal ~ must be expanded for BOTH the init and the
+    // whitelist existsSync checks, else nothing would be staged. HOME is stubbed
+    // to `home`, so "~/.vibebook/session-repo" resolves to the seeded `repo`.
+    writeConfig({ repoPath: "~/.vibebook/session-repo" });
+    seedSpool();
+    const { finalizeCmd } = await import("../../src/commands/finalize.js");
+    const r = await finalizeCmd({});
+    expect(r.committed).toBe(true);
+    const tracked = (await simpleGit(repo).raw(["ls-files"])).trim().split("\n");
+    expect(tracked).toContain("raw_sessions/claude/p/2026-06-15/s.md");
+  });
+
   it("idempotent: a second finalize with no new changes commits nothing", async () => {
     writeConfig({});
     seedSpool();
