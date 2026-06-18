@@ -5392,8 +5392,8 @@ function asNumber(source, onNaN = 0) {
   if (source == null) {
     return onNaN;
   }
-  const num = parseInt(source, 10);
-  return Number.isNaN(num) ? onNaN : num;
+  const num2 = parseInt(source, 10);
+  return Number.isNaN(num2) ? onNaN : num2;
 }
 function prefixedArray(input, prefix) {
   const output = [];
@@ -10754,6 +10754,8 @@ function applyMemoryItems(repoPath, items) {
   const paths = [];
   for (const { entry, body, canonical, abs, supersede } of planned) {
     entry.path = canonical;
+    if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
+    if (entry.lastAccess === void 0) entry.lastAccess = null;
     if (supersede && idx.entries[supersede.targetId]) {
       idx.entries[supersede.targetId].status = "superseded";
       superseded++;
@@ -10923,6 +10925,9 @@ var init_memory_index = __esm({
 function tokenize(s) {
   return s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1);
 }
+function num(v, dflt = 0) {
+  return typeof v === "number" && isFinite(v) ? v : dflt;
+}
 function isEligible(e, q2) {
   if (e.status === "superseded") return false;
   if (e.validTo !== null && e.validTo <= q2.now) return false;
@@ -10972,9 +10977,10 @@ function scoreMemories(entries, q2) {
       why.push(`commit\xD7${commitHit}`);
     }
     score += recencyBoost(e.updatedAt, q2.now);
-    score += e.importance;
-    score += Math.min(e.accessCount, 5) * 0.5;
-    if (e.importance >= 3) why.push(`importance:${e.importance}`);
+    const importance = num(e.importance);
+    score += importance;
+    score += Math.min(num(e.accessCount), 5) * 0.5;
+    if (importance >= 3) why.push(`importance:${importance}`);
     out.push({ entry: e, score, whyRecalled: why.join(" ") || "scope-eligible" });
   }
   out.sort((a, b2) => b2.score - a.score || a.entry.id.localeCompare(b2.entry.id));

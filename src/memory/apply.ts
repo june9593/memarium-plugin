@@ -71,6 +71,13 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
   const paths: string[] = [];
   for (const { entry, body, canonical, abs, supersede } of planned) {
     entry.path = canonical;
+    // Normalize runtime-optional usage fields. Authored entries (from
+    // memory-write / propose JSON) routinely omit accessCount / lastAccess, so
+    // without this the LIVE index stores `accessCount: undefined` while a
+    // memory-index rebuild heals it to 0 — a divergence that poisons the scorer
+    // (Math.min(undefined,5)=NaN). Write the same defaults parse.ts produces.
+    if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
+    if (entry.lastAccess === undefined) entry.lastAccess = null;
 
     if (supersede && idx.entries[supersede.targetId]) {
       idx.entries[supersede.targetId].status = "superseded";

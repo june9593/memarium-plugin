@@ -103,4 +103,40 @@ describe("applyMemoryItems", () => {
     expect(idx.entries["core/b"].status).toBe("active");
     expect(readFileSync(join(repo, "memory/core/_global/a.md"), "utf8")).toMatch(/^status: superseded$/m);
   });
+
+  it("fills accessCount:0 / lastAccess:null when the authored entry omits them", async () => {
+    // Authored memory-write/propose JSON routinely omits accessCount/lastAccess.
+    // The live index must store finite defaults, else the scorer hits
+    // Math.min(undefined,5)=NaN and ranking breaks for that entry.
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const entry = mk({ id: "semantic/p/z", type: "semantic", scope: "project:p", project: "p", path: "" });
+    delete (entry as unknown as Record<string, unknown>).accessCount;
+    delete (entry as unknown as Record<string, unknown>).lastAccess;
+    applyMemoryItems(repo, [{ entry, body: "b" }]);
+    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const got = idx.entries["semantic/p/z"];
+    expect(got.accessCount).toBe(0);
+    expect(got.lastAccess).toBe(null);
+  });
+
+  it("live-written index scores identically to a parse rebuild (no accessCount drift)", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const { parseMemoryMarkdown } = await import("../../src/memory/parse.js");
+    const { scoreMemories } = await import("../../src/memory/score.js");
+    const entry = mk({
+      id: "semantic/p/z", type: "semantic", scope: "project:p", project: "p", path: "",
+      title: "bookmark bar crash", entities: ["BookmarkBarView"],
+    });
+    delete (entry as unknown as Record<string, unknown>).accessCount; // authored entry, no usage field
+    const r = applyMemoryItems(repo, [{ entry, body: "b" }]);
+
+    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const live = idx.entries["semantic/p/z"];
+    const rebuilt = parseMemoryMarkdown(readFileSync(join(repo, r.paths[0]), "utf8"))!;
+    const q = { project: "p", text: "bookmark crash", type: null, now: "2026-06-12" };
+    const sLive = scoreMemories([live], q)[0].score;
+    const sRebuilt = scoreMemories([rebuilt], q)[0].score;
+    expect(Number.isFinite(sLive)).toBe(true);
+    expect(sLive).toBe(sRebuilt); // live write and rebuild must agree → eval can't drift across a rebuild
+  });
 });

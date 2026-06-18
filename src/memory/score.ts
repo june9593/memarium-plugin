@@ -19,6 +19,13 @@ function tokenize(s: string): string[] {
   return s.toLowerCase().split(/[^a-z0-9_]+/).filter((t) => t.length > 1);
 }
 
+/** Coerce a possibly-missing/NaN numeric field to a finite number (default 0).
+ *  Defends the scorer against indexes whose entries lack a numeric field — one
+ *  NaN term would otherwise propagate through `score` and corrupt the sort. */
+function num(v: unknown, dflt = 0): number {
+  return typeof v === "number" && isFinite(v) ? v : dflt;
+}
+
 function isEligible(e: MemoryEntry, q: MemoryQuery): boolean {
   if (e.status === "superseded") return false;
   if (e.validTo !== null && e.validTo <= q.now) return false;
@@ -65,10 +72,16 @@ export function scoreMemories(entries: MemoryEntry[], q: MemoryQuery): ScoredMem
     // recency: newer updatedAt scores a little higher (string ISO compare is monotone)
     score += recencyBoost(e.updatedAt, q.now);
 
-    // importance + prior usefulness
-    score += e.importance;
-    score += Math.min(e.accessCount, 5) * 0.5;
-    if (e.importance >= 3) why.push(`importance:${e.importance}`);
+    // importance + prior usefulness.
+    // Coerce optional numerics: an index written by the live write path can
+    // carry a missing/non-number accessCount or importance (e.g. authored
+    // entries that never set accessCount). Math.min(undefined,5)=NaN would
+    // poison `score` and break the whole sort (NaN comparisons drop entries to
+    // insertion order), so guard every numeric term to a finite default.
+    const importance = num(e.importance);
+    score += importance;
+    score += Math.min(num(e.accessCount), 5) * 0.5;
+    if (importance >= 3) why.push(`importance:${importance}`);
 
     out.push({ entry: e, score, whyRecalled: why.join(" ") || "scope-eligible" });
   }
