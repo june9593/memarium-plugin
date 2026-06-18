@@ -617,7 +617,10 @@ end**. Write a JSON array to
 
 `id` is a stable globally-unique slug: `<type>/<project|_global>/<kebab-slug>`.
 Fill `entities` with file paths / symbols / APIs the memory is about (powers
-retrieval). Set `importance` 0-5 and `confidence` 0-1. Then:
+retrieval). Set `importance` 0-5 and `confidence` 0-1. **Do NOT set `accessCount`**
+— it is a device-local usage signal maintained automatically by `memory-query`
+(stored in a sidecar outside the repo, never synced), not something you author;
+leave it at its default. Then:
 
     "$VBP" memory-write --input /tmp/vibebook-memory.json
 

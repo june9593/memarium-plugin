@@ -99,4 +99,62 @@ describe("memoryQueryCmd", () => {
     const supersededItem = payload.conflicts.find((x: any) => x.entry.id === "semantic/edge-memvc/old");
     expect(supersededItem.whyRecalled).toBe("superseded");
   });
+
+  // ---- accessCount tracking (usage sidecar) ----
+
+  it("non-empty content-hit query bumps the matched entry, not baseline entries", async () => {
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const { loadUsage } = await import("../../src/memory/usage-store.js");
+    await memoryQueryCmd({ cwd: "/work/edge-memvc", q: "spool" });
+    const u = loadUsage(repo);
+    expect(u["semantic/edge-memvc/spool"]?.count).toBe(1); // keyword hit → bumped
+    expect(u["core/g"]).toBeUndefined();                   // only scope/importance baseline → NOT bumped
+  });
+
+  it("unrelated query (no content hit) bumps nothing", async () => {
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const { loadUsage } = await import("../../src/memory/usage-store.js");
+    await memoryQueryCmd({ cwd: "/work/edge-memvc", q: "kubernetes helm" });
+    expect(loadUsage(repo)).toEqual({}); // no keyword/file/commit hit anywhere → no bump
+  });
+
+  it("empty-q query overlays usage onto ranking but never bumps", async () => {
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const { bumpUsage, loadUsage } = await import("../../src/memory/usage-store.js");
+    bumpUsage(repo, ["semantic/edge-memvc/spool"], "2026-06-18"); // seed count=1
+    stdout.length = 0;
+    await memoryQueryCmd({ cwd: "/work/edge-memvc" }); // empty q
+    const payload = JSON.parse(stdout.join(""));
+    const spool = payload.semantic.find((x: any) => x.entry.id === "semantic/edge-memvc/spool");
+    expect(spool.entry.accessCount).toBe(1); // overlay applied even on empty q
+    expect(loadUsage(repo)["semantic/edge-memvc/spool"].count).toBe(1); // but NOT bumped (still 1)
+  });
+
+  it("a query never mutates the synced index.memory.json", async () => {
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const idxPath = join(repo, ".vibebook/index.memory.json");
+    const before = readFileSync(idxPath, "utf8");
+    await memoryQueryCmd({ cwd: "/work/edge-memvc", q: "spool" }); // a real, bumping recall
+    expect(readFileSync(idxPath, "utf8")).toBe(before); // byte-identical: usage lives in the local sidecar
+  });
+
+  it("bumps at most the top 5 content-hit results, even with 6 hits", async () => {
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const { loadUsage } = await import("../../src/memory/usage-store.js");
+    // overwrite the index with 6 entries that all keyword-hit "widget" (equal score)
+    const entries: Record<string, any> = {};
+    for (let i = 1; i <= 6; i++) {
+      const id = `semantic/edge-memvc/widget-${i}`;
+      entries[id] = { id, type: "semantic", scope: "project:edge-memvc", project: "edge-memvc",
+        title: "widget thing", summary: "about widget", path: `memory/semantic/edge-memvc/widget-${i}.md`,
+        status: "active", confidence: 0.9, importance: 3, createdAt: "2026-06-01", updatedAt: "2026-06-01",
+        validFrom: null, validTo: null, sourceSessions: [], sourceCommits: [], sourceFiles: [],
+        supersedes: null, entities: ["widget"], originDevice: null, accessCount: 0, lastAccess: null };
+    }
+    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({ version: 1, entries }));
+    await memoryQueryCmd({ cwd: "/work/edge-memvc", q: "widget" });
+    const u = loadUsage(repo);
+    expect(Object.keys(u).length).toBe(5);              // capped at 5
+    expect(u["semantic/edge-memvc/widget-6"]).toBeUndefined(); // lowest-ranked tie dropped
+  });
 });
