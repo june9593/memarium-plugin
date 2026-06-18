@@ -75,4 +75,24 @@ describe("scoreMemories", () => {
     const r = scoreMemories(entries, Q({ text: "rule", type: "core" }));
     expect(r.map((x) => x.entry.id)).toEqual(["c"]);
   });
+
+  it("scores finite when optional numerics (accessCount/importance) are missing", () => {
+    const bad = e({ id: "match", title: "bookmark bar crash", entities: ["BookmarkBarView"] });
+    delete (bad as unknown as Record<string, unknown>).accessCount;
+    delete (bad as unknown as Record<string, unknown>).importance;
+    const r = scoreMemories([bad], Q({ text: "bookmark crash" }));
+    expect(Number.isFinite(r[0].score)).toBe(true);
+    expect(r[0].whyRecalled).toContain("keyword");
+  });
+
+  it("a missing-accessCount keyword match still outranks a non-match (NaN would scramble the sort)", () => {
+    // Pre-fix, Math.min(undefined,5)=NaN poisoned `score`; NaN comparisons in the
+    // sort dropped entries to insertion order, so a clear match could sink.
+    const match = e({ id: "match", title: "fullscreen crash", entities: ["X"] });
+    delete (match as unknown as Record<string, unknown>).accessCount;
+    const nomatch = e({ id: "nomatch", title: "totally unrelated topic" });
+    const r = scoreMemories([nomatch, match], Q({ text: "fullscreen crash" }));
+    expect(r[0].entry.id).toBe("match");
+    for (const s of r) expect(Number.isFinite(s.score)).toBe(true);
+  });
 });
