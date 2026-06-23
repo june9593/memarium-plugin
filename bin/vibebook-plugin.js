@@ -10677,9 +10677,7 @@ var init_gate = __esm({
       "core",
       "semantic",
       "episodic",
-      "procedural",
-      "working",
-      "artifact"
+      "procedural"
     ]);
   }
 });
@@ -11144,7 +11142,7 @@ __export(memory_query_exports, {
 import { mkdirSync as mkdirSync9, writeFileSync as writeFileSync8 } from "node:fs";
 import { dirname as dirname5, join as join14 } from "node:path";
 function isType(s) {
-  const ok = ["core", "semantic", "episodic", "procedural", "working", "artifact"];
+  const ok = ["core", "semantic", "episodic", "procedural"];
   return s && ok.includes(s) ? s : null;
 }
 async function memoryQueryCmd(opts) {
@@ -11182,9 +11180,7 @@ async function memoryQueryCmd(opts) {
     procedures: byType("procedural"),
     semantic: byType("semantic"),
     episodes: byType("episodic"),
-    working: byType("working"),
     conflicts: conflicts2,
-    artifacts: byType("artifact"),
     meta: { total: scored.length, project }
   };
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
@@ -12156,7 +12152,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
           detail: `no sourceSessions/sourceCommits/sourceFiles \u2014 origin not traceable`
         });
       }
-      if (e.status === "active" && (e.type === "episodic" || e.type === "working")) {
+      if (e.status === "active" && e.type === "episodic") {
         const age = daysBetween(opts.now, e.updatedAt);
         if (!isFinite(age)) {
           issues.push({

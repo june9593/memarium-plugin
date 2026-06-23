@@ -39,9 +39,9 @@ describe("memoryQueryCmd", () => {
           updatedAt: "2026-06-01", validFrom: null, validTo: null, sourceSessions: [],
           sourceCommits: [], sourceFiles: [], supersedes: null, entities: ["spool"],
           originDevice: null, accessCount: 0, lastAccess: null },
-        "working/edge-memvc/task": { id: "working/edge-memvc/task", type: "working",
+        "episodic/edge-memvc/task": { id: "episodic/edge-memvc/task", type: "episodic",
           scope: "project:edge-memvc", project: "edge-memvc", title: "Current task",
-          summary: "in-progress note", path: "memory/working/edge-memvc/task.md",
+          summary: "in-progress note", path: "memory/episodic/edge-memvc/task.md",
           status: "active", confidence: 0.7, importance: 2, createdAt: "2026-06-09",
           updatedAt: "2026-06-09", validFrom: null, validTo: null, sourceSessions: [],
           sourceCommits: [], sourceFiles: [], supersedes: null, entities: [],
@@ -82,12 +82,15 @@ describe("memoryQueryCmd", () => {
     expect(spool.whyRecalled).toContain("keyword");
   });
 
-  it("payload includes working array", async () => {
+  it("payload includes episodes array", async () => {
     const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
     await memoryQueryCmd({ cwd: "/work/edge-memvc" });
     const payload = JSON.parse(stdout.join(""));
-    expect(Array.isArray(payload.working)).toBe(true);
-    expect(payload.working.map((x: any) => x.entry.id)).toContain("working/edge-memvc/task");
+    expect(Array.isArray(payload.episodes)).toBe(true);
+    expect(payload.episodes.map((x: any) => x.entry.id)).toContain("episodic/edge-memvc/task");
+    // working/artifact buckets were removed with those unused types (#20)
+    expect(payload.working).toBeUndefined();
+    expect(payload.artifacts).toBeUndefined();
   });
 
   it("conflicts includes superseded entries even though scoreMemories drops them", async () => {

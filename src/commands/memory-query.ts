@@ -11,7 +11,7 @@ import type { MemoryType } from "../memory/types.js";
 export interface MemoryQueryOptions { cwd?: string; type?: string; q?: string; }
 
 function isType(s: string | undefined): MemoryType | null {
-  const ok = ["core", "semantic", "episodic", "procedural", "working", "artifact"];
+  const ok = ["core", "semantic", "episodic", "procedural"];
   return s && ok.includes(s) ? (s as MemoryType) : null;
 }
 
@@ -70,9 +70,7 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
     procedures: byType("procedural"),
     semantic: byType("semantic"),
     episodes: byType("episodic"),
-    working: byType("working"),
     conflicts,
-    artifacts: byType("artifact"),
     meta: { total: scored.length, project },
   };
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");

@@ -118,7 +118,7 @@ export function lintMemory(
         issues.push({ check: "missing-provenance", severity: "warning", layer: "memory", id: e.id,
           detail: `no sourceSessions/sourceCommits/sourceFiles — origin not traceable` });
       }
-      if (e.status === "active" && (e.type === "episodic" || e.type === "working")) {
+      if (e.status === "active" && e.type === "episodic") {
         const age = daysBetween(opts.now, e.updatedAt);
         if (!isFinite(age)) {
           issues.push({ check: "malformed-date", severity: "warning", layer: "memory", id: e.id,
