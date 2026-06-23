@@ -114,13 +114,15 @@ function rankEntity(corpus: EvalCorpus, query: EvalCaseQuery): { ids: string[]; 
 }
 
 /** Reverse-map rendered primer bullets back to memory ids by title. Requires
- *  unique titles in the corpus (enforced by a fixture invariant test). */
+ *  unique titles in the corpus (enforced by a fixture invariant test). The
+ *  optional ` _(tentative)_` marker (low-confidence entries) sits between the
+ *  bold title and ` — `, so tolerate it here or those entries get dropped. */
 function primerIncludedIds(corpus: EvalCorpus, query: EvalCaseQuery): string[] {
   const md = renderPrimer(query.project ?? "", corpus.memory, { now: query.now });
   const titleToId = new Map(corpus.memory.map((m) => [m.title, m.id]));
   const ids: string[] = [];
   for (const line of md.split("\n")) {
-    const m = /^- \*\*(.+?)\*\* —/.exec(line);
+    const m = /^- \*\*(.+?)\*\*(?: _\(tentative\)_)? —/.exec(line);
     if (m) { const id = titleToId.get(m[1]); if (id) ids.push(id); }
   }
   return ids;
