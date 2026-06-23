@@ -95,4 +95,22 @@ describe("scoreMemories", () => {
     expect(r[0].entry.id).toBe("match");
     for (const s of r) expect(Number.isFinite(s.score)).toBe(true);
   });
+
+  it("a keyword content match outranks a high-importance non-match (importance can't dominate)", () => {
+    // Pre-fix, importance was added raw: importance:9 (+9) beat a single keyword
+    // hit (+5). Capped at 3, a content match always wins.
+    const hot = e({ id: "hot", title: "completely unrelated", importance: 9 });
+    const match = e({ id: "match", title: "bookmark stuff", importance: 0 });
+    const r = scoreMemories([hot, match], Q({ text: "bookmark" }));
+    expect(r[0].entry.id).toBe("match");
+  });
+
+  it("caps the importance contribution at 3 (importance 10 scores the same as importance 3)", () => {
+    const lo = e({ id: "imp3", importance: 3 });
+    const hi = e({ id: "imp10", importance: 10 });
+    const r = scoreMemories([lo, hi], Q());
+    const sLo = r.find((x) => x.entry.id === "imp3")!.score;
+    const sHi = r.find((x) => x.entry.id === "imp10")!.score;
+    expect(sHi).toBe(sLo);
+  });
 });

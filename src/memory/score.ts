@@ -26,6 +26,10 @@ function num(v: unknown, dflt = 0): number {
   return typeof v === "number" && isFinite(v) ? v : dflt;
 }
 
+/** Max score contribution from `importance`. Keeps it a secondary boost (file/
+ *  commit/pinned tier) that can't outrank a keyword content match (+5). */
+const IMPORTANCE_CAP = 3;
+
 function isEligible(e: MemoryEntry, q: MemoryQuery): boolean {
   if (e.status === "superseded") return false;
   if (e.validTo !== null && e.validTo <= q.now) return false;
@@ -79,7 +83,12 @@ export function scoreMemories(entries: MemoryEntry[], q: MemoryQuery): ScoredMem
     // poison `score` and break the whole sort (NaN comparisons drop entries to
     // insertion order), so guard every numeric term to a finite default.
     const importance = num(e.importance);
-    score += importance;
+    // importance is a SECONDARY boost, not an unbounded term. Cap its score
+    // contribution (≤3, the same tier as file/commit/pinned) so a subjective
+    // LLM-assigned importance can never outrank an actual content match — a
+    // single keyword hit is +5, so capped importance (≤3) can't beat it. The
+    // real value is still shown in `why` for transparency.
+    score += Math.min(importance, IMPORTANCE_CAP);
     score += Math.min(num(e.accessCount), 5) * 0.5;
     if (importance >= 3) why.push(`importance:${importance}`);
 
