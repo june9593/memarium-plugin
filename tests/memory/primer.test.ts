@@ -87,5 +87,34 @@ describe("renderPrimer", () => {
     // validTo <= now → excluded (2026-06-10 <= 2026-06-10 is true)
     expect(md).not.toContain("same-day");
   });
+
+  it("surfaces a +N more footer when a section is truncated (not silent) — #19", () => {
+    const many = Array.from({ length: 20 }, (_, i) =>
+      e({ id: `semantic/p/${i}`, type: "semantic", title: `fact ${i}`, summary: "s", importance: i }));
+    const md = renderPrimer("p", many, { maxPerSection: 5 });
+    expect(md).toContain("15 more (run");
+    // the footer is not counted as a content bullet
+    expect((md.match(/^- \*\*/gm) ?? []).length).toBe(5);
+  });
+
+  it("no footer when nothing is truncated", () => {
+    const md = renderPrimer("p", [e({ id: "semantic/p/a", type: "semantic", title: "only", summary: "s" })]);
+    expect(md).not.toContain("more (run");
+  });
+
+  it("marks low-confidence entries tentative; confident ones are unmarked — #21", () => {
+    const shaky = { ...e({ id: "semantic/p/shaky", type: "semantic", title: "shaky guess", summary: "maybe" }), confidence: 0.3 };
+    const solid = { ...e({ id: "semantic/p/solid", type: "semantic", title: "solid fact", summary: "verified" }), confidence: 0.9 };
+    const md = renderPrimer("p", [shaky, solid]);
+    expect(md).toContain("**shaky guess** _(tentative)_");
+    expect(md).not.toContain("**solid fact** _(tentative)_");
+  });
+
+  it("breaks importance ties by confidence (blended ranking, not pure importance)", () => {
+    const hi = { ...e({ id: "semantic/p/hi", type: "semantic", title: "high conf", summary: "s", importance: 5 }), confidence: 0.9 };
+    const lo = { ...e({ id: "semantic/p/lo", type: "semantic", title: "low conf", summary: "s", importance: 5 }), confidence: 0.6 };
+    const md = renderPrimer("p", [lo, hi]);
+    expect(md.indexOf("high conf")).toBeLessThan(md.indexOf("low conf"));
+  });
 });
 
