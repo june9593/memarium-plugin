@@ -88,7 +88,7 @@ vibebook is deliberately grounded in published research and a clear set of trade
 - **SessionStart hook** — auto-injects the project primer so a new session starts informed.
 
 **Underlying `bin/vibebook-plugin.js` subcommands** (the skills call these; pure I/O, no LLM):
-`memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `catalog-regen` · `site` · `list-projects` · `prepare` · `publish`.
+`memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `catalog-regen` · `site` · `list-projects` · `status` · `prepare` · `publish`.
 
 ### Install
 
@@ -190,7 +190,7 @@ vibebook 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 - **SessionStart hook** —— 自动注入项目 primer,新会话一开始就有底。
 
 **底层 `bin/vibebook-plugin.js` 子命令**(skills 调用;纯 I/O,不调 LLM):
-`memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `catalog-regen` · `site` · `list-projects` · `prepare` · `publish`。
+`memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `catalog-regen` · `site` · `list-projects` · `status` · `prepare` · `publish`。
 
 ### 安装
 
