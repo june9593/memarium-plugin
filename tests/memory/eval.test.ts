@@ -62,3 +62,24 @@ describe("runEval aggregate", () => {
     }, null, 2));
   });
 });
+
+describe("primer reverse-lookup tolerates the tentative marker", () => {
+  it("finds a low-confidence (tentative-marked) primer entry instead of dropping it", () => {
+    // confidence < 0.5 renders `- **title** _(tentative)_ — summary`; primerIncludedIds'
+    // regex must tolerate the marker or this gold entry is silently missed.
+    const entry = {
+      id: "semantic/p/shaky", type: "semantic", scope: "project:p", project: "p",
+      title: "shaky low-conf fact", summary: "maybe", path: "",
+      status: "active", confidence: 0.3, importance: 3,
+      createdAt: "2026-01-01", updatedAt: "2026-06-01", validFrom: null, validTo: null,
+      sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
+      entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+    };
+    const corpus = { memory: [entry], qa: [], entity: [] } as unknown as Parameters<typeof runEvalCase>[0];
+    const c = {
+      name: "t", category: "primer",
+      query: { text: "", project: "p", now: "2026-06-10" }, goldIds: ["semantic/p/shaky"],
+    } as unknown as Parameters<typeof runEvalCase>[1];
+    expect(runEvalCase(corpus, c).recallAtK).toBe(1);
+  });
+});

@@ -5392,8 +5392,8 @@ function asNumber(source, onNaN = 0) {
   if (source == null) {
     return onNaN;
   }
-  const num2 = parseInt(source, 10);
-  return Number.isNaN(num2) ? onNaN : num2;
+  const num3 = parseInt(source, 10);
+  return Number.isNaN(num3) ? onNaN : num3;
 }
 function prefixedArray(input, prefix) {
   const output = [];
@@ -11090,15 +11090,25 @@ var init_usage_store = __esm({
 });
 
 // src/memory/primer.ts
-function pick2(entries, type, project, max, now) {
-  return entries.filter((e) => e.status !== "superseded" && e.type === type).filter((e) => e.validTo === null || e.validTo > now).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).sort((a, b2) => b2.importance - a.importance || a.title.localeCompare(b2.title)).slice(0, max);
+function num2(v, dflt) {
+  return typeof v === "number" && isFinite(v) ? v : dflt;
 }
-function section(title, items) {
-  if (items.length === 0) return "";
-  const lines = items.map((e) => `- **${e.title}** \u2014 ${e.summary}`);
+function eligible(entries, type, project, now) {
+  return entries.filter((e) => e.status !== "superseded" && e.type === type).filter((e) => e.validTo === null || e.validTo > now).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
+}
+function section(title, all, max) {
+  if (all.length === 0) return "";
+  const shown = all.slice(0, max);
+  const lines = shown.map((e) => {
+    const tentative = typeof e.confidence === "number" && e.confidence < TENTATIVE_BELOW ? " _(tentative)_" : "";
+    return `- **${e.title}**${tentative} \u2014 ${e.summary}`;
+  });
+  const hidden = all.length - shown.length;
+  const footer = hidden > 0 ? `
+- _\u2026and ${hidden} more (run \`/vibebook-context\`)_` : "";
   return `## ${title}
 
-${lines.join("\n")}
+${lines.join("\n")}${footer}
 `;
 }
 function renderPrimer(project, entries, opts = {}) {
@@ -11110,18 +11120,19 @@ function renderPrimer(project, entries, opts = {}) {
 > Auto-generated primer. The agent should treat this as already-known project context.
 `;
   const sections = [
-    section("Core rules", pick2(entries, "core", project, max, now)),
-    section("Project facts", pick2(entries, "semantic", project, max, now)),
-    section("Procedures & gotchas", pick2(entries, "procedural", project, max, now))
+    section("Core rules", eligible(entries, "core", project, now), max),
+    section("Project facts", eligible(entries, "semantic", project, now), max),
+    section("Procedures & gotchas", eligible(entries, "procedural", project, now), max)
   ].filter(Boolean);
   if (sections.length === 0) return "";
   return [head, ...sections].join("\n");
 }
-var MAX_PER_SECTION;
+var MAX_PER_SECTION, TENTATIVE_BELOW;
 var init_primer = __esm({
   "src/memory/primer.ts"() {
     "use strict";
     MAX_PER_SECTION = 12;
+    TENTATIVE_BELOW = 0.5;
   }
 });
 
