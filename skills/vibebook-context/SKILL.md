@@ -69,7 +69,7 @@ After Entities, surface distilled Q&A relevant to the task. Run:
 vibebook-plugin qa-query --cwd "$(pwd)" --q "<keywords from the user's ask>"
 ```
 
-This is **index-only** — it returns ranked `{ question, answerSummary, kind, path }` (NOT the full answer). Present the top matches as a short "Past Q&A" list (question + answerSummary). If the user wants the full answer, Read the `.md` at `path`. Keep this separate from the memory recall list — it is its own light scorer, not part of the BM25 memory ranking.
+This is **index-only** — it returns ranked `{ question, answerSummary, kind, path }` (NOT the full answer). Present the top matches as a short "Past Q&A" list (question + answerSummary). If the user wants the full answer, Read the `.md` at `path`. Keep this separate from the memory recall list — it is its own light scorer, not part of the lexical (term-overlap) memory ranking.
 
 ## Step 1.7 — Pending memory proposals (`memory-diff`)
 
