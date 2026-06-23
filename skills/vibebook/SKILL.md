@@ -777,6 +777,12 @@ vibebook-plugin memory-lint --cwd "$(pwd)" --json
 
 The report has `issues[]` (objective integrity defects) and `suggestions[]` (semantic-judgment candidates). Read it together with this session's new memories and the existing memory.
 
+**Auto-staleness shortcut:** for the common `expired` findings (active memories past
+their `validTo`), you can run `memory-lint --cwd "$(pwd)" --fix` to **queue** a
+`status→superseded` proposal for each — it goes through `memory-diff`/`memory-approve`
+(never a direct write, never touches the repo), so surface those queued fixes for
+review like any other proposal. For anything beyond plain expiry, judge manually below.
+
 Act on only a FEW high-confidence items — prefer writing nothing over writing noise. Non-gated writes go through `memory-write` (it flips a superseded target's status automatically). **Gated changes — any `core`/`procedural`/pinned memory, or anything that supersedes one — go through `memory-propose`**, which queues them for human review (`memory-diff` / `memory-approve`); consolidation cannot silently rewrite long-term memory. Do NOT batch-fix.
 
 - **episodic→semantic / repeated→procedural** (from `suggestions[]`): when a fact is repeatedly confirmed/stable, write a new `semantic` (or `procedural`) memory. **By default KEEP the source episodic** — it is the evidence / chronicle pointer. Only `supersedes` the episodic when it is a low-value duplicate pointer AND the new memory carries its `sourceSessions` / provenance forward.

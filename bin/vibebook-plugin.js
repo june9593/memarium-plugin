@@ -12439,19 +12439,140 @@ var init_lint = __esm({
   }
 });
 
+// src/memory/proposal-store.ts
+import { createHash as createHash3 } from "node:crypto";
+import { existsSync as existsSync20, mkdirSync as mkdirSync14, readFileSync as readFileSync19, readdirSync as readdirSync5, rmSync, writeFileSync as writeFileSync13 } from "node:fs";
+import { homedir as homedir4 } from "node:os";
+import { join as join23, resolve as resolve7 } from "node:path";
+function vibebookHome2() {
+  return join23(homedir4(), ".vibebook");
+}
+function proposalsDir(repoPath) {
+  const repoHash = createHash3("sha256").update(resolve7(repoPath)).digest("hex").slice(0, 12);
+  return join23(vibebookHome2(), "local-proposals", repoHash);
+}
+function guardQueuePath(targetAbs) {
+  assertNoSymlinkedComponent(vibebookHome2(), targetAbs, "proposal-store");
+}
+function flatTargetKey(targetKey2) {
+  if (targetKey2.includes("__")) {
+    throw new Error(`proposal-store: target key may not contain "__": ${JSON.stringify(targetKey2)}`);
+  }
+  const flat = targetKey2.split("/").join("__");
+  if (flat.includes("..") || flat.includes("/") || flat.includes("\\") || flat.length === 0) {
+    throw new Error(`proposal-store: unsafe target key ${JSON.stringify(targetKey2)}`);
+  }
+  return flat;
+}
+function fileFor(repoPath, idOrKey) {
+  const flat = idOrKey.includes("/") ? flatTargetKey(idOrKey) : flatTargetKey(idOrKey.split("__").join("/"));
+  return join23(proposalsDir(repoPath), `${flat}.json`);
+}
+function writeProposal(repoPath, p2) {
+  const dir = proposalsDir(repoPath);
+  const file = join23(dir, `${flatTargetKey(p2.targetKey)}.json`);
+  guardQueuePath(file);
+  mkdirSync14(dir, { recursive: true });
+  writeFileSync13(file, JSON.stringify(p2, null, 2) + "\n");
+  return file;
+}
+function readProposal(repoPath, idOrKey) {
+  let file;
+  try {
+    file = fileFor(repoPath, idOrKey);
+  } catch {
+    return null;
+  }
+  guardQueuePath(file);
+  if (!existsSync20(file)) return null;
+  try {
+    return JSON.parse(readFileSync19(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+function listProposals(repoPath) {
+  const dir = proposalsDir(repoPath);
+  guardQueuePath(dir);
+  if (!existsSync20(dir)) return [];
+  const out = [];
+  for (const name of readdirSync5(dir).sort()) {
+    if (!name.endsWith(".json")) continue;
+    const file = join23(dir, name);
+    guardQueuePath(file);
+    try {
+      out.push(JSON.parse(readFileSync19(file, "utf8")));
+    } catch {
+    }
+  }
+  return out;
+}
+function deleteProposal(repoPath, idOrKey) {
+  let file;
+  try {
+    file = fileFor(repoPath, idOrKey);
+  } catch {
+    return null;
+  }
+  guardQueuePath(file);
+  if (!existsSync20(file)) return null;
+  rmSync(file);
+  return file;
+}
+var init_proposal_store = __esm({
+  "src/memory/proposal-store.ts"() {
+    "use strict";
+    init_path_guard();
+  }
+});
+
 // src/commands/memory-lint.ts
 var memory_lint_exports = {};
 __export(memory_lint_exports, {
   memoryLintCmd: () => memoryLintCmd
 });
-import { existsSync as existsSync20, readFileSync as readFileSync19 } from "node:fs";
-import { join as join23 } from "node:path";
+import { existsSync as existsSync21, readFileSync as readFileSync20 } from "node:fs";
+import { join as join24 } from "node:path";
+function readBody(repoPath, entry) {
+  try {
+    const md = readFileSync20(join24(repoPath, entry.path), "utf8");
+    const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
+    return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();
+  } catch {
+    return "";
+  }
+}
+function proposeStalenessFixes(repoPath, idx, report, now) {
+  const queued = [];
+  for (const f of report.issues) {
+    if (f.layer !== "memory" || f.check !== "expired") continue;
+    const live = idx.entries[f.id];
+    if (!live || live.status === "superseded") continue;
+    const fixed = { ...live, status: "superseded", updatedAt: now };
+    fixed.path = canonicalMemoryPath(fixed);
+    const tKey = targetKey(fixed);
+    const p2 = {
+      proposalId: flatTargetKey(tKey),
+      targetKey: tKey,
+      proposedEntryId: fixed.id,
+      action: deriveAction(fixed, idx.entries),
+      rationale: `auto-staleness: ${f.detail} \u2192 mark superseded`,
+      sourceSession: null,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      // full ISO, matching memory-propose + the MemoryProposal.createdAt contract
+      proposal: { entry: fixed, body: readBody(repoPath, live) }
+    };
+    writeProposal(repoPath, p2);
+    queued.push(tKey);
+  }
+  return queued;
+}
 function readIndexOnce(repoPath, rel, layer, empty) {
-  const p2 = join23(repoPath, rel);
-  if (!existsSync20(p2)) return { index: empty, finding: null };
+  const p2 = join24(repoPath, rel);
+  if (!existsSync21(p2)) return { index: empty, finding: null };
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync19(p2, "utf8"));
+    parsed = JSON.parse(readFileSync20(p2, "utf8"));
   } catch {
     return { index: empty, finding: {
       check: "corrupt-index",
@@ -12510,7 +12631,18 @@ async function memoryLintCmd(opts) {
     report.issues = [...corrupt, ...report.issues];
     report.counts = { issues: report.issues.length, suggestions: report.suggestions.length };
   }
-  process.stdout.write(opts.json ? JSON.stringify(report, null, 2) + "\n" : humanReport(report));
+  const fixed = opts.fix ? proposeStalenessFixes(cfg.repoPath, m.index, report, now) : [];
+  if (opts.json) {
+    process.stdout.write(JSON.stringify(opts.fix ? { ...report, fixesProposed: fixed } : report, null, 2) + "\n");
+  } else {
+    let out = humanReport(report);
+    if (opts.fix) {
+      out += fixed.length ? `
+${fixed.length} staleness fix(es) queued as proposals \u2014 review with \`memory-diff\` then \`memory-approve\`:
+` + fixed.map((k2) => `  - ${k2}`).join("\n") + "\n" : "\nNo auto-fixable staleness (no expired active entries).\n";
+    }
+    process.stdout.write(out);
+  }
 }
 var init_memory_lint = __esm({
   "src/commands/memory-lint.ts"() {
@@ -12524,93 +12656,8 @@ var init_memory_lint = __esm({
     init_types3();
     init_types2();
     init_lint();
-  }
-});
-
-// src/memory/proposal-store.ts
-import { createHash as createHash3 } from "node:crypto";
-import { existsSync as existsSync21, mkdirSync as mkdirSync14, readFileSync as readFileSync20, readdirSync as readdirSync5, rmSync, writeFileSync as writeFileSync13 } from "node:fs";
-import { homedir as homedir4 } from "node:os";
-import { join as join24, resolve as resolve7 } from "node:path";
-function vibebookHome2() {
-  return join24(homedir4(), ".vibebook");
-}
-function proposalsDir(repoPath) {
-  const repoHash = createHash3("sha256").update(resolve7(repoPath)).digest("hex").slice(0, 12);
-  return join24(vibebookHome2(), "local-proposals", repoHash);
-}
-function guardQueuePath(targetAbs) {
-  assertNoSymlinkedComponent(vibebookHome2(), targetAbs, "proposal-store");
-}
-function flatTargetKey(targetKey2) {
-  if (targetKey2.includes("__")) {
-    throw new Error(`proposal-store: target key may not contain "__": ${JSON.stringify(targetKey2)}`);
-  }
-  const flat = targetKey2.split("/").join("__");
-  if (flat.includes("..") || flat.includes("/") || flat.includes("\\") || flat.length === 0) {
-    throw new Error(`proposal-store: unsafe target key ${JSON.stringify(targetKey2)}`);
-  }
-  return flat;
-}
-function fileFor(repoPath, idOrKey) {
-  const flat = idOrKey.includes("/") ? flatTargetKey(idOrKey) : flatTargetKey(idOrKey.split("__").join("/"));
-  return join24(proposalsDir(repoPath), `${flat}.json`);
-}
-function writeProposal(repoPath, p2) {
-  const dir = proposalsDir(repoPath);
-  const file = join24(dir, `${flatTargetKey(p2.targetKey)}.json`);
-  guardQueuePath(file);
-  mkdirSync14(dir, { recursive: true });
-  writeFileSync13(file, JSON.stringify(p2, null, 2) + "\n");
-  return file;
-}
-function readProposal(repoPath, idOrKey) {
-  let file;
-  try {
-    file = fileFor(repoPath, idOrKey);
-  } catch {
-    return null;
-  }
-  guardQueuePath(file);
-  if (!existsSync21(file)) return null;
-  try {
-    return JSON.parse(readFileSync20(file, "utf8"));
-  } catch {
-    return null;
-  }
-}
-function listProposals(repoPath) {
-  const dir = proposalsDir(repoPath);
-  guardQueuePath(dir);
-  if (!existsSync21(dir)) return [];
-  const out = [];
-  for (const name of readdirSync5(dir).sort()) {
-    if (!name.endsWith(".json")) continue;
-    const file = join24(dir, name);
-    guardQueuePath(file);
-    try {
-      out.push(JSON.parse(readFileSync20(file, "utf8")));
-    } catch {
-    }
-  }
-  return out;
-}
-function deleteProposal(repoPath, idOrKey) {
-  let file;
-  try {
-    file = fileFor(repoPath, idOrKey);
-  } catch {
-    return null;
-  }
-  guardQueuePath(file);
-  if (!existsSync21(file)) return null;
-  rmSync(file);
-  return file;
-}
-var init_proposal_store = __esm({
-  "src/memory/proposal-store.ts"() {
-    "use strict";
-    init_path_guard();
+    init_proposal_store();
+    init_gate();
   }
 });
 
@@ -14676,9 +14723,9 @@ async function run(argv) {
     const { qaQueryCmd: qaQueryCmd2 } = await Promise.resolve().then(() => (init_qa_query(), qa_query_exports));
     await qaQueryCmd2(o2);
   });
-  program2.command("memory-lint").description("Read-only integrity diagnostic across memory/entity/qa indexes (never writes). --json for structured output.").option("--cwd <path>", "scope findings to the project at this path (+ global/user); default: lint the whole store").option("--json", "emit the structured LintReport JSON instead of a human report").option("--stale-days <n>", "age threshold for stale episodic/working (default 90)", (v) => parseInt(v, 10)).action(async (o2) => {
+  program2.command("memory-lint").description("Read-only integrity diagnostic across memory/entity/qa indexes (never writes the repo). --json for structured output; --fix queues review proposals for expired entries.").option("--cwd <path>", "scope findings to the project at this path (+ global/user); default: lint the whole store").option("--json", "emit the structured LintReport JSON instead of a human report").option("--stale-days <n>", "age threshold for stale episodic/working (default 90)", (v) => parseInt(v, 10)).option("--fix", "queue a review proposal (status\u2192superseded) for each expired entry \u2014 goes through memory-diff/approve, never a direct write").action(async (o2) => {
     const { memoryLintCmd: memoryLintCmd2 } = await Promise.resolve().then(() => (init_memory_lint(), memory_lint_exports));
-    await memoryLintCmd2({ cwd: o2.cwd, json: o2.json, staleDays: o2.staleDays });
+    await memoryLintCmd2({ cwd: o2.cwd, json: o2.json, staleDays: o2.staleDays, fix: o2.fix });
   });
   program2.command("memory-propose").description("Queue a gated (core/procedural/pinned) memory change as a local proposal instead of writing it. Reads an --input JSON array of {entry, body, rationale?, sourceSession?}.").requiredOption("--input <path>", "JSON file: array of { entry, body, rationale?, sourceSession? }").action(async (o2) => {
     const { memoryProposeCmd: memoryProposeCmd2 } = await Promise.resolve().then(() => (init_memory_propose(), memory_propose_exports));
