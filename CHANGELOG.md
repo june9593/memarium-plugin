@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.7 — 2026-06-23
+
+**Memory types: drop the two unused types (`working`, `artifact`).**
+
+The Memory OS has four typed-memory types — `core` / `semantic` / `episodic` /
+`procedural` — matching what digests actually produce. `working` and `artifact`
+were declared but had **no writer** (no plugin path ever emitted them), so they
+are removed from `MemoryType`, the gate's valid-type set, the `memory-query`
+payload (the always-empty `working` / `artifacts` buckets are gone), and
+`memory-lint`'s stale-candidate check (now `episodic` only). `qa` and `entity`
+remain separate derived layers, not memory types.
+
+**Compatibility:** no plugin writer ever produced `working`/`artifact` entries,
+so real stores are unaffected. A hand-authored legacy `working`/`artifact` md is
+treated as unsupported/ignored — it still parses into the index but is never
+surfaced in queries or the primer, and `memory-write` rejects the type. Resolves #20.
+
 ## 0.5.0 — 2026-06-10
 
 **Memory OS v2 — automatic project memory + a personal knowledge base.**

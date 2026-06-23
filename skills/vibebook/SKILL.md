@@ -613,7 +613,10 @@ end**. Write a JSON array to
 - **procedural** — how-to playbooks + gotchas ("to add X, do Y; watch out for Z").
 - **episodic** — a lightweight pointer per significant thread: title +
   summary + `sourceSessions`, body = 1-2 lines linking to the chronicle.
-- **artifact** — notable commits/PRs/files (optional).
+
+The Memory OS has exactly these four typed-memory types (`core` / `semantic` /
+`episodic` / `procedural`); `qa` and `entity` are separate derived layers, not
+memory types.
 
 `id` is a stable globally-unique slug: `<type>/<project|_global>/<kebab-slug>`.
 Fill `entities` with file paths / symbols / APIs the memory is about (powers
@@ -635,7 +638,7 @@ edits/supersedes an existing core/procedural/pinned memory. Put gated items in a
 SEPARATE JSON array and call `memory-propose` instead of `memory-write` (same
 `{ entry, body }` items, plus optional `rationale` / `sourceSession`); they queue
 locally for human review rather than landing live. Non-gated items (`semantic`,
-`episodic`, `working`, `artifact`) use `memory-write` as above. If you call
+`episodic`) use `memory-write` as above. If you call
 `memory-write` with a gated item it errors with "use memory-propose" — re-route
 that item. **Never approve your own proposals.**
 

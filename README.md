@@ -23,7 +23,7 @@ flowchart LR
   A & B -->|extract| SP[raw_sessions/*.md<br/>spool]
   SP -->|/vibebook digest<br/>in-session agent| D{Distill}
   D --> CH[chronicles + topics]
-  D --> M[typed memory<br/>6 types]
+  D --> M[typed memory<br/>4 types]
   D --> E[entity wiki]
   D --> Q[distilled Q&A]
   M & E & Q --> IDX[(.vibebook/index.*.json)]
@@ -57,7 +57,7 @@ Self-contained: no extra CLI required, no cloud service, your data stays local a
 
 | Layer | What it adds |
 |---|---|
-| **v1 — typed memory** | Six memory types (`core` / `semantic` / `episodic` / `procedural` / `working` / `artifact`), a per-project **primer**, a JSON index, and a relevance scorer. |
+| **v1 — typed memory** | Four memory types (`core` / `semantic` / `episodic` / `procedural`), a per-project **primer**, a JSON index, and a relevance scorer. |
 | **v2 — primer + entities** | A **SessionStart hook** that auto-injects the primer; an **entity wiki** (one living page per file / symbol / API / concept / person). |
 | **qa — distilled Q&A** | A `qa/` answer layer: durable question→answer pairs (compound questions, troubleshooting conclusions, decision rationale, operational routes). |
 | **v3 — lint + consolidation** | `memory-lint`, a read-only health check (expired / dangling-supersede / duplicate-like / missing-provenance / stale), plus a conservative consolidation step at digest time. |
@@ -70,7 +70,7 @@ vibebook is deliberately grounded in published research and a clear set of trade
 
 | Design choice | Based on / informed by | Why |
 |---|---|---|
-| **Typed memory** (working / episodic / semantic / procedural …) | **CoALA** — *Cognitive Architectures for Language Agents* (Sumers, Yao, Narasimhan, Griffiths, 2023) | A principled memory taxonomy from cognitive science, rather than one undifferentiated blob. |
+| **Typed memory** (core / semantic / episodic / procedural) | **CoALA** — *Cognitive Architectures for Language Agents* (Sumers, Yao, Narasimhan, Griffiths, 2023) | A principled memory taxonomy from cognitive science, rather than one undifferentiated blob. |
 | **Relevance scorer** = recency + importance + relevance | **Generative Agents** (Park et al., 2023) — the memory-stream retrieval function | A simple, explainable, well-validated ranking signal. |
 | **Scorer regression eval** | **LongMemEval** (Wu et al., 2024) — long-term memory benchmark for chat assistants | Inspiration for the ability axes (info-extraction, multi-session, temporal, knowledge-update, abstention), which are exercised against a fixture corpus to catch scorer regressions — not a benchmark of real-corpus recall. |
 | **Markdown-first, local, git-synced, no vector DB** | A deliberate counter-position to vector/graph memory stacks like **mem0**, **Letta / MemGPT**, **Zep / Graphiti**, **A-MEM** | Auditability and ownership: memory is human-readable, diff-able, and version-controlled. The cost — lexical (term-overlap) retrieval — is a known trade-off (see [Limitations](#limitations--roadmap)). |
@@ -159,7 +159,7 @@ PRs welcome. Open an issue first for anything beyond a typo — design changes a
 
 | 层 | 加了什么 |
 |---|---|
-| **v1 — typed memory** | 六种记忆类型(`core` / `semantic` / `episodic` / `procedural` / `working` / `artifact`)、按项目的 **primer**、JSON 索引、相关性打分器。 |
+| **v1 — typed memory** | 四种记忆类型(`core` / `semantic` / `episodic` / `procedural`)、按项目的 **primer**、JSON 索引、相关性打分器。 |
 | **v2 — primer + 实体** | **SessionStart hook** 自动注入 primer;**entity wiki**(每个文件 / 符号 / API / 概念 / 人一份活页)。 |
 | **qa — 精炼问答** | `qa/` 答案层:可复用的问→答对(复合问题、排障结论、决策理由、操作路径)。 |
 | **v3 — lint + 整合** | `memory-lint` 只读健康检查(过期 / 悬挂 supersede / 疑似重复 / 缺出处 / 陈旧),以及 digest 时的保守整合。 |
@@ -172,7 +172,7 @@ vibebook 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 
 | 设计选择 | 参考 / 受启发于 | 为什么 |
 |---|---|---|
-| **typed memory**(working / episodic / semantic / procedural …) | **CoALA** — *Cognitive Architectures for Language Agents*(2023) | 来自认知科学的记忆分类法,而不是一坨无差别的 blob。 |
+| **typed memory**(core / semantic / episodic / procedural) | **CoALA** — *Cognitive Architectures for Language Agents*(2023) | 来自认知科学的记忆分类法,而不是一坨无差别的 blob。 |
 | **打分器** = recency + importance + relevance | **Generative Agents**(Park 等, 2023)的 memory-stream 召回函数 | 简单、可解释、被验证过的排序信号。 |
 | **Scorer 回归评估** | **LongMemEval**(Wu 等, 2024)长期记忆基准 | 借鉴其能力维度(信息抽取/多会话/时序/知识更新/弃答),在 fixture 语料上跑来防 scorer 回归 —— 不是真实语料召回的基准。 |
 | **markdown 优先、本地、git 同步、不用向量库** | 对 **mem0**、**Letta / MemGPT**、**Zep / Graphiti**、**A-MEM** 这类向量/图记忆栈的刻意反向选择 | 可审计、可拥有:记忆人类可读、可 diff、可版本控制。代价是词法(term-overlap)召回 —— 一个已知取舍(见[局限](#局限与路线图))。 |

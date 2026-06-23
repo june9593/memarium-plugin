@@ -1,7 +1,7 @@
 import type { MemoryEntry, MemoryIndex, MemoryType } from "./types.js";
 
 const MEMORY_TYPES: ReadonlySet<MemoryType> = new Set<MemoryType>([
-  "core", "semantic", "episodic", "procedural", "working", "artifact",
+  "core", "semantic", "episodic", "procedural",
 ]);
 
 /** A memory is "gated" if it shapes long-term agent behavior: core, procedural,

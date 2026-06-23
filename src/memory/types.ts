@@ -1,5 +1,5 @@
 export type MemoryType =
-  | "core" | "semantic" | "episodic" | "procedural" | "working" | "artifact";
+  | "core" | "semantic" | "episodic" | "procedural";
 
 /** "global" | "user" | "project:<slug>" */
 export type MemoryScope = string;
