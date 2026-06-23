@@ -37,6 +37,14 @@ export async function run(argv: string[]) {
     });
 
   program
+    .command("status")
+    .description("Digest coverage: synced sessions vs digested vs pending, plus book + memory layer counts.")
+    .action(async () => {
+      const { statusCmd } = await import("./commands/status.js");
+      await statusCmd();
+    });
+
+  program
     .command("prepare")
     .description("Emit the JSON payload of new sessions for the /vibebook skill to digest.")
     .option("--cwd <path>", "treat this dir as the user's cwd (default: process.cwd())")

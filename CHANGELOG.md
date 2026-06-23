@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.9 — 2026-06-24
+
+**`status` command — digest coverage / backlog visibility (#22).**
+
+The product turns sessions into durable memory, but gave no signal about how much
+of your history has actually been digested vs. is still pending. New read-only
+`status` command aggregates the funnel across all real projects: synced sessions →
+digested (referenced by a chronicle) → pending, a coverage %, the book layer
+(chronicles / topics / cards) and the typed Memory OS layer (typed memory /
+entities / qa) counts, plus a per-project pending backlog. Pure aggregation over
+the existing indexes (reuses `list-projects`); no new state.
+
 ## 0.9.8 — 2026-06-23
 
 **Provenance trust gating for semantic memory (#23).**
