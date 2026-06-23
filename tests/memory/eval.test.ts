@@ -73,7 +73,7 @@ describe("primer reverse-lookup tolerates the tentative marker", () => {
       status: "active", confidence: 0.3, importance: 3,
       createdAt: "2026-01-01", updatedAt: "2026-06-01", validFrom: null, validTo: null,
       sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
-      entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+      entities: [], trust: "trusted", originDevice: null, accessCount: 0, lastAccess: null,
     };
     const corpus = { memory: [entry], qa: [], entity: [] } as unknown as Parameters<typeof runEvalCase>[0];
     const c = {

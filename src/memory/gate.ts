@@ -18,6 +18,18 @@ export function supersedesId(entry: MemoryEntry): string | null {
   return typeof entry.supersedes === "string" && entry.supersedes.length > 0 ? entry.supersedes : null;
 }
 
+/** True iff this change raises an EXISTING live entry's trust up to "trusted"
+ *  from a lower trust (untrusted / unknown / absent). Promoting a memory into the
+ *  auto-injected primer is a trust decision that must go through human review
+ *  (#23, decision #4) — it can't be done with a plain `memory-write`. A brand-new
+ *  trusted entry (no live predecessor) is NOT an elevation, and downgrades are free. */
+export function isTrustElevation(entry: MemoryEntry, live: MemoryIndex["entries"]): boolean {
+  if ((entry.trust ?? "unknown") !== "trusted") return false;
+  const prev = live[entry.id];
+  if (!prev) return false; // brand-new entry — not an elevation of anything
+  return (prev.trust ?? "unknown") !== "trusted";
+}
+
 /** Gate the *change*, not just the proposed entry: the proposed entry, the live
  *  entry it overwrites in place, and the live entry it supersedes are all
  *  considered. Closes the supersede-bypass (a non-gated entry that supersedes a
@@ -27,6 +39,7 @@ export function isGatedChange(entry: MemoryEntry, live: MemoryIndex["entries"]):
   if (isGated(live[entry.id])) return true;
   const sup = supersedesId(entry);
   if (sup && isGated(live[sup])) return true;
+  if (isTrustElevation(entry, live)) return true; // promoting to trusted needs review
   return false;
 }
 

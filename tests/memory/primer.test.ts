@@ -5,10 +5,10 @@ import type { MemoryEntry } from "../../src/memory/types.js";
 function e(over: Partial<MemoryEntry>): MemoryEntry {
   return { id: over.id ?? "x", type: over.type ?? "semantic", scope: over.scope ?? "project:p",
     project: over.project ?? "p", title: over.title ?? "t", summary: over.summary ?? "s",
-    path: "memory/x.md", status: over.status ?? "active", confidence: 0.8, importance: over.importance ?? 1,
+    path: "memory/x.md", status: over.status ?? "active", confidence: over.confidence ?? 0.8, importance: over.importance ?? 1,
     createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: over.validTo ?? null,
     sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
-    entities: [], originDevice: null, accessCount: 0, lastAccess: null };
+    entities: [], trust: over.trust ?? "trusted", originDevice: null, accessCount: 0, lastAccess: null };
 }
 
 describe("renderPrimer", () => {
@@ -115,6 +115,26 @@ describe("renderPrimer", () => {
     const lo = { ...e({ id: "semantic/p/lo", type: "semantic", title: "low conf", summary: "s", importance: 5 }), confidence: 0.6 };
     const md = renderPrimer("p", [lo, hi]);
     expect(md.indexOf("high conf")).toBeLessThan(md.indexOf("low conf"));
+  });
+
+  it("only auto-injects trusted semantic; untrusted/unknown withheld (#23)", () => {
+    const md = renderPrimer("p", [
+      e({ id: "semantic/p/t", type: "semantic", title: "trusted fact", trust: "trusted" }),
+      e({ id: "semantic/p/u", type: "semantic", title: "untrusted fact", trust: "untrusted" }),
+      e({ id: "semantic/p/k", type: "semantic", title: "unknown fact", trust: "unknown" }),
+    ]);
+    expect(md).toContain("trusted fact");
+    expect(md).not.toContain("untrusted fact");
+    expect(md).not.toContain("unknown fact");
+  });
+
+  it("trust filter does NOT apply to core/procedural (v4 gate protects them) — #23", () => {
+    const md = renderPrimer("p", [
+      e({ id: "core/g", type: "core", scope: "global", project: null, title: "core rule", trust: "unknown" }),
+      e({ id: "proc/p/x", type: "procedural", title: "proc step", trust: "untrusted" }),
+    ]);
+    expect(md).toContain("core rule"); // injected regardless of trust
+    expect(md).toContain("proc step");
   });
 });
 

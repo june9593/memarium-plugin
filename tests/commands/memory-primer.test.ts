@@ -39,7 +39,7 @@ describe("memoryPrimerCmd", () => {
           status: "active", confidence: 0.9, importance: 4, createdAt: "2026-06-01",
           updatedAt: "2026-06-01", validFrom: null, validTo: null, sourceSessions: [],
           sourceCommits: [], sourceFiles: [], supersedes: null, entities: ["spool"],
-          originDevice: null, accessCount: 0, lastAccess: null },
+          trust: "trusted", originDevice: null, accessCount: 0, lastAccess: null },
         "procedural/edge-memvc/bump": { id: "procedural/edge-memvc/bump", type: "procedural",
           scope: "project:edge-memvc", project: "edge-memvc", title: "Bump and tag workflow",
           summary: "npm run build + vitest + version + tag", path: "memory/procedural/edge-memvc/bump.md",

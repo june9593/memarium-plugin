@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderMemoryMarkdown } from "../../src/memory/render.js";
+import { parseMemoryMarkdown } from "../../src/memory/parse.js";
 import type { MemoryEntry } from "../../src/memory/types.js";
 
 function entry(over: Partial<MemoryEntry> = {}): MemoryEntry {
@@ -41,5 +42,36 @@ describe("renderMemoryMarkdown", () => {
     const md = renderMemoryMarkdown(entry({ validTo: null, supersedes: null }), "body");
     expect(md).toContain("validTo: null");
     expect(md).toContain("supersedes: null");
+  });
+
+  it("renders trust; absent → unknown (#23)", () => {
+    expect(renderMemoryMarkdown(entry({ trust: "untrusted" }), "body")).toContain("trust: untrusted");
+    expect(renderMemoryMarkdown(entry({ trust: undefined }), "body")).toContain("trust: unknown");
+  });
+});
+
+describe("trust round-trip + legacy derivation (#23)", () => {
+  it("round-trips an explicit trust value through render → parse", () => {
+    for (const t of ["trusted", "untrusted", "unknown"] as const) {
+      const back = parseMemoryMarkdown(renderMemoryMarkdown(entry({ trust: t }), "body"));
+      expect(back?.trust).toBe(t);
+    }
+  });
+
+  it("legacy md with NO trust line: own-provenance + project-scoped → derived trusted", () => {
+    // Hand-authored legacy frontmatter (pre-feature: no `trust:` line) with a sourceSession.
+    const md = [
+      "---", "id: semantic/p/legacy", "type: semantic", "scope: project:p", "project: p",
+      "title: Legacy fact", "summary: s", "sourceSessions: [s1]", "---", "", "# Legacy fact", "body",
+    ].join("\n");
+    expect(parseMemoryMarkdown(md)?.trust).toBe("trusted");
+  });
+
+  it("legacy md with NO trust line and NO provenance → unknown", () => {
+    const md = [
+      "---", "id: semantic/p/orphan", "type: semantic", "scope: project:p", "project: p",
+      "title: Orphan fact", "summary: s", "sourceSessions: []", "sourceCommits: []", "---", "", "# Orphan", "body",
+    ].join("\n");
+    expect(parseMemoryMarkdown(md)?.trust).toBe("unknown");
   });
 });
