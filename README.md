@@ -28,7 +28,7 @@ flowchart LR
   D --> Q[distilled Q&A]
   M & E & Q --> IDX[(.vibebook/index.*.json)]
   IDX -->|SessionStart hook| P[project primer<br/>auto-loaded]
-  IDX -->|/vibebook-context| R[layered recall<br/>BM25-lite scorer]
+  IDX -->|/vibebook-context| R[layered recall<br/>term-overlap scorer]
 ```
 
 **The memory-PR gate** (v4 self-evolution — long-term memory cannot change without review):
@@ -73,7 +73,7 @@ vibebook is deliberately grounded in published research and a clear set of trade
 | **Typed memory** (working / episodic / semantic / procedural …) | **CoALA** — *Cognitive Architectures for Language Agents* (Sumers, Yao, Narasimhan, Griffiths, 2023) | A principled memory taxonomy from cognitive science, rather than one undifferentiated blob. |
 | **Relevance scorer** = recency + importance + relevance | **Generative Agents** (Park et al., 2023) — the memory-stream retrieval function | A simple, explainable, well-validated ranking signal. |
 | **Retrieval-quality eval** | **LongMemEval** (Wu et al., 2024) — long-term memory benchmark for chat assistants | You can't improve what you don't measure; abilities (info-extraction, multi-session, temporal, knowledge-update, abstention) are tested explicitly. |
-| **Markdown-first, local, git-synced, no vector DB** | A deliberate counter-position to vector/graph memory stacks like **mem0**, **Letta / MemGPT**, **Zep / Graphiti**, **A-MEM** | Auditability and ownership: memory is human-readable, diff-able, and version-controlled. The cost — lexical (BM25-lite) retrieval — is a known trade-off (see [Limitations](#limitations--roadmap)). |
+| **Markdown-first, local, git-synced, no vector DB** | A deliberate counter-position to vector/graph memory stacks like **mem0**, **Letta / MemGPT**, **Zep / Graphiti**, **A-MEM** | Auditability and ownership: memory is human-readable, diff-able, and version-controlled. The cost — lexical (term-overlap) retrieval — is a known trade-off (see [Limitations](#limitations--roadmap)). |
 | **Memory-PR governance gate** | (novel) — most memory frameworks let the agent self-edit long-term memory freely | Governance: long-term, behavior-shaping memory changes get human review before they persist. |
 | **Entity wiki + distilled Q&A** | Personal-knowledge-base / Zettelkasten practice (linked atomic notes) | A reverse-index synthesis layer on top of episodic chronicles. |
 
@@ -129,7 +129,7 @@ The plugin **does not** create or modify `.git/` or the npm CLI's config files �
 
 ### Limitations & roadmap
 
-- **Lexical-only retrieval (the known gap).** Recall ranks by keyword overlap + scope + recency + importance, so a *semantically* related but *lexically* different query can under-recall. Planned: an **optional local embedding index** used only for recall ranking (markdown stays the source of truth — never "vector-only"), validated against the v5 eval harness before adoption.
+- **Lexical-only retrieval (the known gap).** Recall ranks by keyword overlap + scope + recency + importance, so a *semantically* related but *lexically* different query can under-recall. The scorer is **presence-based term-overlap, not IDF-weighted** — rare and common tokens weigh equally (IDF was evaluated and deferred as net-neutral on the current corpus). Planned: an **optional local embedding index** used only for recall ranking (markdown stays the source of truth — never "vector-only"), validated against the v5 eval harness before adoption.
 - **Codex as a third session source** — adapter in progress.
 - **End-to-end answer-quality eval** (no-context vs recalled-context) — a documented follow-up to the v5 retrieval eval.
 
@@ -175,7 +175,7 @@ vibebook 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 | **typed memory**(working / episodic / semantic / procedural …) | **CoALA** — *Cognitive Architectures for Language Agents*(2023) | 来自认知科学的记忆分类法,而不是一坨无差别的 blob。 |
 | **打分器** = recency + importance + relevance | **Generative Agents**(Park 等, 2023)的 memory-stream 召回函数 | 简单、可解释、被验证过的排序信号。 |
 | **召回质量评估** | **LongMemEval**(Wu 等, 2024)长期记忆基准 | 不度量就无法改进;信息抽取/多会话/时序/知识更新/弃答这些能力被显式测试。 |
-| **markdown 优先、本地、git 同步、不用向量库** | 对 **mem0**、**Letta / MemGPT**、**Zep / Graphiti**、**A-MEM** 这类向量/图记忆栈的刻意反向选择 | 可审计、可拥有:记忆人类可读、可 diff、可版本控制。代价是词法(BM25-lite)召回 —— 一个已知取舍(见[局限](#局限与路线图))。 |
+| **markdown 优先、本地、git 同步、不用向量库** | 对 **mem0**、**Letta / MemGPT**、**Zep / Graphiti**、**A-MEM** 这类向量/图记忆栈的刻意反向选择 | 可审计、可拥有:记忆人类可读、可 diff、可版本控制。代价是词法(term-overlap)召回 —— 一个已知取舍(见[局限](#局限与路线图))。 |
 | **memory-PR 治理门禁** | (新)—— 多数记忆框架让 agent 自由自改长期记忆 | 治理:会长期影响行为的记忆改动落库前先经人审。 |
 | **entity wiki + 精炼 Q&A** | 个人知识库 / Zettelkasten 实践(链接式原子笔记) | 在 episodic chronicle 之上的反向索引综合层。 |
 
@@ -231,7 +231,7 @@ vibebook resume <sessionId>
 
 ### 局限与路线图
 
-- **纯词法召回(已知缺口)。** 召回靠关键词重叠 + scope + recency + importance 排序,所以语义相关但词面不同的查询可能漏召回。计划:加一个**可选的本地 embedding 索引**,只用于召回排序(markdown 仍是唯一真相源,绝不"纯向量"),上线前用 v5 eval harness 实测验证。
+- **纯词法召回(已知缺口)。** 召回靠关键词重叠 + scope + recency + importance 排序,所以语义相关但词面不同的查询可能漏召回。打分是**基于出现的 term-overlap,不是 IDF 加权** —— 稀有词和泛词同权(IDF 评估过,在当前语料上净收益为零,已搁置)。计划:加一个**可选的本地 embedding 索引**,只用于召回排序(markdown 仍是唯一真相源,绝不"纯向量"),上线前用 v5 eval harness 实测验证。
 - **Codex 作为第三个会话源** —— adapter 进行中。
 - **端到端答案质量评估**(无上下文 vs 召回上下文)—— v5 召回评估之后的后续项。
 

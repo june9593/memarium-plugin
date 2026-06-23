@@ -52,7 +52,8 @@ export function scoreMemories(entries: MemoryEntry[], q: MemoryQuery): ScoredMem
     let score = 0;
     const why: string[] = [];
 
-    // keyword (BM25-lite): term overlap over title+summary+entities
+    // keyword (lexical term-overlap — NOT BM25: no IDF/TF/length-norm, so rare
+    // and common tokens weigh equally): presence overlap over title+summary+entities
     if (qTokens.size > 0) {
       const haystack = new Set(tokenize(`${e.title} ${e.summary} ${e.entities.join(" ")}`));
       let hits = 0;
