@@ -4,7 +4,7 @@
 
 **📖 Project page:** https://june9593.github.io/vibebook-plugin/ · **npm CLI (optional sync):** https://github.com/june9593/vibebook
 
-> vibebook turns your AI coding sessions into a **durable, typed, queryable memory** that every future session starts from — not just a log of what happened, but a layered *Memory OS*: typed memory, an entity wiki, distilled Q&A, health linting, a human-review gate for long-term memory, and a CI scorer-regression eval harness.
+> vibebook turns your AI coding sessions into a **durable, typed, queryable memory** that every future session starts from — not just a log of what happened, but a layered *Memory OS*: typed memory, an entity wiki, distilled Q&A, health linting, a human-review gate for long-term memory, and a CI scorer regression eval harness.
 >
 > **Markdown-first. Local. Git-syncable. Fully auditable.** No cloud, no vector database, and **no LLM in the storage/retrieval layer** — all writing happens in-session via skills; the CLI is pure I/O.
 
@@ -62,7 +62,7 @@ Self-contained: no extra CLI required, no cloud service, your data stays local a
 | **qa — distilled Q&A** | A `qa/` answer layer: durable question→answer pairs (compound questions, troubleshooting conclusions, decision rationale, operational routes). |
 | **v3 — lint + consolidation** | `memory-lint`, a read-only health check (expired / dangling-supersede / duplicate-like / missing-provenance / stale), plus a conservative consolidation step at digest time. |
 | **v4 — self-evolution gate** | A **"memory-PR"** flow: changes to long-term `core` / `procedural` / pinned memory can't be written directly — the agent must `memory-propose`; a human reviews with `memory-diff` and applies with `memory-approve` (or `memory-reject`). One bad summary can't silently poison long-term behavior. |
-| **v5 — retrieval eval** | A deterministic, LLM-free **scorer regression suite** (LongMemEval-style fixtures) that locks the scorer's behaviour against a hand-authored corpus in CI — a guardrail against scorer regressions, *not* a held-out recall benchmark — with zero runtime footprint. (Real-corpus recall measurement is a separate, ongoing effort.) |
+| **v5 — retrieval eval** | A deterministic, LLM-free **scorer regression suite** (LongMemEval-style fixtures) that locks the scorer's behavior against a hand-authored corpus in CI — a guardrail against scorer regressions, *not* a held-out recall benchmark — with zero runtime footprint. (Real-corpus recall measurement is a separate, ongoing effort.) |
 
 ### Why it's designed this way — prior art & lineage
 
