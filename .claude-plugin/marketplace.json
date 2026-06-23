@@ -9,7 +9,7 @@
     {
       "name": "vibebook",
       "description": "/vibebook digests sessions into chronicles + typed memory + an entity wiki + distilled Q&A. A SessionStart hook auto-injects the project primer so a new session starts already knowing the project. /vibebook-context for deeper recall + entities + past Q&A; /vibebook-recall to dig into chronicles.",
-      "version": "0.9.2",
+      "version": "0.9.3",
       "source": "./",
       "category": "productivity"
     }

@@ -10978,7 +10978,7 @@ function scoreMemories(entries, q2) {
     }
     score += recencyBoost(e.updatedAt, q2.now);
     const importance = num(e.importance);
-    score += importance;
+    score += Math.min(importance, IMPORTANCE_CAP);
     score += Math.min(num(e.accessCount), 5) * 0.5;
     if (importance >= 3) why.push(`importance:${importance}`);
     out.push({ entry: e, score, whyRecalled: why.join(" ") || "scope-eligible" });
@@ -10993,9 +10993,11 @@ function recencyBoost(updatedAt, now) {
   if (days <= 30) return 1;
   return 0;
 }
+var IMPORTANCE_CAP;
 var init_score = __esm({
   "src/memory/score.ts"() {
     "use strict";
+    IMPORTANCE_CAP = 3;
   }
 });
 
