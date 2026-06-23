@@ -1,6 +1,6 @@
 {
   "name": "vibebook-plugin",
-  "version": "0.9.9",
+  "version": "0.9.10",
   "description": "Vibebook Claude Code plugin: digest your AI coding sessions into chronicles + topics, recall past notes before new work. Standalone — works without the vibebook npm CLI.",
   "type": "module",
   "license": "MIT",

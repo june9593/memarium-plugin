@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.10 — 2026-06-24
+
+**`memory-lint --fix` — auto-staleness via the review gate (#14).**
+
+`memory-lint` detected `expired` entries (active memories past their `validTo`) but
+was read-only — a stale fact lingered until a human noticed and hand-edited it. New
+`--fix` flag queues a `status→superseded` **proposal** for each expired entry,
+routed through `memory-diff`/`memory-approve` — it **never writes the repo directly**
+(the staleness fix is always reviewed), and writes only to the device-local proposal
+queue. The fix preserves the entry's body and flips only the status. (Without `--fix`,
+`memory-lint` stays purely read-only as before.) Digest Step P7.8 documents the shortcut.
+
 ## 0.9.9 — 2026-06-24
 
 **`status` command — digest coverage / backlog visibility (#22).**

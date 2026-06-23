@@ -5,12 +5,53 @@ import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { MEMORY_INDEX_REL } from "../memory/index-store.js";
 import { ENTITY_INDEX_REL } from "../entity/index-store.js";
 import { QA_INDEX_REL } from "../qa/index-store.js";
-import { emptyMemoryIndex, type MemoryIndex } from "../memory/types.js";
+import { emptyMemoryIndex, type MemoryIndex, type MemoryEntry } from "../memory/types.js";
 import { emptyEntityIndex, type EntityIndex } from "../entity/types.js";
 import { emptyQaIndex, type QaIndex } from "../qa/types.js";
 import { lintMemory, type LintFinding, type LintReport } from "../memory/lint.js";
+import { writeProposal, flatTargetKey, type MemoryProposal } from "../memory/proposal-store.js";
+import { targetKey, deriveAction, canonicalMemoryPath } from "../memory/gate.js";
 
-export interface MemoryLintOptions { cwd?: string; json?: boolean; staleDays?: number; }
+export interface MemoryLintOptions { cwd?: string; json?: boolean; staleDays?: number; fix?: boolean; }
+
+/** Recover a memory's body (the prose after the `# title` heading) from its md,
+ *  so a --fix proposal preserves content and only flips status. */
+function readBody(repoPath: string, entry: MemoryEntry): string {
+  try {
+    const md = readFileSync(join(repoPath, entry.path), "utf8");
+    const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, ""); // drop frontmatter
+    return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();        // drop the leading "# Title" heading
+  } catch { return ""; }
+}
+
+/** --fix: queue a review proposal for each `expired` finding that flips the live
+ *  entry to `status: superseded`. Goes through the proposal queue (human review),
+ *  NEVER a direct write (#14) — and writes ONLY to the device-local queue outside
+ *  the repo, so the repo itself stays untouched. Returns the count queued. */
+function proposeStalenessFixes(repoPath: string, idx: MemoryIndex, report: LintReport, now: string): string[] {
+  const queued: string[] = [];
+  for (const f of report.issues) {
+    if (f.layer !== "memory" || f.check !== "expired") continue;
+    const live = idx.entries[f.id];
+    if (!live || live.status === "superseded") continue;
+    const fixed: MemoryEntry = { ...live, status: "superseded", updatedAt: now };
+    fixed.path = canonicalMemoryPath(fixed);
+    const tKey = targetKey(fixed);
+    const p: MemoryProposal = {
+      proposalId: flatTargetKey(tKey),
+      targetKey: tKey,
+      proposedEntryId: fixed.id,
+      action: deriveAction(fixed, idx.entries),
+      rationale: `auto-staleness: ${f.detail} → mark superseded`,
+      sourceSession: null,
+      createdAt: now,
+      proposal: { entry: fixed, body: readBody(repoPath, live) },
+    };
+    writeProposal(repoPath, p);
+    queued.push(tKey);
+  }
+  return queued;
+}
 
 function readIndexOnce<T extends { version: number; entries: object }>(
   repoPath: string, rel: string, layer: LintFinding["layer"], empty: T,
@@ -72,5 +113,19 @@ export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
     report.issues = [...corrupt, ...report.issues];
     report.counts = { issues: report.issues.length, suggestions: report.suggestions.length };
   }
-  process.stdout.write(opts.json ? JSON.stringify(report, null, 2) + "\n" : humanReport(report));
+  // --fix queues review proposals (status→superseded) for expired entries; it
+  // does NOT touch the repo — the human still approves via memory-diff/approve.
+  const fixed = opts.fix ? proposeStalenessFixes(cfg.repoPath, m.index, report, now) : [];
+  if (opts.json) {
+    process.stdout.write(JSON.stringify(opts.fix ? { ...report, fixesProposed: fixed } : report, null, 2) + "\n");
+  } else {
+    let out = humanReport(report);
+    if (opts.fix) {
+      out += fixed.length
+        ? `\n${fixed.length} staleness fix(es) queued as proposals — review with \`memory-diff\` then \`memory-approve\`:\n` +
+          fixed.map((k) => `  - ${k}`).join("\n") + "\n"
+        : "\nNo auto-fixable staleness (no expired active entries).\n";
+    }
+    process.stdout.write(out);
+  }
 }

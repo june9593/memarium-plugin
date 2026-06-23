@@ -177,13 +177,14 @@ export async function run(argv: string[]) {
     });
 
   program.command("memory-lint")
-    .description("Read-only integrity diagnostic across memory/entity/qa indexes (never writes). --json for structured output.")
+    .description("Read-only integrity diagnostic across memory/entity/qa indexes (never writes the repo). --json for structured output; --fix queues review proposals for expired entries.")
     .option("--cwd <path>", "scope findings to the project at this path (+ global/user); default: lint the whole store")
     .option("--json", "emit the structured LintReport JSON instead of a human report")
     .option("--stale-days <n>", "age threshold for stale episodic/working (default 90)", (v) => parseInt(v, 10))
-    .action(async (o: { cwd?: string; json?: boolean; staleDays?: number }) => {
+    .option("--fix", "queue a review proposal (status→superseded) for each expired entry — goes through memory-diff/approve, never a direct write")
+    .action(async (o: { cwd?: string; json?: boolean; staleDays?: number; fix?: boolean }) => {
       const { memoryLintCmd } = await import("./commands/memory-lint.js");
-      await memoryLintCmd({ cwd: o.cwd, json: o.json, staleDays: o.staleDays });
+      await memoryLintCmd({ cwd: o.cwd, json: o.json, staleDays: o.staleDays, fix: o.fix });
     });
 
   program.command("memory-propose")

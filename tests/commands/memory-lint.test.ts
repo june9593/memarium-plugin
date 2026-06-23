@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, readdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { memoryLintCmd } from "../../src/commands/memory-lint.js";
@@ -174,5 +174,41 @@ describe("memoryLintCmd", () => {
     expect(ids).toContain("semantic/p/mp");
     // q-scoped entry must NOT appear
     expect(ids).not.toContain("semantic/q/mp");
+  });
+
+  function writeExpiredEntry() {
+    writeFileSync(join(repo, ".vibebook", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/exp": { id: "semantic/p/exp", type: "semantic", scope: "project:p", project: "p",
+        title: "Expired fact", summary: "s", path: "memory/semantic/p/exp.md", status: "active",
+        confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+        validFrom: null, validTo: "2000-01-01", sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+        supersedes: null, entities: [], trust: "trusted", originDevice: null, accessCount: 0, lastAccess: null },
+    } }));
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    writeFileSync(join(repo, "memory/semantic/p/exp.md"), "---\nid: semantic/p/exp\n---\n\n# Expired fact\n\nThe real body.\n");
+  }
+
+  it("--fix queues a superseded proposal for an expired entry (body preserved) WITHOUT touching the repo (#14)", async () => {
+    writeExpiredEntry();
+    const indexBefore = readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8");
+    await memoryLintCmd({ fix: true, json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.fixesProposed).toContain("semantic/p/exp");
+    const { listProposals } = await import("../../src/memory/proposal-store.js");
+    const p = listProposals(repo).find((x) => x.proposedEntryId === "semantic/p/exp")!;
+    expect(p.proposal.entry.status).toBe("superseded"); // proposes the flip
+    expect(p.proposal.body).toBe("The real body.");      // body preserved
+    // repo index NOT mutated — the fix is a queued proposal, not a direct write
+    expect(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8")).toBe(indexBefore);
+  });
+
+  it("without --fix, an expired entry is reported but nothing is queued", async () => {
+    writeExpiredEntry();
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.issues.some((f: { check: string; id: string }) => f.check === "expired" && f.id === "semantic/p/exp")).toBe(true);
+    expect(payload.fixesProposed).toBeUndefined();
+    const { listProposals } = await import("../../src/memory/proposal-store.js");
+    expect(listProposals(repo).length).toBe(0);
   });
 });
