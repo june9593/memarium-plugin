@@ -4,7 +4,7 @@
 
 **📖 Project page:** https://june9593.github.io/vibebook-plugin/ · **npm CLI (optional sync):** https://github.com/june9593/vibebook
 
-> vibebook turns your AI coding sessions into a **durable, typed, queryable memory** that every future session starts from — not just a log of what happened, but a layered *Memory OS*: typed memory, an entity wiki, distilled Q&A, health linting, a human-review gate for long-term memory, and a retrieval-quality eval harness.
+> vibebook turns your AI coding sessions into a **durable, typed, queryable memory** that every future session starts from — not just a log of what happened, but a layered *Memory OS*: typed memory, an entity wiki, distilled Q&A, health linting, a human-review gate for long-term memory, and a CI scorer regression eval harness.
 >
 > **Markdown-first. Local. Git-syncable. Fully auditable.** No cloud, no vector database, and **no LLM in the storage/retrieval layer** — all writing happens in-session via skills; the CLI is pure I/O.
 
@@ -62,7 +62,7 @@ Self-contained: no extra CLI required, no cloud service, your data stays local a
 | **qa — distilled Q&A** | A `qa/` answer layer: durable question→answer pairs (compound questions, troubleshooting conclusions, decision rationale, operational routes). |
 | **v3 — lint + consolidation** | `memory-lint`, a read-only health check (expired / dangling-supersede / duplicate-like / missing-provenance / stale), plus a conservative consolidation step at digest time. |
 | **v4 — self-evolution gate** | A **"memory-PR"** flow: changes to long-term `core` / `procedural` / pinned memory can't be written directly — the agent must `memory-propose`; a human reviews with `memory-diff` and applies with `memory-approve` (or `memory-reject`). One bad summary can't silently poison long-term behavior. |
-| **v5 — retrieval eval** | A deterministic, LLM-free eval harness (LongMemEval-style) that gates recall quality in CI — proving memory surfaces the *right* context, with zero runtime footprint. |
+| **v5 — retrieval eval** | A deterministic, LLM-free **scorer regression suite** (LongMemEval-style fixtures) that locks the scorer's behavior against a hand-authored corpus in CI — a guardrail against scorer regressions, *not* a held-out recall benchmark — with zero runtime footprint. (Real-corpus recall measurement is a separate, ongoing effort.) |
 
 ### Why it's designed this way — prior art & lineage
 
@@ -72,12 +72,12 @@ vibebook is deliberately grounded in published research and a clear set of trade
 |---|---|---|
 | **Typed memory** (working / episodic / semantic / procedural …) | **CoALA** — *Cognitive Architectures for Language Agents* (Sumers, Yao, Narasimhan, Griffiths, 2023) | A principled memory taxonomy from cognitive science, rather than one undifferentiated blob. |
 | **Relevance scorer** = recency + importance + relevance | **Generative Agents** (Park et al., 2023) — the memory-stream retrieval function | A simple, explainable, well-validated ranking signal. |
-| **Retrieval-quality eval** | **LongMemEval** (Wu et al., 2024) — long-term memory benchmark for chat assistants | You can't improve what you don't measure; abilities (info-extraction, multi-session, temporal, knowledge-update, abstention) are tested explicitly. |
+| **Scorer regression eval** | **LongMemEval** (Wu et al., 2024) — long-term memory benchmark for chat assistants | Inspiration for the ability axes (info-extraction, multi-session, temporal, knowledge-update, abstention), which are exercised against a fixture corpus to catch scorer regressions — not a benchmark of real-corpus recall. |
 | **Markdown-first, local, git-synced, no vector DB** | A deliberate counter-position to vector/graph memory stacks like **mem0**, **Letta / MemGPT**, **Zep / Graphiti**, **A-MEM** | Auditability and ownership: memory is human-readable, diff-able, and version-controlled. The cost — lexical (term-overlap) retrieval — is a known trade-off (see [Limitations](#limitations--roadmap)). |
 | **Memory-PR governance gate** | (novel) — most memory frameworks let the agent self-edit long-term memory freely | Governance: long-term, behavior-shaping memory changes get human review before they persist. |
 | **Entity wiki + distilled Q&A** | Personal-knowledge-base / Zettelkasten practice (linked atomic notes) | A reverse-index synthesis layer on top of episodic chronicles. |
 
-> **Honest positioning:** the taxonomy, scorer, governance gate, and eval harness are aligned with — and in places ahead of — mainstream agent-memory tooling. The one intentional gap is **lexical-only retrieval** (no embeddings/graph); see the roadmap below for how we plan to close it without giving up auditability.
+> **Honest positioning:** the taxonomy, scorer, and governance gate are aligned with — and in places ahead of — mainstream agent-memory tooling; the eval harness is a CI regression guard (held-out real-corpus recall benchmarking is ongoing, not yet shipped). The one intentional gap is **lexical-only retrieval** (no embeddings/graph); see the roadmap below for how we plan to close it without giving up auditability.
 
 ### Commands & skills
 
@@ -164,7 +164,7 @@ PRs welcome. Open an issue first for anything beyond a typo — design changes a
 | **qa — 精炼问答** | `qa/` 答案层:可复用的问→答对(复合问题、排障结论、决策理由、操作路径)。 |
 | **v3 — lint + 整合** | `memory-lint` 只读健康检查(过期 / 悬挂 supersede / 疑似重复 / 缺出处 / 陈旧),以及 digest 时的保守整合。 |
 | **v4 — 自进化门禁** | **"memory-PR"** 流程:长期 `core` / `procedural` / pinned 记忆不能直接写 —— agent 必须 `memory-propose`;人用 `memory-diff` 审、用 `memory-approve` 落库(或 `memory-reject`)。一条坏 summary 无法静默污染长期行为。 |
-| **v5 — 召回评估** | 确定性、不调 LLM 的 eval harness(LongMemEval 风格),在 CI 里把召回质量当门禁 —— 证明记忆能把*对的*上下文摆到面前,零运行时开销。 |
+| **v5 — 召回评估** | 确定性、不调 LLM 的 **scorer 回归套件**(LongMemEval 风格的 fixture),在 CI 里把 scorer 行为锁在一组手写语料上 —— 是防 scorer 回归的护栏,**不是** held-out 召回基准,零运行时开销。(真实语料的召回测量是另一条单独、进行中的工作。) |
 
 ### 为什么这么设计 —— 参考的论文与 repo
 
@@ -174,12 +174,12 @@ vibebook 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 |---|---|---|
 | **typed memory**(working / episodic / semantic / procedural …) | **CoALA** — *Cognitive Architectures for Language Agents*(2023) | 来自认知科学的记忆分类法,而不是一坨无差别的 blob。 |
 | **打分器** = recency + importance + relevance | **Generative Agents**(Park 等, 2023)的 memory-stream 召回函数 | 简单、可解释、被验证过的排序信号。 |
-| **召回质量评估** | **LongMemEval**(Wu 等, 2024)长期记忆基准 | 不度量就无法改进;信息抽取/多会话/时序/知识更新/弃答这些能力被显式测试。 |
+| **Scorer 回归评估** | **LongMemEval**(Wu 等, 2024)长期记忆基准 | 借鉴其能力维度(信息抽取/多会话/时序/知识更新/弃答),在 fixture 语料上跑来防 scorer 回归 —— 不是真实语料召回的基准。 |
 | **markdown 优先、本地、git 同步、不用向量库** | 对 **mem0**、**Letta / MemGPT**、**Zep / Graphiti**、**A-MEM** 这类向量/图记忆栈的刻意反向选择 | 可审计、可拥有:记忆人类可读、可 diff、可版本控制。代价是词法(term-overlap)召回 —— 一个已知取舍(见[局限](#局限与路线图))。 |
 | **memory-PR 治理门禁** | (新)—— 多数记忆框架让 agent 自由自改长期记忆 | 治理:会长期影响行为的记忆改动落库前先经人审。 |
 | **entity wiki + 精炼 Q&A** | 个人知识库 / Zettelkasten 实践(链接式原子笔记) | 在 episodic chronicle 之上的反向索引综合层。 |
 
-> **如实定位:** 分类法、打分器、治理门禁、评估 harness 与主流 agent 记忆工具持平,有些地方还领先。唯一刻意的缺口是**纯词法召回**(没有 embedding / 图);路线图里写了如何在不放弃可审计的前提下补上它。
+> **如实定位:** 分类法、打分器、治理门禁与主流 agent 记忆工具持平,有些地方还领先;评估 harness 是 CI 回归护栏(真实语料的 held-out 召回基准还在进行、尚未上线)。唯一刻意的缺口是**纯词法召回**(没有 embedding / 图);路线图里写了如何在不放弃可审计的前提下补上它。
 
 ### 命令与 skills
 
