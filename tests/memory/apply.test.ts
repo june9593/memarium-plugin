@@ -139,4 +139,13 @@ describe("applyMemoryItems", () => {
     expect(Number.isFinite(sLive)).toBe(true);
     expect(sLive).toBe(sRebuilt); // live write and rebuild must agree → eval can't drift across a rebuild
   });
+
+  it("defaults a missing trust to 'unknown' (never auto-promotes) — #23", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const entry = mk({ id: "semantic/p/z", type: "semantic", scope: "project:p", project: "p", path: "" });
+    delete (entry as unknown as Record<string, unknown>).trust;
+    applyMemoryItems(repo, [{ entry, body: "b" }]);
+    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    expect(idx.entries["semantic/p/z"].trust).toBe("unknown");
+  });
 });

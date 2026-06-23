@@ -38,7 +38,7 @@ describe("memoryQueryCmd", () => {
           status: "active", confidence: 0.9, importance: 4, createdAt: "2026-06-01",
           updatedAt: "2026-06-01", validFrom: null, validTo: null, sourceSessions: [],
           sourceCommits: [], sourceFiles: [], supersedes: null, entities: ["spool"],
-          originDevice: null, accessCount: 0, lastAccess: null },
+          trust: "trusted", originDevice: null, accessCount: 0, lastAccess: null },
         "episodic/edge-memvc/task": { id: "episodic/edge-memvc/task", type: "episodic",
           scope: "project:edge-memvc", project: "edge-memvc", title: "Current task",
           summary: "in-progress note", path: "memory/episodic/edge-memvc/task.md",
@@ -159,5 +159,29 @@ describe("memoryQueryCmd", () => {
     const u = loadUsage(repo);
     expect(Object.keys(u).length).toBe(5);              // capped at 5
     expect(u["semantic/edge-memvc/widget-6"]).toBeUndefined(); // lowest-ranked tie dropped
+  });
+
+  it("splits semantic by trust: trusted → semantic, untrusted/unknown → untrustedSemantic (#23)", async () => {
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const e = (id: string, trust: string) => ({ id, type: "semantic", scope: "project:edge-memvc",
+      project: "edge-memvc", title: id, summary: "s", path: `memory/${id}.md`, status: "active",
+      confidence: 0.9, importance: 3, createdAt: "2026-06-01", updatedAt: "2026-06-01", validFrom: null,
+      validTo: null, sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
+      entities: [], trust, originDevice: null, accessCount: 0, lastAccess: null });
+    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/edge-memvc/t": e("semantic/edge-memvc/t", "trusted"),
+      "semantic/edge-memvc/u": e("semantic/edge-memvc/u", "untrusted"),
+      "semantic/edge-memvc/k": e("semantic/edge-memvc/k", "unknown"),
+    } }));
+    stdout.length = 0;
+    await memoryQueryCmd({ cwd: "/work/edge-memvc" });
+    const p = JSON.parse(stdout.join(""));
+    expect(p.semantic.map((x: any) => x.entry.id)).toEqual(["semantic/edge-memvc/t"]);
+    const un = p.untrustedSemantic.map((x: any) => x.entry.id);
+    expect(un).toContain("semantic/edge-memvc/u");
+    expect(un).toContain("semantic/edge-memvc/k");
+    // and the primer only carries the trusted one
+    expect(p.primer).toContain("semantic/edge-memvc/t");
+    expect(p.primer).not.toContain("semantic/edge-memvc/u");
   });
 });

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.9.8 — 2026-06-23
+
+**Provenance trust gating for semantic memory (#23).**
+
+`semantic` memory was written live (ungated) yet auto-injected into the
+SessionStart primer — a prompt-injection / memory-poisoning vector when a digest
+ingests external content (web pages, external repos, files the agent read). A new
+`trust` field (`trusted` | `untrusted` | `unknown`) governs auto-injection,
+**without** routing every semantic write through the human review queue:
+
+- The SessionStart primer auto-injects ONLY `trusted` semantic. `untrusted` /
+  `unknown` semantic is withheld from the primer; it still writes and is searchable
+  via explicit `/vibebook-context`, surfaced flagged (`untrustedSemantic`, "⚠️ unverified").
+- `core` / `procedural` are unaffected — the v4 review gate already protects them.
+- New writes that don't set `trust` default to `unknown` (never auto-promoted to trusted).
+- **Promoting** an existing entry up to `trusted` is gated → must go through
+  `memory-propose` / `memory-approve` (a plain `memory-write` is rejected). Downgrades are free.
+- The scorer is untouched — `trust` affects primer injection + `/vibebook-context`
+  display only, not recall ranking (eval recall@5 unchanged at 0.96).
+
+**Compatibility:** legacy md without a `trust:` line is migrated mechanically on the
+next `memory-index`: own-project provenance (a sourceSession / sourceCommit) +
+project/global/user scope → `trusted`; otherwise `unknown`. Existing digested project
+facts keep appearing in the primer; unprovenanced entries default out.
+
 ## 0.9.7 — 2026-06-23
 
 **Memory types: drop the two unused types (`working`, `artifact`).**

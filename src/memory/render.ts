@@ -30,6 +30,7 @@ export function renderMemoryMarkdown(entry: MemoryEntry, body: string): string {
     `sourceCommits: ${arr(entry.sourceCommits)}`,
     `sourceFiles: ${arr(entry.sourceFiles)}`,
     `entities: ${arr(entry.entities)}`,
+    `trust: ${entry.trust ?? "unknown"}`,
     "---",
   ].join("\n");
   const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");

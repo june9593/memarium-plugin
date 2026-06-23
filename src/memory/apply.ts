@@ -78,6 +78,9 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     // (Math.min(undefined,5)=NaN). Write the same defaults parse.ts produces.
     if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
     if (entry.lastAccess === undefined) entry.lastAccess = null;
+    // trust: a new entry that didn't set it (or set garbage) defaults to "unknown"
+    // — never auto-promote to trusted (#23 decision #3). unknown stays out of the primer.
+    if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
 
     if (supersede && idx.entries[supersede.targetId]) {
       idx.entries[supersede.targetId].status = "superseded";

@@ -63,12 +63,20 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
         : "time-bounded",
     }));
 
+  // Split semantic by trust (#23): only `trusted` semantic is shown as plain
+  // "Project facts"; untrusted/unknown semantic goes in a SEPARATE group so the
+  // skill can surface it flagged ("⚠️ unverified source — don't treat as fact")
+  // instead of silently mixing it in. Same split the primer auto-injection uses.
+  const semanticAll = byType("semantic");
+  const isTrusted = (s: ScoredMemory): boolean => (s.entry.trust ?? "unknown") === "trusted";
+
   const payload = {
     project,
     primer,
     core: byType("core"),
     procedures: byType("procedural"),
-    semantic: byType("semantic"),
+    semantic: semanticAll.filter(isTrusted),
+    untrustedSemantic: semanticAll.filter((s) => !isTrusted(s)),
     episodes: byType("episodic"),
     conflicts,
     meta: { total: scored.length, project },

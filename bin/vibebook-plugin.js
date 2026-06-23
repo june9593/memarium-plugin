@@ -10612,6 +10612,7 @@ function renderMemoryMarkdown(entry, body) {
     `sourceCommits: ${arr(entry.sourceCommits)}`,
     `sourceFiles: ${arr(entry.sourceFiles)}`,
     `entities: ${arr(entry.entities)}`,
+    `trust: ${entry.trust ?? "unknown"}`,
     "---"
   ].join("\n");
   const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
@@ -10636,11 +10637,18 @@ function isGated(e) {
 function supersedesId(entry) {
   return typeof entry.supersedes === "string" && entry.supersedes.length > 0 ? entry.supersedes : null;
 }
+function isTrustElevation(entry, live) {
+  if ((entry.trust ?? "unknown") !== "trusted") return false;
+  const prev = live[entry.id];
+  if (!prev) return false;
+  return (prev.trust ?? "unknown") !== "trusted";
+}
 function isGatedChange(entry, live) {
   if (isGated(entry)) return true;
   if (isGated(live[entry.id])) return true;
   const sup = supersedesId(entry);
   if (sup && isGated(live[sup])) return true;
+  if (isTrustElevation(entry, live)) return true;
   return false;
 }
 function targetKey(entry) {
@@ -10754,6 +10762,7 @@ function applyMemoryItems(repoPath, items) {
     entry.path = canonical;
     if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
     if (entry.lastAccess === void 0) entry.lastAccess = null;
+    if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
     if (supersede && idx.entries[supersede.targetId]) {
       idx.entries[supersede.targetId].status = "superseded";
       superseded++;
@@ -10823,6 +10832,15 @@ function parseScalar(v) {
   const t2 = v.trim();
   return t2 === "null" ? null : t2;
 }
+function coerceTrust(v) {
+  const t2 = v.trim();
+  return t2 === "trusted" || t2 === "untrusted" ? t2 : "unknown";
+}
+function deriveLegacyTrust(sourceSessions, sourceCommits, scope, project) {
+  const ownProvenance = sourceSessions.length > 0 || sourceCommits.length > 0;
+  const projectScoped = scope === "global" || scope === "user" || project !== null;
+  return ownProvenance && projectScoped ? "trusted" : "unknown";
+}
 function parseMemoryMarkdown(md) {
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
@@ -10833,11 +10851,16 @@ function parseMemoryMarkdown(md) {
     fm[line.slice(0, i2).trim()] = line.slice(i2 + 1).trim();
   }
   if (!fm.id || !fm.type) return null;
+  const scope = fm.scope;
+  const project = parseScalar(fm.project);
+  const sourceSessions = parseArr(fm.sourceSessions ?? "[]");
+  const sourceCommits = parseArr(fm.sourceCommits ?? "[]");
+  const trust = fm.trust !== void 0 ? coerceTrust(fm.trust) : deriveLegacyTrust(sourceSessions, sourceCommits, scope, project);
   return {
     id: fm.id,
     type: fm.type,
-    scope: fm.scope,
-    project: parseScalar(fm.project),
+    scope,
+    project,
     title: fm.title ?? "",
     summary: fm.summary ?? "",
     path: "",
@@ -10849,11 +10872,12 @@ function parseMemoryMarkdown(md) {
     updatedAt: fm.updatedAt ?? "",
     validFrom: parseScalar(fm.validFrom ?? "null"),
     validTo: parseScalar(fm.validTo ?? "null"),
-    sourceSessions: parseArr(fm.sourceSessions ?? "[]"),
-    sourceCommits: parseArr(fm.sourceCommits ?? "[]"),
+    sourceSessions,
+    sourceCommits,
     sourceFiles: parseArr(fm.sourceFiles ?? "[]"),
     supersedes: parseScalar(fm.supersedes ?? "null"),
     entities: parseArr(fm.entities ?? "[]"),
+    trust,
     originDevice: parseScalar(fm.originDevice ?? "null"),
     accessCount: 0,
     lastAccess: null
@@ -11092,7 +11116,7 @@ function num2(v, dflt) {
   return typeof v === "number" && isFinite(v) ? v : dflt;
 }
 function eligible(entries, type, project, now) {
-  return entries.filter((e) => e.status !== "superseded" && e.type === type).filter((e) => e.validTo === null || e.validTo > now).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
+  return entries.filter((e) => e.status !== "superseded" && e.type === type).filter((e) => e.validTo === null || e.validTo > now).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted").sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
 }
 function section(title, all, max) {
   if (all.length === 0) return "";
@@ -11173,12 +11197,15 @@ async function memoryQueryCmd(opts) {
     score: 0,
     whyRecalled: e.status === "superseded" ? "superseded" : e.supersedes !== null ? "supersedes-other" : "time-bounded"
   }));
+  const semanticAll = byType("semantic");
+  const isTrusted = (s) => (s.entry.trust ?? "unknown") === "trusted";
   const payload = {
     project,
     primer,
     core: byType("core"),
     procedures: byType("procedural"),
-    semantic: byType("semantic"),
+    semantic: semanticAll.filter(isTrusted),
+    untrustedSemantic: semanticAll.filter((s) => !isTrusted(s)),
     episodes: byType("episodic"),
     conflicts: conflicts2,
     meta: { total: scored.length, project }

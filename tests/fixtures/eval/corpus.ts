@@ -11,7 +11,7 @@ function mem(o: Partial<MemoryEntry> & Pick<MemoryEntry, "id" | "type" | "scope"
     confidence: 0.9, importance: 3, createdAt: "2026-01-01", updatedAt: "2026-06-01",
     validFrom: null, validTo: null, sourceSessions: [], sourceCommits: [], sourceFiles: [],
     supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
-    status: "active", path: "", ...o,
+    status: "active", path: "", trust: "trusted", ...o,
   };
 }
 function qa(o: Partial<QaEntry> & Pick<QaEntry, "id" | "scope" | "project" | "question" | "answerSummary" | "kind">): QaEntry {

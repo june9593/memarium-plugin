@@ -52,6 +52,16 @@ describe("isGatedChange", () => {
   it("false for a pure non-gated change", () => {
     expect(isGatedChange(mk({ id: "semantic/p/z" }), {})).toBe(false);
   });
+  it("gates elevating an existing entry's trust up to trusted (#23)", () => {
+    const live = { "semantic/p/z": mk({ id: "semantic/p/z", trust: "untrusted" }) };
+    expect(isGatedChange(mk({ id: "semantic/p/z", trust: "trusted" }), live)).toBe(true);   // untrusted → trusted: gated
+    expect(isGatedChange(mk({ id: "semantic/p/z", trust: "untrusted" }), live)).toBe(false); // no elevation
+  });
+  it("does NOT gate a brand-new trusted entry, nor a downgrade (#23)", () => {
+    expect(isGatedChange(mk({ id: "semantic/p/new", trust: "trusted" }), {})).toBe(false); // new, no live predecessor
+    const live = { "semantic/p/z": mk({ id: "semantic/p/z", trust: "trusted" }) };
+    expect(isGatedChange(mk({ id: "semantic/p/z", trust: "untrusted" }), live)).toBe(false); // downgrade is free
+  });
 });
 
 describe("targetKey", () => {

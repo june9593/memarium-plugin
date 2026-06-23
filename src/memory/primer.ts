@@ -21,6 +21,11 @@ function eligible(entries: MemoryEntry[], type: MemoryType, project: string, now
     .filter((e) => e.status !== "superseded" && e.type === type)
     .filter((e) => e.validTo === null || e.validTo > now)
     .filter((e) => e.scope === "global" || e.scope === "user" || e.project === project)
+    // Trust gate (#23): only `trusted` semantic auto-injects into the primer.
+    // untrusted/unknown semantic (possible prompt-injection from external content
+    // the digest read) is withheld — it surfaces only in explicit /vibebook-context,
+    // flagged. core/procedural are unaffected (the v4 review gate protects them).
+    .filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted")
     .sort((a, b) =>
       num(b.importance, 0) - num(a.importance, 0) ||
       num(b.confidence, 0.5) - num(a.confidence, 0.5) ||
