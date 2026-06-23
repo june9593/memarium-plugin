@@ -12558,7 +12558,8 @@ function proposeStalenessFixes(repoPath, idx, report, now) {
       action: deriveAction(fixed, idx.entries),
       rationale: `auto-staleness: ${f.detail} \u2192 mark superseded`,
       sourceSession: null,
-      createdAt: now,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      // full ISO, matching memory-propose + the MemoryProposal.createdAt contract
       proposal: { entry: fixed, body: readBody(repoPath, live) }
     };
     writeProposal(repoPath, p2);

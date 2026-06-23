@@ -27,7 +27,7 @@ function readBody(repoPath: string, entry: MemoryEntry): string {
 /** --fix: queue a review proposal for each `expired` finding that flips the live
  *  entry to `status: superseded`. Goes through the proposal queue (human review),
  *  NEVER a direct write (#14) — and writes ONLY to the device-local queue outside
- *  the repo, so the repo itself stays untouched. Returns the count queued. */
+ *  the repo, so the repo itself stays untouched. Returns the queued target keys. */
 function proposeStalenessFixes(repoPath: string, idx: MemoryIndex, report: LintReport, now: string): string[] {
   const queued: string[] = [];
   for (const f of report.issues) {
@@ -44,7 +44,7 @@ function proposeStalenessFixes(repoPath: string, idx: MemoryIndex, report: LintR
       action: deriveAction(fixed, idx.entries),
       rationale: `auto-staleness: ${f.detail} → mark superseded`,
       sourceSession: null,
-      createdAt: now,
+      createdAt: new Date().toISOString(), // full ISO, matching memory-propose + the MemoryProposal.createdAt contract
       proposal: { entry: fixed, body: readBody(repoPath, live) },
     };
     writeProposal(repoPath, p);
