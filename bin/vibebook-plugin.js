@@ -3043,8 +3043,6 @@ function defaultPluginConfig() {
   return {
     repoPath: join(homedir(), ".vibebook", "session-repo"),
     repoUrl: "",
-    encrypt: false,
-    salt: "",
     deviceBranch: "",
     runner: "claude-cli",
     enableAggregateCI: false,
@@ -3074,14 +3072,13 @@ import { join as join2 } from "node:path";
 function dataDirAbs(repoPath) {
   return join2(repoPath, REPO_DATA_DIR);
 }
-var REPO_DATA_DIR, INDEX_REL, BOOK_INDEX_REL, REPO_SALT_REL;
+var REPO_DATA_DIR, INDEX_REL, BOOK_INDEX_REL;
 var init_repo_data_dir = __esm({
   "src/_shared/repo-data-dir.ts"() {
     "use strict";
     REPO_DATA_DIR = ".vibebook";
     INDEX_REL = `${REPO_DATA_DIR}/index.json`;
     BOOK_INDEX_REL = `${REPO_DATA_DIR}/index.book.json`;
-    REPO_SALT_REL = `${REPO_DATA_DIR}/repo-salt.json`;
   }
 });
 

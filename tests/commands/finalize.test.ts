@@ -19,7 +19,7 @@ describe("finalizeCmd", () => {
 
   function writeConfig(extra: Record<string, unknown>) {
     writeFileSync(join(home, ".vibebook/config.json"), JSON.stringify({
-      repoPath: repo, repoUrl: "", encrypt: false, salt: "", deviceBranch: "",
+      repoPath: repo, repoUrl: "", deviceBranch: "",
       runner: "claude-cli", enableAggregateCI: false, includeReasoning: true,
       threadingConcurrency: 4, threadingMaxAttempts: 3, digestEnabled: true, ...extra,
     }));

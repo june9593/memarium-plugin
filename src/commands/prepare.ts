@@ -41,8 +41,8 @@ export interface PreparedSession {
   nameSlug: string;
   /** Display title from the raw extract. */
   displayName: string;
-  /** Repo-relative path to the synced .md (already decrypted-on-demand;
-   *  the skill should `Read` this path directly). */
+  /** Repo-relative path to the synced .md (the skill should `Read` this
+   *  path directly). */
   mdPath: string;
   /** First-300-char preview of joined user messages. */
   preview: string;
@@ -73,7 +73,7 @@ export interface PrepareOptions {
  *   4. For each unconsumed session:
  *        - apply isRealProjectPath filter
  *        - apply --project filter if given
- *        - read the .md (decrypt if encrypted), compute signals
+ *        - read the .md, compute signals
  *   5. Sort by endedAt ASC, return.
  *
  * The skill's "Step 1 — Plan" calls this and prints the count + summary.
@@ -182,8 +182,7 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
 }
 
 /** The IndexEntry stores the raw_sessions path. We want the human-readable
- *  .md path. Working tree is always plaintext now (encryption happens via
- *  git filter on push) so no .enc handling needed. */
+ *  .md path. */
 function mdPathFor(entry: IndexEntry): string {
   // entry.relativePath is the .raw.json path. Swap suffix.
   return entry.relativePath.replace(/\.raw\.json(\.enc)?$/, `.md`);

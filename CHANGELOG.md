@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.10.0 — 2026-06-24
+
+**Removed: at-rest encryption (lockstep with npm `vibebook` 0.10.0).** The
+npm CLI dropped its opt-in git-crypt body-encryption layer (default-off
+since 0.8.2), so the plugin's `@sync-from` mirrors of those files are
+cleaned to match:
+
+- **Deleted** `src/_shared/passphrase-store.ts` (the npm canonical was
+  removed).
+- **`src/_shared/config.ts`** — dropped the `encrypt` / `salt` schema
+  fields and the `freshSaltBase64` / `writeRepoSaltFile` / `getPassphrase`
+  helpers + their `node:crypto` / passphrase / salt imports.
+- **`src/_shared/repo-data-dir.ts`** — dropped `REPO_SALT_REL` /
+  `repoSaltAbs`.
+- **`src/spool/plugin-config.ts`** — `defaultPluginConfig()` no longer
+  emits `encrypt` / `salt`.
+- **SKILL.md** — removed the `MEMVC1` / "run `vibebook crypt init`" digest
+  warning (the working tree is always plaintext; there is no filter to
+  miss).
+- Tidied stale "decrypt-on-demand" / "encryption happens via git filter"
+  comments in `prepare.ts` / `scan-and-import.ts`.
+
+No runtime behavior change: `readPluginConfig()` already `JSON.parse`s the
+shared config and casts, so configs written by either the old or new npm
+CLI parse fine — the plugin never read `encrypt` / `salt`. tsc clean,
+390/390 tests passing.
+
 ## 0.9.10 — 2026-06-24
 
 **`memory-lint --fix` — auto-staleness via the review gate (#14).**

@@ -30,8 +30,6 @@ function defaultPluginConfig(): Config {
   return {
     repoPath: join(homedir(), ".vibebook", "session-repo"),
     repoUrl: "",
-    encrypt: false,
-    salt: "",
     deviceBranch: "",
     runner: "claude-cli",
     enableAggregateCI: false,
