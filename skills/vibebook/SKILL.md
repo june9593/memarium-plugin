@@ -165,10 +165,6 @@ mega-thread** — and you will under-count if you over-merge.
 not just the preview. The preview can mislead (a session can open with "I
 need to research" but turn into a 6KB debugging session).
 
-> **Encryption is transparent.** Working tree is always plaintext. If you
-> see `MEMVC1` at the top of any md file, the git filter wasn't installed
-> here — tell the user to run `vibebook crypt init` and stop.
-
 #### Reading a 0.7+ `manifest_version: 1` md (chunked navigation)
 
 vibebook 0.7+ writes a per-session manifest + Table of Contents at the top

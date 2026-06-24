@@ -3,7 +3,7 @@
 // upsert per-session entries into ~/.vibebook/session-repo/.vibebook/index.json.
 //
 // This is the plugin equivalent of npm sync.ts's main loop (sync.ts:80-125),
-// minus git/encrypt/migration. Plugin and sync are co-owners of raw_sessions/
+// minus git/migration. Plugin and sync are co-owners of raw_sessions/
 // and index.json; both write via the same upsertEntry path keyed by
 // {tool}:{sessionId}, so concurrent writes are conflict-free.
 //

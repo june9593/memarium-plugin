@@ -19,7 +19,7 @@ describe("readPluginConfig", () => {
   it("returns a default config (repoPath = ~/.vibebook/session-repo) when config.json is absent", () => {
     const cfg = readPluginConfig();
     expect(cfg.repoPath).toBe(join(fakeHome, ".vibebook/session-repo"));
-    expect(cfg.encrypt).toBe(false);
+    expect(cfg.digestEnabled).toBe(true);
     expect(cfg.runner).toBe("claude-cli");
   });
 
@@ -36,8 +36,6 @@ describe("readPluginConfig", () => {
       JSON.stringify({
         repoPath: customRepo,
         repoUrl: "git@example.com:me/repo.git",
-        encrypt: true,
-        salt: "abcd",
         deviceBranch: "macA",
         runner: "claude-cli",
         enableAggregateCI: true,
@@ -49,7 +47,7 @@ describe("readPluginConfig", () => {
     );
     const cfg = readPluginConfig();
     expect(cfg.repoPath).toBe(customRepo);
-    expect(cfg.encrypt).toBe(true);
+    expect(cfg.includeReasoning).toBe(false);
     expect(cfg.deviceBranch).toBe("macA");
   });
 });
