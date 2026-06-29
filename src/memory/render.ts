@@ -1,13 +1,19 @@
 import type { MemoryEntry } from "./types.js";
 
-function arr(xs: string[]): string {
-  return xs.length === 0 ? "[]" : `[${xs.join(", ")}]`;
+function arr(xs: string[] | undefined): string {
+  const a = xs ?? [];
+  return a.length === 0 ? "[]" : `[${a.join(", ")}]`;
 }
 function scalar(v: string | number | null): string {
   return v === null ? "null" : String(v);
 }
 
-/** Render a memory .md = YAML frontmatter (from the structured entry) + body. */
+/** Render a memory .md = YAML frontmatter (from the structured entry) + body.
+ *  Tolerates missing array fields / summary: authored entries (memory-write /
+ *  propose) routinely omit sourceSessions/sourceCommits/sourceFiles/entities/
+ *  summary, and a thin queued proposal is re-rendered at approve time — neither
+ *  should throw. apply.ts normalizes the persisted entry; this is the second
+ *  guard so render never sees `undefined.length`. */
 export function renderMemoryMarkdown(entry: MemoryEntry, body: string): string {
   const fm = [
     "---",
@@ -16,7 +22,7 @@ export function renderMemoryMarkdown(entry: MemoryEntry, body: string): string {
     `scope: ${entry.scope}`,
     `project: ${scalar(entry.project)}`,
     `title: ${entry.title}`,
-    `summary: ${entry.summary}`,
+    `summary: ${entry.summary ?? ""}`,
     `status: ${entry.status}`,
     `confidence: ${entry.confidence}`,
     `importance: ${entry.importance}`,

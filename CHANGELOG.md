@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.1 — 2026-06-29
+
+**Fix: `memory-write/-propose/-approve` crashed with `undefined.length` on a thin entry (#37).** `render.ts`'s `arr()` did `xs.length` and threw `Cannot read properties of undefined (reading 'length')` when an authored entry omitted any of `sourceSessions`/`sourceCommits`/`sourceFiles`/`entities` (and `summary` rendered as `undefined`). Those fields are de-facto required but presented as optional, so a reasonable input died opaquely — and the trap bit twice: `propose` queued a thin entry fine, then `approve` re-rendered and crashed. Fix is two-layer: `arr()` now defaults `xs ?? []` and summary `?? ""` (so render never throws, incl. approve re-render), and `applyMemoryItems` normalizes the arrays/summary alongside the existing accessCount/trust defaults so the persisted md + index stay consistent. +5 regression tests (render with each array undefined; apply normalizes a thin entry). 392 tests.
+
 ## 0.10.0 — 2026-06-24
 
 **Removed: at-rest encryption (lockstep with npm `vibebook` 0.10.0).** The

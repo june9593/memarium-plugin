@@ -81,6 +81,14 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     // trust: a new entry that didn't set it (or set garbage) defaults to "unknown"
     // — never auto-promote to trusted (#23 decision #3). unknown stays out of the primer.
     if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
+    // Provenance arrays + summary are de-facto required but routinely omitted in
+    // authored JSON (#37). Default them so render() never hits undefined.length and
+    // the persisted md/index stay consistent (no live-vs-rebuild drift).
+    if (typeof entry.summary !== "string") entry.summary = "";
+    if (!Array.isArray(entry.sourceSessions)) entry.sourceSessions = [];
+    if (!Array.isArray(entry.sourceCommits)) entry.sourceCommits = [];
+    if (!Array.isArray(entry.sourceFiles)) entry.sourceFiles = [];
+    if (!Array.isArray(entry.entities)) entry.entities = [];
 
     if (supersede && idx.entries[supersede.targetId]) {
       idx.entries[supersede.targetId].status = "superseded";
