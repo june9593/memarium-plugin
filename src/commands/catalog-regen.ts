@@ -65,8 +65,8 @@ export async function catalogRegenCmd(opts: CatalogRegenOptions): Promise<Catalo
     console.log(chalk.cyan(`  Catalog regenerated locally; push skipped.`));
     return report;
   }
-  // Stage the regen'd catalog + the index + any healed orphan md (now first-class)
-  // + the index file itself so the reconciliation persists to the remote.
+  // Stage the regen'd catalog + any healed orphan md (now first-class) + the
+  // index file, so the reconciliation persists to the remote.
   const staged = [...catalog.written, ...orphans.healed, ".vibebook/index.book.json"];
   const r = await commitAndPush(
     git,
