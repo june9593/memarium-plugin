@@ -439,6 +439,32 @@ Add this line to every fan-out agent prompt:
 > Do NOT use Bash heredoc or shell redirection. If Write tool is
 > unavailable, stop and report 'no write tool' — do not fall back."
 
+#### Reader subagents return JSON ONLY — they are not authorized to write artifacts
+
+A fan-out reader's **entire deliverable is the JSON file** under
+`/tmp/vb-<project>/`. It must NOT create or edit anything else. This is a
+hard contract, not a style note: a strong model handed "read these
+sessions and produce chronicles" will over-interpret and start writing
+`book/<project>/chronicle/*.md` directly, or wander off and author an
+unrelated skill/config (observed in #38 — one of six readers wrote the
+chronicle md by hand AND authored a `~/.claude/skills/.../SKILL.md`).
+Chronicle md written directly bypass `publish`, so they never enter
+`index.book.json` — and the index-driven catalog then silently drops the
+whole project.
+
+Put this guardrail verbatim in every fan-out reader prompt:
+
+> "Your ONLY output is the JSON file at /tmp/vb-<project>/agent<N>.json.
+> Do NOT write, create, or edit ANY other file — not chronicle/topic
+> markdown under book/, not memory/, not skills, not configs, nothing.
+> `publish` is the sole writer of book/ artifacts; you only return data
+> for it. If you think you need to write something else, you have
+> misread the task — stop and report instead."
+
+(Defense in depth: `publish` / `catalog-regen` now self-heal orphan
+chronicle md that slip through, re-registering them into the index — but
+the guardrail is what keeps the data clean and wikilinks resolved.)
+
 
 
 ### Step P4 — Write chronicles (AI-first format, agent-reuse body)

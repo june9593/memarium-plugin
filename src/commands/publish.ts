@@ -10,6 +10,7 @@ import {
 } from "../digest/book-index-v2.js";
 import { ensureRepo, ensureDeviceBranch, fastForwardBranch, commitAndPush } from "../_shared/git-ops.js";
 import { generateBookCatalog } from "../digest/book-catalog.js";
+import { reconcileOrphanChronicles } from "../digest/reconcile-orphans.js";
 import { resolveWikiLinks } from "../digest/wikilinks.js";
 
 /**
@@ -201,7 +202,20 @@ export async function publishCmd(opts: PublishOptions): Promise<PublishReport> {
   // Project-mode publish skips this — catalog regen only runs in global mode
   // after every project's subagent has finished, so the catalog reflects the
   // full set in one shot rather than churning per-project.
+  let healedOrphans: string[] = [];
   if (!opts.noCatalog) {
+    // Self-heal orphan chronicle md (written directly under book/, bypassing
+    // publish → never indexed → project silently dropped from the catalog, #38)
+    // before rendering, so the index-driven catalog can't miss a whole project.
+    const orphans = reconcileOrphanChronicles(cfg.repoPath, bookIndex);
+    healedOrphans = orphans.healed;
+    if (orphans.healed.length > 0) {
+      console.error(chalk.cyan(`+ reconciled ${orphans.healed.length} orphan chronicle(s) into the index (written directly, bypassing publish):`));
+      for (const p of orphans.healed) console.error(chalk.gray(`    ${p}`));
+    }
+    for (const s of orphans.skipped) {
+      console.error(chalk.yellow(`! skipped orphan ${s.path}: ${s.reason}`));
+    }
     const catalog = generateBookCatalog(cfg.repoPath, bookIndex);
     report.bookIndexFiles = catalog.written;
   }
@@ -225,6 +239,9 @@ export async function publishCmd(opts: PublishOptions): Promise<PublishReport> {
     }
     for (const w of cardWrites) pushRel(w.absPath);
     for (const f of report.bookIndexFiles) stagedRel.push(repoRelOf(cfg.repoPath, f));
+    // Healed orphan chronicle md (#38) are now first-class — stage them so the
+    // reconciliation reaches the remote alongside the regen'd catalog + index.
+    for (const p of healedOrphans) stagedRel.push(p);
     stagedRel.push(".vibebook/index.book.json");
 
     const r = await commitAndPushBook(cfg.repoPath, cfg.repoUrl, cfg.deviceBranch, report, stagedRel);
