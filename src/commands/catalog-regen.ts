@@ -1,7 +1,8 @@
 import chalk from "chalk";
 import { readPluginConfig } from "../spool/plugin-config.js";
-import { loadBookIndexV2 } from "../digest/book-index-v2.js";
+import { loadBookIndexV2, saveBookIndexV2 } from "../digest/book-index-v2.js";
 import { generateBookCatalog } from "../digest/book-catalog.js";
+import { reconcileOrphanChronicles } from "../digest/reconcile-orphans.js";
 import { ensureRepo, ensureDeviceBranch, fastForwardBranch, commitAndPush } from "../_shared/git-ops.js";
 
 export interface CatalogRegenOptions {
@@ -12,6 +13,8 @@ export interface CatalogRegenOptions {
 export interface CatalogRegenReport {
   /** Repo-rooted paths the catalog renderer wrote. */
   written: string[];
+  /** Orphan chronicle md (written directly, bypassing publish) re-registered. */
+  healed: string[];
   committed: boolean;
   pushed: boolean;
 }
@@ -22,16 +25,30 @@ export interface CatalogRegenReport {
  * published into each project — that way the project subagents never thrash
  * the catalog and we get one consistent regen + one commit at the end.
  *
- * No book-index mutation; no chronicle/topic/card writes; the index is the
- * source of truth.
+ * Before rendering, reconciles orphan chronicle md (written directly under
+ * book/<project>/chronicle/, bypassing publish → absent from the index, #38)
+ * so a whole project can't silently vanish from the catalog. The index stays
+ * the source of truth; reconcile just re-registers what was already on disk.
  */
 export async function catalogRegenCmd(opts: CatalogRegenOptions): Promise<CatalogRegenReport> {
   const cfg = readPluginConfig();
   const bookIndex = loadBookIndexV2(cfg.repoPath);
+
+  const orphans = reconcileOrphanChronicles(cfg.repoPath, bookIndex);
+  if (orphans.healed.length > 0) {
+    console.log(chalk.cyan(`+ reconciled ${orphans.healed.length} orphan chronicle(s) into the index (written directly, bypassing publish):`));
+    for (const p of orphans.healed) console.log(chalk.gray(`    ${p}`));
+    saveBookIndexV2(cfg.repoPath, bookIndex);
+  }
+  for (const s of orphans.skipped) {
+    console.log(chalk.yellow(`! skipped orphan ${s.path}: ${s.reason}`));
+  }
+
   const catalog = generateBookCatalog(cfg.repoPath, bookIndex);
 
   const report: CatalogRegenReport = {
     written: catalog.written,
+    healed: orphans.healed,
     committed: false,
     pushed: false,
   };
@@ -48,10 +65,13 @@ export async function catalogRegenCmd(opts: CatalogRegenOptions): Promise<Catalo
     console.log(chalk.cyan(`  Catalog regenerated locally; push skipped.`));
     return report;
   }
+  // Stage the regen'd catalog + any healed orphan md (now first-class) + the
+  // index file, so the reconciliation persists to the remote.
+  const staged = [...catalog.written, ...orphans.healed, ".vibebook/index.book.json"];
   const r = await commitAndPush(
     git,
     "vibebook: regen catalog",
-    catalog.written,
+    staged,
     cfg.deviceBranch,
     (stage) => console.log(chalk.gray(`  ${stage}`)),
   );

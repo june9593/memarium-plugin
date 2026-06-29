@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.2 — 2026-06-30
+
+**Fix: a new project's first-digest chronicles could silently vanish from the catalog (#38).** A fan-out reader subagent that violated the "return JSON only" contract could write chronicle md straight under `book/<project>/chronicle/`, bypassing `publish` — so the md never entered `index.book.json`. Because the catalog is deliberately index-driven (not FS-globbing), the **entire project disappeared** from `book/index.md` and never got a `book/<project>/index.md` (observed: `chromium-src`, 28 chronicles on disk, 0 in the index, header still said "4 projects").
+
+Two-part fix:
+- **Self-heal (`src/digest/reconcile-orphans.ts`):** `publish` (catalog pass) and `catalog-regen` now scan `book/<project>/chronicle/*.md` for well-formed chronicles absent from the index, parse their frontmatter, and re-register them before rendering — so a whole project can't be silently dropped. Malformed / duplicate-threadId orphans are reported and skipped, never fatal. The index stays the source of truth; reconcile only re-registers what's already on disk. (Verified against a real repo: recovered all 28 `chromium-src` orphans, 0 skipped.)
+- **Prevent (SKILL.md):** the fan-out reader contract is now an explicit hard guardrail — a reader's only output is its `/tmp/vb-<project>/agent<N>.json`; it must not write chronicle/topic md, memory, skills, configs, or anything else. This also closes #38's second symptom (a reader that went off-task and authored an unrelated `~/.claude/skills/.../SKILL.md`).
+
++6 regression tests. 398 tests; tsc clean.
+
 ## 0.10.1 — 2026-06-29
 
 **Fix: `memory-write/-propose/-approve` crashed with `undefined.length` on a thin entry (#37).** `render.ts`'s `arr()` did `xs.length` and threw `Cannot read properties of undefined (reading 'length')` when an authored entry omitted any of `sourceSessions`/`sourceCommits`/`sourceFiles`/`entities` (and `summary` rendered as `undefined`). Those fields are de-facto required but presented as optional, so a reasonable input died opaquely — and the trap bit twice: `propose` queued a thin entry fine, then `approve` re-rendered and crashed. Fix is two-layer: `arr()` now defaults `xs ?? []` and summary `?? ""` (so render never throws, incl. approve re-render), and `applyMemoryItems` normalizes the arrays/summary alongside the existing accessCount/trust defaults so the persisted md + index stay consistent. +5 regression tests (render with each array undefined; apply normalizes a thin entry). 392 tests.
