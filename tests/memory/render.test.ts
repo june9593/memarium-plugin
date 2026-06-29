@@ -48,6 +48,22 @@ describe("renderMemoryMarkdown", () => {
     expect(renderMemoryMarkdown(entry({ trust: "untrusted" }), "body")).toContain("trust: untrusted");
     expect(renderMemoryMarkdown(entry({ trust: undefined }), "body")).toContain("trust: unknown");
   });
+
+  it("does not throw when array fields are undefined; renders [] (#37)", () => {
+    for (const f of ["sourceSessions", "sourceCommits", "sourceFiles", "entities"] as const) {
+      const md = renderMemoryMarkdown(entry({ [f]: undefined }), "body");
+      expect(md).toContain(`${f}: []`);
+    }
+    // all arrays + summary undefined at once → still renders, no undefined.length throw
+    const thin = renderMemoryMarkdown(
+      entry({ sourceSessions: undefined, sourceCommits: undefined, sourceFiles: undefined, entities: undefined, summary: undefined }),
+      "body",
+    );
+    expect(thin).toContain("sourceSessions: []");
+    expect(thin).toContain("entities: []");
+    expect(thin).toContain("summary: \n"); // empty summary, no "undefined"
+    expect(thin).not.toContain("undefined");
+  });
 });
 
 describe("trust round-trip + legacy derivation (#23)", () => {

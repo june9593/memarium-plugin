@@ -35,6 +35,20 @@ describe("applyMemoryItems", () => {
     expect(idx.entries["core/yue-workflow"].path).toBe("memory/core/_global/yue-workflow.md");
   });
 
+  it("normalizes a thin entry (undefined arrays/summary) instead of crashing (#37)", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const thin = mk({ id: "core/thin", title: "thin", summary: undefined, sourceSessions: undefined, sourceCommits: undefined, sourceFiles: undefined, entities: undefined });
+    const r = applyMemoryItems(repo, [{ entry: thin, body: "b" }]);
+    expect(r.written).toBe(1);
+    const md = readFileSync(join(repo, "memory/core/_global/thin.md"), "utf8");
+    expect(md).toContain("sourceSessions: []");
+    expect(md).toContain("entities: []");
+    expect(md).not.toContain("undefined");
+    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    expect(idx.entries["core/thin"].sourceSessions).toEqual([]);
+    expect(idx.entries["core/thin"].summary).toBe("");
+  });
+
   it("rejects a supplied path that does not match the canonical path", async () => {
     const { applyMemoryItems } = await import("../../src/memory/apply.js");
     expect(() => applyMemoryItems(repo, [{

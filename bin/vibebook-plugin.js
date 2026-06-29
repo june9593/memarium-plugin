@@ -10722,7 +10722,8 @@ var init_finalize = __esm({
 
 // src/memory/render.ts
 function arr(xs) {
-  return xs.length === 0 ? "[]" : `[${xs.join(", ")}]`;
+  const a = xs ?? [];
+  return a.length === 0 ? "[]" : `[${a.join(", ")}]`;
 }
 function scalar(v) {
   return v === null ? "null" : String(v);
@@ -10735,7 +10736,7 @@ function renderMemoryMarkdown(entry, body) {
     `scope: ${entry.scope}`,
     `project: ${scalar(entry.project)}`,
     `title: ${entry.title}`,
-    `summary: ${entry.summary}`,
+    `summary: ${entry.summary ?? ""}`,
     `status: ${entry.status}`,
     `confidence: ${entry.confidence}`,
     `importance: ${entry.importance}`,
@@ -10900,6 +10901,11 @@ function applyMemoryItems(repoPath, items) {
     if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
     if (entry.lastAccess === void 0) entry.lastAccess = null;
     if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
+    if (typeof entry.summary !== "string") entry.summary = "";
+    if (!Array.isArray(entry.sourceSessions)) entry.sourceSessions = [];
+    if (!Array.isArray(entry.sourceCommits)) entry.sourceCommits = [];
+    if (!Array.isArray(entry.sourceFiles)) entry.sourceFiles = [];
+    if (!Array.isArray(entry.entities)) entry.entities = [];
     if (supersede && idx.entries[supersede.targetId]) {
       idx.entries[supersede.targetId].status = "superseded";
       superseded++;
