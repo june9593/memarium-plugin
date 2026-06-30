@@ -13701,8 +13701,9 @@ function pathToProjectSlug(absPath, roots) {
   const lastSlash = absPath.lastIndexOf("/");
   if (lastSlash <= 0) return null;
   const dir = absPath.slice(0, lastSlash);
-  const slug = projectSlugFromPath(dir);
-  if (slug === "home" || slug === "root" || dir.startsWith("/tmp/") || dir.startsWith("/private/tmp/") || dir.startsWith("/etc") || dir.startsWith("/usr") || dir.startsWith("/var") || dir.startsWith("/System") || dir.startsWith("/opt")) return null;
+  if (dir.startsWith("/tmp/") || dir.startsWith("/private/tmp/") || dir.startsWith("/etc") || dir.startsWith("/usr") || dir.startsWith("/var") || dir.startsWith("/System") || dir.startsWith("/opt")) return null;
+  const slug = cachedProjectSlug(dir);
+  if (slug === "home" || slug === "root") return null;
   return slug;
 }
 function extractPathsFromMessages(messages) {
@@ -13773,7 +13774,6 @@ var MIN_CONFIDENCE, MIN_PATH_HITS;
 var init_content_project_inference = __esm({
   "src/_shared/content-project-inference.ts"() {
     "use strict";
-    init_slug();
     init_project_identity();
     MIN_CONFIDENCE = 0.7;
     MIN_PATH_HITS = 5;
