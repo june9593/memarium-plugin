@@ -52,9 +52,14 @@ export function buildStatusPayload(cwd: string = process.cwd()): StatusPayload {
     .filter((p) => p.pendingSessions > 0)
     .map((p) => ({ project: p.project, pending: p.pendingSessions }));
 
-  const localMem = Object.keys(loadMemoryIndex(cfg.repoPath).entries).length;
+  const localIdx = loadMemoryIndex(cfg.repoPath);
+  const localMem = Object.keys(localIdx.entries).length;
   const view = resolveMemoryView(cfg.repoPath);
-  const siblingOnly = Object.values(view.sources).filter((s) => s === "overlay").length;
+  // "sibling-only" = ids in the merged view that are ABSENT from the local repo
+  // (not just ids where the overlay copy won the merge — a shared id whose
+  // overlay copy is merely newer still exists locally). This keeps
+  // local + siblingOnly === merged.
+  const siblingOnly = Object.keys(view.entries).filter((id) => !(id in localIdx.entries)).length;
 
   return {
     sessions: {

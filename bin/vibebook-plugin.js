@@ -3509,9 +3509,10 @@ function buildStatusPayload(cwd = process.cwd()) {
     cards += p2.cards;
   }
   const pendingByProject = lp.projects.filter((p2) => p2.pendingSessions > 0).map((p2) => ({ project: p2.project, pending: p2.pendingSessions }));
-  const localMem = Object.keys(loadMemoryIndex(cfg.repoPath).entries).length;
+  const localIdx = loadMemoryIndex(cfg.repoPath);
+  const localMem = Object.keys(localIdx.entries).length;
   const view = resolveMemoryView(cfg.repoPath);
-  const siblingOnly = Object.values(view.sources).filter((s) => s === "overlay").length;
+  const siblingOnly = Object.keys(view.entries).filter((id) => !(id in localIdx.entries)).length;
   return {
     sessions: {
       total,
