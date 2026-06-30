@@ -667,7 +667,9 @@ protects them.) Then:
     "$VBP" memory-write --input /tmp/vibebook-memory.json
 
 This writes `memory/<type>/...` md + updates `.vibebook/index.memory.json`.
-Then run a query to refresh the project primer:
+The SessionStart primer is rendered **live** from the (cross-device) memory
+view, so it picks up new memory automatically — no file refresh needed. (You
+may still run a query to sanity-check what recall now returns:)
 
     "$VBP" memory-query --cwd "$(pwd)" >/dev/null
 
@@ -814,13 +816,7 @@ Act on only a FEW high-confidence items — prefer writing nothing over writing 
 
 Any of the above that produces a `core`/`procedural`/pinned memory — or that supersedes one — is a **gated change**: route it through `memory-propose`, not `memory-write`. (Promoting an episodic into an ordinary `semantic` is non-gated and writes directly; promoting into a `procedural` playbook is gated and gets proposed.)
 
-**Refresh the primer if you wrote any primer-affecting memory via `memory-write`.** If this step actually wrote a non-gated primer-affecting memory (a `semantic`), refresh the SessionStart primer at the end:
-
-```bash
-vibebook-plugin memory-query --cwd "$(pwd)" >/dev/null
-```
-
-(This is the digest WRITE path and is allowed to refresh `_primer/<project>.md` — it does NOT contradict the lint read-only invariant; only consolidation refreshes, and only after it actually wrote primer-affecting memory. **Gated changes you only *proposed* do NOT refresh the primer** — `memory-approve` refreshes it when the human applies them.)
+(As of P0b the SessionStart primer is rendered **live** from the cross-device memory view, so no explicit primer refresh is needed after writing memory — new memory shows up on the next session automatically.)
 
 ### Step P8 — Done
 
