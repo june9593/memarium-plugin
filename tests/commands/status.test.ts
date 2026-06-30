@@ -72,8 +72,8 @@ describe("buildStatusPayload (#22 coverage)", () => {
     const { buildStatusPayload } = await import("../../src/commands/status.js");
     const s = buildStatusPayload(repo);
     expect(s.crossDevice.overlayPresent).toBe(true);
-    // local=2 (core/g + semantic), merged=3 (+core/sibling), siblingOnly=1 (only core/sibling
-    // is absent from local; core/g exists locally even though overlay won the merge).
+    // local=2 (ids a + b), merged=3 (+core/sibling), siblingOnly=1 (only core/sibling
+    // is absent from local; "a" exists locally even though the overlay copy won the merge).
     expect(s.crossDevice.memory).toEqual({ local: 2, merged: 3, siblingOnly: 1 });
   });
 
