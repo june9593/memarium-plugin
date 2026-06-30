@@ -3598,658 +3598,6 @@ var init_slug = __esm({
   }
 });
 
-// src/_shared/project-resolve.ts
-function resolveProjectFromCwd(cwd, repoPath) {
-  const indexFile = loadIndex(repoPath);
-  return resolveProjectFromCwdWithIndex(cwd, indexFile.entries);
-}
-function resolveProjectFromCwdWithIndex(cwd, entries) {
-  const slug = projectSlugFromPath(cwd);
-  for (const e of Object.values(entries)) {
-    if (e.project === slug) return slug;
-  }
-  for (const e of Object.values(entries)) {
-    if (e.projectRaw === cwd) return e.project;
-  }
-  return null;
-}
-var init_project_resolve = __esm({
-  "src/_shared/project-resolve.ts"() {
-    "use strict";
-    init_index_store();
-    init_slug();
-  }
-});
-
-// src/commands/prepare.ts
-var prepare_exports = {};
-__export(prepare_exports, {
-  buildPreparePayload: () => buildPreparePayload,
-  prepareCmd: () => prepareCmd
-});
-import { readFileSync as readFileSync7, existsSync as existsSync7 } from "node:fs";
-import { join as join8 } from "node:path";
-function buildPreparePayload(opts = {}) {
-  const cfg = readPluginConfig();
-  const indexFile = loadIndex(cfg.repoPath);
-  const bookIndex = loadBookIndexV2(cfg.repoPath);
-  let projectFilter = opts.project?.trim() || null;
-  if (!projectFilter && opts.cwd) {
-    projectFilter = resolveProjectFromCwdWithIndex(opts.cwd, indexFile.entries);
-    if (!projectFilter) {
-      throw new Error(
-        `no synced sessions found for cwd '${opts.cwd}' (derived slug '${projectSlugFromPath(opts.cwd)}'). Run \`vibebook sync\` first or pass --project explicitly.`
-      );
-    }
-  }
-  const consumed = /* @__PURE__ */ new Set();
-  for (const c3 of Object.values(bookIndex.chronicles)) {
-    for (const sid of c3.sessionIds) consumed.add(sid);
-  }
-  const meta = {
-    totalSessionsInIndex: 0,
-    sessionsAlreadyChronicled: 0,
-    sessionsFilteredByProject: 0,
-    sessionsFilteredAsPseudoProject: 0,
-    sessionsFilteredAsVibebookMeta: 0,
-    newSessionsCount: 0
-  };
-  const newSessions = [];
-  for (const entry of Object.values(indexFile.entries)) {
-    meta.totalSessionsInIndex++;
-    if (consumed.has(entry.sessionId)) {
-      meta.sessionsAlreadyChronicled++;
-      continue;
-    }
-    if (!isRealProjectPath(entry.project)) {
-      meta.sessionsFilteredAsPseudoProject++;
-      continue;
-    }
-    if (projectFilter && entry.project !== projectFilter) {
-      meta.sessionsFilteredByProject++;
-      continue;
-    }
-    const mdRel = mdPathFor(entry);
-    const mdAbs = join8(cfg.repoPath, mdRel);
-    if (!existsSync7(mdAbs)) {
-      continue;
-    }
-    const mdBody = readFileSync7(mdAbs, "utf8");
-    if (isVibebookMetaSession(mdBody)) {
-      meta.sessionsFilteredAsVibebookMeta++;
-      continue;
-    }
-    const signals = extractSessionSignals(mdBody);
-    newSessions.push({
-      sessionId: entry.sessionId,
-      shortId: entry.shortId,
-      tool: entry.tool,
-      project: entry.project,
-      startedAt: entry.startedAt,
-      endedAt: entry.endedAt,
-      nameSlug: entry.nameSlug,
-      displayName: entry.displayName,
-      mdPath: mdRel,
-      preview: signals.preview,
-      insightScore: signals.insightScore
-    });
-  }
-  newSessions.sort((a, b2) => a.endedAt < b2.endedAt ? -1 : a.endedAt > b2.endedAt ? 1 : 0);
-  meta.newSessionsCount = newSessions.length;
-  const existingTopics = {};
-  for (const t2 of Object.values(bookIndex.topics)) {
-    (existingTopics[t2.project] ??= []).push(t2.topicSlug);
-  }
-  for (const list of Object.values(existingTopics)) list.sort();
-  const existingCards = {};
-  for (const c3 of Object.values(bookIndex.cards)) {
-    (existingCards[c3.project] ??= []).push(c3.cardSlug);
-  }
-  for (const list of Object.values(existingCards)) list.sort();
-  return {
-    project: projectFilter,
-    newSessions,
-    existingTopics,
-    existingCards,
-    meta
-  };
-}
-function mdPathFor(entry) {
-  return entry.relativePath.replace(/\.raw\.json(\.enc)?$/, `.md`);
-}
-async function prepareCmd(opts) {
-  const payload = buildPreparePayload(opts);
-  process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
-}
-var init_prepare = __esm({
-  "src/commands/prepare.ts"() {
-    "use strict";
-    init_plugin_config();
-    init_index_store();
-    init_book_index_v2();
-    init_session_signal();
-    init_project_filter();
-    init_slug();
-    init_project_resolve();
-  }
-});
-
-// node_modules/chalk/source/vendor/ansi-styles/index.js
-function assembleStyles() {
-  const codes = /* @__PURE__ */ new Map();
-  for (const [groupName, group] of Object.entries(styles)) {
-    for (const [styleName, style] of Object.entries(group)) {
-      styles[styleName] = {
-        open: `\x1B[${style[0]}m`,
-        close: `\x1B[${style[1]}m`
-      };
-      group[styleName] = styles[styleName];
-      codes.set(style[0], style[1]);
-    }
-    Object.defineProperty(styles, groupName, {
-      value: group,
-      enumerable: false
-    });
-  }
-  Object.defineProperty(styles, "codes", {
-    value: codes,
-    enumerable: false
-  });
-  styles.color.close = "\x1B[39m";
-  styles.bgColor.close = "\x1B[49m";
-  styles.color.ansi = wrapAnsi16();
-  styles.color.ansi256 = wrapAnsi256();
-  styles.color.ansi16m = wrapAnsi16m();
-  styles.bgColor.ansi = wrapAnsi16(ANSI_BACKGROUND_OFFSET);
-  styles.bgColor.ansi256 = wrapAnsi256(ANSI_BACKGROUND_OFFSET);
-  styles.bgColor.ansi16m = wrapAnsi16m(ANSI_BACKGROUND_OFFSET);
-  Object.defineProperties(styles, {
-    rgbToAnsi256: {
-      value(red, green, blue) {
-        if (red === green && green === blue) {
-          if (red < 8) {
-            return 16;
-          }
-          if (red > 248) {
-            return 231;
-          }
-          return Math.round((red - 8) / 247 * 24) + 232;
-        }
-        return 16 + 36 * Math.round(red / 255 * 5) + 6 * Math.round(green / 255 * 5) + Math.round(blue / 255 * 5);
-      },
-      enumerable: false
-    },
-    hexToRgb: {
-      value(hex) {
-        const matches = /[a-f\d]{6}|[a-f\d]{3}/i.exec(hex.toString(16));
-        if (!matches) {
-          return [0, 0, 0];
-        }
-        let [colorString] = matches;
-        if (colorString.length === 3) {
-          colorString = [...colorString].map((character) => character + character).join("");
-        }
-        const integer = Number.parseInt(colorString, 16);
-        return [
-          /* eslint-disable no-bitwise */
-          integer >> 16 & 255,
-          integer >> 8 & 255,
-          integer & 255
-          /* eslint-enable no-bitwise */
-        ];
-      },
-      enumerable: false
-    },
-    hexToAnsi256: {
-      value: (hex) => styles.rgbToAnsi256(...styles.hexToRgb(hex)),
-      enumerable: false
-    },
-    ansi256ToAnsi: {
-      value(code) {
-        if (code < 8) {
-          return 30 + code;
-        }
-        if (code < 16) {
-          return 90 + (code - 8);
-        }
-        let red;
-        let green;
-        let blue;
-        if (code >= 232) {
-          red = ((code - 232) * 10 + 8) / 255;
-          green = red;
-          blue = red;
-        } else {
-          code -= 16;
-          const remainder = code % 36;
-          red = Math.floor(code / 36) / 5;
-          green = Math.floor(remainder / 6) / 5;
-          blue = remainder % 6 / 5;
-        }
-        const value = Math.max(red, green, blue) * 2;
-        if (value === 0) {
-          return 30;
-        }
-        let result = 30 + (Math.round(blue) << 2 | Math.round(green) << 1 | Math.round(red));
-        if (value === 2) {
-          result += 60;
-        }
-        return result;
-      },
-      enumerable: false
-    },
-    rgbToAnsi: {
-      value: (red, green, blue) => styles.ansi256ToAnsi(styles.rgbToAnsi256(red, green, blue)),
-      enumerable: false
-    },
-    hexToAnsi: {
-      value: (hex) => styles.ansi256ToAnsi(styles.hexToAnsi256(hex)),
-      enumerable: false
-    }
-  });
-  return styles;
-}
-var ANSI_BACKGROUND_OFFSET, wrapAnsi16, wrapAnsi256, wrapAnsi16m, styles, modifierNames, foregroundColorNames, backgroundColorNames, colorNames, ansiStyles, ansi_styles_default;
-var init_ansi_styles = __esm({
-  "node_modules/chalk/source/vendor/ansi-styles/index.js"() {
-    ANSI_BACKGROUND_OFFSET = 10;
-    wrapAnsi16 = (offset = 0) => (code) => `\x1B[${code + offset}m`;
-    wrapAnsi256 = (offset = 0) => (code) => `\x1B[${38 + offset};5;${code}m`;
-    wrapAnsi16m = (offset = 0) => (red, green, blue) => `\x1B[${38 + offset};2;${red};${green};${blue}m`;
-    styles = {
-      modifier: {
-        reset: [0, 0],
-        // 21 isn't widely supported and 22 does the same thing
-        bold: [1, 22],
-        dim: [2, 22],
-        italic: [3, 23],
-        underline: [4, 24],
-        overline: [53, 55],
-        inverse: [7, 27],
-        hidden: [8, 28],
-        strikethrough: [9, 29]
-      },
-      color: {
-        black: [30, 39],
-        red: [31, 39],
-        green: [32, 39],
-        yellow: [33, 39],
-        blue: [34, 39],
-        magenta: [35, 39],
-        cyan: [36, 39],
-        white: [37, 39],
-        // Bright color
-        blackBright: [90, 39],
-        gray: [90, 39],
-        // Alias of `blackBright`
-        grey: [90, 39],
-        // Alias of `blackBright`
-        redBright: [91, 39],
-        greenBright: [92, 39],
-        yellowBright: [93, 39],
-        blueBright: [94, 39],
-        magentaBright: [95, 39],
-        cyanBright: [96, 39],
-        whiteBright: [97, 39]
-      },
-      bgColor: {
-        bgBlack: [40, 49],
-        bgRed: [41, 49],
-        bgGreen: [42, 49],
-        bgYellow: [43, 49],
-        bgBlue: [44, 49],
-        bgMagenta: [45, 49],
-        bgCyan: [46, 49],
-        bgWhite: [47, 49],
-        // Bright color
-        bgBlackBright: [100, 49],
-        bgGray: [100, 49],
-        // Alias of `bgBlackBright`
-        bgGrey: [100, 49],
-        // Alias of `bgBlackBright`
-        bgRedBright: [101, 49],
-        bgGreenBright: [102, 49],
-        bgYellowBright: [103, 49],
-        bgBlueBright: [104, 49],
-        bgMagentaBright: [105, 49],
-        bgCyanBright: [106, 49],
-        bgWhiteBright: [107, 49]
-      }
-    };
-    modifierNames = Object.keys(styles.modifier);
-    foregroundColorNames = Object.keys(styles.color);
-    backgroundColorNames = Object.keys(styles.bgColor);
-    colorNames = [...foregroundColorNames, ...backgroundColorNames];
-    ansiStyles = assembleStyles();
-    ansi_styles_default = ansiStyles;
-  }
-});
-
-// node_modules/chalk/source/vendor/supports-color/index.js
-import process2 from "node:process";
-import os from "node:os";
-import tty from "node:tty";
-function hasFlag(flag, argv = globalThis.Deno ? globalThis.Deno.args : process2.argv) {
-  const prefix = flag.startsWith("-") ? "" : flag.length === 1 ? "-" : "--";
-  const position = argv.indexOf(prefix + flag);
-  const terminatorPosition = argv.indexOf("--");
-  return position !== -1 && (terminatorPosition === -1 || position < terminatorPosition);
-}
-function envForceColor() {
-  if ("FORCE_COLOR" in env) {
-    if (env.FORCE_COLOR === "true") {
-      return 1;
-    }
-    if (env.FORCE_COLOR === "false") {
-      return 0;
-    }
-    return env.FORCE_COLOR.length === 0 ? 1 : Math.min(Number.parseInt(env.FORCE_COLOR, 10), 3);
-  }
-}
-function translateLevel(level) {
-  if (level === 0) {
-    return false;
-  }
-  return {
-    level,
-    hasBasic: true,
-    has256: level >= 2,
-    has16m: level >= 3
-  };
-}
-function _supportsColor(haveStream, { streamIsTTY, sniffFlags = true } = {}) {
-  const noFlagForceColor = envForceColor();
-  if (noFlagForceColor !== void 0) {
-    flagForceColor = noFlagForceColor;
-  }
-  const forceColor = sniffFlags ? flagForceColor : noFlagForceColor;
-  if (forceColor === 0) {
-    return 0;
-  }
-  if (sniffFlags) {
-    if (hasFlag("color=16m") || hasFlag("color=full") || hasFlag("color=truecolor")) {
-      return 3;
-    }
-    if (hasFlag("color=256")) {
-      return 2;
-    }
-  }
-  if ("TF_BUILD" in env && "AGENT_NAME" in env) {
-    return 1;
-  }
-  if (haveStream && !streamIsTTY && forceColor === void 0) {
-    return 0;
-  }
-  const min = forceColor || 0;
-  if (env.TERM === "dumb") {
-    return min;
-  }
-  if (process2.platform === "win32") {
-    const osRelease = os.release().split(".");
-    if (Number(osRelease[0]) >= 10 && Number(osRelease[2]) >= 10586) {
-      return Number(osRelease[2]) >= 14931 ? 3 : 2;
-    }
-    return 1;
-  }
-  if ("CI" in env) {
-    if (["GITHUB_ACTIONS", "GITEA_ACTIONS", "CIRCLECI"].some((key) => key in env)) {
-      return 3;
-    }
-    if (["TRAVIS", "APPVEYOR", "GITLAB_CI", "BUILDKITE", "DRONE"].some((sign) => sign in env) || env.CI_NAME === "codeship") {
-      return 1;
-    }
-    return min;
-  }
-  if ("TEAMCITY_VERSION" in env) {
-    return /^(9\.(0*[1-9]\d*)\.|\d{2,}\.)/.test(env.TEAMCITY_VERSION) ? 1 : 0;
-  }
-  if (env.COLORTERM === "truecolor") {
-    return 3;
-  }
-  if (env.TERM === "xterm-kitty") {
-    return 3;
-  }
-  if (env.TERM === "xterm-ghostty") {
-    return 3;
-  }
-  if (env.TERM === "wezterm") {
-    return 3;
-  }
-  if ("TERM_PROGRAM" in env) {
-    const version = Number.parseInt((env.TERM_PROGRAM_VERSION || "").split(".")[0], 10);
-    switch (env.TERM_PROGRAM) {
-      case "iTerm.app": {
-        return version >= 3 ? 3 : 2;
-      }
-      case "Apple_Terminal": {
-        return 2;
-      }
-    }
-  }
-  if (/-256(color)?$/i.test(env.TERM)) {
-    return 2;
-  }
-  if (/^screen|^xterm|^vt100|^vt220|^rxvt|color|ansi|cygwin|linux/i.test(env.TERM)) {
-    return 1;
-  }
-  if ("COLORTERM" in env) {
-    return 1;
-  }
-  return min;
-}
-function createSupportsColor(stream, options = {}) {
-  const level = _supportsColor(stream, {
-    streamIsTTY: stream && stream.isTTY,
-    ...options
-  });
-  return translateLevel(level);
-}
-var env, flagForceColor, supportsColor, supports_color_default;
-var init_supports_color = __esm({
-  "node_modules/chalk/source/vendor/supports-color/index.js"() {
-    ({ env } = process2);
-    if (hasFlag("no-color") || hasFlag("no-colors") || hasFlag("color=false") || hasFlag("color=never")) {
-      flagForceColor = 0;
-    } else if (hasFlag("color") || hasFlag("colors") || hasFlag("color=true") || hasFlag("color=always")) {
-      flagForceColor = 1;
-    }
-    supportsColor = {
-      stdout: createSupportsColor({ isTTY: tty.isatty(1) }),
-      stderr: createSupportsColor({ isTTY: tty.isatty(2) })
-    };
-    supports_color_default = supportsColor;
-  }
-});
-
-// node_modules/chalk/source/utilities.js
-function stringReplaceAll(string, substring, replacer) {
-  let index = string.indexOf(substring);
-  if (index === -1) {
-    return string;
-  }
-  const substringLength = substring.length;
-  let endIndex = 0;
-  let returnValue = "";
-  do {
-    returnValue += string.slice(endIndex, index) + substring + replacer;
-    endIndex = index + substringLength;
-    index = string.indexOf(substring, endIndex);
-  } while (index !== -1);
-  returnValue += string.slice(endIndex);
-  return returnValue;
-}
-function stringEncaseCRLFWithFirstIndex(string, prefix, postfix, index) {
-  let endIndex = 0;
-  let returnValue = "";
-  do {
-    const gotCR = string[index - 1] === "\r";
-    returnValue += string.slice(endIndex, gotCR ? index - 1 : index) + prefix + (gotCR ? "\r\n" : "\n") + postfix;
-    endIndex = index + 1;
-    index = string.indexOf("\n", endIndex);
-  } while (index !== -1);
-  returnValue += string.slice(endIndex);
-  return returnValue;
-}
-var init_utilities = __esm({
-  "node_modules/chalk/source/utilities.js"() {
-  }
-});
-
-// node_modules/chalk/source/index.js
-function createChalk(options) {
-  return chalkFactory(options);
-}
-var stdoutColor, stderrColor, GENERATOR, STYLER, IS_EMPTY, levelMapping, styles2, applyOptions, chalkFactory, getModelAnsi, usedModels, proto, createStyler, createBuilder, applyStyle, chalk, chalkStderr, source_default;
-var init_source = __esm({
-  "node_modules/chalk/source/index.js"() {
-    init_ansi_styles();
-    init_supports_color();
-    init_utilities();
-    ({ stdout: stdoutColor, stderr: stderrColor } = supports_color_default);
-    GENERATOR = Symbol("GENERATOR");
-    STYLER = Symbol("STYLER");
-    IS_EMPTY = Symbol("IS_EMPTY");
-    levelMapping = [
-      "ansi",
-      "ansi",
-      "ansi256",
-      "ansi16m"
-    ];
-    styles2 = /* @__PURE__ */ Object.create(null);
-    applyOptions = (object, options = {}) => {
-      if (options.level && !(Number.isInteger(options.level) && options.level >= 0 && options.level <= 3)) {
-        throw new Error("The `level` option should be an integer from 0 to 3");
-      }
-      const colorLevel = stdoutColor ? stdoutColor.level : 0;
-      object.level = options.level === void 0 ? colorLevel : options.level;
-    };
-    chalkFactory = (options) => {
-      const chalk2 = (...strings) => strings.join(" ");
-      applyOptions(chalk2, options);
-      Object.setPrototypeOf(chalk2, createChalk.prototype);
-      return chalk2;
-    };
-    Object.setPrototypeOf(createChalk.prototype, Function.prototype);
-    for (const [styleName, style] of Object.entries(ansi_styles_default)) {
-      styles2[styleName] = {
-        get() {
-          const builder = createBuilder(this, createStyler(style.open, style.close, this[STYLER]), this[IS_EMPTY]);
-          Object.defineProperty(this, styleName, { value: builder });
-          return builder;
-        }
-      };
-    }
-    styles2.visible = {
-      get() {
-        const builder = createBuilder(this, this[STYLER], true);
-        Object.defineProperty(this, "visible", { value: builder });
-        return builder;
-      }
-    };
-    getModelAnsi = (model, level, type, ...arguments_) => {
-      if (model === "rgb") {
-        if (level === "ansi16m") {
-          return ansi_styles_default[type].ansi16m(...arguments_);
-        }
-        if (level === "ansi256") {
-          return ansi_styles_default[type].ansi256(ansi_styles_default.rgbToAnsi256(...arguments_));
-        }
-        return ansi_styles_default[type].ansi(ansi_styles_default.rgbToAnsi(...arguments_));
-      }
-      if (model === "hex") {
-        return getModelAnsi("rgb", level, type, ...ansi_styles_default.hexToRgb(...arguments_));
-      }
-      return ansi_styles_default[type][model](...arguments_);
-    };
-    usedModels = ["rgb", "hex", "ansi256"];
-    for (const model of usedModels) {
-      styles2[model] = {
-        get() {
-          const { level } = this;
-          return function(...arguments_) {
-            const styler = createStyler(getModelAnsi(model, levelMapping[level], "color", ...arguments_), ansi_styles_default.color.close, this[STYLER]);
-            return createBuilder(this, styler, this[IS_EMPTY]);
-          };
-        }
-      };
-      const bgModel = "bg" + model[0].toUpperCase() + model.slice(1);
-      styles2[bgModel] = {
-        get() {
-          const { level } = this;
-          return function(...arguments_) {
-            const styler = createStyler(getModelAnsi(model, levelMapping[level], "bgColor", ...arguments_), ansi_styles_default.bgColor.close, this[STYLER]);
-            return createBuilder(this, styler, this[IS_EMPTY]);
-          };
-        }
-      };
-    }
-    proto = Object.defineProperties(() => {
-    }, {
-      ...styles2,
-      level: {
-        enumerable: true,
-        get() {
-          return this[GENERATOR].level;
-        },
-        set(level) {
-          this[GENERATOR].level = level;
-        }
-      }
-    });
-    createStyler = (open, close, parent) => {
-      let openAll;
-      let closeAll;
-      if (parent === void 0) {
-        openAll = open;
-        closeAll = close;
-      } else {
-        openAll = parent.openAll + open;
-        closeAll = close + parent.closeAll;
-      }
-      return {
-        open,
-        close,
-        openAll,
-        closeAll,
-        parent
-      };
-    };
-    createBuilder = (self, _styler, _isEmpty) => {
-      const builder = (...arguments_) => applyStyle(builder, arguments_.length === 1 ? "" + arguments_[0] : arguments_.join(" "));
-      Object.setPrototypeOf(builder, proto);
-      builder[GENERATOR] = self;
-      builder[STYLER] = _styler;
-      builder[IS_EMPTY] = _isEmpty;
-      return builder;
-    };
-    applyStyle = (self, string) => {
-      if (self.level <= 0 || !string) {
-        return self[IS_EMPTY] ? "" : string;
-      }
-      let styler = self[STYLER];
-      if (styler === void 0) {
-        return string;
-      }
-      const { openAll, closeAll } = styler;
-      if (string.includes("\x1B")) {
-        while (styler !== void 0) {
-          string = stringReplaceAll(string, styler.close, styler.open);
-          styler = styler.parent;
-        }
-      }
-      const lfIndex = string.indexOf("\n");
-      if (lfIndex !== -1) {
-        string = stringEncaseCRLFWithFirstIndex(string, closeAll, openAll, lfIndex);
-      }
-      return openAll + string + closeAll;
-    };
-    Object.defineProperties(createChalk.prototype, styles2);
-    chalk = createChalk();
-    chalkStderr = createChalk({ level: stderrColor ? stderrColor.level : 0 });
-    source_default = chalk;
-  }
-});
-
 // node_modules/ms/index.js
 var require_ms = __commonJS({
   "node_modules/ms/index.js"(exports, module) {
@@ -9870,6 +9218,734 @@ var init_esm = __esm({
   }
 });
 
+// src/_shared/project-identity.ts
+import { spawnSync } from "node:child_process";
+function canonicalProjectId(remoteUrl) {
+  const s0 = (remoteUrl ?? "").trim();
+  if (!s0) return null;
+  let host;
+  let path;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(s0)) {
+    let rest = s0.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, "");
+    rest = rest.replace(/^[^@/]+@/, "");
+    const slash = rest.indexOf("/");
+    if (slash < 0) return null;
+    host = rest.slice(0, slash);
+    path = rest.slice(slash + 1);
+  } else {
+    const m = s0.match(/^(?:[^@/]+@)?([^/:]+):(.+)$/);
+    if (!m) return null;
+    if (/^\d+$/.test(m[2].split("/")[0])) return null;
+    host = m[1];
+    path = m[2];
+  }
+  host = host.replace(/:\d+$/, "").toLowerCase();
+  path = path.replace(/^\/+/, "").replace(/\/+$/, "").replace(/\.git$/i, "");
+  if (!host || !path) return null;
+  return `${host}/${path}`;
+}
+function projectSlugFromRemote(remoteUrl) {
+  const id = canonicalProjectId(remoteUrl);
+  if (!id) return null;
+  return id.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+}
+function defaultGetRemoteSync(dir) {
+  const r2 = spawnSync("git", ["-C", dir, "config", "--get", "remote.origin.url"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 3e3
+  });
+  if (r2.status !== 0) return null;
+  const v = (r2.stdout ?? "").trim();
+  return v ? v : null;
+}
+function resolveProjectIdSync(cwdOrRoot, getRemote = defaultGetRemoteSync) {
+  let remote = null;
+  try {
+    remote = getRemote(cwdOrRoot);
+  } catch {
+    remote = null;
+  }
+  const slug = projectSlugFromRemote(remote);
+  if (slug) return { slug, source: "remote", canonical: canonicalProjectId(remote) };
+  return { slug: projectSlugFromPath(cwdOrRoot), source: "path", canonical: null };
+}
+function cachedProjectSlug(dir) {
+  const hit = _slugCache.get(dir);
+  if (hit !== void 0) return hit;
+  const slug = resolveProjectIdSync(dir).slug;
+  _slugCache.set(dir, slug);
+  return slug;
+}
+var _slugCache;
+var init_project_identity = __esm({
+  "src/_shared/project-identity.ts"() {
+    "use strict";
+    init_esm();
+    init_slug();
+    _slugCache = /* @__PURE__ */ new Map();
+  }
+});
+
+// src/_shared/project-resolve.ts
+function resolveProjectFromCwd(cwd, repoPath) {
+  const indexFile = loadIndex(repoPath);
+  return resolveProjectFromCwdWithIndex(cwd, indexFile.entries);
+}
+function resolveProjectFromCwdWithIndex(cwd, entries) {
+  const candidates = [];
+  const remoteSlug = resolveProjectIdSync(cwd).slug;
+  candidates.push(remoteSlug);
+  const pathSlug = projectSlugFromPath(cwd);
+  if (pathSlug !== remoteSlug) candidates.push(pathSlug);
+  for (const cand of candidates) {
+    for (const e of Object.values(entries)) {
+      if (e.project === cand) return cand;
+    }
+  }
+  for (const e of Object.values(entries)) {
+    if (e.projectRaw === cwd) return e.project;
+  }
+  return null;
+}
+var init_project_resolve = __esm({
+  "src/_shared/project-resolve.ts"() {
+    "use strict";
+    init_index_store();
+    init_slug();
+    init_project_identity();
+  }
+});
+
+// src/commands/prepare.ts
+var prepare_exports = {};
+__export(prepare_exports, {
+  buildPreparePayload: () => buildPreparePayload,
+  prepareCmd: () => prepareCmd
+});
+import { readFileSync as readFileSync7, existsSync as existsSync7 } from "node:fs";
+import { join as join8 } from "node:path";
+function buildPreparePayload(opts = {}) {
+  const cfg = readPluginConfig();
+  const indexFile = loadIndex(cfg.repoPath);
+  const bookIndex = loadBookIndexV2(cfg.repoPath);
+  let projectFilter = opts.project?.trim() || null;
+  if (!projectFilter && opts.cwd) {
+    projectFilter = resolveProjectFromCwdWithIndex(opts.cwd, indexFile.entries);
+    if (!projectFilter) {
+      throw new Error(
+        `no synced sessions found for cwd '${opts.cwd}' (derived slug '${projectSlugFromPath(opts.cwd)}'). Run \`vibebook sync\` first or pass --project explicitly.`
+      );
+    }
+  }
+  const consumed = /* @__PURE__ */ new Set();
+  for (const c3 of Object.values(bookIndex.chronicles)) {
+    for (const sid of c3.sessionIds) consumed.add(sid);
+  }
+  const meta = {
+    totalSessionsInIndex: 0,
+    sessionsAlreadyChronicled: 0,
+    sessionsFilteredByProject: 0,
+    sessionsFilteredAsPseudoProject: 0,
+    sessionsFilteredAsVibebookMeta: 0,
+    newSessionsCount: 0
+  };
+  const newSessions = [];
+  for (const entry of Object.values(indexFile.entries)) {
+    meta.totalSessionsInIndex++;
+    if (consumed.has(entry.sessionId)) {
+      meta.sessionsAlreadyChronicled++;
+      continue;
+    }
+    if (!isRealProjectPath(entry.project)) {
+      meta.sessionsFilteredAsPseudoProject++;
+      continue;
+    }
+    if (projectFilter && entry.project !== projectFilter) {
+      meta.sessionsFilteredByProject++;
+      continue;
+    }
+    const mdRel = mdPathFor(entry);
+    const mdAbs = join8(cfg.repoPath, mdRel);
+    if (!existsSync7(mdAbs)) {
+      continue;
+    }
+    const mdBody = readFileSync7(mdAbs, "utf8");
+    if (isVibebookMetaSession(mdBody)) {
+      meta.sessionsFilteredAsVibebookMeta++;
+      continue;
+    }
+    const signals = extractSessionSignals(mdBody);
+    newSessions.push({
+      sessionId: entry.sessionId,
+      shortId: entry.shortId,
+      tool: entry.tool,
+      project: entry.project,
+      startedAt: entry.startedAt,
+      endedAt: entry.endedAt,
+      nameSlug: entry.nameSlug,
+      displayName: entry.displayName,
+      mdPath: mdRel,
+      preview: signals.preview,
+      insightScore: signals.insightScore
+    });
+  }
+  newSessions.sort((a, b2) => a.endedAt < b2.endedAt ? -1 : a.endedAt > b2.endedAt ? 1 : 0);
+  meta.newSessionsCount = newSessions.length;
+  const existingTopics = {};
+  for (const t2 of Object.values(bookIndex.topics)) {
+    (existingTopics[t2.project] ??= []).push(t2.topicSlug);
+  }
+  for (const list of Object.values(existingTopics)) list.sort();
+  const existingCards = {};
+  for (const c3 of Object.values(bookIndex.cards)) {
+    (existingCards[c3.project] ??= []).push(c3.cardSlug);
+  }
+  for (const list of Object.values(existingCards)) list.sort();
+  return {
+    project: projectFilter,
+    newSessions,
+    existingTopics,
+    existingCards,
+    meta
+  };
+}
+function mdPathFor(entry) {
+  return entry.relativePath.replace(/\.raw\.json(\.enc)?$/, `.md`);
+}
+async function prepareCmd(opts) {
+  const payload = buildPreparePayload(opts);
+  process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+}
+var init_prepare = __esm({
+  "src/commands/prepare.ts"() {
+    "use strict";
+    init_plugin_config();
+    init_index_store();
+    init_book_index_v2();
+    init_session_signal();
+    init_project_filter();
+    init_slug();
+    init_project_resolve();
+  }
+});
+
+// node_modules/chalk/source/vendor/ansi-styles/index.js
+function assembleStyles() {
+  const codes = /* @__PURE__ */ new Map();
+  for (const [groupName, group] of Object.entries(styles)) {
+    for (const [styleName, style] of Object.entries(group)) {
+      styles[styleName] = {
+        open: `\x1B[${style[0]}m`,
+        close: `\x1B[${style[1]}m`
+      };
+      group[styleName] = styles[styleName];
+      codes.set(style[0], style[1]);
+    }
+    Object.defineProperty(styles, groupName, {
+      value: group,
+      enumerable: false
+    });
+  }
+  Object.defineProperty(styles, "codes", {
+    value: codes,
+    enumerable: false
+  });
+  styles.color.close = "\x1B[39m";
+  styles.bgColor.close = "\x1B[49m";
+  styles.color.ansi = wrapAnsi16();
+  styles.color.ansi256 = wrapAnsi256();
+  styles.color.ansi16m = wrapAnsi16m();
+  styles.bgColor.ansi = wrapAnsi16(ANSI_BACKGROUND_OFFSET);
+  styles.bgColor.ansi256 = wrapAnsi256(ANSI_BACKGROUND_OFFSET);
+  styles.bgColor.ansi16m = wrapAnsi16m(ANSI_BACKGROUND_OFFSET);
+  Object.defineProperties(styles, {
+    rgbToAnsi256: {
+      value(red, green, blue) {
+        if (red === green && green === blue) {
+          if (red < 8) {
+            return 16;
+          }
+          if (red > 248) {
+            return 231;
+          }
+          return Math.round((red - 8) / 247 * 24) + 232;
+        }
+        return 16 + 36 * Math.round(red / 255 * 5) + 6 * Math.round(green / 255 * 5) + Math.round(blue / 255 * 5);
+      },
+      enumerable: false
+    },
+    hexToRgb: {
+      value(hex) {
+        const matches = /[a-f\d]{6}|[a-f\d]{3}/i.exec(hex.toString(16));
+        if (!matches) {
+          return [0, 0, 0];
+        }
+        let [colorString] = matches;
+        if (colorString.length === 3) {
+          colorString = [...colorString].map((character) => character + character).join("");
+        }
+        const integer = Number.parseInt(colorString, 16);
+        return [
+          /* eslint-disable no-bitwise */
+          integer >> 16 & 255,
+          integer >> 8 & 255,
+          integer & 255
+          /* eslint-enable no-bitwise */
+        ];
+      },
+      enumerable: false
+    },
+    hexToAnsi256: {
+      value: (hex) => styles.rgbToAnsi256(...styles.hexToRgb(hex)),
+      enumerable: false
+    },
+    ansi256ToAnsi: {
+      value(code) {
+        if (code < 8) {
+          return 30 + code;
+        }
+        if (code < 16) {
+          return 90 + (code - 8);
+        }
+        let red;
+        let green;
+        let blue;
+        if (code >= 232) {
+          red = ((code - 232) * 10 + 8) / 255;
+          green = red;
+          blue = red;
+        } else {
+          code -= 16;
+          const remainder = code % 36;
+          red = Math.floor(code / 36) / 5;
+          green = Math.floor(remainder / 6) / 5;
+          blue = remainder % 6 / 5;
+        }
+        const value = Math.max(red, green, blue) * 2;
+        if (value === 0) {
+          return 30;
+        }
+        let result = 30 + (Math.round(blue) << 2 | Math.round(green) << 1 | Math.round(red));
+        if (value === 2) {
+          result += 60;
+        }
+        return result;
+      },
+      enumerable: false
+    },
+    rgbToAnsi: {
+      value: (red, green, blue) => styles.ansi256ToAnsi(styles.rgbToAnsi256(red, green, blue)),
+      enumerable: false
+    },
+    hexToAnsi: {
+      value: (hex) => styles.ansi256ToAnsi(styles.hexToAnsi256(hex)),
+      enumerable: false
+    }
+  });
+  return styles;
+}
+var ANSI_BACKGROUND_OFFSET, wrapAnsi16, wrapAnsi256, wrapAnsi16m, styles, modifierNames, foregroundColorNames, backgroundColorNames, colorNames, ansiStyles, ansi_styles_default;
+var init_ansi_styles = __esm({
+  "node_modules/chalk/source/vendor/ansi-styles/index.js"() {
+    ANSI_BACKGROUND_OFFSET = 10;
+    wrapAnsi16 = (offset = 0) => (code) => `\x1B[${code + offset}m`;
+    wrapAnsi256 = (offset = 0) => (code) => `\x1B[${38 + offset};5;${code}m`;
+    wrapAnsi16m = (offset = 0) => (red, green, blue) => `\x1B[${38 + offset};2;${red};${green};${blue}m`;
+    styles = {
+      modifier: {
+        reset: [0, 0],
+        // 21 isn't widely supported and 22 does the same thing
+        bold: [1, 22],
+        dim: [2, 22],
+        italic: [3, 23],
+        underline: [4, 24],
+        overline: [53, 55],
+        inverse: [7, 27],
+        hidden: [8, 28],
+        strikethrough: [9, 29]
+      },
+      color: {
+        black: [30, 39],
+        red: [31, 39],
+        green: [32, 39],
+        yellow: [33, 39],
+        blue: [34, 39],
+        magenta: [35, 39],
+        cyan: [36, 39],
+        white: [37, 39],
+        // Bright color
+        blackBright: [90, 39],
+        gray: [90, 39],
+        // Alias of `blackBright`
+        grey: [90, 39],
+        // Alias of `blackBright`
+        redBright: [91, 39],
+        greenBright: [92, 39],
+        yellowBright: [93, 39],
+        blueBright: [94, 39],
+        magentaBright: [95, 39],
+        cyanBright: [96, 39],
+        whiteBright: [97, 39]
+      },
+      bgColor: {
+        bgBlack: [40, 49],
+        bgRed: [41, 49],
+        bgGreen: [42, 49],
+        bgYellow: [43, 49],
+        bgBlue: [44, 49],
+        bgMagenta: [45, 49],
+        bgCyan: [46, 49],
+        bgWhite: [47, 49],
+        // Bright color
+        bgBlackBright: [100, 49],
+        bgGray: [100, 49],
+        // Alias of `bgBlackBright`
+        bgGrey: [100, 49],
+        // Alias of `bgBlackBright`
+        bgRedBright: [101, 49],
+        bgGreenBright: [102, 49],
+        bgYellowBright: [103, 49],
+        bgBlueBright: [104, 49],
+        bgMagentaBright: [105, 49],
+        bgCyanBright: [106, 49],
+        bgWhiteBright: [107, 49]
+      }
+    };
+    modifierNames = Object.keys(styles.modifier);
+    foregroundColorNames = Object.keys(styles.color);
+    backgroundColorNames = Object.keys(styles.bgColor);
+    colorNames = [...foregroundColorNames, ...backgroundColorNames];
+    ansiStyles = assembleStyles();
+    ansi_styles_default = ansiStyles;
+  }
+});
+
+// node_modules/chalk/source/vendor/supports-color/index.js
+import process2 from "node:process";
+import os from "node:os";
+import tty from "node:tty";
+function hasFlag(flag, argv = globalThis.Deno ? globalThis.Deno.args : process2.argv) {
+  const prefix = flag.startsWith("-") ? "" : flag.length === 1 ? "-" : "--";
+  const position = argv.indexOf(prefix + flag);
+  const terminatorPosition = argv.indexOf("--");
+  return position !== -1 && (terminatorPosition === -1 || position < terminatorPosition);
+}
+function envForceColor() {
+  if ("FORCE_COLOR" in env) {
+    if (env.FORCE_COLOR === "true") {
+      return 1;
+    }
+    if (env.FORCE_COLOR === "false") {
+      return 0;
+    }
+    return env.FORCE_COLOR.length === 0 ? 1 : Math.min(Number.parseInt(env.FORCE_COLOR, 10), 3);
+  }
+}
+function translateLevel(level) {
+  if (level === 0) {
+    return false;
+  }
+  return {
+    level,
+    hasBasic: true,
+    has256: level >= 2,
+    has16m: level >= 3
+  };
+}
+function _supportsColor(haveStream, { streamIsTTY, sniffFlags = true } = {}) {
+  const noFlagForceColor = envForceColor();
+  if (noFlagForceColor !== void 0) {
+    flagForceColor = noFlagForceColor;
+  }
+  const forceColor = sniffFlags ? flagForceColor : noFlagForceColor;
+  if (forceColor === 0) {
+    return 0;
+  }
+  if (sniffFlags) {
+    if (hasFlag("color=16m") || hasFlag("color=full") || hasFlag("color=truecolor")) {
+      return 3;
+    }
+    if (hasFlag("color=256")) {
+      return 2;
+    }
+  }
+  if ("TF_BUILD" in env && "AGENT_NAME" in env) {
+    return 1;
+  }
+  if (haveStream && !streamIsTTY && forceColor === void 0) {
+    return 0;
+  }
+  const min = forceColor || 0;
+  if (env.TERM === "dumb") {
+    return min;
+  }
+  if (process2.platform === "win32") {
+    const osRelease = os.release().split(".");
+    if (Number(osRelease[0]) >= 10 && Number(osRelease[2]) >= 10586) {
+      return Number(osRelease[2]) >= 14931 ? 3 : 2;
+    }
+    return 1;
+  }
+  if ("CI" in env) {
+    if (["GITHUB_ACTIONS", "GITEA_ACTIONS", "CIRCLECI"].some((key) => key in env)) {
+      return 3;
+    }
+    if (["TRAVIS", "APPVEYOR", "GITLAB_CI", "BUILDKITE", "DRONE"].some((sign) => sign in env) || env.CI_NAME === "codeship") {
+      return 1;
+    }
+    return min;
+  }
+  if ("TEAMCITY_VERSION" in env) {
+    return /^(9\.(0*[1-9]\d*)\.|\d{2,}\.)/.test(env.TEAMCITY_VERSION) ? 1 : 0;
+  }
+  if (env.COLORTERM === "truecolor") {
+    return 3;
+  }
+  if (env.TERM === "xterm-kitty") {
+    return 3;
+  }
+  if (env.TERM === "xterm-ghostty") {
+    return 3;
+  }
+  if (env.TERM === "wezterm") {
+    return 3;
+  }
+  if ("TERM_PROGRAM" in env) {
+    const version = Number.parseInt((env.TERM_PROGRAM_VERSION || "").split(".")[0], 10);
+    switch (env.TERM_PROGRAM) {
+      case "iTerm.app": {
+        return version >= 3 ? 3 : 2;
+      }
+      case "Apple_Terminal": {
+        return 2;
+      }
+    }
+  }
+  if (/-256(color)?$/i.test(env.TERM)) {
+    return 2;
+  }
+  if (/^screen|^xterm|^vt100|^vt220|^rxvt|color|ansi|cygwin|linux/i.test(env.TERM)) {
+    return 1;
+  }
+  if ("COLORTERM" in env) {
+    return 1;
+  }
+  return min;
+}
+function createSupportsColor(stream, options = {}) {
+  const level = _supportsColor(stream, {
+    streamIsTTY: stream && stream.isTTY,
+    ...options
+  });
+  return translateLevel(level);
+}
+var env, flagForceColor, supportsColor, supports_color_default;
+var init_supports_color = __esm({
+  "node_modules/chalk/source/vendor/supports-color/index.js"() {
+    ({ env } = process2);
+    if (hasFlag("no-color") || hasFlag("no-colors") || hasFlag("color=false") || hasFlag("color=never")) {
+      flagForceColor = 0;
+    } else if (hasFlag("color") || hasFlag("colors") || hasFlag("color=true") || hasFlag("color=always")) {
+      flagForceColor = 1;
+    }
+    supportsColor = {
+      stdout: createSupportsColor({ isTTY: tty.isatty(1) }),
+      stderr: createSupportsColor({ isTTY: tty.isatty(2) })
+    };
+    supports_color_default = supportsColor;
+  }
+});
+
+// node_modules/chalk/source/utilities.js
+function stringReplaceAll(string, substring, replacer) {
+  let index = string.indexOf(substring);
+  if (index === -1) {
+    return string;
+  }
+  const substringLength = substring.length;
+  let endIndex = 0;
+  let returnValue = "";
+  do {
+    returnValue += string.slice(endIndex, index) + substring + replacer;
+    endIndex = index + substringLength;
+    index = string.indexOf(substring, endIndex);
+  } while (index !== -1);
+  returnValue += string.slice(endIndex);
+  return returnValue;
+}
+function stringEncaseCRLFWithFirstIndex(string, prefix, postfix, index) {
+  let endIndex = 0;
+  let returnValue = "";
+  do {
+    const gotCR = string[index - 1] === "\r";
+    returnValue += string.slice(endIndex, gotCR ? index - 1 : index) + prefix + (gotCR ? "\r\n" : "\n") + postfix;
+    endIndex = index + 1;
+    index = string.indexOf("\n", endIndex);
+  } while (index !== -1);
+  returnValue += string.slice(endIndex);
+  return returnValue;
+}
+var init_utilities = __esm({
+  "node_modules/chalk/source/utilities.js"() {
+  }
+});
+
+// node_modules/chalk/source/index.js
+function createChalk(options) {
+  return chalkFactory(options);
+}
+var stdoutColor, stderrColor, GENERATOR, STYLER, IS_EMPTY, levelMapping, styles2, applyOptions, chalkFactory, getModelAnsi, usedModels, proto, createStyler, createBuilder, applyStyle, chalk, chalkStderr, source_default;
+var init_source = __esm({
+  "node_modules/chalk/source/index.js"() {
+    init_ansi_styles();
+    init_supports_color();
+    init_utilities();
+    ({ stdout: stdoutColor, stderr: stderrColor } = supports_color_default);
+    GENERATOR = Symbol("GENERATOR");
+    STYLER = Symbol("STYLER");
+    IS_EMPTY = Symbol("IS_EMPTY");
+    levelMapping = [
+      "ansi",
+      "ansi",
+      "ansi256",
+      "ansi16m"
+    ];
+    styles2 = /* @__PURE__ */ Object.create(null);
+    applyOptions = (object, options = {}) => {
+      if (options.level && !(Number.isInteger(options.level) && options.level >= 0 && options.level <= 3)) {
+        throw new Error("The `level` option should be an integer from 0 to 3");
+      }
+      const colorLevel = stdoutColor ? stdoutColor.level : 0;
+      object.level = options.level === void 0 ? colorLevel : options.level;
+    };
+    chalkFactory = (options) => {
+      const chalk2 = (...strings) => strings.join(" ");
+      applyOptions(chalk2, options);
+      Object.setPrototypeOf(chalk2, createChalk.prototype);
+      return chalk2;
+    };
+    Object.setPrototypeOf(createChalk.prototype, Function.prototype);
+    for (const [styleName, style] of Object.entries(ansi_styles_default)) {
+      styles2[styleName] = {
+        get() {
+          const builder = createBuilder(this, createStyler(style.open, style.close, this[STYLER]), this[IS_EMPTY]);
+          Object.defineProperty(this, styleName, { value: builder });
+          return builder;
+        }
+      };
+    }
+    styles2.visible = {
+      get() {
+        const builder = createBuilder(this, this[STYLER], true);
+        Object.defineProperty(this, "visible", { value: builder });
+        return builder;
+      }
+    };
+    getModelAnsi = (model, level, type, ...arguments_) => {
+      if (model === "rgb") {
+        if (level === "ansi16m") {
+          return ansi_styles_default[type].ansi16m(...arguments_);
+        }
+        if (level === "ansi256") {
+          return ansi_styles_default[type].ansi256(ansi_styles_default.rgbToAnsi256(...arguments_));
+        }
+        return ansi_styles_default[type].ansi(ansi_styles_default.rgbToAnsi(...arguments_));
+      }
+      if (model === "hex") {
+        return getModelAnsi("rgb", level, type, ...ansi_styles_default.hexToRgb(...arguments_));
+      }
+      return ansi_styles_default[type][model](...arguments_);
+    };
+    usedModels = ["rgb", "hex", "ansi256"];
+    for (const model of usedModels) {
+      styles2[model] = {
+        get() {
+          const { level } = this;
+          return function(...arguments_) {
+            const styler = createStyler(getModelAnsi(model, levelMapping[level], "color", ...arguments_), ansi_styles_default.color.close, this[STYLER]);
+            return createBuilder(this, styler, this[IS_EMPTY]);
+          };
+        }
+      };
+      const bgModel = "bg" + model[0].toUpperCase() + model.slice(1);
+      styles2[bgModel] = {
+        get() {
+          const { level } = this;
+          return function(...arguments_) {
+            const styler = createStyler(getModelAnsi(model, levelMapping[level], "bgColor", ...arguments_), ansi_styles_default.bgColor.close, this[STYLER]);
+            return createBuilder(this, styler, this[IS_EMPTY]);
+          };
+        }
+      };
+    }
+    proto = Object.defineProperties(() => {
+    }, {
+      ...styles2,
+      level: {
+        enumerable: true,
+        get() {
+          return this[GENERATOR].level;
+        },
+        set(level) {
+          this[GENERATOR].level = level;
+        }
+      }
+    });
+    createStyler = (open, close, parent) => {
+      let openAll;
+      let closeAll;
+      if (parent === void 0) {
+        openAll = open;
+        closeAll = close;
+      } else {
+        openAll = parent.openAll + open;
+        closeAll = close + parent.closeAll;
+      }
+      return {
+        open,
+        close,
+        openAll,
+        closeAll,
+        parent
+      };
+    };
+    createBuilder = (self, _styler, _isEmpty) => {
+      const builder = (...arguments_) => applyStyle(builder, arguments_.length === 1 ? "" + arguments_[0] : arguments_.join(" "));
+      Object.setPrototypeOf(builder, proto);
+      builder[GENERATOR] = self;
+      builder[STYLER] = _styler;
+      builder[IS_EMPTY] = _isEmpty;
+      return builder;
+    };
+    applyStyle = (self, string) => {
+      if (self.level <= 0 || !string) {
+        return self[IS_EMPTY] ? "" : string;
+      }
+      let styler = self[STYLER];
+      if (styler === void 0) {
+        return string;
+      }
+      const { openAll, closeAll } = styler;
+      if (string.includes("\x1B")) {
+        while (styler !== void 0) {
+          string = stringReplaceAll(string, styler.close, styler.open);
+          styler = styler.parent;
+        }
+      }
+      const lfIndex = string.indexOf("\n");
+      if (lfIndex !== -1) {
+        string = stringEncaseCRLFWithFirstIndex(string, closeAll, openAll, lfIndex);
+      }
+      return openAll + string + closeAll;
+    };
+    Object.defineProperties(createChalk.prototype, styles2);
+    chalk = createChalk();
+    chalkStderr = createChalk({ level: stderrColor ? stderrColor.level : 0 });
+    source_default = chalk;
+  }
+});
+
 // src/_shared/git-ops.ts
 import { existsSync as existsSync8, mkdirSync as mkdirSync6, readdirSync } from "node:fs";
 import { homedir as homedir2 } from "node:os";
@@ -13049,7 +13125,7 @@ __export(recall_exports, {
   recallCmd: () => recallCmd
 });
 import { existsSync as existsSync25, readFileSync as readFileSync23 } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawnSync as spawnSync2 } from "node:child_process";
 import { join as join27 } from "node:path";
 function buildRecallPayload(opts = {}) {
   const cfg = readPluginConfig();
@@ -13272,7 +13348,7 @@ async function recallCmd(opts) {
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
 }
 function loadMemexCatalog() {
-  const r2 = spawnSync("memex", ["read", "index"], {
+  const r2 = spawnSync2("memex", ["read", "index"], {
     encoding: "utf8",
     timeout: 2e3,
     stdio: ["ignore", "pipe", "pipe"]
@@ -13612,7 +13688,7 @@ function listKnownProjectRoots(projectsDir = join31(homedir8(), ".claude", "proj
   }
   const out = entries.map((name) => {
     const path = decodeProjectDirName(name);
-    return { path, slug: projectSlugFromPath(path) };
+    return { path, slug: cachedProjectSlug(path) };
   });
   out.sort((a, b2) => b2.path.length - a.path.length);
   return out;
@@ -13698,6 +13774,7 @@ var init_content_project_inference = __esm({
   "src/_shared/content-project-inference.ts"() {
     "use strict";
     init_slug();
+    init_project_identity();
     MIN_CONFIDENCE = 0.7;
     MIN_PATH_HITS = 5;
   }
@@ -13762,7 +13839,7 @@ function parseClaudeJsonl(sourcePath, content) {
   const fallbackId = basename(sourcePath, ".jsonl");
   const finalId = sessionId || fallbackId;
   const shortId = finalId.slice(0, 8);
-  const cwdProject = projectSlugFromPath(cwd);
+  const cwdProject = cachedProjectSlug(cwd);
   const inference = inferProjectFromContent(messages, getRoots());
   const useInferred = inference.inferredProject !== null && inference.inferredProject !== cwdProject && inference.confidence >= MIN_CONFIDENCE;
   const project = useInferred ? inference.inferredProject : cwdProject;
@@ -13850,6 +13927,7 @@ var init_claude_code = __esm({
   "src/_shared/sources/claude-code.ts"() {
     "use strict";
     init_slug();
+    init_project_identity();
     init_content_project_inference();
     cachedRoots = null;
     ClaudeCodeAdapter = class {
@@ -14002,7 +14080,7 @@ function buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath
     tool: "copilot",
     sessionId,
     shortId,
-    project: projectSlugFromPath(workspacePath),
+    project: cachedProjectSlug(workspacePath),
     projectRaw: workspacePath,
     startedAt: startedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
     endedAt: endedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
@@ -14105,7 +14183,7 @@ function parseCopilotTranscript(sourcePath, content, workspacePath) {
     tool: "copilot",
     sessionId,
     shortId,
-    project: projectSlugFromPath(workspacePath),
+    project: cachedProjectSlug(workspacePath),
     projectRaw: workspacePath,
     startedAt: startedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
     endedAt: endedAt || (/* @__PURE__ */ new Date(0)).toISOString(),
@@ -14120,6 +14198,7 @@ var init_vscode_copilot = __esm({
   "src/_shared/sources/vscode-copilot.ts"() {
     "use strict";
     init_slug();
+    init_project_identity();
     init_claude_code();
     VSCodeCopilotAdapter = class {
       constructor(root = defaultStorageRoot()) {
@@ -14694,7 +14773,7 @@ async function orchestrateCmd(opts) {
   let result;
   if (opts.mode === "project") {
     const cwd = opts.cwd ?? process.cwd();
-    const project = projectSlugFromPath(cwd);
+    const project = cachedProjectSlug(cwd);
     const scan = await scanAndImport({ projectFilter: project });
     result = {
       mode: "project",
@@ -14722,7 +14801,7 @@ var init_orchestrator = __esm({
     "use strict";
     init_ensure_dir();
     init_scan_and_import();
-    init_slug();
+    init_project_identity();
   }
 });
 
