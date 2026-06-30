@@ -7,7 +7,8 @@ import { homedir } from "node:os";
 import { join, basename } from "node:path";
 import type { SourceAdapter, DiscoveredSession } from "./base.js";
 import type { NormalizedSession, SessionMessage, ContentBlock } from "../types.js";
-import { deriveSlug, projectSlugFromPath } from "../slug.js";
+import { deriveSlug } from "../slug.js";
+import { cachedProjectSlug } from "../project-identity.js";
 import { sanitizeMessageText } from "./claude-code.js";
 
 function defaultStorageRoot(): string {
@@ -223,7 +224,7 @@ function buildSessionFromRequests(
     tool: "copilot",
     sessionId,
     shortId,
-    project: projectSlugFromPath(workspacePath),
+    project: cachedProjectSlug(workspacePath),
     projectRaw: workspacePath,
     startedAt: startedAt || new Date(0).toISOString(),
     endedAt: endedAt || new Date(0).toISOString(),
@@ -343,7 +344,7 @@ function parseCopilotTranscript(sourcePath: string, content: string, workspacePa
     tool: "copilot",
     sessionId,
     shortId,
-    project: projectSlugFromPath(workspacePath),
+    project: cachedProjectSlug(workspacePath),
     projectRaw: workspacePath,
     startedAt: startedAt || new Date(0).toISOString(),
     endedAt: endedAt || new Date(0).toISOString(),

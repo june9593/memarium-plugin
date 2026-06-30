@@ -11,7 +11,7 @@
 import { execFileSync } from "node:child_process";
 import { ensureSpoolDir } from "../spool/ensure-dir.js";
 import { scanAndImport, type ScanResult } from "../spool/scan-and-import.js";
-import { projectSlugFromPath } from "../_shared/slug.js";
+import { cachedProjectSlug } from "../_shared/project-identity.js";
 
 export interface OrchestrateOptions {
   mode: string;
@@ -53,7 +53,7 @@ export async function orchestrateCmd(opts: OrchestrateOptions): Promise<void> {
   let result: OrchestrateOutput;
   if (opts.mode === "project") {
     const cwd = opts.cwd ?? process.cwd();
-    const project = projectSlugFromPath(cwd);
+    const project = cachedProjectSlug(cwd);
     const scan = await scanAndImport({ projectFilter: project });
     result = {
       mode: "project",
