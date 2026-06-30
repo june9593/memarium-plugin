@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.0 — 2026-06-30
+
+**Project identity from the git remote (P0a) — lockstep with npm vibebook 0.11.0.** The project a session/memory belongs to was keyed on the cwd's last two path segments (`~/edge/memvc` → `edge-memvc`), so the same repo at a different path per device split into different projects and never aggregated. Identity is now the normalized git `origin` remote (`github.com-june9593-vibebook`), path-independent, with the path slug as fallback for non-git projects.
+
+- new `src/_shared/project-identity.ts` (mirror of npm canonical).
+- `_shared/project-resolve.ts` read chokepoint prefers the remote slug, path fallback.
+- `_shared/sources/{claude-code,vscode-copilot}.ts`, `_shared/content-project-inference.ts` (known roots), and `digest/orchestrator.ts` assign the remote slug.
+
+Migration of existing path-slug data not shipped (local wipe + re-digest). tsc clean; 424 tests.
+
 ## 0.10.2 — 2026-06-30
 
 **Fix: a new project's first-digest chronicles could silently vanish from the catalog (#38).** A fan-out reader subagent that violated the "return JSON only" contract could write chronicle md straight under `book/<project>/chronicle/`, bypassing `publish` — so the md never entered `index.book.json`. Because the catalog is deliberately index-driven (not FS-globbing), the **entire project disappeared** from `book/index.md` and never got a `book/<project>/index.md` (observed: `chromium-src`, 28 chronicles on disk, 0 in the index, header still said "4 projects").
