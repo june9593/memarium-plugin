@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { canonicalProjectId, projectSlugFromRemote, resolveProjectId, resolveProjectIdSync, cachedProjectSlug } from "../src/_shared/project-identity.js";
+import { canonicalProjectId, projectSlugFromRemote, resolveProjectId, resolveProjectIdSync, cachedProjectSlug } from "../../src/_shared/project-identity.js";
 
 describe("canonicalProjectId — collapses every remote form to host/path", () => {
   const cases: [string, string | null][] = [

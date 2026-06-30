@@ -13686,17 +13686,14 @@ function listKnownProjectRoots(projectsDir = join31(homedir8(), ".claude", "proj
   } catch {
     return [];
   }
-  const out = entries.map((name) => {
-    const path = decodeProjectDirName(name);
-    return { path, slug: cachedProjectSlug(path) };
-  });
+  const out = entries.map((name) => ({ path: decodeProjectDirName(name) }));
   out.sort((a, b2) => b2.path.length - a.path.length);
   return out;
 }
 function pathToProjectSlug(absPath, roots) {
   if (!absPath || !absPath.startsWith("/")) return null;
   for (const r2 of roots) {
-    if (absPath === r2.path || absPath.startsWith(r2.path + "/")) return r2.slug;
+    if (absPath === r2.path || absPath.startsWith(r2.path + "/")) return cachedProjectSlug(r2.path);
   }
   const lastSlash = absPath.lastIndexOf("/");
   if (lastSlash <= 0) return null;
