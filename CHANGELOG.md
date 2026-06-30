@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.0 — 2026-07-01
+
+**Cross-device memory recall (P0b).** `vibebook sync` already aggregates every device's typed memory into `origin/main` (merge-books) and mounts a read-only worktree at `~/.vibebook/aggregated/`, but recall/primer only ever read the local device repo — so the aggregated cross-device memory was produced and never consumed (the "Q2 gap"). Now recall sees sibling-device memory:
+
+- **`src/memory/source-resolver.ts`** (new): `resolveMemoryView` merges the local + overlay memory indexes — union by id; latest `updatedAt` wins; equal timestamp prefers local (own-device authority, a read-view override, not CI parity). It's a *repo-indexed / non-proposal* view: status is NOT pre-filtered (superseded kept for the conflicts block); pending proposals live outside the repo so they're excluded for free; each entry is tagged with its source tree. Gracefully degrades to local-only when the overlay is absent/corrupt.
+- **`memory-query`** reads the merged view; **`memory-primer`** renders the SessionStart primer **live** from the merged view (no longer prefers the on-disk `_primer/<project>.md`, which is a per-device artifact merge-books doesn't aggregate). `memory-query` no longer persists `_primer` (it would be a stale, local-only snapshot).
+- **`status`** gains a `crossDevice` section: overlay present/path + local / merged / sibling-only memory counts.
+
+Writes stay local-only; the "unreviewed memory doesn't propagate" invariant is unchanged. +16 tests.
+
 ## 0.11.0 — 2026-06-30
 
 **Project identity from the git remote (P0a) — lockstep with npm vibebook 0.11.0.** The project a session/memory belongs to was keyed on the cwd's last two path segments (`~/edge/memvc` → `edge-memvc`), so the same repo at a different path per device split into different projects and never aggregated. Identity is now the normalized git `origin` remote (`github.com-june9593-vibebook`), path-independent, with the path slug as fallback for non-git projects.

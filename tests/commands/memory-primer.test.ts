@@ -81,16 +81,41 @@ describe("memoryPrimerCmd", () => {
     expect(existsSync(join(repo, "memory", "_primer"))).toBe(false);
   });
 
-  it("prints pre-written _primer file verbatim when it exists (prefers on-disk file)", async () => {
-    // Pre-write a _primer file as the digest command would
+  it("ignores a stale _primer file and renders live from the index (P0b)", async () => {
+    // A stale/misleading _primer file must NOT be preferred — memory-primer
+    // renders live from the (merged) memory view, so it can never serve
+    // cross-device memory from a frozen local snapshot.
     const primerDir = join(repo, "memory", "_primer");
     mkdirSync(primerDir, { recursive: true });
-    const prewritten = "# Project memory: edge-memvc\n\nPre-written content from digest.\n";
-    writeFileSync(join(primerDir, "edge-memvc.md"), prewritten);
+    writeFileSync(join(primerDir, "edge-memvc.md"), "# STALE do not use\n\nold cached primer\n");
 
     const { memoryPrimerCmd } = await import("../../src/commands/memory-primer.js");
     await memoryPrimerCmd({ cwd: "/work/edge-memvc" });
-    // Should print the pre-written file verbatim, not re-render from index
-    expect(stdout.join("")).toBe(prewritten);
+    const out = stdout.join("");
+    expect(out).not.toContain("STALE do not use");
+    expect(out).toContain("# Project memory: edge-memvc");
+    expect(out).toContain("never npm publish"); // rendered from the index, not the file
+  });
+
+  it("includes sibling-device memory from the aggregated overlay (P0b cross-device)", async () => {
+    // The npm CLI mounts origin/main at ~/.vibebook/aggregated; HOME is stubbed,
+    // so write a sibling core memory into the overlay's memory index.
+    const ovl = join(fakeHome, ".vibebook", "aggregated", ".vibebook");
+    mkdirSync(ovl, { recursive: true });
+    writeFileSync(join(ovl, "index.memory.json"), JSON.stringify({
+      version: 1, entries: {
+        "core/sibling": { id: "core/sibling", type: "core", scope: "global", project: null,
+          title: "sibling-device rule", summary: "from another machine", path: "memory/core/_global/sibling.md",
+          status: "active", confidence: 1, importance: 5, createdAt: "2026-06-20",
+          updatedAt: "2026-06-20", validFrom: null, validTo: null, sourceSessions: [],
+          sourceCommits: [], sourceFiles: [], supersedes: null, entities: [],
+          originDevice: "mac-mini-2", accessCount: 0, lastAccess: null },
+      },
+    }));
+    const { memoryPrimerCmd } = await import("../../src/commands/memory-primer.js");
+    await memoryPrimerCmd({ cwd: "/work/edge-memvc" });
+    const out = stdout.join("");
+    expect(out).toContain("never npm publish");      // local memory
+    expect(out).toContain("sibling-device rule");    // overlay (sibling device) memory
   });
 });

@@ -45,6 +45,28 @@ describe("buildStatusPayload (#22 coverage)", () => {
     expect(s.book.chronicles).toBe(1);
     expect(s.memory).toEqual({ typedMemory: 2, entities: 1, qa: 1 });
     expect(s.pendingByProject).toEqual([{ project: "edge-memvc", pending: 2 }]);
+    // P0b: no aggregated overlay → local-only view.
+    expect(s.crossDevice.overlayPresent).toBe(false);
+    expect(s.crossDevice.overlayPath).toBeNull();
+    expect(s.crossDevice.memory).toEqual({ local: 2, merged: 2, siblingOnly: 0 });
+  });
+
+  it("crossDevice counts sibling-only memory when the overlay is present (P0b)", async () => {
+    const ovl = join(home, ".vibebook", "aggregated", ".vibebook");
+    mkdirSync(ovl, { recursive: true });
+    writeFileSync(join(ovl, "index.memory.json"), JSON.stringify({
+      version: 1, entries: {
+        "core/sibling": { id: "core/sibling", type: "core", scope: "global", project: null,
+          title: "t", summary: "s", path: "memory/core/_global/sibling.md", status: "active",
+          confidence: 1, importance: 5, createdAt: "2026-06-20", updatedAt: "2026-06-20",
+          validFrom: null, validTo: null, sourceSessions: [], sourceCommits: [], sourceFiles: [],
+          supersedes: null, entities: [], originDevice: "mini2", accessCount: 0, lastAccess: null },
+      },
+    }));
+    const { buildStatusPayload } = await import("../../src/commands/status.js");
+    const s = buildStatusPayload(repo);
+    expect(s.crossDevice.overlayPresent).toBe(true);
+    expect(s.crossDevice.memory).toEqual({ local: 2, merged: 3, siblingOnly: 1 });
   });
 
   it("coveragePct is 0 (not NaN) when there are no sessions", async () => {

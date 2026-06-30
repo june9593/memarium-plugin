@@ -1,8 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
-import { loadMemoryIndex } from "../memory/index-store.js";
+import { resolveMemoryView } from "../memory/source-resolver.js";
 import { scoreMemories, type ScoredMemory } from "../memory/score.js";
 import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
 import { renderPrimer } from "../memory/primer.js";
@@ -26,8 +24,11 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
   const cfg = readPluginConfig();
   const cwd = opts.cwd ?? process.cwd();
   const project = resolveProjectFromCwd(cwd, cfg.repoPath);
-  const idx = loadMemoryIndex(cfg.repoPath);
-  const entries = Object.values(idx.entries);
+  // Merge local + aggregated-overlay memory (P0b) so recall sees sibling-device
+  // memory. Read-only; writes stay local; pending proposals (outside the repo)
+  // are excluded for free; superseded kept (conflicts block needs them).
+  const view = resolveMemoryView(cfg.repoPath);
+  const entries = Object.values(view.entries);
   const now = new Date().toISOString().slice(0, 10);
 
   // Overlay device-local usage onto the in-memory entries BEFORE scoring, so
@@ -43,13 +44,13 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
 
   const byType = (t: MemoryType): ScoredMemory[] => scored.filter((s) => s.entry.type === t);
 
-  // primer: refresh on query so it always reflects current memory
+  // primer: render on query so it always reflects current memory (merged view).
+  // We do NOT persist it to memory/_primer/<project>.md anymore — memory-primer
+  // renders live from the same merged view, so a written file would just be a
+  // stale, local-only snapshot of a cross-device render (P0b detail B).
   let primer = "";
   if (project) {
     primer = renderPrimer(project, entries);
-    const abs = join(cfg.repoPath, "memory", "_primer", `${project}.md`);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, primer);
   }
 
   const conflicts = entries

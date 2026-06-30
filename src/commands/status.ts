@@ -3,6 +3,7 @@ import { buildListProjectsPayload } from "./list-projects.js";
 import { loadMemoryIndex } from "../memory/index-store.js";
 import { loadQaIndex } from "../qa/index-store.js";
 import { loadEntityIndex } from "../entity/index-store.js";
+import { resolveMemoryView } from "../memory/source-resolver.js";
 
 export interface StatusPayload {
   /** Session digest funnel, aggregated across all real projects. */
@@ -14,8 +15,17 @@ export interface StatusPayload {
   };
   /** Book layer (chronicles / topics / cards) totals. */
   book: { chronicles: number; topics: number; cards: number };
-  /** Typed Memory OS layer entry counts. */
+  /** Typed Memory OS layer entry counts (LOCAL device repo). */
   memory: { typedMemory: number; entities: number; qa: number };
+  /** Cross-device memory view (P0b): is the aggregated overlay present + fresh,
+   *  and how much sibling-device memory does recall/primer now see. */
+  crossDevice: {
+    /** True when `~/.vibebook/aggregated` (npm sync's origin/main worktree) has a memory index. */
+    overlayPresent: boolean;
+    overlayPath: string | null;
+    /** Entry counts: local-only repo, the merged view, and entries visible ONLY via the overlay. */
+    memory: { local: number; merged: number; siblingOnly: number };
+  };
   /** Projects with a non-empty backlog, most-pending first. */
   pendingByProject: { project: string; pending: number }[];
   meta: { sessionRepoPath: string };
@@ -42,6 +52,10 @@ export function buildStatusPayload(cwd: string = process.cwd()): StatusPayload {
     .filter((p) => p.pendingSessions > 0)
     .map((p) => ({ project: p.project, pending: p.pendingSessions }));
 
+  const localMem = Object.keys(loadMemoryIndex(cfg.repoPath).entries).length;
+  const view = resolveMemoryView(cfg.repoPath);
+  const siblingOnly = Object.values(view.sources).filter((s) => s === "overlay").length;
+
   return {
     sessions: {
       total, digested, pending,
@@ -49,9 +63,14 @@ export function buildStatusPayload(cwd: string = process.cwd()): StatusPayload {
     },
     book: { chronicles, topics, cards },
     memory: {
-      typedMemory: Object.keys(loadMemoryIndex(cfg.repoPath).entries).length,
+      typedMemory: localMem,
       entities: Object.keys(loadEntityIndex(cfg.repoPath).entries).length,
       qa: Object.keys(loadQaIndex(cfg.repoPath).entries).length,
+    },
+    crossDevice: {
+      overlayPresent: view.overlayPresent,
+      overlayPath: view.roots.overlay,
+      memory: { local: localMem, merged: Object.keys(view.entries).length, siblingOnly },
     },
     pendingByProject,
     meta: { sessionRepoPath: cfg.repoPath },

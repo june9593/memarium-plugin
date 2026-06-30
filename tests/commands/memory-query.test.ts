@@ -62,7 +62,7 @@ describe("memoryQueryCmd", () => {
   });
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); rmSync(fakeHome, { recursive: true, force: true }); });
 
-  it("emits layered context for the cwd project + writes primer", async () => {
+  it("emits layered context for the cwd project + renders primer (no _primer file write)", async () => {
     const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
     await memoryQueryCmd({ cwd: "/work/edge-memvc" });
     const payload = JSON.parse(stdout.join(""));
@@ -70,7 +70,9 @@ describe("memoryQueryCmd", () => {
     expect(payload.core.map((x: any) => x.entry.id)).toContain("core/g");
     expect(payload.semantic.map((x: any) => x.entry.id)).toContain("semantic/edge-memvc/spool");
     expect(payload.primer).toContain("# Project memory: edge-memvc");
-    expect(existsSync(join(repo, "memory/_primer/edge-memvc.md"))).toBe(true);
+    // P0b: query no longer persists the primer to memory/_primer/ (memory-primer
+    // renders live from the merged view; a written file would be a stale snapshot).
+    expect(existsSync(join(repo, "memory/_primer/edge-memvc.md"))).toBe(false);
   });
 
   it("--q filters by text and includes whyRecalled", async () => {
