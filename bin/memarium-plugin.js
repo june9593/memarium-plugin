@@ -7140,6 +7140,7 @@ var init_zod = __esm({
 
 // src/_shared/config.ts
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 function configDir() {
@@ -7155,10 +7156,20 @@ function migrateLegacyConfigDir() {
   try {
     renameSync(legacy, dir);
     const p2 = configPath();
+    let repoPath = join(dir, "session-repo");
     if (existsSync(p2)) {
       const raw = readFileSync(p2, "utf8");
-      const fixed = raw.split(legacy).join(dir);
+      const fixed = raw.split(legacy).join(dir).split("~/.vibebook").join("~/.memarium");
       if (fixed !== raw) writeFileSync(p2, fixed);
+      try {
+        const parsed = JSON.parse(fixed);
+        if (parsed.repoPath) repoPath = parsed.repoPath.replace(/^~(?=$|\/)/, homedir());
+      } catch {
+      }
+    }
+    const agg = join(dir, "aggregated");
+    if (existsSync(agg)) {
+      spawnSync("git", ["-C", repoPath, "worktree", "repair", agg], { stdio: "ignore", timeout: 1e4 });
     }
   } catch {
   }
@@ -13438,7 +13449,7 @@ var init_esm = __esm({
 });
 
 // src/_shared/project-identity.ts
-import { spawnSync } from "node:child_process";
+import { spawnSync as spawnSync2 } from "node:child_process";
 function canonicalProjectId(remoteUrl) {
   const s0 = (remoteUrl ?? "").trim();
   if (!s0) return null;
@@ -13469,7 +13480,7 @@ function projectSlugFromRemote(remoteUrl) {
   return id.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
 }
 function defaultGetRemoteSync(dir) {
-  const r2 = spawnSync("git", ["-C", dir, "config", "--get", "remote.origin.url"], {
+  const r2 = spawnSync2("git", ["-C", dir, "config", "--get", "remote.origin.url"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
     timeout: 3e3
@@ -17332,7 +17343,7 @@ __export(recall_exports, {
   recallCmd: () => recallCmd
 });
 import { existsSync as existsSync26, readFileSync as readFileSync23 } from "node:fs";
-import { spawnSync as spawnSync2 } from "node:child_process";
+import { spawnSync as spawnSync3 } from "node:child_process";
 import { join as join27 } from "node:path";
 function buildRecallPayload(opts = {}) {
   const cfg = readPluginConfig();
@@ -17555,7 +17566,7 @@ async function recallCmd(opts) {
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
 }
 function loadMemexCatalog() {
-  const r2 = spawnSync2("memex", ["read", "index"], {
+  const r2 = spawnSync3("memex", ["read", "index"], {
     encoding: "utf8",
     timeout: 2e3,
     stdio: ["ignore", "pipe", "pipe"]
