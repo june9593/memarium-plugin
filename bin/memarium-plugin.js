@@ -7159,7 +7159,7 @@ function migrateLegacyConfigDir() {
     let repoPath = join(dir, "session-repo");
     if (existsSync(p2)) {
       const raw = readFileSync(p2, "utf8");
-      const fixed = raw.split(legacy).join(dir);
+      const fixed = raw.split(legacy).join(dir).split("~/.vibebook").join("~/.memarium");
       if (fixed !== raw) writeFileSync(p2, fixed);
       try {
         const parsed = JSON.parse(fixed);
@@ -7169,7 +7169,7 @@ function migrateLegacyConfigDir() {
     }
     const agg = join(dir, "aggregated");
     if (existsSync(agg)) {
-      spawnSync("git", ["-C", repoPath, "worktree", "repair", agg], { stdio: "ignore" });
+      spawnSync("git", ["-C", repoPath, "worktree", "repair", agg], { stdio: "ignore", timeout: 1e4 });
     }
   } catch {
   }

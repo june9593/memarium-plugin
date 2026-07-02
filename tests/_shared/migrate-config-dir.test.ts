@@ -45,6 +45,16 @@ describe("migrateLegacyConfigDir (mirror of npm canonical)", () => {
     expect(existsSync(join(home, ".memarium"))).toBe(false);
   });
 
+  it("rewrites a literal-tilde repoPath (~/.vibebook → ~/.memarium)", () => {
+    // config.json may legally store repoPath with a literal ~ (finalize.test.ts).
+    // The move must rewrite it too, else the ~ re-expands to the old location.
+    plantLegacy({ repoPath: "~/.vibebook/session-repo", repoUrl: "", deviceBranch: "" });
+    migrateLegacyConfigDir();
+    const raw = readFileSync(join(home, ".memarium", "config.json"), "utf8");
+    expect(JSON.parse(raw).repoPath).toBe("~/.memarium/session-repo");
+    expect(raw).not.toContain(".vibebook");
+  });
+
   it("repairs the aggregated worktree so it stays usable after the move", () => {
     const legacy = join(home, ".vibebook");
     const repo = join(legacy, "session-repo");
