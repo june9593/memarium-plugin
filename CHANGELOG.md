@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.1 — 2026-07-02
+
+**Fix: config-dir migration broke the aggregated worktree (mirror of npm memarium fix).** `migrateLegacyConfigDir` (added in 0.13.0) bulk-renames `~/.vibebook/` → `~/.memarium/`, but the read-only `aggregated/` git worktree stores its link to `session-repo` as an **absolute** path, so the move staled it. On a dual-install machine where the plugin's SessionStart hook runs the migration before `memarium sync`, cross-device recall silently degraded (the overlay's `.git` file still exists but dangles, and `refreshAggregatedWorktree` only rebuilds when it's *absent*). Fix: after the move, `git worktree repair` the aggregated worktree (keeps `_shared/config.ts` in sync with npm canonical). +4 tests.
+
 ## 0.13.0 — 2026-07-02
 
 **Project renamed: vibebook → memarium** ("mem" + "-arium" = a place where memory lives). This is a rename-only release — no behavior change. Paired with npm `memarium` 0.13.0.
