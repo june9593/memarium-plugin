@@ -37,8 +37,8 @@ jobs:
       - name: Build site
         env:
           # GitHub Pages serves project sites at /<repo>/, so set base accordingly.
-          PAGES_URL: https://june9593.github.io/vibebook-plugin/
-          PAGES_BASE: /vibebook-plugin/
+          PAGES_URL: https://june9593.github.io/memarium-plugin/
+          PAGES_BASE: /memarium-plugin/
         run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

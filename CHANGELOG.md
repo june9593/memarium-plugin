@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.0 — 2026-07-02
+
+**Project renamed: vibebook → memarium** ("mem" + "-arium" = a place where memory lives). This is a rename-only release — no behavior change. Paired with npm `memarium` 0.13.0.
+
+- **Skills renamed:** `/vibebook` → `/memarium`, `/vibebook-context` → `/memarium-context`, `/vibebook-recall` → `/memarium-recall` (the `skills/` dirs moved to match).
+- **Plugin/marketplace names** → `memarium` / `memarium-plugin`; bundled CLI → `bin/memarium-plugin.js`.
+- **Config/data dirs** move `~/.vibebook/` → `~/.memarium/` and in-repo `.vibebook/` → `.memarium/`, auto-migrated on first read (best-effort, idempotent). Legacy chain is `.memvc` → `.vibebook` → `.memarium`; borrowed-tenant plugin users (no npm CLI) migrate via `readPluginConfig`.
+- `@sync-from` mirror headers now point at `github.com/june9593/memarium`.
+
 ## 0.12.0 — 2026-07-01
 
 **Cross-device memory recall (P0b).** `vibebook sync` already aggregates every device's typed memory into `origin/main` (merge-books) and mounts a read-only worktree at `~/.vibebook/aggregated/`, but recall/primer only ever read the local device repo — so the aggregated cross-device memory was produced and never consumed (the "Q2 gap"). Now recall sees sibling-device memory:

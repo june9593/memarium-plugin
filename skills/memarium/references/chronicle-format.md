@@ -1,6 +1,6 @@
 # Chronicle format (AI-first frontmatter, agent-reuse body)
 
-vibebook chronicles are read by AI agents. The frontmatter is the
+memarium chronicles are read by AI agents. The frontmatter is the
 **index** — everything an agent needs to triage "is this relevant?"
 without reading the body. The body is **structured experience an agent
 can directly reuse**: what worked, what didn't, what's still open.
@@ -113,6 +113,6 @@ aware of before extending the work.
 - **Don't hallucinate.** `status: blocked` + a `blockers` entry beats
   an overstated "Outcome" line. If something didn't land, the
   `status` field already says so.
-- Wikilinks: `[[chronicle/<threadId>]]` (vibebook) or
+- Wikilinks: `[[chronicle/<threadId>]]` (memarium) or
   `[[memex:<cardSlug>]]` (memex card, left as text — readers know to
   `memex read <slug>`).

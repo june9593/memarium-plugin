@@ -14,8 +14,8 @@ import { reconcileOrphanChronicles } from "../digest/reconcile-orphans.js";
 import { resolveWikiLinks } from "../digest/wikilinks.js";
 
 /**
- * Inputs for `vibebook publish` — three independent JSON files written by
- * the in-session Claude during the /vibebook skill flow.
+ * Inputs for `memarium publish` — three independent JSON files written by
+ * the in-session Claude during the /memarium skill flow.
  */
 export interface ChronicleInput {
   threadId: string;
@@ -61,7 +61,7 @@ export interface PublishOptions {
    *  Useful for tests and for users who want to inspect before pushing. */
   noCommit?: boolean;
   /** Skip catalog generation (book/index.md, book/_meta/timeline.md,
-   *  book/<project>/index.md). Project-mode `/vibebook` passes this — only
+   *  book/<project>/index.md). Project-mode `/memarium` passes this — only
    *  the global mode rebuilds the catalog after fan-out completes. */
   noCatalog?: boolean;
 }
@@ -142,15 +142,15 @@ export async function publishCmd(opts: PublishOptions): Promise<PublishReport> {
   }
 
   if (opts.cardsPath) {
-    // Deprecated since v0.4: vibebook no longer writes its own atomic
+    // Deprecated since v0.4: memarium no longer writes its own atomic
     // cards — that workflow belongs to memex (`/memex-retro` skill).
     // We still accept --cards for backward compatibility (an old skill
     // version on disk could still pass this flag), but warn the user.
     console.error(chalk.yellow(
-      `! --cards is deprecated as of vibebook 0.4 — atomic cards now belong to memex.\n` +
+      `! --cards is deprecated as of memarium 0.4 — atomic cards now belong to memex.\n` +
       `  Install memex (npm install -g @touchskyer/memex) and use /memex-retro after\n` +
       `  the chronicle/topic publish. The cards in your input file will still be written\n` +
-      `  this run for backward compat, but new runs of /vibebook won't generate cards.`,
+      `  this run for backward compat, but new runs of /memarium won't generate cards.`,
     ));
     const inputs = readJsonInput<CardInput[]>(opts.cardsPath, "cards");
     for (const c of inputs) {
@@ -242,7 +242,7 @@ export async function publishCmd(opts: PublishOptions): Promise<PublishReport> {
     // Healed orphan chronicle md (#38) are now first-class — stage them so the
     // reconciliation reaches the remote alongside the regen'd catalog + index.
     for (const p of healedOrphans) stagedRel.push(p);
-    stagedRel.push(".vibebook/index.book.json");
+    stagedRel.push(".memarium/index.book.json");
 
     const r = await commitAndPushBook(cfg.repoPath, cfg.repoUrl, cfg.deviceBranch, report, stagedRel);
     report.committed = r.committed;
@@ -462,7 +462,7 @@ async function commitAndPushBook(
     return { committed: false, pushed: false };
   }
   // commitAndPush handles "no changes → no commit" cleanly.
-  const msg = `vibebook: +${report.chroniclesInserted} chronicle, ${report.topicsInserted}+${report.topicsUpdated} topic, ${report.cardsInserted}+${report.cardsUpdated} card`;
+  const msg = `memarium: +${report.chroniclesInserted} chronicle, ${report.topicsInserted}+${report.topicsUpdated} topic, ${report.cardsInserted}+${report.cardsUpdated} card`;
   const r = await commitAndPush(git, msg, paths, deviceBranch, (stage) => console.log(chalk.gray(`  ${stage}`)));
   return { committed: r.committed, pushed: r.pushed };
 }

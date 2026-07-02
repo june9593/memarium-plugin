@@ -2,12 +2,12 @@
  * Read the user's session-repo (BookIndex + book/ markdown files) at build
  * time and produce typed page-data records for Astro `getStaticPaths`.
  *
- * One source of truth: BookIndex v2 (`.vibebook/index.book.json`). The md
+ * One source of truth: BookIndex v2 (`.memarium/index.book.json`). The md
  * body is read straight from disk per-entry; we do NOT walk book/ to
  * discover artifacts, because the index records project ownership +
  * sessionIds + skip flags that aren't recoverable from the markdown alone.
  *
- * NOTE: this runs in the Astro/vite Node context, not in the vibebook CLI
+ * NOTE: this runs in the Astro/vite Node context, not in the memarium CLI
  * package, so we re-implement the small read paths here rather than
  * importing from src/digest/. Keeps the site decoupled enough that a user
  * could swap it for a different renderer.
@@ -18,11 +18,11 @@ import matter from "gray-matter";
 
 const REPO_PATH: string =
   // @ts-ignore — astro vite injection
-  import.meta.env.VIBEBOOK_REPO_PATH ||
-  process.env.VIBEBOOK_REPO_PATH ||
-  `${process.env.HOME}/.vibebook/session-repo`;
+  import.meta.env.MEMARIUM_REPO_PATH ||
+  process.env.MEMARIUM_REPO_PATH ||
+  `${process.env.HOME}/.memarium/session-repo`;
 
-const BOOK_INDEX_PATH = join(REPO_PATH, ".vibebook", "index.book.json");
+const BOOK_INDEX_PATH = join(REPO_PATH, ".memarium", "index.book.json");
 
 // ---------- BookIndex v2 types (mirrored from src/digest/book-index-v2.ts) --
 
@@ -68,7 +68,7 @@ export interface ChroniclePage extends RawChronicle {
   displayTitle: string;
   /** Markdown body with frontmatter stripped. */
   markdown: string;
-  /** Cleaned-up thread label without the noise prefixes vibebook publish
+  /** Cleaned-up thread label without the noise prefixes memarium publish
    *  used to inject (e.g. `2026-04-26-2025-09-22-...` → `2025-09-22-...`). */
   cleanThreadId: string;
 }
@@ -106,7 +106,7 @@ function readMd(repoRel: string): { md: string; data: Record<string, unknown> } 
     const parsed = matter(raw);
     return { md: parsed.content, data: parsed.data as Record<string, unknown> };
   } catch (e) {
-    console.warn(`[vibebook-site] gray-matter failed on ${repoRel}: ${(e as Error).message} — treating as body-only`);
+    console.warn(`[memarium-site] gray-matter failed on ${repoRel}: ${(e as Error).message} — treating as body-only`);
     return { md: raw, data: {} };
   }
 }
@@ -116,7 +116,7 @@ function firstHeading(md: string): string | null {
   return m ? m[1].trim() : null;
 }
 
-/** Strip the publish-bug prefix from a noisy threadId. The early /vibebook
+/** Strip the publish-bug prefix from a noisy threadId. The early /memarium
  *  runs let LLMs put `<runDate>-<datedSlug>-<shortId>` into threadId; for
  *  display we want the cleanest readable form possible without losing
  *  identity. We don't try to invert this — just present a friendlier label. */
@@ -145,7 +145,7 @@ export function listChronicles(): ChroniclePage[] {
   const out: ChroniclePage[] = [];
   for (const c of Object.values(idx.chronicles)) {
     if (c.skip) continue;
-    // Old vibebook publish (pre-fail-fast) wrote chronicles without a
+    // Old memarium publish (pre-fail-fast) wrote chronicles without a
     // top-level `project` field. We can recover from the path: book/<proj>/
     // chronicle/...md. Fall back to "_unknown" if even that fails so the
     // build doesn't crash on legacy data.
@@ -258,7 +258,7 @@ export function rewriteMarkdownLinks(
 
 /** Map a `book/<project>/<kind>/<slug>.md` path to a site URL. Returns null
  *  if the path doesn't fit any known shape. (cards/ paths from legacy
- *  vibebook installs are deliberately not routed — vibebook 0.4+ no longer
+ *  memarium installs are deliberately not routed — memarium 0.4+ no longer
  *  ships card pages; that workflow now belongs to memex.) */
 export function mdPathToRoute(repoRel: string, base: string): string | null {
   const parts = repoRel.split("/").filter(Boolean);

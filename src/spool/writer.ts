@@ -1,4 +1,4 @@
-// @sync-from: github.com/june9593/vibebook → src/writer.ts
+// @sync-from: github.com/june9593/memarium → src/writer.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -13,7 +13,7 @@ export interface WriteSessionOptions {
    *  from reasoning context. */
   includeReasoning?: boolean;
   /** Skip truncation of large tool_result / tool_use.input blocks.
-   *  Default false. Override via VIBEBOOK_FULL_TOOL_RESULTS=1. */
+   *  Default false. Override via MEMARIUM_FULL_TOOL_RESULTS=1. */
   fullToolResults?: boolean;
 }
 
@@ -43,7 +43,7 @@ export function writeSession(
 
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults =
-    opts.fullToolResults ?? process.env.VIBEBOOK_FULL_TOOL_RESULTS === "1";
+    opts.fullToolResults ?? process.env.MEMARIUM_FULL_TOOL_RESULTS === "1";
 
   writeFileSync(
     join(repoRoot, mdRel),

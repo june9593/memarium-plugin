@@ -33,7 +33,7 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
 
   // Overlay device-local usage onto the in-memory entries BEFORE scoring, so
   // accessCount/lastAccess affect ranking. This runs on EVERY path (incl. the
-  // empty-q primer refresh used by /vibebook-context) — overlay is read-only and
+  // empty-q primer refresh used by /memarium-context) — overlay is read-only and
   // never persisted back to the synced index. (Bumping is separate; see below.)
   const usage = loadUsage(cfg.repoPath);
   overlayUsage(entries, usage);

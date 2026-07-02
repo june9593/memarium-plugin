@@ -31,10 +31,10 @@ describe("entityWriteCmd", () => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-entw-"));
     vi.stubEnv("HOME", fakeHome);
     vi.resetModules();
-    repo = join(fakeHome, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    mkdirSync(join(fakeHome, ".vibebook"), { recursive: true });
-    writeFileSync(join(fakeHome, ".vibebook/config.json"), JSON.stringify({
+    repo = join(fakeHome, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(fakeHome, ".memarium"), { recursive: true });
+    writeFileSync(join(fakeHome, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
   });
@@ -62,7 +62,7 @@ describe("entityWriteCmd", () => {
     expect(md).toContain("kind: symbol");
     expect(md).toContain("SpoolWriter renders sessions to md.");
 
-    const idxPath = join(repo, ".vibebook/index.entity.json");
+    const idxPath = join(repo, ".memarium/index.entity.json");
     expect(existsSync(idxPath)).toBe(true);
     const idx = JSON.parse(readFileSync(idxPath, "utf8"));
     expect(idx.entries["entity/edge-memvc/spool-writer"]).toBeDefined();

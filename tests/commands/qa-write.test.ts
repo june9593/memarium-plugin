@@ -15,7 +15,7 @@ function trySymlink(target: string, linkPath: string): boolean {
 let home: string, repo: string;
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "qa-write-home-"));
-  repo = join(home, ".vibebook", "session-repo");
+  repo = join(home, ".memarium", "session-repo");
   mkdirSync(repo, { recursive: true });
   vi.stubEnv("HOME", home);
 });

@@ -19,7 +19,7 @@ const base = import.meta.env.BASE_URL;
 const md = rewriteMarkdownLinks(chronicle.markdown, chronicle.path, base);
 const html = await marked.parse(md);
 ---
-<Base title={`${chronicle.displayTitle} · ${chronicle.project} · vibebook`}>
+<Base title={`${chronicle.displayTitle} · ${chronicle.project} · memarium`}>
   <article class="reading">
     <p class="meta">
       <a href={`${base}projects/${chronicle.project}/`} style="color: var(--olive-gray); border: none;">

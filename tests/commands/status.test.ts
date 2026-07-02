@@ -9,10 +9,10 @@ describe("buildStatusPayload (#22 coverage)", () => {
     home = mkdtempSync(join(tmpdir(), "vbp-status-"));
     vi.stubEnv("HOME", home);
     vi.resetModules();
-    repo = join(home, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    mkdirSync(join(home, ".vibebook"), { recursive: true });
-    writeFileSync(join(home, ".vibebook/config.json"), JSON.stringify({
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(home, ".memarium"), { recursive: true });
+    writeFileSync(join(home, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
     const sess = (id: string) => ({
@@ -22,19 +22,19 @@ describe("buildStatusPayload (#22 coverage)", () => {
       sourcePath: "/x.jsonl", sourceMtimeMs: 1, sourceSha256: "x",
     });
     // 3 synced sessions
-    writeFileSync(join(repo, ".vibebook/index.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.json"), JSON.stringify({
       version: 1, entries: { "claude:s1": sess("s1"), "claude:s2": sess("s2"), "claude:s3": sess("s3") },
     }));
     // 1 chronicle consuming s1 → 1 digested, 2 pending
-    writeFileSync(join(repo, ".vibebook/index.book.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.book.json"), JSON.stringify({
       version: 2, chronicles: { c1: {
         threadId: "c1", project: "edge-memvc", title: "T", sessionIds: ["s1"],
         path: "book/edge-memvc/chronicle/c1.md", createdAt: "2026-01-01", updatedAt: "2026-01-02", tags: [],
       } }, topics: {}, cards: {},
     }));
-    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({ version: 1, entries: { a: {}, b: {} } }));
-    writeFileSync(join(repo, ".vibebook/index.qa.json"), JSON.stringify({ version: 1, entries: { q: {} } }));
-    writeFileSync(join(repo, ".vibebook/index.entity.json"), JSON.stringify({ version: 1, entries: { e: {} } }));
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: { a: {}, b: {} } }));
+    writeFileSync(join(repo, ".memarium/index.qa.json"), JSON.stringify({ version: 1, entries: { q: {} } }));
+    writeFileSync(join(repo, ".memarium/index.entity.json"), JSON.stringify({ version: 1, entries: { e: {} } }));
   });
   afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
 
@@ -52,7 +52,7 @@ describe("buildStatusPayload (#22 coverage)", () => {
   });
 
   it("crossDevice counts sibling-only memory when the overlay is present (P0b)", async () => {
-    const ovl = join(home, ".vibebook", "aggregated", ".vibebook");
+    const ovl = join(home, ".memarium", "aggregated", ".memarium");
     mkdirSync(ovl, { recursive: true });
     const ent = (over: Record<string, unknown>) => ({
       type: "core", scope: "global", project: null, title: "t", summary: "s",
@@ -78,7 +78,7 @@ describe("buildStatusPayload (#22 coverage)", () => {
   });
 
   it("coveragePct is 0 (not NaN) when there are no sessions", async () => {
-    writeFileSync(join(repo, ".vibebook/index.json"), JSON.stringify({ version: 1, entries: {} }));
+    writeFileSync(join(repo, ".memarium/index.json"), JSON.stringify({ version: 1, entries: {} }));
     const { buildStatusPayload } = await import("../../src/commands/status.js");
     const s = buildStatusPayload(repo);
     expect(s.sessions).toMatchObject({ total: 0, digested: 0, pending: 0, coveragePct: 0 });

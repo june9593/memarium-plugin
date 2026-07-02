@@ -1,4 +1,4 @@
-// Plugin autonomy entrypoint. Called by the skill at start of /vibebook
+// Plugin autonomy entrypoint. Called by the skill at start of /memarium
 // (Step P0 / G0). Does the "spool warmup":
 //   1. ensureSpoolDir() — make sure raw_sessions/ + book/ exist
 //   2. scanAndImport()  — copy any new ~/.claude/projects jsonl into spool

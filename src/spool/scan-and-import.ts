@@ -1,6 +1,6 @@
 // Plugin scan: walk ~/.claude/projects/, render each session into the spool
 // as .md + .raw.json (matching npm sync's writer output byte-for-byte), and
-// upsert per-session entries into ~/.vibebook/session-repo/.vibebook/index.json.
+// upsert per-session entries into ~/.memarium/session-repo/.memarium/index.json.
 //
 // This is the plugin equivalent of npm sync.ts's main loop (sync.ts:80-125),
 // minus git/migration. Plugin and sync are co-owners of raw_sessions/
@@ -79,17 +79,17 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
       // for every chat tab opened (even ones immediately closed). Without
       // this guard we'd write one 1970-01-01/untitled__<id>.md per shell
       // (epoch fallback because startedAt stays empty). Matches the
-      // empty-skip behavior of vibebook (npm) >=0.7.1.
+      // empty-skip behavior of memarium (npm) >=0.7.1.
       if (session.messages.length === 0) {
         result.skipped++;
         continue;
       }
 
-      // Write rendered .md. 0.2.0 dropped .raw.json (npm vibebook >=0.6
+      // Write rendered .md. 0.2.0 dropped .raw.json (npm memarium >=0.6
       // dropped it too); the .md carries everything via manifest +
       // content blocks. includeReasoning=true matches npm sync's default;
       // we don't read config here (plugin must work without
-      // ~/.vibebook/config.json).
+      // ~/.memarium/config.json).
       const written = writeSession(spoolRoot, session, { includeReasoning: true });
 
       const entry: IndexEntry = {
@@ -113,7 +113,7 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
   }
 
   // Persist the index in the same format npm sync uses, so a later
-  // `vibebook sync` (if user installs npm CLI later) sees plugin-written
+  // `memarium sync` (if user installs npm CLI later) sees plugin-written
   // entries as already-known and doesn't re-render them.
   saveIndex(spoolRoot, idx);
 

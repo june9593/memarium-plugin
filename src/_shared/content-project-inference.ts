@@ -1,4 +1,4 @@
-// @sync-from: github.com/june9593/vibebook → src/content-project-inference.ts
+// @sync-from: github.com/june9593/memarium → src/content-project-inference.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
 import { readdirSync } from "node:fs";
@@ -13,9 +13,9 @@ import { cachedProjectSlug } from "./project-identity.js";
  * Claude Code groups jsonl files by cwd at session-start. When the user
  * `cd`s into a different project mid-session, or runs `claude` in the wrong
  * directory by accident (e.g. opens it in `chromium-src` but spends the
- * whole session editing files in `edge-vibebook`), the session is filed
+ * whole session editing files in `edge-memarium`), the session is filed
  * under the wrong project. The user's intent — "this conversation is about
- * vibebook" — disagrees with the cwd label.
+ * memarium" — disagrees with the cwd label.
  *
  * We recover intent by scanning the session's tool-use blocks for absolute
  * file paths the assistant actually touched (Read / Write / Edit / Bash),

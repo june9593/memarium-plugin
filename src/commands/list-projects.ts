@@ -45,7 +45,7 @@ export interface ListProjectsPayload {
  * book artifacts. Pseudo-projects (those failing isRealProjectPath) are
  * excluded — they can't be digested anyway.
  *
- * The global-mode `/vibebook` skill calls this to:
+ * The global-mode `/memarium` skill calls this to:
  *   1. show the user a table of "what's left",
  *   2. decide which projects to spawn subagents for (pendingSessions > 0),
  *   3. avoid re-digesting projects the user already handled in project-mode.

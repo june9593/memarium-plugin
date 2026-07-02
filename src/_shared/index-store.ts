@@ -1,4 +1,4 @@
-// @sync-from: github.com/june9593/vibebook → src/index-store.ts
+// @sync-from: github.com/june9593/memarium → src/index-store.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";

@@ -7,7 +7,7 @@ import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { projectSlugFromPath } from "../_shared/slug.js";
 
 /**
- * `vibebook recall` — three-stage progressive catalog.
+ * `memarium recall` — three-stage progressive catalog.
  *
  * Stage 1 (default, ~2-5 KB): a project's TOPIC LIST plus 1-line
  * descriptions. The agent looks at this first to find which subsystem(s)
@@ -60,7 +60,7 @@ export interface RecallEntry {
 
 /** Subset of chronicle frontmatter the recall payload surfaces.
  *  Mirrors the AI-first fields documented in
- *  `skills/vibebook/references/chronicle-format.md`. */
+ *  `skills/memarium/references/chronicle-format.md`. */
 export interface ChronicleFrontmatter {
   files_touched?: string[];
   commits?: string[];
@@ -188,7 +188,7 @@ function buildStage1(
       ...(memexQueried ? { memexQueried, memexCards: memexCount } : {}),
       ...(cwdUnresolved ? { cwdUnresolved: true } : {}),
       nextStep: topicCount > 0
-        ? `Pick a relevant topic, then run: \${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js recall --project <slug> --topic <topicSlug>`
+        ? `Pick a relevant topic, then run: \${CLAUDE_PLUGIN_ROOT}/bin/memarium-plugin.js recall --project <slug> --topic <topicSlug>`
         : "No topics yet for this project.",
     },
   };

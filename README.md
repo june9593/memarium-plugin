@@ -1,10 +1,10 @@
-# vibebook — a local, auditable **Memory OS** for AI coding agents
+# memarium — a local, auditable **Memory OS** for AI coding agents
 
 [English](#english) · [中文](#中文)
 
-**📖 Project page:** https://june9593.github.io/vibebook-plugin/ · **npm CLI (optional sync):** https://github.com/june9593/vibebook
+**📖 Project page:** https://june9593.github.io/memarium-plugin/ · **npm CLI (optional sync):** https://github.com/june9593/memarium
 
-> vibebook turns your AI coding sessions into a **durable, typed, queryable memory** that every future session starts from — not just a log of what happened, but a layered *Memory OS*: typed memory, an entity wiki, distilled Q&A, health linting, a human-review gate for long-term memory, and a CI scorer regression eval harness.
+> memarium turns your AI coding sessions into a **durable, typed, queryable memory** that every future session starts from — not just a log of what happened, but a layered *Memory OS*: typed memory, an entity wiki, distilled Q&A, health linting, a human-review gate for long-term memory, and a CI scorer regression eval harness.
 >
 > **Markdown-first. Local. Git-syncable. Fully auditable.** No cloud, no vector database, and **no LLM in the storage/retrieval layer** — all writing happens in-session via skills; the CLI is pure I/O.
 
@@ -21,14 +21,14 @@ flowchart LR
     B[VS Code Copilot Chat]
   end
   A & B -->|extract| SP[raw_sessions/*.md<br/>spool]
-  SP -->|/vibebook digest<br/>in-session agent| D{Distill}
+  SP -->|/memarium digest<br/>in-session agent| D{Distill}
   D --> CH[chronicles + topics]
   D --> M[typed memory<br/>4 types]
   D --> E[entity wiki]
   D --> Q[distilled Q&A]
-  M & E & Q --> IDX[(.vibebook/index.*.json)]
+  M & E & Q --> IDX[(.memarium/index.*.json)]
   IDX -->|SessionStart hook| P[project primer<br/>auto-loaded]
-  IDX -->|/vibebook-context| R[layered recall<br/>term-overlap scorer]
+  IDX -->|/memarium-context| R[layered recall<br/>term-overlap scorer]
 ```
 
 **The memory-PR gate** (v4 self-evolution — long-term memory cannot change without review):
@@ -49,7 +49,7 @@ flowchart TD
 
 ### What it is
 
-A Claude Code plugin that gives an AI coding agent **long-term memory it can trust**. Run `/vibebook` to digest your sessions into per-project chronicles **and** a typed memory store; a SessionStart hook then auto-loads a compact *primer* so every new session begins already knowing the project's rules, setup, facts, and gotchas — instead of re-deriving them every time.
+A Claude Code plugin that gives an AI coding agent **long-term memory it can trust**. Run `/memarium` to digest your sessions into per-project chronicles **and** a typed memory store; a SessionStart hook then auto-loads a compact *primer* so every new session begins already knowing the project's rules, setup, facts, and gotchas — instead of re-deriving them every time.
 
 Self-contained: no extra CLI required, no cloud service, your data stays local and human-readable.
 
@@ -66,7 +66,7 @@ Self-contained: no extra CLI required, no cloud service, your data stays local a
 
 ### Why it's designed this way — prior art & lineage
 
-vibebook is deliberately grounded in published research and a clear set of trade-offs, not invented from scratch:
+memarium is deliberately grounded in published research and a clear set of trade-offs, not invented from scratch:
 
 | Design choice | Based on / informed by | Why |
 |---|---|---|
@@ -82,48 +82,48 @@ vibebook is deliberately grounded in published research and a clear set of trade
 ### Commands & skills
 
 **Skills (slash commands — the everyday surface):**
-- **`/vibebook`** — digest synced sessions into per-project chronicles + topics, and author typed memory + entity wiki + distilled Q&A (with a conservative consolidation pass).
-- **`/vibebook-context`** — load this project's memory at the start of work: *Core rules / Procedures & gotchas / Project facts / Episodes / Conflicts / Entities / Past Q&A / Pending memory proposals.*
-- **`/vibebook-recall`** — three-stage progressive recall of past chronicles & topics (topic list → frontmatter → bodies).
+- **`/memarium`** — digest synced sessions into per-project chronicles + topics, and author typed memory + entity wiki + distilled Q&A (with a conservative consolidation pass).
+- **`/memarium-context`** — load this project's memory at the start of work: *Core rules / Procedures & gotchas / Project facts / Episodes / Conflicts / Entities / Past Q&A / Pending memory proposals.*
+- **`/memarium-recall`** — three-stage progressive recall of past chronicles & topics (topic list → frontmatter → bodies).
 - **SessionStart hook** — auto-injects the project primer so a new session starts informed.
 
-**Underlying `bin/vibebook-plugin.js` subcommands** (the skills call these; pure I/O, no LLM):
+**Underlying `bin/memarium-plugin.js` subcommands** (the skills call these; pure I/O, no LLM):
 `memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `catalog-regen` · `site` · `list-projects` · `status` · `prepare` · `publish`.
 
 ### Install
 
 ```text
-/plugin marketplace add june9593/vibebook-plugin
-/plugin install vibebook
+/plugin marketplace add june9593/memarium-plugin
+/plugin install memarium
 ```
 
-Open any Claude Code session and run `/vibebook` to digest your local sessions; a new session afterward auto-loads the project primer.
+Open any Claude Code session and run `/memarium` to digest your local sessions; a new session afterward auto-loads the project primer.
 
 ### Cross-device sync (optional)
 
-To carry sessions **and** memory across machines, install the optional **vibebook** npm CLI:
+To carry sessions **and** memory across machines, install the optional **memarium** npm CLI:
 
 ```sh
-npm i -g vibebook
-vibebook init
+npm i -g memarium
+memarium init
 ```
 
-It syncs `~/.vibebook/session-repo/` (sessions, chronicles, **and** the `memory/` layer) to a private GitHub repo, aggregating across devices on the `main` branch. The CLI also resumes a session on another machine:
+It syncs `~/.memarium/session-repo/` (sessions, chronicles, **and** the `memory/` layer) to a private GitHub repo, aggregating across devices on the `main` branch. The CLI also resumes a session on another machine:
 
 ```sh
-vibebook list-sessions --since 1d   # find the sessionId
-vibebook resume <sessionId>         # copies jsonl into ~/.claude/projects/ + prints `claude --resume <id>`
+memarium list-sessions --since 1d   # find the sessionId
+memarium resume <sessionId>         # copies jsonl into ~/.claude/projects/ + prints `claude --resume <id>`
 ```
 
-> **Note:** the memory layer (`memory/` + its indexes) syncs only with CLI **≥ 0.8.6**. The plugin and CLI share the same spool path; install one, both, or neither. npm CLI: https://github.com/june9593/vibebook
+> **Note:** the memory layer (`memory/` + its indexes) syncs only with CLI **≥ 0.8.6**. The plugin and CLI share the same spool path; install one, both, or neither. npm CLI: https://github.com/june9593/memarium
 
 ### Files written
 
-- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` — rendered session (single `.md`: YAML frontmatter w/ `manifest_version: 1` + `tools_used` / `commits` / `files_touched`, a Table-of-Contents block, then the body).
-- `~/.vibebook/session-repo/book/<project>/{chronicle,topics}/*.md` — digested book.
-- `~/.vibebook/session-repo/memory/{<type>,entities,qa,_primer}/...` — the Memory OS store.
-- `~/.vibebook/session-repo/.vibebook/index.{json,book,memory,entity,qa}.json` — indexes.
-- `~/.vibebook/local-proposals/<repoHash>/*.json` — **local-only** memory-PR queue (never synced).
+- `~/.memarium/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` — rendered session (single `.md`: YAML frontmatter w/ `manifest_version: 1` + `tools_used` / `commits` / `files_touched`, a Table-of-Contents block, then the body).
+- `~/.memarium/session-repo/book/<project>/{chronicle,topics}/*.md` — digested book.
+- `~/.memarium/session-repo/memory/{<type>,entities,qa,_primer}/...` — the Memory OS store.
+- `~/.memarium/session-repo/.memarium/index.{json,book,memory,entity,qa}.json` — indexes.
+- `~/.memarium/local-proposals/<repoHash>/*.json` — **local-only** memory-PR queue (never synced).
 
 The plugin **does not** create or modify `.git/` or the npm CLI's config files — those are owned by the optional CLI.
 
@@ -135,9 +135,9 @@ The plugin **does not** create or modify `.git/` or the npm CLI's config files �
 
 ### Repo layout
 
-- `skills/` — `/vibebook`, `/vibebook-context`, `/vibebook-recall` skill files (in-session prompts).
+- `skills/` — `/memarium`, `/memarium-context`, `/memarium-recall` skill files (in-session prompts).
 - `commands/` — slash-command thin wrappers · `hooks/` — SessionStart primer + Stop nudge.
-- `bin/vibebook-plugin.js` — bundled CLI invoked by the skills (single esbuild output; not on PATH).
+- `bin/memarium-plugin.js` — bundled CLI invoked by the skills (single esbuild output; not on PATH).
 - `src/` — TypeScript source · `tests/` — vitest suite (`npm install && npx vitest run`).
 - `site-template/` — Astro template for the optional local book site · `docs/` — GitHub Pages source.
 
@@ -151,7 +151,7 @@ PRs welcome. Open an issue first for anything beyond a typo — design changes a
 
 ### 这是什么
 
-一个 Claude Code 插件,给 AI 编程 agent 一套**可信赖的长期记忆**。跑 `/vibebook` 把会话整理成按项目分组的 chronicle,**同时**生成一套有类型的记忆;之后 SessionStart hook 会自动加载一份精简的 *primer*,让每个新会话一开始就知道这个项目的规则、配置、事实和坑 —— 而不是每次都重新摸索。
+一个 Claude Code 插件,给 AI 编程 agent 一套**可信赖的长期记忆**。跑 `/memarium` 把会话整理成按项目分组的 chronicle,**同时**生成一套有类型的记忆;之后 SessionStart hook 会自动加载一份精简的 *primer*,让每个新会话一开始就知道这个项目的规则、配置、事实和坑 —— 而不是每次都重新摸索。
 
 独立运行:不需要额外 CLI、不需要云服务,数据全部留在本地、人类可读。
 
@@ -168,7 +168,7 @@ PRs welcome. Open an issue first for anything beyond a typo — design changes a
 
 ### 为什么这么设计 —— 参考的论文与 repo
 
-vibebook 刻意建立在公开研究和清晰的取舍之上,而不是凭空发明:
+memarium 刻意建立在公开研究和清晰的取舍之上,而不是凭空发明:
 
 | 设计选择 | 参考 / 受启发于 | 为什么 |
 |---|---|---|
@@ -184,48 +184,48 @@ vibebook 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 ### 命令与 skills
 
 **Skills(斜杠命令 —— 日常入口):**
-- **`/vibebook`** —— 把会话整理成 chronicle + topic,并生成 typed memory + entity wiki + 精炼 Q&A(带保守整合)。
-- **`/vibebook-context`** —— 工作开始时加载本项目记忆:核心规则 / 操作与坑 / 项目事实 / 片段 / 冲突 / 实体 / 历史 Q&A / 待审记忆提案。
-- **`/vibebook-recall`** —— 三阶段渐进召回历史 chronicle 与 topic(topic 列表 → frontmatter → 正文)。
+- **`/memarium`** —— 把会话整理成 chronicle + topic,并生成 typed memory + entity wiki + 精炼 Q&A(带保守整合)。
+- **`/memarium-context`** —— 工作开始时加载本项目记忆:核心规则 / 操作与坑 / 项目事实 / 片段 / 冲突 / 实体 / 历史 Q&A / 待审记忆提案。
+- **`/memarium-recall`** —— 三阶段渐进召回历史 chronicle 与 topic(topic 列表 → frontmatter → 正文)。
 - **SessionStart hook** —— 自动注入项目 primer,新会话一开始就有底。
 
-**底层 `bin/vibebook-plugin.js` 子命令**(skills 调用;纯 I/O,不调 LLM):
+**底层 `bin/memarium-plugin.js` 子命令**(skills 调用;纯 I/O,不调 LLM):
 `memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `catalog-regen` · `site` · `list-projects` · `status` · `prepare` · `publish`。
 
 ### 安装
 
 ```text
-/plugin marketplace add june9593/vibebook-plugin
-/plugin install vibebook
+/plugin marketplace add june9593/memarium-plugin
+/plugin install memarium
 ```
 
-开任何 Claude Code 会话跑 `/vibebook` 整理本机会话;之后新会话会自动加载项目 primer。
+开任何 Claude Code 会话跑 `/memarium` 整理本机会话;之后新会话会自动加载项目 primer。
 
 ### 跨设备同步(可选)
 
-要把会话**和记忆**带到多台机器,装可选的 **vibebook** npm CLI:
+要把会话**和记忆**带到多台机器,装可选的 **memarium** npm CLI:
 
 ```sh
-npm i -g vibebook
-vibebook init
+npm i -g memarium
+memarium init
 ```
 
-它把 `~/.vibebook/session-repo/`(会话、chronicle、**以及** `memory/` 层)同步到私有 GitHub repo,并在 `main` 分支跨设备聚合。CLI 也能在另一台机器 resume 会话:
+它把 `~/.memarium/session-repo/`(会话、chronicle、**以及** `memory/` 层)同步到私有 GitHub repo,并在 `main` 分支跨设备聚合。CLI 也能在另一台机器 resume 会话:
 
 ```sh
-vibebook list-sessions --since 1d
-vibebook resume <sessionId>
+memarium list-sessions --since 1d
+memarium resume <sessionId>
 ```
 
-> **注意:** 记忆层(`memory/` 及其索引)只在 CLI **≥ 0.8.6** 时同步。插件与 CLI 共享同一 spool 路径;装一个、两个、或都不装都行。npm CLI:https://github.com/june9593/vibebook
+> **注意:** 记忆层(`memory/` 及其索引)只在 CLI **≥ 0.8.6** 时同步。插件与 CLI 共享同一 spool 路径;装一个、两个、或都不装都行。npm CLI:https://github.com/june9593/memarium
 
 ### 写到哪里
 
-- `~/.vibebook/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` —— 渲染过的会话(单 `.md`:YAML frontmatter + 目录块 + 正文)。
-- `~/.vibebook/session-repo/book/<project>/{chronicle,topics}/*.md` —— 整理出的笔记本。
-- `~/.vibebook/session-repo/memory/{<type>,entities,qa,_primer}/...` —— Memory OS 存储。
-- `~/.vibebook/session-repo/.vibebook/index.{json,book,memory,entity,qa}.json` —— 索引。
-- `~/.vibebook/local-proposals/<repoHash>/*.json` —— **仅本地**的 memory-PR 队列(从不同步)。
+- `~/.memarium/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` —— 渲染过的会话(单 `.md`:YAML frontmatter + 目录块 + 正文)。
+- `~/.memarium/session-repo/book/<project>/{chronicle,topics}/*.md` —— 整理出的笔记本。
+- `~/.memarium/session-repo/memory/{<type>,entities,qa,_primer}/...` —— Memory OS 存储。
+- `~/.memarium/session-repo/.memarium/index.{json,book,memory,entity,qa}.json` —— 索引。
+- `~/.memarium/local-proposals/<repoHash>/*.json` —— **仅本地**的 memory-PR 队列(从不同步)。
 
 插件**不会**创建或修改 `.git/` 或 npm CLI 的配置文件 —— 那些归可选 CLI 管。
 
@@ -237,9 +237,9 @@ vibebook resume <sessionId>
 
 ### 仓库布局
 
-- `skills/` —— `/vibebook`、`/vibebook-context`、`/vibebook-recall` 的 skill 文件。
+- `skills/` —— `/memarium`、`/memarium-context`、`/memarium-recall` 的 skill 文件。
 - `commands/` —— slash 命令薄壳 · `hooks/` —— SessionStart primer + Stop 提醒。
-- `bin/vibebook-plugin.js` —— skill 调用的打包 CLI(单 esbuild 输出;不进 PATH)。
+- `bin/memarium-plugin.js` —— skill 调用的打包 CLI(单 esbuild 输出;不进 PATH)。
 - `src/` —— TypeScript 源 · `tests/` —— vitest(`npm install && npx vitest run`)。
 - `site-template/` —— 本地笔记站点的 Astro 模板 · `docs/` —— GitHub Pages 源。
 

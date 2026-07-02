@@ -1,19 +1,19 @@
 ---
-name: vibebook-recall
+name: memarium-recall
 description: |
-  **TRIGGER IMMEDIATELY when the user's question contains retrospective phrasing in ANY language:** 之前是怎么解的 / 之前怎么解的 / 上次怎么处理的 / 上次怎么解决的 / 以前遇到过吗 / 以前我们怎么做 / 之前我们试过吗 / how did we fix X before / how was Y solved / why does Z work this way / what did we try last time / did we already try W. **Also trigger on:** design/architecture/prior-art questions — what pattern should I use for X / how have we approached Y before / what did we decide about Z / is there prior art for W. **Anti-pattern to break before reflex kicks in:** the question often contains clear keywords (file name, crash type, API) and your shortcut instinct is `git log --grep="<keyword>"` — DO NOT. Commit messages strip the conversation context where the user explained what didn't work and why; vibebook chronicles preserve decisions, dead ends, trade-offs, and unmerged-attempt context that git history can't surface. Run vibebook-recall stage 1 (one CLI call, ~5 KB) FIRST; if no topic matches, *then* fall back to git. Three-stage progressive recall — stage 1 = topic list. Stage 2 (`--topic <slug>`) = chronicles in that topic + frontmatter. Stage 3 = `Read` chronicle bodies. Cheap to invoke; when in doubt, run stage 1 — never deduplicate it away as "git is faster". When the optional memex CLI is on PATH, atomic-card entries fold in automatically.
+  **TRIGGER IMMEDIATELY when the user's question contains retrospective phrasing in ANY language:** 之前是怎么解的 / 之前怎么解的 / 上次怎么处理的 / 上次怎么解决的 / 以前遇到过吗 / 以前我们怎么做 / 之前我们试过吗 / how did we fix X before / how was Y solved / why does Z work this way / what did we try last time / did we already try W. **Also trigger on:** design/architecture/prior-art questions — what pattern should I use for X / how have we approached Y before / what did we decide about Z / is there prior art for W. **Anti-pattern to break before reflex kicks in:** the question often contains clear keywords (file name, crash type, API) and your shortcut instinct is `git log --grep="<keyword>"` — DO NOT. Commit messages strip the conversation context where the user explained what didn't work and why; memarium chronicles preserve decisions, dead ends, trade-offs, and unmerged-attempt context that git history can't surface. Run memarium-recall stage 1 (one CLI call, ~5 KB) FIRST; if no topic matches, *then* fall back to git. Three-stage progressive recall — stage 1 = topic list. Stage 2 (`--topic <slug>`) = chronicles in that topic + frontmatter. Stage 3 = `Read` chronicle bodies. Cheap to invoke; when in doubt, run stage 1 — never deduplicate it away as "git is faster". When the optional memex CLI is on PATH, atomic-card entries fold in automatically.
 ---
 
-# /vibebook-recall — read your own notes before doing the work
+# /memarium-recall — read your own notes before doing the work
 
 You (in-session Claude) just landed in a project repo. The user has been
-working in this repo (and others) for weeks/months, and the vibebook
+working in this repo (and others) for weeks/months, and the memarium
 plugin has captured every Claude Code + Copilot session into
-`~/.vibebook/session-repo/`. The `/vibebook` skill has digested those
+`~/.memarium/session-repo/`. The `/memarium` skill has digested those
 sessions into per-project **chronicles** (one per work thread,
 4-section AI-first body) and **topics** (one per subsystem). When
 [memex](https://github.com/iamtouchskyer/memex) is installed, atomic
-**cards** also exist — vibebook surfaces them too in the recall payload.
+**cards** also exist — memarium surfaces them too in the recall payload.
 
 **Your job here**: before you start exploring code, figure out which
 past topic(s) bear on the current task, then read the matching
@@ -45,7 +45,7 @@ The output is a JSON payload like:
 {
   "stage": "stage-1-topics",
   "project": "edge-src",
-  "repoPath": "/Users/me/.vibebook/session-repo",
+  "repoPath": "/Users/me/.memarium/session-repo",
   "entries": [
     {
       "kind": "topic",
@@ -79,10 +79,10 @@ The output is a JSON payload like:
 ```
 
 Stage 1 includes:
-- **`kind: "topic"`** — vibebook topics for the current project. Read
+- **`kind: "topic"`** — memarium topics for the current project. Read
   `summary` to gauge subsystem fit.
 - **`kind: "memex-card"`** (optional) — when `meta.memexQueried === true`,
-  vibebook found memex on PATH and folded its index in. memex-card
+  memarium found memex on PATH and folded its index in. memex-card
   entries have `path: "memex:<slug>"` — to read the body, run
   `memex read <slug>` (NOT the `Read` tool).
 
@@ -112,14 +112,14 @@ Output:
   "stage": "stage-2-articles",
   "project": "edge-src",
   "topic": "menu-bar-copilot-mac",
-  "repoPath": "/Users/me/.vibebook/session-repo",
+  "repoPath": "/Users/me/.memarium/session-repo",
   "entries": [
     {
       "kind": "chronicle",
       "project": "edge-src",
       "title": "Native header + 3 PR landing",
       "summary": "status=shipped · 4 files · 3 commits · 2 decisions",
-      "path": "/Users/me/.vibebook/session-repo/book/edge-src/chronicle/2026-04-25__menu-bar-app-native-header__menu-bar.md",
+      "path": "/Users/me/.memarium/session-repo/book/edge-src/chronicle/2026-04-25__menu-bar-app-native-header__menu-bar.md",
       "slug": "menu-bar-app-native-header",
       "frontmatter": {
         "files_touched": [
@@ -151,7 +151,7 @@ For chronicles whose frontmatter looks relevant, use the `Read` tool with
 the absolute `path`:
 
 ```
-Read /Users/me/.vibebook/session-repo/book/edge-src/chronicle/2026-04-25__menu-bar-app-native-header__menu-bar.md
+Read /Users/me/.memarium/session-repo/book/edge-src/chronicle/2026-04-25__menu-bar-app-native-header__menu-bar.md
 ```
 
 Chronicles are short (1-3 sentences per section, the body is the receipt
@@ -171,7 +171,7 @@ When you reply to the user:
 - **Update on contradiction**: if what you read no longer reflects
   current code, mention it. The user may want to update the chronicle.
 - **No relevant chronicle / topic / card?** Say so explicitly: "I
-  didn't find anything in your vibebook about X — proceeding fresh."
+  didn't find anything in your memarium about X — proceeding fresh."
 
 ## When NOT to invoke recall
 
@@ -201,9 +201,9 @@ When you reply to the user:
 - ❌ **Refusing to do the task because old notes contradict it.** Notes
   are dated; code may have moved on. Recall is one input, not a veto.
 
-## Relationship to /vibebook and memex
+## Relationship to /memarium and memex
 
-| | `/vibebook` (write) | `/vibebook-recall` (read) | memex (atomic) |
+| | `/memarium` (write) | `/memarium-recall` (read) | memex (atomic) |
 |---|---|---|---|
 | When | After a session, run before moving on | At the START of new work | Whenever an atomic insight comes up |
 | Cwd | session-repo (global) or project (project mode) | Always a project repo | Anywhere |
@@ -212,6 +212,6 @@ When you reply to the user:
 | LLM | in-session Claude (you) | in-session Claude (you) | in-session Claude via /memex-retro |
 
 The three skills close the loop:
-- `/vibebook` writes notes for future-you (chronicle + topic).
+- `/memarium` writes notes for future-you (chronicle + topic).
 - `/memex-retro` writes atomic cards for future-you (when memex is installed).
-- `/vibebook-recall` lets future-you read all of the above in one pass.
+- `/memarium-recall` lets future-you read all of the above in one pass.

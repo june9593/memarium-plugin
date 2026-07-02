@@ -39,7 +39,7 @@ read the chronicles".
 - 2026-03-15 [[chronicle/immersive-mode-rewrite]] — V1→V2 rewrite
 
 ## Active gotchas
-Reference relevant memex cards (or vibebook chronicles if no card exists):
+Reference relevant memex cards (or memarium chronicles if no card exists):
 - [[memex:gotcha-immersive-mode-controller-mac-uaf]] — popup destroy order
 - [[memex:pattern-msa-aad-pref-helper]]
 ```
@@ -61,5 +61,5 @@ Rules:
   topics without loading every chronicle. Keep them in sync.
 - Use the same language as the source content for the body. Section
   headings stay in English for cross-project consistency.
-- Wikilinks: `[[chronicle/<threadId>]]` (vibebook), `[[memex:<slug>]]`
+- Wikilinks: `[[chronicle/<threadId>]]` (memarium), `[[memex:<slug>]]`
   (memex card, left as text — agents know to `memex read <slug>`).

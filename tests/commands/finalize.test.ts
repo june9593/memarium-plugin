@@ -10,15 +10,15 @@ describe("finalizeCmd", () => {
     home = mkdtempSync(join(tmpdir(), "vbp-final-"));
     vi.stubEnv("HOME", home);
     vi.resetModules();
-    repo = join(home, ".vibebook/session-repo");
-    mkdirSync(join(home, ".vibebook"), { recursive: true });
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(join(home, ".memarium"), { recursive: true });
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
 
   function writeConfig(extra: Record<string, unknown>) {
-    writeFileSync(join(home, ".vibebook/config.json"), JSON.stringify({
+    writeFileSync(join(home, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "",
       runner: "claude-cli", enableAggregateCI: false, includeReasoning: true,
       threadingConcurrency: 4, threadingMaxAttempts: 3, digestEnabled: true, ...extra,
@@ -27,8 +27,8 @@ describe("finalizeCmd", () => {
   function seedSpool() {
     mkdirSync(join(repo, "raw_sessions/claude/p/2026-06-15"), { recursive: true });
     writeFileSync(join(repo, "raw_sessions/claude/p/2026-06-15/s.md"), "# session\n");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    writeFileSync(join(repo, ".vibebook/index.json"), "{}\n");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    writeFileSync(join(repo, ".memarium/index.json"), "{}\n");
   }
 
   it("init-if-absent: inits repo and commits whitelist (no remote)", async () => {
@@ -43,7 +43,7 @@ describe("finalizeCmd", () => {
     expect(existsSync(join(repo, ".git"))).toBe(true);
     const tracked = (await simpleGit(repo).raw(["ls-files"])).trim().split("\n");
     expect(tracked).toContain("raw_sessions/claude/p/2026-06-15/s.md");
-    expect(tracked).toContain(".vibebook/index.json");
+    expect(tracked).toContain(".memarium/index.json");
   });
 
   it("whitelist safety: never commits a foreign dir", async () => {
@@ -81,30 +81,30 @@ describe("finalizeCmd", () => {
   });
 
   it("commits entity + qa markdown AND their indexes", async () => {
-    // P1: entity-write / qa-write update .vibebook/index.entity.json and
-    // .vibebook/index.qa.json; merge-books needs them. They must be committed.
+    // P1: entity-write / qa-write update .memarium/index.entity.json and
+    // .memarium/index.qa.json; merge-books needs them. They must be committed.
     writeConfig({});
     seedSpool();
     mkdirSync(join(repo, "memory/entities/p"), { recursive: true });
     writeFileSync(join(repo, "memory/entities/p/foo.md"), "# foo\n");
     mkdirSync(join(repo, "memory/qa/p"), { recursive: true });
     writeFileSync(join(repo, "memory/qa/p/q.md"), "# q\n");
-    writeFileSync(join(repo, ".vibebook/index.entity.json"), "{}\n");
-    writeFileSync(join(repo, ".vibebook/index.qa.json"), "{}\n");
+    writeFileSync(join(repo, ".memarium/index.entity.json"), "{}\n");
+    writeFileSync(join(repo, ".memarium/index.qa.json"), "{}\n");
     const { finalizeCmd } = await import("../../src/commands/finalize.js");
     await finalizeCmd({});
     const tracked = (await simpleGit(repo).raw(["ls-files"])).trim().split("\n");
     expect(tracked).toContain("memory/entities/p/foo.md");
     expect(tracked).toContain("memory/qa/p/q.md");
-    expect(tracked).toContain(".vibebook/index.entity.json");
-    expect(tracked).toContain(".vibebook/index.qa.json");
+    expect(tracked).toContain(".memarium/index.entity.json");
+    expect(tracked).toContain(".memarium/index.qa.json");
   });
 
   it("resolves a repoPath containing ~ consistently (whitelist still found)", async () => {
     // cfg.repoPath with a literal ~ must be expanded for BOTH the init and the
     // whitelist existsSync checks, else nothing would be staged. HOME is stubbed
-    // to `home`, so "~/.vibebook/session-repo" resolves to the seeded `repo`.
-    writeConfig({ repoPath: "~/.vibebook/session-repo" });
+    // to `home`, so "~/.memarium/session-repo" resolves to the seeded `repo`.
+    writeConfig({ repoPath: "~/.memarium/session-repo" });
     seedSpool();
     const { finalizeCmd } = await import("../../src/commands/finalize.js");
     const r = await finalizeCmd({});

@@ -16,23 +16,23 @@ describe("readPluginConfig", () => {
     rmSync(fakeHome, { recursive: true, force: true });
   });
 
-  it("returns a default config (repoPath = ~/.vibebook/session-repo) when config.json is absent", () => {
+  it("returns a default config (repoPath = ~/.memarium/session-repo) when config.json is absent", () => {
     const cfg = readPluginConfig();
-    expect(cfg.repoPath).toBe(join(fakeHome, ".vibebook/session-repo"));
+    expect(cfg.repoPath).toBe(join(fakeHome, ".memarium/session-repo"));
     expect(cfg.digestEnabled).toBe(true);
     expect(cfg.runner).toBe("claude-cli");
   });
 
   it("does NOT write config.json on first read (plugin is borrowed-tenant)", () => {
     readPluginConfig();
-    expect(existsSync(join(fakeHome, ".vibebook/config.json"))).toBe(false);
+    expect(existsSync(join(fakeHome, ".memarium/config.json"))).toBe(false);
   });
 
-  it("returns the real config when ~/.vibebook/config.json exists", () => {
-    mkdirSync(join(fakeHome, ".vibebook"), { recursive: true });
+  it("returns the real config when ~/.memarium/config.json exists", () => {
+    mkdirSync(join(fakeHome, ".memarium"), { recursive: true });
     const customRepo = join(fakeHome, "custom/repo");
     writeFileSync(
-      join(fakeHome, ".vibebook/config.json"),
+      join(fakeHome, ".memarium/config.json"),
       JSON.stringify({
         repoPath: customRepo,
         repoUrl: "git@example.com:me/repo.git",

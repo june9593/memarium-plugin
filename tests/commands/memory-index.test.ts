@@ -19,9 +19,9 @@ describe("memoryIndexCmd (rebuild from md)", () => {
   beforeEach(() => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-memidx2-"));
     vi.stubEnv("HOME", fakeHome); vi.resetModules();
-    repo = join(fakeHome, ".vibebook/session-repo");
-    mkdirSync(join(fakeHome, ".vibebook"), { recursive: true });
-    writeFileSync(join(fakeHome, ".vibebook/config.json"), JSON.stringify({
+    repo = join(fakeHome, ".memarium/session-repo");
+    mkdirSync(join(fakeHome, ".memarium"), { recursive: true });
+    writeFileSync(join(fakeHome, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli" }));
     const e = entry();
     const abs = join(repo, e.path);
@@ -34,7 +34,7 @@ describe("memoryIndexCmd (rebuild from md)", () => {
     const { memoryIndexCmd } = await import("../../src/commands/memory-index.js");
     const report = await memoryIndexCmd();
     expect(report.indexed).toBe(1);
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     const e = idx.entries["semantic/edge-memvc/spool"];
     expect(e.title).toBe("Spool single md");
     expect(e.importance).toBe(4);

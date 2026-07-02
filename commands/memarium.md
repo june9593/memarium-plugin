@@ -2,10 +2,10 @@
 description: Digest synced sessions into chronicles + topics (per-project). Atomic cards delegated to memex when installed.
 ---
 
-Invoke the **vibebook** skill via the `Skill` tool with `skill: "vibebook"`.
+Invoke the **memarium** skill via the `Skill` tool with `skill: "memarium"`.
 
 The skill walks you through:
-1. Locate the plugin binary (`VBP=$(ls -td ~/.claude/plugins/cache/vibebook/vibebook/*/bin/vibebook-plugin.js | head -1)`).
+1. Locate the plugin binary (`VBP=$(ls -td ~/.claude/plugins/cache/memarium/memarium/*/bin/memarium-plugin.js | head -1)`).
 2. (If memex is installed) Ask once: also kick off `/memex-retro` afterward?
 3. Run `"$VBP" orchestrate project --cwd "$(pwd)"` to prime the spool and detect mode.
 4. Run `"$VBP" prepare --cwd "$(pwd)"` to discover unprocessed sessions.
@@ -20,5 +20,5 @@ The skill walks you through:
 9. If user opted in at step 2: chain into `/memex-retro` for atomic cards.
 
 Per-project isolation is a hard rule (publish.ts rejects missing
-`project` field). Cards are no longer written by vibebook itself — that
+`project` field). Cards are no longer written by memarium itself — that
 workflow belongs to memex.

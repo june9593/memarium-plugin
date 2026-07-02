@@ -10,15 +10,15 @@ describe("entityQueryCmd", () => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-entq-"));
     vi.stubEnv("HOME", fakeHome);
     vi.resetModules();
-    repo = join(fakeHome, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    mkdirSync(join(fakeHome, ".vibebook"), { recursive: true });
-    writeFileSync(join(fakeHome, ".vibebook/config.json"), JSON.stringify({
+    repo = join(fakeHome, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(fakeHome, ".memarium"), { recursive: true });
+    writeFileSync(join(fakeHome, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
 
     // session index so cwd resolves to project "edge-memvc"
-    writeFileSync(join(repo, ".vibebook/index.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.json"), JSON.stringify({
       version: 1, entries: {
         "claude:s1": {
           sessionId: "s1", shortId: "s1", tool: "claude", project: "edge-memvc",
@@ -38,7 +38,7 @@ describe("entityQueryCmd", () => {
       join(repo, "memory/entities/edge-memvc/spool-writer.md"),
       "---\nid: entity/edge-memvc/spool-writer\nkind: symbol\n---\n\n# SpoolWriter\n\nWrites spool files.\n",
     );
-    writeFileSync(join(repo, ".vibebook/index.entity.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.entity.json"), JSON.stringify({
       version: 1, entries: {
         "entity/edge-memvc/spool-writer": {
           id: "entity/edge-memvc/spool-writer",
@@ -106,7 +106,7 @@ describe("entityQueryCmd", () => {
     }));
 
     // seed memory index for reverse lookup
-    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({
       version: 1, entries: {
         "semantic/edge-memvc/spool": {
           id: "semantic/edge-memvc/spool",
@@ -335,7 +335,7 @@ describe("entityQueryCmd", () => {
 
   it("--entity with missing/undefined entities field does not throw and only matches on title", async () => {
     // Overwrite memory index with an entry that has NO entities field (corrupted/older index)
-    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({
       version: 1, entries: {
         "semantic/edge-memvc/no-entities": {
           id: "semantic/edge-memvc/no-entities",
@@ -424,7 +424,7 @@ describe("entityQueryCmd", () => {
 
   it("referencingMemories excludes expired memories (validTo <= today)", async () => {
     // Overwrite memory index with an expired entry
-    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({
       version: 1, entries: {
         "semantic/edge-memvc/expired": {
           id: "semantic/edge-memvc/expired",
@@ -517,7 +517,7 @@ describe("entityQueryCmd", () => {
     const secretPath = join(repo, "secret.md");
     writeFileSync(secretPath, "super secret content");
     // Add an entity index entry with a traversal path
-    writeFileSync(join(repo, ".vibebook/index.entity.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.entity.json"), JSON.stringify({
       version: 1, entries: {
         "entity/edge-memvc/evil": {
           id: "entity/edge-memvc/evil",
@@ -551,7 +551,7 @@ describe("entityQueryCmd", () => {
   // Fix 2: aliases non-array guard
   it("--entity with missing/non-array aliases on entity does not throw and skips alias match", async () => {
     // Overwrite entity index with an entry that has no aliases field (corrupted/older index)
-    writeFileSync(join(repo, ".vibebook/index.entity.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.entity.json"), JSON.stringify({
       version: 1, entries: {
         "entity/edge-memvc/no-aliases": {
           id: "entity/edge-memvc/no-aliases",
@@ -615,7 +615,7 @@ describe("entityQueryCmd", () => {
       return;
     }
 
-    writeFileSync(join(repo, ".vibebook/index.entity.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.entity.json"), JSON.stringify({
       version: 1, entries: {
         "entity/edge-memvc/symlinked": {
           id: "entity/edge-memvc/symlinked",

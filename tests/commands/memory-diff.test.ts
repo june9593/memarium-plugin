@@ -9,10 +9,10 @@ describe("memoryDiffCmd", () => {
     home = mkdtempSync(join(tmpdir(), "vbp-diff-"));
     vi.stubEnv("HOME", home);
     vi.resetModules();
-    repo = join(home, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    mkdirSync(join(home, ".vibebook"), { recursive: true });
-    writeFileSync(join(home, ".vibebook/config.json"), JSON.stringify({
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(home, ".memarium"), { recursive: true });
+    writeFileSync(join(home, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
     logs = [];
@@ -141,10 +141,10 @@ describe("memoryDiffCmd", () => {
 
   it("is read-only: writes nothing to memory/ or the index", async () => {
     await seedProposal("update");
-    const before = JSON.parse((await import("node:fs")).readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const before = JSON.parse((await import("node:fs")).readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     const { memoryDiffCmd } = await import("../../src/commands/memory-diff.js");
     await memoryDiffCmd({});
-    const after = JSON.parse((await import("node:fs")).readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const after = JSON.parse((await import("node:fs")).readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     expect(after).toEqual(before);
   });
 });

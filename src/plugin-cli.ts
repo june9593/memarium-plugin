@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Plugin-internal CLI. NOT installed on user PATH; invoked by skills via
-//   ${CLAUDE_PLUGIN_ROOT}/bin/vibebook-plugin.js <subcommand>
+//   ${CLAUDE_PLUGIN_ROOT}/bin/memarium-plugin.js <subcommand>
 //
-// The shape mirrors the subcommands the /vibebook and /vibebook-recall skills
-// used to call on the npm `vibebook` binary, so SKILL.md changes are minimal
+// The shape mirrors the subcommands the /memarium and /memarium-recall skills
+// used to call on the npm `memarium` binary, so SKILL.md changes are minimal
 // (T6 just rewrites the binary name + path).
 
 import { Command } from "commander";
@@ -24,13 +24,13 @@ function readPackageVersion(): string {
 export async function run(argv: string[]) {
   const program = new Command();
   program
-    .name("vibebook-plugin")
-    .description("Vibebook Claude Code plugin internal CLI (invoked by skills, not by users)")
+    .name("memarium-plugin")
+    .description("Memarium Claude Code plugin internal CLI (invoked by skills, not by users)")
     .version(readPackageVersion(), "-v, --version", "print the installed plugin version");
 
   program
     .command("list-projects")
-    .description("List projects with pending sessions in the spool. Used by /vibebook to detect mode.")
+    .description("List projects with pending sessions in the spool. Used by /memarium to detect mode.")
     .action(async () => {
       const { listProjectsCmd } = await import("./commands/list-projects.js");
       await listProjectsCmd();
@@ -46,7 +46,7 @@ export async function run(argv: string[]) {
 
   program
     .command("prepare")
-    .description("Emit the JSON payload of new sessions for the /vibebook skill to digest.")
+    .description("Emit the JSON payload of new sessions for the /memarium skill to digest.")
     .option("--cwd <path>", "treat this dir as the user's cwd (default: process.cwd())")
     .option("--project <slug>", "force a specific project slug")
     .action(async (opts: { cwd?: string; project?: string }) => {
@@ -56,7 +56,7 @@ export async function run(argv: string[]) {
 
   program
     .command("publish")
-    .description("Write chronicle/topic md files emitted by the /vibebook skill into the book.")
+    .description("Write chronicle/topic md files emitted by the /memarium skill into the book.")
     .option("--chronicles <path>", "path to chronicles JSON")
     .option("--topics <path>", "path to topics JSON")
     .option("--no-catalog", "skip book/index.md regen (caller will batch)")
@@ -94,7 +94,7 @@ export async function run(argv: string[]) {
 
   program
     .command("memory-index")
-    .description("Rebuild .vibebook/index.memory.json from the memory/ markdown files.")
+    .description("Rebuild .memarium/index.memory.json from the memory/ markdown files.")
     .action(async () => {
       const { memoryIndexCmd } = await import("./commands/memory-index.js");
       const report = await memoryIndexCmd();
@@ -122,7 +122,7 @@ export async function run(argv: string[]) {
     });
 
   program.command("entity-write")
-    .description("Write entity-wiki .md pages + update .vibebook/index.entity.json from an agent JSON payload.")
+    .description("Write entity-wiki .md pages + update .memarium/index.entity.json from an agent JSON payload.")
     .option("--input <path>", "path to entity pages JSON")
     .action(async (o: { input?: string }) => {
       const { entityWriteCmd } = await import("./commands/entity-write.js");
@@ -131,7 +131,7 @@ export async function run(argv: string[]) {
     });
 
   program.command("entity-index")
-    .description("Rebuild .vibebook/index.entity.json from memory/entities/ markdown.")
+    .description("Rebuild .memarium/index.entity.json from memory/entities/ markdown.")
     .action(async () => {
       const { entityIndexCmd } = await import("./commands/entity-index.js");
       const r = await entityIndexCmd();
@@ -150,7 +150,7 @@ export async function run(argv: string[]) {
     });
 
   program.command("qa-write")
-    .description("Write distilled Q&A .md pages + update .vibebook/index.qa.json from an agent JSON payload.")
+    .description("Write distilled Q&A .md pages + update .memarium/index.qa.json from an agent JSON payload.")
     .option("--input <path>", "path to qa pages JSON")
     .action(async (o: { input?: string }) => {
       const { qaWriteCmd } = await import("./commands/qa-write.js");
@@ -159,7 +159,7 @@ export async function run(argv: string[]) {
     });
 
   program.command("qa-index")
-    .description("Rebuild .vibebook/index.qa.json from memory/qa/ markdown.")
+    .description("Rebuild .memarium/index.qa.json from memory/qa/ markdown.")
     .action(async () => {
       const { qaIndexCmd } = await import("./commands/qa-index.js");
       const r = await qaIndexCmd();
@@ -285,7 +285,7 @@ export async function run(argv: string[]) {
 // or other modules). The `import.meta.url` guard mirrors Node's __filename check.
 const _thisFile = fileURLToPath(import.meta.url);
 const _mainFile = process.argv[1] ? resolve(process.argv[1]) : "";
-if (_thisFile === _mainFile || _mainFile.endsWith("vibebook-plugin.js")) {
+if (_thisFile === _mainFile || _mainFile.endsWith("memarium-plugin.js")) {
   run(process.argv).catch((err) => {
     console.error(err instanceof Error ? err.message : err);
     process.exit(1);

@@ -24,10 +24,10 @@ describe("proposal-store", () => {
   });
   afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
 
-  it("queue dir is under ~/.vibebook/local-proposals and outside the repo", async () => {
+  it("queue dir is under ~/.memarium/local-proposals and outside the repo", async () => {
     const { proposalsDir } = await import("../../src/memory/proposal-store.js");
     const dir = proposalsDir(repo);
-    expect(dir.startsWith(join(home, ".vibebook", "local-proposals"))).toBe(true);
+    expect(dir.startsWith(join(home, ".memarium", "local-proposals"))).toBe(true);
     expect(dir.startsWith(repo)).toBe(false);
   });
 
@@ -84,8 +84,8 @@ describe("proposal-store", () => {
     const { writeProposal } = await import("../../src/memory/proposal-store.js");
     const outside = join(home, "evil");
     mkdirSync(outside, { recursive: true });
-    mkdirSync(join(home, ".vibebook"), { recursive: true });
-    symlinkSync(outside, join(home, ".vibebook", "local-proposals"));
+    mkdirSync(join(home, ".memarium"), { recursive: true });
+    symlinkSync(outside, join(home, ".memarium", "local-proposals"));
     expect(() => writeProposal(repo, prop())).toThrow(/symlink guard/i);
   });
 

@@ -20,7 +20,7 @@ export interface StatusPayload {
   /** Cross-device memory view (P0b): is the aggregated overlay present + fresh,
    *  and how much sibling-device memory does recall/primer now see. */
   crossDevice: {
-    /** True when `~/.vibebook/aggregated` (npm sync's origin/main worktree) has a memory index. */
+    /** True when `~/.memarium/aggregated` (npm sync's origin/main worktree) has a memory index. */
     overlayPresent: boolean;
     overlayPath: string | null;
     /** Entry counts: local-only repo, the merged view, and entries visible ONLY via the overlay. */

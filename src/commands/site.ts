@@ -7,20 +7,20 @@ import chalk from "chalk";
 import { readPluginConfig } from "../spool/plugin-config.js";
 
 /**
- * `vibebook serve` and `vibebook build-site` are thin wrappers around
- * Astro. We ship the site template inside the vibebook npm package
+ * `memarium serve` and `memarium build-site` are thin wrappers around
+ * Astro. We ship the site template inside the memarium npm package
  * (`site-template/`) and run astro from a per-user cache directory
- * (`~/.vibebook/site-cache/`) so node_modules + dist live somewhere
+ * (`~/.memarium/site-cache/`) so node_modules + dist live somewhere
  * persistent without touching the user's session-repo working tree.
  *
  * Layout:
- *   <package>/site-template/             ← bundled with vibebook (template source)
- *   ~/.vibebook/site-cache/<sig>/        ← copy of template + node_modules + dist
+ *   <package>/site-template/             ← bundled with memarium (template source)
+ *   ~/.memarium/site-cache/<sig>/        ← copy of template + node_modules + dist
  *
- * The cache is keyed by a signature of the template files so a vibebook
+ * The cache is keyed by a signature of the template files so a memarium
  * upgrade rebuilds cleanly. node_modules can be ~hundreds-of-MB so we
  * keep just the most recent signature; older ones are not pruned (rare
- * enough not to matter; user can `rm -rf ~/.vibebook/site-cache`).
+ * enough not to matter; user can `rm -rf ~/.memarium/site-cache`).
  */
 
 export interface SiteOptions {
@@ -56,13 +56,13 @@ function siteContext(opts: SiteOptions): SiteContext {
   const templateDir = candidates.find((c) => existsSync(join(c, "package.json")));
   if (!templateDir) {
     throw new Error(
-      `vibebook site template not found. Tried:\n  ${candidates.join("\n  ")}\n` +
-      `If you installed vibebook from npm, try \`npm install -g vibebook@latest\`.`,
+      `memarium site template not found. Tried:\n  ${candidates.join("\n  ")}\n` +
+      `If you installed memarium from npm, try \`npm install -g memarium@latest\`.`,
     );
   }
 
   const sig = templateSignature(templateDir);
-  const cacheDir = join(homedir(), ".vibebook", "site-cache", sig);
+  const cacheDir = join(homedir(), ".memarium", "site-cache", sig);
   return {
     templateDir,
     cacheDir,
@@ -137,13 +137,13 @@ export async function serveSiteCmd(opts: SiteOptions = {}): Promise<void> {
   console.log(chalk.gray(`  repo:     ${ctx.repoPath}`));
   syncTemplateInto(ctx.templateDir, ctx.cacheDir);
   await ensureNodeModules(ctx.cacheDir);
-  console.log(chalk.cyan(`\n  vibebook serve — astro dev`));
+  console.log(chalk.cyan(`\n  memarium serve — astro dev`));
   console.log(chalk.gray(`  open http://localhost:4321 in your browser; ctrl-c to stop\n`));
   await runCmd(
     "node",
     [join(ctx.cacheDir, "node_modules", "astro", "astro.js"), "dev"],
     ctx.cacheDir,
-    { VIBEBOOK_REPO_PATH: ctx.repoPath },
+    { MEMARIUM_REPO_PATH: ctx.repoPath },
   );
 }
 
@@ -152,15 +152,15 @@ export async function buildSiteCmd(opts: SiteOptions = {}): Promise<{ outDir: st
   syncTemplateInto(ctx.templateDir, ctx.cacheDir);
   await ensureNodeModules(ctx.cacheDir);
 
-  console.log(chalk.cyan(`\n  vibebook build-site — astro build`));
+  console.log(chalk.cyan(`\n  memarium build-site — astro build`));
   await runCmd(
     "node",
     [join(ctx.cacheDir, "node_modules", "astro", "astro.js"), "build"],
     ctx.cacheDir,
     {
-      VIBEBOOK_REPO_PATH: ctx.repoPath,
-      VIBEBOOK_SITE_BASE: ctx.base,
-      VIBEBOOK_SITE_URL: ctx.siteUrl,
+      MEMARIUM_REPO_PATH: ctx.repoPath,
+      MEMARIUM_SITE_BASE: ctx.base,
+      MEMARIUM_SITE_URL: ctx.siteUrl,
     },
   );
 

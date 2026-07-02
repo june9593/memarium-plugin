@@ -8,10 +8,10 @@ describe("plugin-cli memory subcommands", () => {
   beforeEach(() => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-memcli-"));
     vi.stubEnv("HOME", fakeHome); vi.resetModules();
-    repo = join(fakeHome, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    mkdirSync(join(fakeHome, ".vibebook"), { recursive: true });
-    writeFileSync(join(fakeHome, ".vibebook/config.json"), JSON.stringify({
+    repo = join(fakeHome, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(fakeHome, ".memarium"), { recursive: true });
+    writeFileSync(join(fakeHome, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli" }));
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   });
@@ -28,7 +28,7 @@ describe("plugin-cli memory subcommands", () => {
       sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
       entities: [], originDevice: null, accessCount: 0, lastAccess: null }, body: "b" }]));
     const { run } = await import("../../src/plugin-cli.js");
-    await run(["node", "vibebook-plugin", "memory-write", "--input", input]);
+    await run(["node", "memarium-plugin", "memory-write", "--input", input]);
     expect(existsSync(join(repo, "memory/semantic/_global/r.md"))).toBe(true);
   });
 
@@ -41,7 +41,7 @@ describe("plugin-cli memory subcommands", () => {
       sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
       entities: [], originDevice: null, accessCount: 0, lastAccess: null }, body: "b" }]));
     const { run } = await import("../../src/plugin-cli.js");
-    await expect(run(["node", "vibebook-plugin", "memory-write", "--input", input]))
+    await expect(run(["node", "memarium-plugin", "memory-write", "--input", input]))
       .rejects.toThrow(/memory-propose/);
     expect(existsSync(join(repo, "memory/core/_global/r.md"))).toBe(false);
   });

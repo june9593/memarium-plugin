@@ -1,9 +1,9 @@
 ---
-name: vibebook
-description: Digest already-synced raw_sessions into TWO things per project — a book (chronicle / topics) AND a typed Memory OS (typed memory, entity wiki, distilled Q&A). Triggers on `/vibebook`. Two modes auto-selected by cwd — project-mode (cwd ≠ session-repo, digests just the matching project) or global-mode (cwd = session-repo, fan-out one subagent per pending project then regen catalog). Per-project isolated. The digest is NOT complete when the book is published — it is complete only after the Memory OS layer is written.
+name: memarium
+description: Digest already-synced raw_sessions into TWO things per project — a book (chronicle / topics) AND a typed Memory OS (typed memory, entity wiki, distilled Q&A). Triggers on `/memarium`. Two modes auto-selected by cwd — project-mode (cwd ≠ session-repo, digests just the matching project) or global-mode (cwd = session-repo, fan-out one subagent per pending project then regen catalog). Per-project isolated. The digest is NOT complete when the book is published — it is complete only after the Memory OS layer is written.
 ---
 
-# /vibebook — digest sessions into a book + Memory OS
+# /memarium — digest sessions into a book + Memory OS
 
 This skill walks the **in-session Claude** (you) through digesting the user's
 already-synced AI coding sessions into TWO things per project: **(1) a book**
@@ -20,11 +20,11 @@ segmentation + writing — is yours, in this conversation, with full context.
 - The plugin's `orchestrate` step (run as Pre-step + Step 0 below) will
   scan the user's local `~/.claude/projects/` and Copilot Chat session
   jsonl, then write rendered `.md` + `.raw.json` into the spool at
-  `~/.vibebook/session-repo/raw_sessions/...` and update
-  `~/.vibebook/session-repo/.vibebook/index.json`. **You do not need to
+  `~/.memarium/session-repo/raw_sessions/...` and update
+  `~/.memarium/session-repo/.memarium/index.json`. **You do not need to
   check whether sync ran first** — the plugin is self-contained and
   scans sessions itself on every invocation.
-- If the user has ALSO installed the optional `vibebook` npm CLI for
+- If the user has ALSO installed the optional `memarium` npm CLI for
   cross-device sync, that's fine — both write to the same spool with
   sessionId-keyed entries. Don't gate plugin work on the npm CLI being
   present; it is not required.
@@ -39,7 +39,7 @@ So before any subcommand, discover the plugin's bin path and stash it
 in a shell variable. Run:
 
 ```bash
-VBP=$(ls -td ~/.claude/plugins/cache/*/vibebook/*/bin/vibebook-plugin.js 2>/dev/null | head -1) && echo "VBP=$VBP"
+VBP=$(ls -td ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | head -1) && echo "VBP=$VBP"
 ```
 
 Confirm `$VBP` resolves to an existing file:
@@ -50,9 +50,9 @@ Confirm `$VBP` resolves to an existing file:
 
 You should see `0.1.x` print. **If `$VBP` is empty or the version doesn't
 print**, the plugin is not installed correctly — STOP and tell the user
-they need to install via `/plugin install vibebook` (after adding the
-marketplace `june9593/vibebook-plugin`). Do not fall back to checking
-PATH for `vibebook` — that's a different (npm) product, not this plugin.
+they need to install via `/plugin install memarium` (after adding the
+marketplace `june9593/memarium-plugin`). Do not fall back to checking
+PATH for `memarium` — that's a different (npm) product, not this plugin.
 
 Every command in this skill below uses `$VBP` directly, e.g.
 `"$VBP" prepare --cwd "$(pwd)"`. You must run all subcommands as
@@ -70,7 +70,7 @@ Before anything else, run:
 ```
 
 This prints a one-time nudge if the user hasn't installed the optional
-`vibebook` npm CLI for cross-device sync. Silent on every subsequent
+`memarium` npm CLI for cross-device sync. Silent on every subsequent
 invocation. Don't summarize the output to the user — just let it print.
 
 ## Step 0 — Spool warmup + mode detection (DO THIS FIRST)
@@ -81,10 +81,10 @@ Before reading any session data, prime the spool:
 "$VBP" orchestrate project --cwd "$(pwd)"
 ```
 
-(If you're in `~/.vibebook/session-repo/` or in a non-project dir, use
+(If you're in `~/.memarium/session-repo/` or in a non-project dir, use
 `orchestrate global` instead — see decision tree below.)
 
-This (a) creates `~/.vibebook/session-repo/raw_sessions/` and `book/`
+This (a) creates `~/.memarium/session-repo/raw_sessions/` and `book/`
 if absent, and (b) imports any new local `~/.claude/projects/` jsonl
 into the spool. Idempotent. Read the JSON output:
 - `mode`: "project" or "global"
@@ -103,7 +103,7 @@ Read `meta.isInSessionRepo` and `meta.sessionRepoPath` in the output.
 | `meta.isInSessionRepo` | Mode | What you do |
 |---|---|---|
 | `false` | **project-mode** | Digest only the project matching the user's cwd. Most common case — user opened Claude Code inside a normal coding repo and is asking you to write up that project's recent work. |
-| `true` | **global-mode** | User is sitting in `~/.vibebook/session-repo`, asking for a full sweep. Fan out one subagent per project that has pending sessions; finish with a catalog regen. |
+| `true` | **global-mode** | User is sitting in `~/.memarium/session-repo`, asking for a full sweep. Fan out one subagent per project that has pending sessions; finish with a catalog regen. |
 
 **Tell the user which mode you detected** in one line, then proceed to the
 matching section below. Do not try to guess; trust `list-projects`.
@@ -167,7 +167,7 @@ need to research" but turn into a 6KB debugging session).
 
 #### Reading a 0.7+ `manifest_version: 1` md (chunked navigation)
 
-vibebook 0.7+ writes a per-session manifest + Table of Contents at the top
+memarium 0.7+ writes a per-session manifest + Table of Contents at the top
 of each raw_sessions md, so you can navigate huge sessions (9MB+, 10000+
 turns) without loading the whole body. **Always check for this first:**
 
@@ -214,20 +214,20 @@ A session may be marked `skip: true` ONLY when ALL of these hold:
 - The user **explicitly abandoned** it ("nvm, gonna try elsewhere") OR the
   whole transcript is < ~500 chars of useful content.
 
-**Always SKIP — vibebook meta-sessions.** A session whose entire content is
-the user invoking `/vibebook` (or otherwise driving this skill) has zero
+**Always SKIP — memarium meta-sessions.** A session whose entire content is
+the user invoking `/memarium` (or otherwise driving this skill) has zero
 chronicle value — it's the user *running* the digest pipeline, not doing
 real work. Detect via any of:
 
-- The first user message is exactly `/vibebook` (or `/vibebook ...`).
+- The first user message is exactly `/memarium` (or `/memarium ...`).
 - The transcript is dominated by `"$VBP" prepare` / `"$VBP" publish` /
   `"$VBP" list-projects` / `"$VBP" catalog-regen` tool calls.
 - The assistant's output is mostly chronicle/topic/card markdown bodies
-  being written to `/tmp/vibebook-*.json` or directly into `book/`.
+  being written to `/tmp/memarium-*.json` or directly into `book/`.
 - Project slug is `home` or any other pseudo project (already filtered by
   `isRealProjectPath`, but double-check at thread-segmentation time).
 
-Mark these `skip: true` with `skipReason: "vibebook meta-session — user
+Mark these `skip: true` with `skipReason: "memarium meta-session — user
 running the digest skill, no original work content"`. Do NOT chronicle
 them; they would just be self-referential noise.
 
@@ -246,7 +246,7 @@ In particular, you must NOT SKIP:
 - Sessions with `untitled` filename — read the body; usually they're real
   work where the first message wasn't a question.
 
-Write the segmentation to `/tmp/vibebook-groups.json`:
+Write the segmentation to `/tmp/memarium-groups.json`:
 
 ```json
 [
@@ -290,7 +290,7 @@ Inline below 150 KB is faster end-to-end because:
 
 Below the threshold, **just open the files and write**. Don't fan out.
 
-**Anti-pattern:** looping `vibebook show <id>` in the main session for 50
+**Anti-pattern:** looping `memarium show <id>` in the main session for 50
 threads — eats your context window and produces lower-quality writing
 because you start cargo-culting your own previous chronicles.
 
@@ -336,7 +336,7 @@ status to the user, e.g.:
 
 Use the **PushNotification tool** (when available) for any wait that
 exceeds 8 minutes; the user may have switched away from the terminal.
-The notification body can be one short line — "vibebook fan-out: 4/6
+The notification body can be one short line — "memarium fan-out: 4/6
 chronicle agents done, 2 still running".
 
 If a single agent has been running > 15 minutes, suspect it's stuck on
@@ -502,7 +502,7 @@ Critical rules:
   few messages of the source session — users often drop "ok merged" /
   "didn't work" / "still don't know if this races" right at the end.
 
-**Build the JSON incrementally** — `Write` to `/tmp/vibebook-chronicles.json`
+**Build the JSON incrementally** — `Write` to `/tmp/memarium-chronicles.json`
 one chronicle at a time, OR write each chronicle to
 `/tmp/vb/chronicle-<threadId>.json` and merge at the end with a small Python
 pass. **Never `cat > /tmp/x.json << 'PYEOF'` heredoc with all bodies in
@@ -553,7 +553,7 @@ chronicle bodies as human-friendly placeholders. `"$VBP" publish`
 mechanically rewrites them to real relative-path markdown links. Use
 bare `threadId`, NOT a date-prefixed filename.
 
-Write topics to `/tmp/vibebook-topics.json`:
+Write topics to `/tmp/memarium-topics.json`:
 
 ```json
 [
@@ -588,13 +588,13 @@ just re-emit the JSON). Then publish:
 
 ```bash
 "$VBP" publish \
-  --chronicles /tmp/vibebook-chronicles.json \
-  --topics /tmp/vibebook-topics.json \
+  --chronicles /tmp/memarium-chronicles.json \
+  --topics /tmp/memarium-topics.json \
   --no-catalog
 ```
 
 `--no-catalog` because project-mode is incremental — the catalog will be
-regenerated next time the user runs global-mode `/vibebook`. Skipping it
+regenerated next time the user runs global-mode `/memarium`. Skipping it
 here keeps the commit small and avoids touching files for other projects.
 
 publish does:
@@ -603,7 +603,7 @@ publish does:
    (refuses on threadId collision).
 2. Topics: backs old `.md` up to `<slug>.md.bak` if existed, writes new.
 3. Resolves `[[wikilinks]]` against the live BookIndex.
-4. Stages ONLY the files it wrote + `.vibebook/index.book.json`.
+4. Stages ONLY the files it wrote + `.memarium/index.book.json`.
 5. Commits + pushes the device branch.
 
 If unresolved wikilinks remain, publish prints them at the end. Read the
@@ -612,7 +612,7 @@ inserted chronicles refuse via threadId collision, so you can re-run with
 just the new artifacts).
 
 > ⚠️ **`publish` is NOT the end of the digest.** The book (chronicles + topics)
-> is only HALF of what `/vibebook` produces. The `publish` commit + push just
+> is only HALF of what `/memarium` produces. The `publish` commit + push just
 > lands the book layer — the **Memory OS layer (typed memory / entities / Q&A)
 > is still unwritten**. You MUST continue through **Steps P7.5–P7.8** before
 > Step P8. Do **not** print a summary, say "done", or stop here just because
@@ -620,13 +620,13 @@ just the new artifacts).
 
 ### Step P7.5 — Distill typed memory (REQUIRED — do not stop after publish)
 
-**Mandatory, not optional.** This is the half of `/vibebook` that makes a new
+**Mandatory, not optional.** This is the half of `/memarium` that makes a new
 session start *already knowing* the project (its rules, facts, gotchas). After
 publish lands the book, you MUST distill durable typed memory for this project.
 You may still write *nothing* if truly nothing durable emerged — but you must
 run the step and consciously decide, **never skip it by treating publish as the
 end**. Write a JSON array to
-`/tmp/vibebook-memory.json` where each item is `{ entry, body }`:
+`/tmp/memarium-memory.json` where each item is `{ entry, body }`:
 
 - **core** — never-forget rules (rare; e.g. release/workflow rules). scope
   `global`/`user`/`project:<slug>`.
@@ -658,15 +658,15 @@ leave it at its default.
 - `unknown` — can't determine. Like `untrusted`, it does NOT enter the primer.
 
 `untrusted`/`unknown` semantic still gets written and is searchable via explicit
-`/vibebook-context` (shown flagged), it just isn't silently auto-injected as fact.
+`/memarium-context` (shown flagged), it just isn't silently auto-injected as fact.
 **Promoting an existing memory up to `trusted` is gated** — `memory-write` rejects
 a trust elevation; route it through `memory-propose` like other gated changes.
 (`core`/`procedural` don't need `trust` for the primer — the v4 gate already
 protects them.) Then:
 
-    "$VBP" memory-write --input /tmp/vibebook-memory.json
+    "$VBP" memory-write --input /tmp/memarium-memory.json
 
-This writes `memory/<type>/...` md + updates `.vibebook/index.memory.json`.
+This writes `memory/<type>/...` md + updates `.memarium/index.memory.json`.
 The SessionStart primer is rendered **live** from the (cross-device) memory
 view, so it picks up new memory automatically — no file refresh needed. (You
 may still run a query to sanity-check what recall now returns:)
@@ -713,7 +713,7 @@ them to confirm — never blind-approve.
 
 Be conservative: a few high-value memories beat many trivial ones. Don't
 duplicate what's already in the index (it was loaded at session start via
-`/vibebook-context`).
+`/memarium-context`).
 
 ### Step P7.6 — Synthesize entity wiki (personal knowledge base)
 
@@ -737,7 +737,7 @@ fact with a lifecycle).
    - `referencingMemories`: typed memories that mention this entity (by title or
      `entities[]` field) — your raw material for synthesising the updated page.
    - `entities`: the full ranked entity list (unfiltered browse), always present.
-3. Write a JSON array to `/tmp/vibebook-entities.json` where each item is
+3. Write a JSON array to `/tmp/memarium-entities.json` where each item is
    `{ entry, body }`:
    - `entry`: `id` = `entity/<project|_global>/<kebab-slug>`, `kind` =
      `file|symbol|api|concept|person`, `scope`/`project`, `title`, `aliases`,
@@ -749,9 +749,9 @@ fact with a lifecycle).
      copy them). Imperative, agent-reuse voice.
 4. Persist:
 
-       "$VBP" entity-write --input /tmp/vibebook-entities.json
+       "$VBP" entity-write --input /tmp/memarium-entities.json
 
-   Writes `memory/entities/...` md + updates `.vibebook/index.entity.json`.
+   Writes `memory/entities/...` md + updates `.memarium/index.entity.json`.
 
 Skip this step entirely if the session produced no durable entity worth a page.
 
@@ -789,14 +789,14 @@ For each qualifying pair, build an item and call `qa-write` with JSON shaped lik
 }]
 ```
 
-Run `vibebook-plugin qa-write --input <that-json-file>`. The CLI derives the stable `id`/`path`, normalizes `question`/`answerSummary` to single lines, writes `memory/qa/<project|_global>/<slug>.md`, and updates `.vibebook/index.qa.json`. Re-asking a known question upserts (refines) the existing page — do not fork. **If nothing qualifies, write nothing and move on.**
+Run `memarium-plugin qa-write --input <that-json-file>`. The CLI derives the stable `id`/`path`, normalizes `question`/`answerSummary` to single lines, writes `memory/qa/<project|_global>/<slug>.md`, and updates `.memarium/index.qa.json`. Re-asking a known question upserts (refines) the existing page — do not fork. **If nothing qualifies, write nothing and move on.**
 
 ### Step P7.8 — Consolidate (memory health + conservative promotion)
 
 After P7.5–P7.7, run the read-only diagnostic and act on it CONSERVATIVELY:
 
 ```bash
-vibebook-plugin memory-lint --cwd "$(pwd)" --json
+memarium-plugin memory-lint --cwd "$(pwd)" --json
 ```
 
 The report has `issues[]` (objective integrity defects) and `suggestions[]` (semantic-judgment candidates). Read it together with this session's new memories and the existing memory.
@@ -832,8 +832,8 @@ run the closing commit so the session-repo is never left half-committed:
 
 This ensures the repo exists (inits it if this is a self-contained, npm-CLI-less
 setup), commits everything this digest wrote — `raw_sessions/`, `book/`,
-`memory/`, and the `.vibebook/index*.json` files — and auto-pushes if a remote
-is configured. It only stages vibebook's own paths, never foreign files. Read
+`memory/`, and the `.memarium/index*.json` files — and auto-pushes if a remote
+is configured. It only stages memarium's own paths, never foreign files. Read
 its JSON report (`committed`, `staged`, `pushed`, `branch`, `remote`) to fill the
 summary line below — `staged` is the number of files committed (the `<N>` below).
 
@@ -855,14 +855,14 @@ say "local-only, no remote".)
 `Memory: 0 (nothing durable this round)` — so it's clear the step *ran* and chose
 to write nothing, rather than being skipped.)
 
-That's it for project-mode. The user can now `cd ~/.vibebook/session-repo && claude → /vibebook`
+That's it for project-mode. The user can now `cd ~/.memarium/session-repo && claude → /memarium`
 later to do a global sweep across all projects.
 
 ---
 
 # Global mode
 
-Triggered when cwd = `~/.vibebook/session-repo`. The user wants a full
+Triggered when cwd = `~/.memarium/session-repo`. The user wants a full
 sweep across every project. You orchestrate; subagents do the per-project
 work using the same project-mode flow.
 
@@ -893,13 +893,13 @@ Same rationale as project-mode P3 (subagents can't prompt the user
 for permission). Before the first `Agent(...)` call, run inline:
 
 ```bash
-mkdir -p /tmp/vibebook/_warmup && rmdir /tmp/vibebook/_warmup
+mkdir -p /tmp/memarium/_warmup && rmdir /tmp/memarium/_warmup
 "$VBP" prepare --help >/dev/null
 "$VBP" publish --help >/dev/null
-echo warmup > /tmp/vibebook/_warmup.json && rm /tmp/vibebook/_warmup.json
+echo warmup > /tmp/memarium/_warmup.json && rm /tmp/memarium/_warmup.json
 ```
 
-Tell the user to approve the BROAD pattern (e.g. `Bash(vibebook
+Tell the user to approve the BROAD pattern (e.g. `Bash(memarium
 prepare *)`, not the literal `--help` invocation). Skip if already
 warmed up earlier in the session or pre-approved in
 `~/.claude/settings.json`.
@@ -910,8 +910,8 @@ For each project to process, dispatch a `general-purpose` Agent in parallel
 (via multiple Agent tool calls in one message). Each agent's prompt:
 
 ```
-You are running project-mode /vibebook for project '<slug>'. Steps to follow,
-verbatim from skills/vibebook/SKILL.md sections P1–P7:
+You are running project-mode /memarium for project '<slug>'. Steps to follow,
+verbatim from skills/memarium/SKILL.md sections P1–P7:
 
   1. Run: "$VBP" prepare --project <slug>
   2. For every newSession, Read its mdPath. Apply SKIP rules conservatively
@@ -926,7 +926,7 @@ verbatim from skills/vibebook/SKILL.md sections P1–P7:
      topic pages and preserve historical facts when rewriting.
   6. Run: "$VBP" publish --chronicles ... --topics ... --no-catalog
 
-Write your three input JSON files under /tmp/vibebook/<slug>/ so we don't
+Write your three input JSON files under /tmp/memarium/<slug>/ so we don't
 collide with sibling subagents.
 
 Return a one-line summary of counts. Do NOT regen the catalog — the
@@ -941,7 +941,7 @@ re-run the warm-up. Do NOT retry the same command — you can't escalate.
 limits on concurrent subagents. Cap at 4 in flight; queue the rest.
 
 If a subagent fails (especially with `permission denied`), log it but
-continue with the next batch — the user can re-run `/vibebook` against
+continue with the next batch — the user can re-run `/memarium` against
 that project later in project-mode after the warm-up has approved the
 needed patterns.
 
@@ -983,7 +983,7 @@ This regenerates `book/index.md`, `book/_meta/timeline.md`, and
 - ❌ Skip Step P7.5. Distilling typed memory is what lets future sessions start already knowing the project.
 - ❌ Skip the `Read` of an existing topic page before rewriting it.
 - ❌ Touch any file in `raw_sessions/` — those are immutable source data.
-- ❌ Run global-mode `/vibebook` with cwd ≠ `~/.vibebook/session-repo`. The
+- ❌ Run global-mode `/memarium` with cwd ≠ `~/.memarium/session-repo`. The
   cwd check is the mode trigger; do not override.
 
 ## Things you should always do

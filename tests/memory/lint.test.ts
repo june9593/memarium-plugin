@@ -256,10 +256,10 @@ describe("lintMemory — duplicate-like below-threshold regression", () => {
   it("overlap just under 0.6 is NOT flagged as duplicate-like", () => {
     // These titles/summaries produce ~0.5 overlap — below the default 0.6 threshold
     const a = mem({ id: "semantic/p/a", type: "semantic",
-      title: "vibebook sync command",
+      title: "memarium sync command",
       summary: "runs git push and extracts sessions to markdown" });
     const b = mem({ id: "semantic/p/b", type: "semantic",
-      title: "vibebook doctor command",
+      title: "memarium doctor command",
       summary: "health check validates config and git remote" });
     const r = run(idxOf(a, b));
     expect(checks(r)).not.toContain("duplicate-like");

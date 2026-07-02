@@ -1,22 +1,22 @@
 import { defineConfig } from "astro/config";
 
-// VIBEBOOK_REPO_PATH points at the user's session-repo (set by `vibebook
-// serve` / `vibebook build-site` before invoking astro). Default to
-// `~/.vibebook/session-repo` so `astro dev` works standalone too.
+// MEMARIUM_REPO_PATH points at the user's session-repo (set by `memarium
+// serve` / `memarium build-site` before invoking astro). Default to
+// `~/.memarium/session-repo` so `astro dev` works standalone too.
 const repoPath =
-  process.env.VIBEBOOK_REPO_PATH ||
-  `${process.env.HOME}/.vibebook/session-repo`;
+  process.env.MEMARIUM_REPO_PATH ||
+  `${process.env.HOME}/.memarium/session-repo`;
 
 export default defineConfig({
   // Anything published-ish: GitHub Pages will set the right base via
-  // VIBEBOOK_SITE_BASE; for local dev we serve at /.
-  site: process.env.VIBEBOOK_SITE_URL || "http://localhost:4321",
-  base: process.env.VIBEBOOK_SITE_BASE || "/",
+  // MEMARIUM_SITE_BASE; for local dev we serve at /.
+  site: process.env.MEMARIUM_SITE_URL || "http://localhost:4321",
+  base: process.env.MEMARIUM_SITE_BASE || "/",
   output: "static",
   trailingSlash: "always",
   vite: {
     define: {
-      "import.meta.env.VIBEBOOK_REPO_PATH": JSON.stringify(repoPath),
+      "import.meta.env.MEMARIUM_REPO_PATH": JSON.stringify(repoPath),
     },
   },
   markdown: {

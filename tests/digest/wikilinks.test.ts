@@ -41,7 +41,7 @@ function idx(): BookIndexV2 {
   };
 }
 
-describe("resolveWikiLinks — topic links (vibebook-plugin)", () => {
+describe("resolveWikiLinks — topic links (memarium-plugin)", () => {
   it("resolves [[topic/<slug>]] to a same-project relative path", () => {
     const { body, unresolved } = resolveWikiLinks(
       "See [[topic/native-ui-fullscreen]] for context.",

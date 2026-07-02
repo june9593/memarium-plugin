@@ -17,7 +17,7 @@ function trySymlink(target: string, linkPath: string): boolean {
 let home: string, repo: string;
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "qa-index-"));
-  repo = join(home, ".vibebook", "session-repo");
+  repo = join(home, ".memarium", "session-repo");
   mkdirSync(repo, { recursive: true });
   vi.stubEnv("HOME", home);
 });
@@ -43,7 +43,7 @@ describe("qaIndexCmd", () => {
   it("cold-start: memory/qa/ absent → indexed: 0, no throw", async () => {
     // Fresh repo: no memory/qa/ dir, no index written
     const home2 = mkdtempSync(join(tmpdir(), "qa-index-empty-"));
-    const repo2 = join(home2, ".vibebook", "session-repo");
+    const repo2 = join(home2, ".memarium", "session-repo");
     mkdirSync(repo2, { recursive: true });
     vi.stubEnv("HOME", home2);
     try {

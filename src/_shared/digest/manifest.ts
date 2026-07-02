@@ -1,4 +1,4 @@
-// @sync-from: github.com/june9593/vibebook → src/digest/manifest.ts
+// @sync-from: github.com/june9593/memarium → src/digest/manifest.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
 import type { SessionMessage, SessionManifest, ContentBlock } from "../types.js";

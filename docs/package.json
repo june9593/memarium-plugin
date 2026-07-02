@@ -1,9 +1,9 @@
 {
-  "name": "vibebook-plugin-docs",
+  "name": "memarium-plugin-docs",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "GitHub Pages site for the vibebook Claude Code plugin. Built with Astro; deployed by .github/workflows/pages.yml to june9593.github.io/vibebook-plugin/.",
+  "description": "GitHub Pages site for the memarium Claude Code plugin. Built with Astro; deployed by .github/workflows/pages.yml to june9593.github.io/memarium-plugin/.",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",

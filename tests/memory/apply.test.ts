@@ -21,8 +21,8 @@ describe("applyMemoryItems", () => {
     home = mkdtempSync(join(tmpdir(), "vbp-apply-"));
     vi.stubEnv("HOME", home);
     vi.resetModules();
-    repo = join(home, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
   });
   afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
 
@@ -31,7 +31,7 @@ describe("applyMemoryItems", () => {
     const r = applyMemoryItems(repo, [{ entry: mk({ path: "" }), body: "b" }]);
     expect(r.written).toBe(1);
     expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(true);
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     expect(idx.entries["core/yue-workflow"].path).toBe("memory/core/_global/yue-workflow.md");
   });
 
@@ -44,7 +44,7 @@ describe("applyMemoryItems", () => {
     expect(md).toContain("sourceSessions: []");
     expect(md).toContain("entities: []");
     expect(md).not.toContain("undefined");
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     expect(idx.entries["core/thin"].sourceSessions).toEqual([]);
     expect(idx.entries["core/thin"].summary).toBe("");
   });
@@ -62,7 +62,7 @@ describe("applyMemoryItems", () => {
     const { applyMemoryItems } = await import("../../src/memory/apply.js");
     applyMemoryItems(repo, [{ entry: mk({ id: "core/old", title: "old" }), body: "old" }]);
     applyMemoryItems(repo, [{ entry: mk({ id: "core/new", title: "new", supersedes: "core/old" }), body: "new" }]);
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     expect(idx.entries["core/old"].status).toBe("superseded");
     const oldMd = readFileSync(join(repo, "memory/core/_global/old.md"), "utf8");
     expect(oldMd).toMatch(/^status: superseded$/m);
@@ -112,7 +112,7 @@ describe("applyMemoryItems", () => {
       { entry: mk({ id: "core/a", title: "a" }), body: "a" },
       { entry: mk({ id: "core/b", title: "b", supersedes: "core/a" }), body: "b" },
     ]);
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     expect(idx.entries["core/a"].status).toBe("superseded");
     expect(idx.entries["core/b"].status).toBe("active");
     expect(readFileSync(join(repo, "memory/core/_global/a.md"), "utf8")).toMatch(/^status: superseded$/m);
@@ -127,7 +127,7 @@ describe("applyMemoryItems", () => {
     delete (entry as unknown as Record<string, unknown>).accessCount;
     delete (entry as unknown as Record<string, unknown>).lastAccess;
     applyMemoryItems(repo, [{ entry, body: "b" }]);
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     const got = idx.entries["semantic/p/z"];
     expect(got.accessCount).toBe(0);
     expect(got.lastAccess).toBe(null);
@@ -144,7 +144,7 @@ describe("applyMemoryItems", () => {
     delete (entry as unknown as Record<string, unknown>).accessCount; // authored entry, no usage field
     const r = applyMemoryItems(repo, [{ entry, body: "b" }]);
 
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     const live = idx.entries["semantic/p/z"];
     const rebuilt = parseMemoryMarkdown(readFileSync(join(repo, r.paths[0]), "utf8"))!;
     const q = { project: "p", text: "bookmark crash", type: null, now: "2026-06-12" };
@@ -159,7 +159,7 @@ describe("applyMemoryItems", () => {
     const entry = mk({ id: "semantic/p/z", type: "semantic", scope: "project:p", project: "p", path: "" });
     delete (entry as unknown as Record<string, unknown>).trust;
     applyMemoryItems(repo, [{ entry, body: "b" }]);
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     expect(idx.entries["semantic/p/z"].trust).toBe("unknown");
   });
 });

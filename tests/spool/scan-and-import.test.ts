@@ -39,7 +39,7 @@ describe("scanAndImport", () => {
     expect(result.imported).toBe(1);
     expect(result.skipped).toBe(0);
 
-    const spoolRoot = join(fakeHome, ".vibebook/session-repo");
+    const spoolRoot = join(fakeHome, ".memarium/session-repo");
     // raw_sessions/claude/<project-slug>/<YYYY-MM-DD>/ should now contain
     // exactly one .md. 0.2.0 dropped the .raw.json sibling.
     const claudeDir = join(spoolRoot, "raw_sessions/claude");
@@ -51,17 +51,17 @@ describe("scanAndImport", () => {
     const files = readdirSync(join(claudeDir, projectSlugs[0], dates[0]));
     const md = files.find((f) => f.endsWith(".md"));
     expect(md).toBeTruthy();
-    // No .raw.json — single-file md format since 0.2.0 (matches npm vibebook >= 0.6)
+    // No .raw.json — single-file md format since 0.2.0 (matches npm memarium >= 0.6)
     expect(files.find((f) => f.endsWith(".raw.json"))).toBeUndefined();
   });
 
-  it("writes ~/.vibebook/session-repo/.vibebook/index.json with the imported session entry", async () => {
+  it("writes ~/.memarium/session-repo/.memarium/index.json with the imported session entry", async () => {
     const projDir = join(claudeProjectsDir, "-Users-test-edge-src");
     writeFakeJsonl(projDir, "abc-123", "/Users/test/edge/src");
 
     await scanAndImport({ projectFilter: null });
 
-    const indexPath = join(fakeHome, ".vibebook/session-repo/.vibebook/index.json");
+    const indexPath = join(fakeHome, ".memarium/session-repo/.memarium/index.json");
     expect(existsSync(indexPath)).toBe(true);
     const idx = JSON.parse(readFileSync(indexPath, "utf8"));
     expect(idx.version).toBe(1);
@@ -92,7 +92,7 @@ describe("scanAndImport", () => {
     const result = await scanAndImport({ projectFilter: "edge-src" });
     expect(result.imported).toBe(1);
 
-    const spoolRoot = join(fakeHome, ".vibebook/session-repo");
+    const spoolRoot = join(fakeHome, ".memarium/session-repo");
     const projectSlugs = readdirSync(join(spoolRoot, "raw_sessions/claude"));
     expect(projectSlugs).toEqual(["edge-src"]);
   });

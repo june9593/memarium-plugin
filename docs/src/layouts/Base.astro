@@ -23,8 +23,8 @@ const navLinks = isZh
   : { changelog: "Changelog", npm: "npm CLI" };
 
 const footer = isZh
-  ? "MIT 许可证 · 由 @june9593 构建 · 与可选的 vibebook npm CLI 互为兄弟项目。"
-  : "MIT licensed · Built by @june9593 · Sibling to the optional vibebook npm CLI.";
+  ? "MIT 许可证 · 由 @june9593 构建 · 与可选的 memarium npm CLI 互为兄弟项目。"
+  : "MIT licensed · Built by @june9593 · Sibling to the optional memarium npm CLI.";
 ---
 <!doctype html>
 <html lang={isZh ? "zh-Hans" : "en"}>
@@ -50,11 +50,11 @@ const footer = isZh
   <body>
     <nav class="site-nav">
       <div class="container">
-        <a class="brand" href={base}>vibebook plugin</a>
+        <a class="brand" href={base}>memarium plugin</a>
         <div class="links">
-          <a href="https://github.com/june9593/vibebook-plugin">GitHub</a>
-          <a href="https://github.com/june9593/vibebook-plugin/blob/main/CHANGELOG.md">{navLinks.changelog}</a>
-          <a href="https://github.com/june9593/vibebook">{navLinks.npm}</a>
+          <a href="https://github.com/june9593/memarium-plugin">GitHub</a>
+          <a href="https://github.com/june9593/memarium-plugin/blob/main/CHANGELOG.md">{navLinks.changelog}</a>
+          <a href="https://github.com/june9593/memarium">{navLinks.npm}</a>
           <a href={otherHref} class="lang-switch" rel="alternate" hreflang={isZh ? "en" : "zh"}>{otherLabel}</a>
         </div>
       </div>
@@ -66,7 +66,7 @@ const footer = isZh
           {isZh ? "MIT 许可证 · 由 " : "MIT licensed · Built by "}
           <a href="https://github.com/june9593">@june9593</a>
           {isZh ? " 构建 · 与可选的 " : " · Sibling to the optional "}
-          <a href="https://github.com/june9593/vibebook">vibebook</a>
+          <a href="https://github.com/june9593/memarium">memarium</a>
           {isZh ? " npm CLI 互为兄弟项目。" : " npm CLI."}
         </p>
       </div>
