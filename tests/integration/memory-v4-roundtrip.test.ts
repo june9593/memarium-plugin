@@ -9,10 +9,10 @@ describe("memory v4 propose → diff → approve round-trip + queue isolation", 
     home = mkdtempSync(join(tmpdir(), "vbp-rt-"));
     vi.stubEnv("HOME", home);
     vi.resetModules();
-    repo = join(home, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    mkdirSync(join(home, ".vibebook"), { recursive: true });
-    writeFileSync(join(home, ".vibebook/config.json"), JSON.stringify({
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(home, ".memarium"), { recursive: true });
+    writeFileSync(join(home, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
   });
@@ -37,7 +37,7 @@ describe("memory v4 propose → diff → approve round-trip + queue isolation", 
     await memoryProposeCmd({ inputPath: input });
     expect(existsSync(join(repo, "memory/procedural/edge-memvc/build-rule.md"))).toBe(false);
 
-    const queueRoot = join(home, ".vibebook", "local-proposals");
+    const queueRoot = join(home, ".memarium", "local-proposals");
     expect(existsSync(queueRoot)).toBe(true);
     const repoFiles: string[] = [];
     const walk = (d: string) => { for (const e of readdirSync(d, { withFileTypes: true })) {

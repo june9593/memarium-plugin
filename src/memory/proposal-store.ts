@@ -17,23 +17,23 @@ export interface MemoryProposal {
   proposal: { entry: MemoryEntry; body: string };
 }
 
-function vibebookHome(): string {
-  return join(homedir(), ".vibebook");
+function memariumHome(): string {
+  return join(homedir(), ".memarium");
 }
 
 /** Device-local queue dir, OUTSIDE the git repo so it never syncs/aggregates.
  *  Namespaced per session-repo so multiple repos on one device can't collide. */
 export function proposalsDir(repoPath: string): string {
   const repoHash = createHash("sha256").update(resolve(repoPath)).digest("hex").slice(0, 12);
-  return join(vibebookHome(), "local-proposals", repoHash);
+  return join(memariumHome(), "local-proposals", repoHash);
 }
 
 /** Refuse to operate if `local-proposals/` or its `<repoHash>/` subdir is a
  *  symlink, so the queue can't be redirected outside its intended location.
- *  We intentionally do NOT guard `~/.vibebook` itself — a user may legitimately
- *  symlink their vibebook home. */
+ *  We intentionally do NOT guard `~/.memarium` itself — a user may legitimately
+ *  symlink their memarium home. */
 function guardQueuePath(targetAbs: string): void {
-  assertNoSymlinkedComponent(vibebookHome(), targetAbs, "proposal-store");
+  assertNoSymlinkedComponent(memariumHome(), targetAbs, "proposal-store");
 }
 
 /** Filesystem-safe queue key. Flattens "/" → "__" and rejects any traversal.

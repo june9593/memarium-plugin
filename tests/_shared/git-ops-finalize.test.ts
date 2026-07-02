@@ -38,7 +38,7 @@ describe("ensureLocalRepo + commitWhitelist", () => {
     const repo = join(dir, "repo");
     const { git } = await ensureLocalRepo(repo);
     const email = (await git.raw(["config", "user.email"])).trim();
-    expect(email).toBe("vibebook@localhost");
+    expect(email).toBe("memarium@localhost");
   });
 
   it("commitWhitelist stages only the listed paths (not foreign files), commits, no push", async () => {

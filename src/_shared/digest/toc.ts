@@ -1,4 +1,4 @@
-// @sync-from: github.com/june9593/vibebook → src/digest/toc.ts
+// @sync-from: github.com/june9593/memarium → src/digest/toc.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
 import type { SessionMessage, TocEntry, ContentBlock } from "../types.js";

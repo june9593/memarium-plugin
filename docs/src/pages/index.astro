@@ -2,16 +2,16 @@
 import Base from "../layouts/Base.astro";
 ---
 <Base
-  title="vibebook plugin — searchable book of your AI coding sessions"
+  title="memarium plugin — searchable book of your AI coding sessions"
   description="Claude Code plugin that turns past AI sessions into chronicles + topics, then recalls them before new work. Standalone — no extra CLI required."
 >
   <section class="hero container">
     <h1>Don't re-derive what past-you already figured out.</h1>
     <p class="lede">
-      <strong>vibebook plugin</strong> turns your past Claude Code and
+      <strong>memarium plugin</strong> turns your past Claude Code and
       VS Code Copilot Chat sessions into a searchable book of decisions,
-      dead ends, and fixes. Run <code>/vibebook</code> once a week to
-      digest; run <code>/vibebook-recall</code> before any non-trivial
+      dead ends, and fixes. Run <code>/memarium</code> once a week to
+      digest; run <code>/memarium-recall</code> before any non-trivial
       task to surface what's relevant.
     </p>
     <div class="badges">
@@ -21,7 +21,7 @@ import Base from "../layouts/Base.astro";
     </div>
     <div class="cta-row">
       <a class="btn-primary" href="#install">Install</a>
-      <a class="btn-secondary" href="https://github.com/june9593/vibebook-plugin">View on GitHub</a>
+      <a class="btn-secondary" href="https://github.com/june9593/memarium-plugin">View on GitHub</a>
     </div>
   </section>
 
@@ -36,7 +36,7 @@ import Base from "../layouts/Base.astro";
     </p>
     <p class="lede" style="margin-top: var(--space-5);">
       Your Claude Code session-history is right there in
-      <code>~/.claude/projects/</code>. vibebook reads it, structures
+      <code>~/.claude/projects/</code>. memarium reads it, structures
       it, and lets future sessions stand on it.
     </p>
   </section>
@@ -45,7 +45,7 @@ import Base from "../layouts/Base.astro";
     <h2>Two slash commands</h2>
     <div class="three-col" style="grid-template-columns: 1fr 1fr;">
       <div class="feature-card">
-        <h3><code>/vibebook</code></h3>
+        <h3><code>/memarium</code></h3>
         <p>
           Walks <code>~/.claude/projects/</code> and your Copilot Chat
           history, then digests each session into per-project artifacts:
@@ -65,7 +65,7 @@ import Base from "../layouts/Base.astro";
         </p>
       </div>
       <div class="feature-card">
-        <h3><code>/vibebook-recall</code></h3>
+        <h3><code>/memarium-recall</code></h3>
         <p>
           Three-stage progressive recall before new work. Designed for AI
           agents to consume cheaply:
@@ -97,7 +97,7 @@ import Base from "../layouts/Base.astro";
       <p>
         You didn't ask "have we seen this before". You asked for a fix.
         But Claude reads "flaky test" as a recall trigger and runs
-        <code>/vibebook-recall</code> stage 1 first — a 5 KB topic list,
+        <code>/memarium-recall</code> stage 1 first — a 5 KB topic list,
         cheap. Stage 1 surfaces a topic <code>flaky-tests</code> with
         two contributing chronicles. Claude drills into the relevant
         one and pulls back a structured summary:
@@ -141,26 +141,26 @@ three suspect call sites flagged in the chronicle?</pre>
     <p>
       Two commands inside Claude Code:
     </p>
-    <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md); font-size: 1rem;">/plugin marketplace add june9593/vibebook-plugin
-/plugin install vibebook</pre>
+    <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md); font-size: 1rem;">/plugin marketplace add june9593/memarium-plugin
+/plugin install memarium</pre>
     <p>
-      That's it. Open any Claude Code session and run <code>/vibebook</code>
-      to digest your local sessions, or <code>/vibebook-recall</code> to
+      That's it. Open any Claude Code session and run <code>/memarium</code>
+      to digest your local sessions, or <code>/memarium-recall</code> to
       surface past notes. No npm install, no external service, your data
-      stays in <code>~/.vibebook/</code>.
+      stays in <code>~/.memarium/</code>.
     </p>
   </section>
 
   <section class="container">
     <h2>Files written</h2>
     <p>
-      Everything stays under <code>~/.vibebook/session-repo/</code>:
+      Everything stays under <code>~/.memarium/session-repo/</code>:
     </p>
     <ul style="color: var(--olive-gray); padding-left: var(--space-6); font-family: var(--font-mono); font-size: 0.95rem;">
       <li><code>raw_sessions/&lt;tool&gt;/&lt;project&gt;/&lt;date&gt;/*.&#123;md,raw.json&#125;</code> — rendered copies of your sessions</li>
       <li><code>book/&lt;project&gt;/&#123;chronicle,topics&#125;/*.md</code> — digested book</li>
-      <li><code>.vibebook/index.json</code> — per-session entry index</li>
-      <li><code>.vibebook/index.book.json</code> — chronicle / topic catalog</li>
+      <li><code>.memarium/index.json</code> — per-session entry index</li>
+      <li><code>.memarium/index.book.json</code> — chronicle / topic catalog</li>
     </ul>
     <p style="margin-top: var(--space-4);">
       The plugin <strong>does not</strong> create or modify <code>.git/</code>
@@ -173,18 +173,18 @@ three suspect call sites flagged in the chronicle?</pre>
     <h2>Cross-device sync (optional)</h2>
     <p>
       To carry your sessions across multiple machines, install the
-      optional <strong>vibebook</strong> npm CLI:
+      optional <strong>memarium</strong> npm CLI:
     </p>
-    <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md);">npm i -g vibebook
-vibebook init</pre>
+    <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md);">npm i -g memarium
+memarium init</pre>
     <p>
-      It syncs <code>~/.vibebook/session-repo/</code> to a private GitHub
+      It syncs <code>~/.memarium/session-repo/</code> to a private GitHub
       repo across your devices. The plugin and the npm CLI cooperate on
       the same spool path with sessionId-keyed entries — install one,
       both, or neither based on what you need.
     </p>
     <p>
-      <a href="https://github.com/june9593/vibebook">vibebook npm CLI →</a>
+      <a href="https://github.com/june9593/memarium">memarium npm CLI →</a>
     </p>
   </section>
 
@@ -192,15 +192,15 @@ vibebook init</pre>
     <h2>Memex hand-off (optional)</h2>
     <p>
       For atomic Zettelkasten cards (one insight per card with backlinks,
-      organize, orphan detection), vibebook delegates to
+      organize, orphan detection), memarium delegates to
       <a href="https://github.com/iamtouchskyer/memex">memex</a>. Install
-      it and the <code>/vibebook</code> skill will offer to chain
-      <code>/memex-retro</code> after writing chronicles. <code>/vibebook-recall</code>
+      it and the <code>/memarium</code> skill will offer to chain
+      <code>/memex-retro</code> after writing chronicles. <code>/memarium-recall</code>
       folds memex's catalog into stage 1 so agents see both layers in
       one triage pass.
     </p>
     <p>
-      Memex is optional — vibebook works fine without it; you just won't
+      Memex is optional — memarium works fine without it; you just won't
       have an atomic-card layer.
     </p>
   </section>
@@ -208,10 +208,10 @@ vibebook init</pre>
   <section class="container" style="padding-bottom: var(--space-24);">
     <h2>Project</h2>
     <ul style="color: var(--olive-gray); padding-left: var(--space-6);">
-      <li><a href="https://github.com/june9593/vibebook-plugin">Source on GitHub</a></li>
-      <li><a href="https://github.com/june9593/vibebook-plugin/blob/main/CHANGELOG.md">Changelog</a></li>
-      <li><a href="https://github.com/june9593/vibebook-plugin/issues">Issues / feedback</a></li>
-      <li><a href="https://github.com/june9593/vibebook">Sibling: vibebook npm CLI for cross-device sync</a></li>
+      <li><a href="https://github.com/june9593/memarium-plugin">Source on GitHub</a></li>
+      <li><a href="https://github.com/june9593/memarium-plugin/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="https://github.com/june9593/memarium-plugin/issues">Issues / feedback</a></li>
+      <li><a href="https://github.com/june9593/memarium">Sibling: memarium npm CLI for cross-device sync</a></li>
     </ul>
     <p class="muted small" style="margin-top: var(--space-6);">
       MIT licensed · 22-test suite covering autonomy, scan, orchestrator

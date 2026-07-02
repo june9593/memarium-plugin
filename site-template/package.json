@@ -1,9 +1,9 @@
 {
-  "name": "vibebook-site",
+  "name": "memarium-site",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Static site template for rendering a vibebook session-repo as a personal blog. Consumed by `vibebook serve` and `vibebook build-site` — not meant to be installed standalone.",
+  "description": "Static site template for rendering a memarium session-repo as a personal blog. Consumed by `memarium serve` and `memarium build-site` — not meant to be installed standalone.",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",

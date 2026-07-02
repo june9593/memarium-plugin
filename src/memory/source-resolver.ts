@@ -7,9 +7,9 @@ import type { MemoryEntry } from "./types.js";
 /**
  * Cross-device READ view over typed memory (P0b).
  *
- * `vibebook sync` (npm CLI) aggregates every device's memory into origin/main
+ * `memarium sync` (npm CLI) aggregates every device's memory into origin/main
  * (merge-books: union by id, latest updatedAt wins) and mounts a read-only
- * worktree of main at `~/.vibebook/aggregated/`. But the plugin's recall/primer
+ * worktree of main at `~/.memarium/aggregated/`. But the plugin's recall/primer
  * only ever read the LOCAL device repo, so the aggregated cross-device memory
  * was produced and never consumed (the Q2 gap). This resolver merges the local
  * index with the overlay index so recall on any device sees sibling-device
@@ -35,9 +35,9 @@ export interface MemoryView {
 }
 
 /** Where the npm CLI mounts the read-only origin/main overlay. The plugin only
- *  READS it; `vibebook sync` maintains it (`reset --hard origin/main`). */
+ *  READS it; `memarium sync` maintains it (`reset --hard origin/main`). */
 export function aggregatedOverlayPath(): string {
-  return join(homedir(), ".vibebook", "aggregated");
+  return join(homedir(), ".memarium", "aggregated");
 }
 
 /**
@@ -70,7 +70,7 @@ export function mergeIndexById(
 
 /**
  * Build the merged local+overlay memory view. Gracefully degrades to local-only
- * when the overlay is absent (plugin-only / self-contained users, or `vibebook
+ * when the overlay is absent (plugin-only / self-contained users, or `memarium
  * sync` not yet run). `overlayRoot` is injectable for tests; pass `null` to
  * force local-only.
  */

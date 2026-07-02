@@ -15,7 +15,7 @@ function isKind(s: string | undefined): QaKind | null {
   return s && ok.includes(s as QaKind) ? (s as QaKind) : null;
 }
 
-/** Read-only, index-only: reads .vibebook/index.qa.json, scores, emits ranked
+/** Read-only, index-only: reads .memarium/index.qa.json, scores, emits ranked
  *  metadata + path. Never opens the .md bodies (so no read guard needed). */
 export async function qaQueryCmd(opts: QaQueryOptions): Promise<void> {
   const cfg = readPluginConfig();

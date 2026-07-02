@@ -22,13 +22,13 @@ describe("firstRunCmd", () => {
     rmSync(fakeHome, { recursive: true, force: true });
   });
 
-  it("prints the nudge when npm vibebook is NOT on PATH and state is fresh", async () => {
-    process.env.PATH = "/usr/bin"; // a PATH dir that won't have a fake `vibebook`
+  it("prints the nudge when npm memarium is NOT on PATH and state is fresh", async () => {
+    process.env.PATH = "/usr/bin"; // a PATH dir that won't have a fake `memarium`
     await firstRunCmd();
     const allOutput = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
-    expect(allOutput).toContain("npm i -g vibebook");
+    expect(allOutput).toContain("npm i -g memarium");
     // State file was written with firstRunNudgeShown=true
-    const statePath = join(fakeHome, ".vibebook/.plugin-state.json");
+    const statePath = join(fakeHome, ".memarium/.plugin-state.json");
     expect(existsSync(statePath)).toBe(true);
     const state = JSON.parse(readFileSync(statePath, "utf8"));
     expect(state.firstRunNudgeShown).toBe(true);
@@ -42,17 +42,17 @@ describe("firstRunCmd", () => {
     expect(logSpy.mock.calls.length).toBe(0);
   });
 
-  it("does NOT print the nudge when npm vibebook is detected on PATH", async () => {
-    // Create a fake `vibebook` binary in a tmp dir and put it on PATH
+  it("does NOT print the nudge when npm memarium is detected on PATH", async () => {
+    // Create a fake `memarium` binary in a tmp dir and put it on PATH
     const binDir = mkdtempSync(join(tmpdir(), "vbp-bin-"));
-    const fakeBin = join(binDir, "vibebook");
+    const fakeBin = join(binDir, "memarium");
     writeFileSync(fakeBin, "#!/bin/sh\necho 0.5.0", { mode: 0o755 });
     process.env.PATH = `${binDir}:/usr/bin`;
     try {
       await firstRunCmd();
       expect(logSpy.mock.calls.length).toBe(0);
       // State still records that we've checked once (so we don't re-detect endlessly)
-      const statePath = join(fakeHome, ".vibebook/.plugin-state.json");
+      const statePath = join(fakeHome, ".memarium/.plugin-state.json");
       const state = JSON.parse(readFileSync(statePath, "utf8"));
       expect(state.firstRunNudgeShown).toBe(true);
     } finally {

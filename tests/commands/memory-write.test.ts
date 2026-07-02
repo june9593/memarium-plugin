@@ -10,10 +10,10 @@ describe("memoryWriteCmd", () => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-memw-"));
     vi.stubEnv("HOME", fakeHome);
     vi.resetModules();
-    repo = join(fakeHome, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    mkdirSync(join(fakeHome, ".vibebook"), { recursive: true });
-    writeFileSync(join(fakeHome, ".vibebook/config.json"), JSON.stringify({
+    repo = join(fakeHome, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(fakeHome, ".memarium"), { recursive: true });
+    writeFileSync(join(fakeHome, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
   });
@@ -42,7 +42,7 @@ describe("memoryWriteCmd", () => {
     expect(existsSync(mdPath)).toBe(true);
     expect(readFileSync(mdPath, "utf8")).toContain("title: Spool is single .md per session");
 
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     expect(idx.entries["semantic/edge-memvc/spool-format"].path)
       .toBe("memory/semantic/edge-memvc/spool-format.md");
   });
@@ -69,7 +69,7 @@ describe("memoryWriteCmd", () => {
     ]));
     await memoryWriteCmd({ inputPath: replace });
 
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     expect(idx.entries["semantic/p/old"].status).toBe("superseded");
     expect(idx.entries["semantic/p/new"].status).toBe("active");
   });
@@ -146,7 +146,7 @@ describe("memoryWriteCmd", () => {
   });
 
   it("rejects a non-gated entry that supersedes a gated id (bypass closed)", async () => {
-    const idxPath = join(repo, ".vibebook/index.memory.json");
+    const idxPath = join(repo, ".memarium/index.memory.json");
     writeFileSync(idxPath, JSON.stringify({ version: 1, entries: { "core/y": {
       id: "core/y", type: "core", scope: "global", project: null, title: "y", summary: "s",
       path: "memory/core/_global/y.md", status: "active", confidence: 1, importance: 5,

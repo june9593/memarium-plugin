@@ -1,4 +1,4 @@
-// @sync-from: github.com/june9593/vibebook → src/project-resolve.ts
+// @sync-from: github.com/june9593/memarium → src/project-resolve.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
 import { loadIndex } from "./index-store.js";

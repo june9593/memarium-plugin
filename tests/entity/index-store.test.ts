@@ -43,7 +43,7 @@ describe("entity index store", () => {
     expect(idx.entries["a"].title).toBe("second");
   });
 
-  it("ENTITY_INDEX_REL points into .vibebook/", () => {
-    expect(ENTITY_INDEX_REL).toBe(".vibebook/index.entity.json");
+  it("ENTITY_INDEX_REL points into .memarium/", () => {
+    expect(ENTITY_INDEX_REL).toBe(".memarium/index.entity.json");
   });
 });

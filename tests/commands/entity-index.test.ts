@@ -30,9 +30,9 @@ describe("entityIndexCmd (rebuild from md)", () => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-entidx-"));
     vi.stubEnv("HOME", fakeHome);
     vi.resetModules();
-    repo = join(fakeHome, ".vibebook/session-repo");
-    mkdirSync(join(fakeHome, ".vibebook"), { recursive: true });
-    writeFileSync(join(fakeHome, ".vibebook/config.json"), JSON.stringify({
+    repo = join(fakeHome, ".memarium/session-repo");
+    mkdirSync(join(fakeHome, ".memarium"), { recursive: true });
+    writeFileSync(join(fakeHome, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
 
@@ -53,7 +53,7 @@ describe("entityIndexCmd (rebuild from md)", () => {
     const report = await entityIndexCmd();
     expect(report.indexed).toBe(1);
 
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.entity.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.entity.json"), "utf8"));
     const e = idx.entries["entity/edge-memvc/spool-writer"];
     expect(e).toBeDefined();
     expect(e.title).toBe("SpoolWriter");
@@ -73,9 +73,9 @@ describe("entityIndexCmd (rebuild from md)", () => {
   it("indexed = 0 when memory/entities/ does not exist", async () => {
     // Fresh repo with no entities dir
     const fakeHome2 = mkdtempSync(join(tmpdir(), "vbp-entidx-empty-"));
-    const repo2 = join(fakeHome2, ".vibebook/session-repo");
-    mkdirSync(join(fakeHome2, ".vibebook"), { recursive: true });
-    writeFileSync(join(fakeHome2, ".vibebook/config.json"), JSON.stringify({
+    const repo2 = join(fakeHome2, ".memarium/session-repo");
+    mkdirSync(join(fakeHome2, ".memarium"), { recursive: true });
+    writeFileSync(join(fakeHome2, ".memarium/config.json"), JSON.stringify({
       repoPath: repo2, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
     // stub HOME to point to the new empty home
@@ -115,7 +115,7 @@ describe("entityIndexCmd (rebuild from md)", () => {
     const report = await entityIndexCmd();
     expect(report.indexed).toBe(2);
 
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.entity.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.entity.json"), "utf8"));
     expect(idx.entries["entity/edge-memvc/spool-writer"]).toBeDefined();
     expect(idx.entries["entity/_global/typescript"]).toBeDefined();
     expect(idx.entries["entity/_global/typescript"].project).toBeNull();

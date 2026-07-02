@@ -21,7 +21,7 @@ export interface CatalogRegenReport {
 
 /**
  * Regenerate every catalog file from the existing BookIndex on disk. The
- * global-mode `/vibebook` skill runs this once after subagent fan-out has
+ * global-mode `/memarium` skill runs this once after subagent fan-out has
  * published into each project — that way the project subagents never thrash
  * the catalog and we get one consistent regen + one commit at the end.
  *
@@ -67,10 +67,10 @@ export async function catalogRegenCmd(opts: CatalogRegenOptions): Promise<Catalo
   }
   // Stage the regen'd catalog + any healed orphan md (now first-class) + the
   // index file, so the reconciliation persists to the remote.
-  const staged = [...catalog.written, ...orphans.healed, ".vibebook/index.book.json"];
+  const staged = [...catalog.written, ...orphans.healed, ".memarium/index.book.json"];
   const r = await commitAndPush(
     git,
-    "vibebook: regen catalog",
+    "memarium: regen catalog",
     staged,
     cfg.deviceBranch,
     (stage) => console.log(chalk.gray(`  ${stage}`)),

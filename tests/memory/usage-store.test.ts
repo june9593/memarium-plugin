@@ -25,10 +25,10 @@ describe("usage-store", () => {
   });
   afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
 
-  it("usageDir lives under ~/.vibebook/usage/, OUTSIDE any session-repo", async () => {
+  it("usageDir lives under ~/.memarium/usage/, OUTSIDE any session-repo", async () => {
     const { usageDir } = await import("../../src/memory/usage-store.js");
     const dir = usageDir(repo);
-    expect(dir.startsWith(join(home, ".vibebook", "usage"))).toBe(true);
+    expect(dir.startsWith(join(home, ".memarium", "usage"))).toBe(true);
     expect(dir.includes("session-repo")).toBe(false);
   });
 
@@ -124,7 +124,7 @@ describe("usage-store", () => {
   it("refuses to write through a symlinked usage dir (guard)", async () => {
     const { bumpUsage, usageDir } = await import("../../src/memory/usage-store.js");
     const dir = usageDir(repo);
-    mkdirSync(join(home, ".vibebook", "usage"), { recursive: true });
+    mkdirSync(join(home, ".memarium", "usage"), { recursive: true });
     const elsewhere = join(home, "elsewhere");
     mkdirSync(elsewhere, { recursive: true });
     symlinkSync(elsewhere, dir); // <repoHash> dir is a symlink

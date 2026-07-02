@@ -9,11 +9,11 @@ const WHITELIST = [
   "raw_sessions",
   "book",
   "memory",
-  ".vibebook/index.json",
-  ".vibebook/index.book.json",
-  ".vibebook/index.memory.json",
-  ".vibebook/index.entity.json",
-  ".vibebook/index.qa.json",
+  ".memarium/index.json",
+  ".memarium/index.book.json",
+  ".memarium/index.memory.json",
+  ".memarium/index.entity.json",
+  ".memarium/index.qa.json",
 ];
 
 export interface FinalizeOptions { noPush?: boolean; }
@@ -44,7 +44,7 @@ export async function finalizeCmd(opts: FinalizeOptions = {}): Promise<FinalizeR
     } catch { /* unborn / detached — keep fallback */ }
 
     // Remote only if config has a URL AND an origin remote actually exists
-    // (npm `vibebook init` created it). finalize never configures a remote.
+    // (npm `memarium init` created it). finalize never configures a remote.
     let remote = !!cfg.repoUrl;
     if (remote) {
       try {
@@ -56,7 +56,7 @@ export async function finalizeCmd(opts: FinalizeOptions = {}): Promise<FinalizeR
     const r = await commitWhitelist(
       git,
       repoPath,
-      "vibebook: finalize digest (raw_sessions + book + memory)",
+      "memarium: finalize digest (raw_sessions + book + memory)",
       WHITELIST,
       { push: remote && !opts.noPush, branch },
       (s) => console.error(chalk.gray(`  ${s}`)),

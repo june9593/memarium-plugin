@@ -29,7 +29,7 @@ export interface ChronicleEntry {
   /** ISO date — first ever write. */
   createdAt: string;
   /** ISO date — last regen (chronicles are typically write-once but
-   *  /vibebook regenerate may overwrite later). */
+   *  /memarium regenerate may overwrite later). */
   updatedAt: string;
   /** Tags from frontmatter (lowercase, ≤5). */
   tags: string[];
@@ -108,7 +108,7 @@ interface BookIndexV1 {
 }
 
 /**
- * Load `.vibebook/index.book.json`. Migrates v1 → v2 in-place on disk if
+ * Load `.memarium/index.book.json`. Migrates v1 → v2 in-place on disk if
  * the file is still v1.
  *
  * v1 → v2 migration mapping:
@@ -170,7 +170,7 @@ function migrateV1ToV2(v1: BookIndexV1): BookIndexV2 {
       title: t.title,
       sessionIds: t.sessionIds,
       // v1 articlePath was book/<proj>/articles/<file>.md; we keep that path
-      // verbatim — `vibebook publish` won't touch it because v2 chronicles
+      // verbatim — `memarium publish` won't touch it because v2 chronicles
       // live under book/<proj>/chronicle/, so the old article files just
       // become orphaned data on disk. User can delete manually.
       path: t.articlePath,

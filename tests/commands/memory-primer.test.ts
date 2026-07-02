@@ -10,14 +10,14 @@ describe("memoryPrimerCmd", () => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-memp-"));
     vi.stubEnv("HOME", fakeHome);
     vi.resetModules();
-    repo = join(fakeHome, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    mkdirSync(join(fakeHome, ".vibebook"), { recursive: true });
-    writeFileSync(join(fakeHome, ".vibebook/config.json"), JSON.stringify({
+    repo = join(fakeHome, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(fakeHome, ".memarium"), { recursive: true });
+    writeFileSync(join(fakeHome, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
     // session index so cwd resolves to project "edge-memvc"
-    writeFileSync(join(repo, ".vibebook/index.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.json"), JSON.stringify({
       version: 1, entries: { "claude:s1": {
         sessionId: "s1", shortId: "s1", tool: "claude", project: "edge-memvc",
         projectRaw: "/work/edge-memvc", startedAt: "2026-01-01T00:00:00Z",
@@ -25,7 +25,7 @@ describe("memoryPrimerCmd", () => {
         relativePath: "raw_sessions/claude/edge-memvc/2026-01-01/x__s1.md",
         sourcePath: "/x.jsonl", sourceMtimeMs: 1, sourceSha256: "x" } },
     }));
-    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({
       version: 1, entries: {
         "core/g": { id: "core/g", type: "core", scope: "global", project: null,
           title: "never npm publish", summary: "Yue OTP", path: "memory/core/_global/g.md",
@@ -98,9 +98,9 @@ describe("memoryPrimerCmd", () => {
   });
 
   it("includes sibling-device memory from the aggregated overlay (P0b cross-device)", async () => {
-    // The npm CLI mounts origin/main at ~/.vibebook/aggregated; HOME is stubbed,
+    // The npm CLI mounts origin/main at ~/.memarium/aggregated; HOME is stubbed,
     // so write a sibling core memory into the overlay's memory index.
-    const ovl = join(fakeHome, ".vibebook", "aggregated", ".vibebook");
+    const ovl = join(fakeHome, ".memarium", "aggregated", ".memarium");
     mkdirSync(ovl, { recursive: true });
     writeFileSync(join(ovl, "index.memory.json"), JSON.stringify({
       version: 1, entries: {

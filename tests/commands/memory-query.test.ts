@@ -9,14 +9,14 @@ describe("memoryQueryCmd", () => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-memq-"));
     vi.stubEnv("HOME", fakeHome);
     vi.resetModules();
-    repo = join(fakeHome, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    mkdirSync(join(fakeHome, ".vibebook"), { recursive: true });
-    writeFileSync(join(fakeHome, ".vibebook/config.json"), JSON.stringify({
+    repo = join(fakeHome, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(fakeHome, ".memarium"), { recursive: true });
+    writeFileSync(join(fakeHome, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
     // session index so cwd resolves to project "edge-memvc"
-    writeFileSync(join(repo, ".vibebook/index.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.json"), JSON.stringify({
       version: 1, entries: { "claude:s1": {
         sessionId: "s1", shortId: "s1", tool: "claude", project: "edge-memvc",
         projectRaw: "/work/edge-memvc", startedAt: "2026-01-01T00:00:00Z",
@@ -24,7 +24,7 @@ describe("memoryQueryCmd", () => {
         relativePath: "raw_sessions/claude/edge-memvc/2026-01-01/x__s1.md",
         sourcePath: "/x.jsonl", sourceMtimeMs: 1, sourceSha256: "x" } },
     }));
-    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({
       version: 1, entries: {
         "core/g": { id: "core/g", type: "core", scope: "global", project: null,
           title: "never npm publish", summary: "Yue OTP", path: "memory/core/_global/g.md",
@@ -137,7 +137,7 @@ describe("memoryQueryCmd", () => {
 
   it("a query never mutates the synced index.memory.json", async () => {
     const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
-    const idxPath = join(repo, ".vibebook/index.memory.json");
+    const idxPath = join(repo, ".memarium/index.memory.json");
     const before = readFileSync(idxPath, "utf8");
     await memoryQueryCmd({ cwd: "/work/edge-memvc", q: "spool" }); // a real, bumping recall
     expect(readFileSync(idxPath, "utf8")).toBe(before); // byte-identical: usage lives in the local sidecar
@@ -156,7 +156,7 @@ describe("memoryQueryCmd", () => {
         validFrom: null, validTo: null, sourceSessions: [], sourceCommits: [], sourceFiles: [],
         supersedes: null, entities: ["widget"], originDevice: null, accessCount: 0, lastAccess: null };
     }
-    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({ version: 1, entries }));
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries }));
     await memoryQueryCmd({ cwd: "/work/edge-memvc", q: "widget" });
     const u = loadUsage(repo);
     expect(Object.keys(u).length).toBe(5);              // capped at 5
@@ -170,7 +170,7 @@ describe("memoryQueryCmd", () => {
       confidence: 0.9, importance: 3, createdAt: "2026-06-01", updatedAt: "2026-06-01", validFrom: null,
       validTo: null, sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
       entities: [], trust, originDevice: null, accessCount: 0, lastAccess: null });
-    writeFileSync(join(repo, ".vibebook/index.memory.json"), JSON.stringify({ version: 1, entries: {
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
       "semantic/edge-memvc/t": e("semantic/edge-memvc/t", "trusted"),
       "semantic/edge-memvc/u": e("semantic/edge-memvc/u", "untrusted"),
       "semantic/edge-memvc/k": e("semantic/edge-memvc/k", "unknown"),

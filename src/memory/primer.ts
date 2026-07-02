@@ -23,7 +23,7 @@ function eligible(entries: MemoryEntry[], type: MemoryType, project: string, now
     .filter((e) => e.scope === "global" || e.scope === "user" || e.project === project)
     // Trust gate (#23): only `trusted` semantic auto-injects into the primer.
     // untrusted/unknown semantic (possible prompt-injection from external content
-    // the digest read) is withheld — it surfaces only in explicit /vibebook-context,
+    // the digest read) is withheld — it surfaces only in explicit /memarium-context,
     // flagged. core/procedural are unaffected (the v4 review gate protects them).
     .filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted")
     .sort((a, b) =>
@@ -43,7 +43,7 @@ function section(title: string, all: MemoryEntry[], max: number): string {
   // Surface the truncated tail so the agent KNOWS it's seeing a partial view —
   // the silent `.slice()` was the failure mode the product exists to prevent (#19).
   const hidden = all.length - shown.length;
-  const footer = hidden > 0 ? `\n- _…and ${hidden} more (run \`/vibebook-context\`)_` : "";
+  const footer = hidden > 0 ? `\n- _…and ${hidden} more (run \`/memarium-context\`)_` : "";
   return `## ${title}\n\n${lines.join("\n")}${footer}\n`;
 }
 

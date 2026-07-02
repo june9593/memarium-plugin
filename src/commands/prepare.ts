@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadIndex } from "../_shared/index-store.js";
 import { loadBookIndexV2 } from "../digest/book-index-v2.js";
-import { extractSessionSignals, isVibebookMetaSession } from "../_shared/digest/session-signal.js";
+import { extractSessionSignals, isMemariumMetaSession } from "../_shared/digest/session-signal.js";
 import { isRealProjectPath } from "../_shared/digest/project-filter.js";
 import { projectSlugFromPath } from "../_shared/slug.js";
 import { resolveProjectFromCwdWithIndex } from "../_shared/project-resolve.js";
@@ -25,7 +25,7 @@ export interface PreparePayload {
     sessionsAlreadyChronicled: number;
     sessionsFilteredByProject: number;
     sessionsFilteredAsPseudoProject: number;
-    sessionsFilteredAsVibebookMeta: number;
+    sessionsFilteredAsMemariumMeta: number;
     newSessionsCount: number;
   };
 }
@@ -61,11 +61,11 @@ export interface PrepareOptions {
 
 /**
  * Build the JSON payload that the in-session Claude reads via the
- * `/vibebook` skill. Pure I/O over the user's already-synced raw_sessions.
+ * `/memarium` skill. Pure I/O over the user's already-synced raw_sessions.
  *
  * Algorithm:
- *   1. Load raw index (.vibebook/index.json) — every synced session.
- *   2. Load book index v2 (.vibebook/index.book.json) — every chronicle's
+ *   1. Load raw index (.memarium/index.json) — every synced session.
+ *   2. Load book index v2 (.memarium/index.book.json) — every chronicle's
  *      sessionIds, every existing topic + card slug.
  *   3. Build the set of "consumed" session ids (union of all chronicle
  *      sessionIds, including skipped ones — we don't want to re-evaluate
@@ -92,7 +92,7 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
     projectFilter = resolveProjectFromCwdWithIndex(opts.cwd, indexFile.entries);
     if (!projectFilter) {
       throw new Error(
-        `no synced sessions found for cwd '${opts.cwd}' (derived slug '${projectSlugFromPath(opts.cwd)}'). Run \`vibebook sync\` first or pass --project explicitly.`,
+        `no synced sessions found for cwd '${opts.cwd}' (derived slug '${projectSlugFromPath(opts.cwd)}'). Run \`memarium sync\` first or pass --project explicitly.`,
       );
     }
   }
@@ -109,7 +109,7 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
     sessionsAlreadyChronicled: 0,
     sessionsFilteredByProject: 0,
     sessionsFilteredAsPseudoProject: 0,
-    sessionsFilteredAsVibebookMeta: 0,
+    sessionsFilteredAsMemariumMeta: 0,
     newSessionsCount: 0,
   };
   const newSessions: PreparedSession[] = [];
@@ -135,11 +135,11 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
       continue;
     }
     const mdBody = readFileSync(mdAbs, "utf8");
-    if (isVibebookMetaSession(mdBody)) {
-      // User's own /vibebook invocation. Self-referential noise — exclude
+    if (isMemariumMetaSession(mdBody)) {
+      // User's own /memarium invocation. Self-referential noise — exclude
       // before the LLM ever sees it. (See SessionSignals docs for the
       // detection heuristics.)
-      meta.sessionsFilteredAsVibebookMeta++;
+      meta.sessionsFilteredAsMemariumMeta++;
       continue;
     }
     const signals = extractSessionSignals(mdBody);

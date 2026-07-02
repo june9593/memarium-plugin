@@ -1,8 +1,17 @@
 # Changelog
 
+## 0.13.0 — 2026-07-02
+
+**Project renamed: vibebook → memarium** ("mem" + "-arium" = a place where memory lives). This is a rename-only release — no behavior change. Paired with npm `memarium` 0.13.0.
+
+- **Skills renamed:** `/vibebook` → `/memarium`, `/vibebook-context` → `/memarium-context`, `/vibebook-recall` → `/memarium-recall` (the `skills/` dirs moved to match).
+- **Plugin/marketplace names** → `memarium` / `memarium-plugin`; bundled CLI → `bin/memarium-plugin.js`.
+- **Config/data dirs** move `~/.vibebook/` → `~/.memarium/` and in-repo `.vibebook/` → `.memarium/`, auto-migrated on first read (best-effort, idempotent). Legacy chain is `.memvc` → `.vibebook` → `.memarium`; borrowed-tenant plugin users (no npm CLI) migrate via `readPluginConfig`.
+- `@sync-from` mirror headers now point at `github.com/june9593/memarium`.
+
 ## 0.12.0 — 2026-07-01
 
-**Cross-device memory recall (P0b).** `vibebook sync` already aggregates every device's typed memory into `origin/main` (merge-books) and mounts a read-only worktree at `~/.vibebook/aggregated/`, but recall/primer only ever read the local device repo — so the aggregated cross-device memory was produced and never consumed (the "Q2 gap"). Now recall sees sibling-device memory:
+**Cross-device memory recall (P0b).** `memarium sync` already aggregates every device's typed memory into `origin/main` (merge-books) and mounts a read-only worktree at `~/.memarium/aggregated/`, but recall/primer only ever read the local device repo — so the aggregated cross-device memory was produced and never consumed (the "Q2 gap"). Now recall sees sibling-device memory:
 
 - **`src/memory/source-resolver.ts`** (new): `resolveMemoryView` merges the local + overlay memory indexes — union by id; latest `updatedAt` wins; equal timestamp prefers local (own-device authority, a read-view override, not CI parity). It's a *repo-indexed / non-proposal* view: status is NOT pre-filtered (superseded kept for the conflicts block); pending proposals live outside the repo so they're excluded for free; each entry is tagged with its source tree. Gracefully degrades to local-only when the overlay is absent/corrupt.
 - **`memory-query`** reads the merged view; **`memory-primer`** renders the SessionStart primer **live** from the merged view (no longer prefers the on-disk `_primer/<project>.md`, which is a per-device artifact merge-books doesn't aggregate). `memory-query` no longer persists `_primer` (it would be a stale, local-only snapshot).
@@ -12,7 +21,7 @@ Writes stay local-only; the "unreviewed memory doesn't propagate" invariant is u
 
 ## 0.11.0 — 2026-06-30
 
-**Project identity from the git remote (P0a) — lockstep with npm vibebook 0.11.0.** The project a session/memory belongs to was keyed on the cwd's last two path segments (`~/edge/memvc` → `edge-memvc`), so the same repo at a different path per device split into different projects and never aggregated. Identity is now the normalized git `origin` remote (`github.com-june9593-vibebook`), path-independent, with the path slug as fallback for non-git projects.
+**Project identity from the git remote (P0a) — lockstep with npm memarium 0.11.0.** The project a session/memory belongs to was keyed on the cwd's last two path segments (`~/edge/memvc` → `edge-memvc`), so the same repo at a different path per device split into different projects and never aggregated. Identity is now the normalized git `origin` remote (`github.com-june9593-memarium`), path-independent, with the path slug as fallback for non-git projects.
 
 - new `src/_shared/project-identity.ts` (mirror of npm canonical).
 - `_shared/project-resolve.ts` read chokepoint prefers the remote slug, path fallback.
@@ -36,7 +45,7 @@ Two-part fix:
 
 ## 0.10.0 — 2026-06-24
 
-**Removed: at-rest encryption (lockstep with npm `vibebook` 0.10.0).** The
+**Removed: at-rest encryption (lockstep with npm `memarium` 0.10.0).** The
 npm CLI dropped its opt-in git-crypt body-encryption layer (default-off
 since 0.8.2), so the plugin's `@sync-from` mirrors of those files are
 cleaned to match:
@@ -50,7 +59,7 @@ cleaned to match:
   `repoSaltAbs`.
 - **`src/spool/plugin-config.ts`** — `defaultPluginConfig()` no longer
   emits `encrypt` / `salt`.
-- **SKILL.md** — removed the `MEMVC1` / "run `vibebook crypt init`" digest
+- **SKILL.md** — removed the `MEMVC1` / "run `memarium crypt init`" digest
   warning (the working tree is always plaintext; there is no filter to
   miss).
 - Tidied stale "decrypt-on-demand" / "encryption happens via git filter"
@@ -97,12 +106,12 @@ ingests external content (web pages, external repos, files the agent read). A ne
 
 - The SessionStart primer auto-injects ONLY `trusted` semantic. `untrusted` /
   `unknown` semantic is withheld from the primer; it still writes and is searchable
-  via explicit `/vibebook-context`, surfaced flagged (`untrustedSemantic`, "⚠️ unverified").
+  via explicit `/memarium-context`, surfaced flagged (`untrustedSemantic`, "⚠️ unverified").
 - `core` / `procedural` are unaffected — the v4 review gate already protects them.
 - New writes that don't set `trust` default to `unknown` (never auto-promoted to trusted).
 - **Promoting** an existing entry up to `trusted` is gated → must go through
   `memory-propose` / `memory-approve` (a plain `memory-write` is rejected). Downgrades are free.
-- The scorer is untouched — `trust` affects primer injection + `/vibebook-context`
+- The scorer is untouched — `trust` affects primer injection + `/memarium-context`
   display only, not recall ranking (eval recall@5 unchanged at 0.96).
 
 **Compatibility:** legacy md without a `trust:` line is migrated mechanically on the
@@ -130,7 +139,7 @@ surfaced in queries or the primer, and `memory-write` rejects the type. Resolves
 ## 0.5.0 — 2026-06-10
 
 **Memory OS v2 — automatic project memory + a personal knowledge base.**
-v1 made typed memory exist behind a manual `/vibebook-context`. v2 closes the
+v1 made typed memory exist behind a manual `/memarium-context`. v2 closes the
 killer use case: project memory now loads **automatically** at session start,
 and sessions grow an **entity wiki**.
 
@@ -151,7 +160,7 @@ and sessions grow an **entity wiki**.
 
 - **New `memory/entities/<project|_global>/<slug>.md`** living pages — one per
   file / symbol / API / concept / person — that aggregate what's known about an
-  entity across sessions, with a committed `.vibebook/index.entity.json`.
+  entity across sessions, with a committed `.memarium/index.entity.json`.
 - This is a **derived layer, not a 7th memory type**: an entity page is a
   synthesis / reverse index (no lifecycle/supersede), distinct from the typed
   memory facts.
@@ -160,15 +169,15 @@ and sessions grow an **entity wiki**.
   reference the entity) — the raw material the digest agent uses to author a
   page. Path-safety guarded; own light scorer (not the memory BM25).
 - **Digest step P7.6** synthesizes/updates entity pages after typed-memory
-  distillation; `/vibebook-context` gains an **Entities** browse section.
+  distillation; `/memarium-context` gains an **Entities** browse section.
 
 > Cross-device aggregation of entity pages ships as a small `merge-books`
-> entity pass in the vibebook npm CLI.
+> entity pass in the memarium npm CLI.
 
 ## 0.3.0 — 2026-06-10
 
 **Typed memory layer — a new session starts already knowing the project.**
-vibebook now distills durable, typed memory from your sessions and loads it
+memarium now distills durable, typed memory from your sessions and loads it
 at the start of work, so an agent opening a fresh session in a project begins
 familiar with it (architecture, setup, gotchas, rules) instead of re-learning
 the codebase every task.
@@ -179,12 +188,12 @@ the codebase every task.
   `core` (never-forget rules), `semantic` (project facts/architecture),
   `procedural` (how-to + gotchas), `episodic` (lightweight chronicle pointers),
   `working`, `artifact`. Markdown is the source of truth; a committed
-  `.vibebook/index.memory.json` mirrors it for retrieval.
+  `.memarium/index.memory.json` mirrors it for retrieval.
 - **Three CLI subcommands**: `memory-write` (render md + update index +
   supersede), `memory-query` (resolve cwd→project, score, emit layered context
   + refresh the per-project primer), `memory-index` (rebuild the index from
   markdown — recovery path).
-- **`/vibebook-context` skill** — run at the start of work to load the
+- **`/memarium-context` skill** — run at the start of work to load the
   project's typed memory (Core / Procedures / Project facts / Episodes /
   Conflicts) plus a compact per-project primer.
 - **Per-project primer** (`memory/_primer/<project>.md`) — the carrier of
@@ -193,28 +202,28 @@ the codebase every task.
   plus scope, file/commit overlap, recency, importance, and prior-use signals,
   with a `whyRecalled` explanation per hit. No SQLite, no native deps.
 - **Digest distill step (P7.5)** — after publishing chronicles/topics,
-  `/vibebook` distills durable typed memory for the project.
+  `/memarium` distills durable typed memory for the project.
 
 ### Changed
 
-- **Decoupled from memex.** vibebook no longer hands off to memex; atomic
+- **Decoupled from memex.** memarium no longer hands off to memex; atomic
   insights are captured as `procedural`/`semantic` typed memory in P7.5.
 - **Robust plugin-binary discovery** — skills now locate the bundled binary
-  across any marketplace dir (`cache/*/vibebook/*`), so installs from the
-  `vibebook-plugin` marketplace resolve correctly.
+  across any marketplace dir (`cache/*/memarium/*`), so installs from the
+  `memarium-plugin` marketplace resolve correctly.
 
 > Cross-device aggregation of `memory/` (union by id, latest wins) ships in
-> the vibebook npm CLI 0.8.6 (`merge-books` + `sync` staging).
+> the memarium npm CLI 0.8.6 (`merge-books` + `sync` staging).
 
 ## 0.2.0 — 2026-05-23
 
-**Full sync of the spool extractor with vibebook (npm) 0.7.1.** Before
+**Full sync of the spool extractor with memarium (npm) 0.7.1.** Before
 this, plugin's standalone scan was stuck on 0.6.x extractor logic — so
-users with only the plugin installed (no npm `vibebook`) hit five
-classes of bugs that npm vibebook had already fixed. This release
+users with only the plugin installed (no npm `memarium`) hit five
+classes of bugs that npm memarium had already fixed. This release
 brings the plugin to parity.
 
-### Fixes inherited from npm vibebook
+### Fixes inherited from npm memarium
 
 - **Copilot `chatSessions/<id>.jsonl` chronological reconstruction**
   (npm 0.6.2). VS Code stores Copilot as a rolling-window state log;
@@ -250,7 +259,7 @@ brings the plugin to parity.
   .md directly. `prepare.ts`'s existing `.raw.json` → `.md` regex swap
   becomes a no-op (preserved for back-compat with old indices).
 
-### Files synced from `june9593/vibebook@v0.7.1`
+### Files synced from `june9593/memarium@v0.7.1`
 
 - `src/_shared/types.ts` — added `ContentBlock`, `SessionManifest`,
   `TocEntry`, `contentBlocks` field, `originSessionId` field
@@ -286,11 +295,11 @@ Pre-opensource documentation cleanup. No behavior changes.
 - **`.npmignore`**: added a comment explaining why it's `*` (this
   package is marketplace-only, never published to npm).
 - **Removed `bin/.gitkeep`**: leftover scaffolding from when bin/
-  was empty; obsolete since `bin/vibebook-plugin.js` is committed.
+  was empty; obsolete since `bin/memarium-plugin.js` is committed.
 
 ## 0.1.10 — 2026-05-13
 
-`vibebook-recall` skill description rewritten to defeat the
+`memarium-recall` skill description rewritten to defeat the
 "I'll just `git log --grep`" reflex AI falls into for retrospective
 questions like "之前是怎么解的". Real dogfood case (2026-05-13):
 user asked "fullscreen bookmark crash 之前是怎么解的", AI ran
@@ -298,7 +307,7 @@ user asked "fullscreen bookmark crash 之前是怎么解的", AI ran
 recall — finding commit messages but missing the chronicle's "what
 didn't work / why we picked X over Y" context.
 
-### Changed (`skills/vibebook-recall/SKILL.md` description)
+### Changed (`skills/memarium-recall/SKILL.md` description)
 
 - "Use this EVEN when you can grep" → "**Use this BEFORE
   `git log --grep`**" (specific reflex to override).
@@ -320,23 +329,23 @@ Rapid dogfood iteration shaking out the plugin's autonomy. Highlights,
 in landing order:
 
 - **0.1.1**: tolerant `readPluginConfig()` so plugin commands don't
-  require `~/.vibebook/config.json` to exist.
-- **0.1.2**: bundled `bin/vibebook-plugin.js` committed to git
+  require `~/.memarium/config.json` to exist.
+- **0.1.2**: bundled `bin/memarium-plugin.js` committed to git
   (marketplace install is `git clone` only — no `npm install`); rewrote
   `scan-and-import` to render `.md` + `.raw.json` and update
   `index.json` so downstream `prepare` actually finds sessions; added
   the autonomy gate test.
-- **0.1.3**: marketplace renamed `vibebook` → `vibebook-plugin` to
-  coexist cleanly with the npm `vibebook` repo's own marketplace
-  descriptor. Plugin name stays `vibebook` so user-facing slash
+- **0.1.3**: marketplace renamed `memarium` → `memarium-plugin` to
+  coexist cleanly with the npm `memarium` repo's own marketplace
+  descriptor. Plugin name stays `memarium` so user-facing slash
   commands are unchanged.
 - **0.1.4**: scan now walks both Claude Code AND VS Code Copilot Chat
   history (the 0.1.2 refactor accidentally dropped Copilot).
 - **0.1.5**: autonomy gate test extended to plant a Copilot fixture
   too, so 0.1.4-class regressions can't slip past tests.
 - **0.1.6**: SKILL.md text rewritten to drop npm-CLI-era assumptions
-  ("User has already run vibebook sync...") that were pushing the AI
-  to abort with "vibebook CLI not installed" before the plugin's own
+  ("User has already run memarium sync...") that were pushing the AI
+  to abort with "memarium CLI not installed" before the plugin's own
   `orchestrate` could even run.
 - **0.1.7**: `publish` and `catalog-regen` now emit JSON success
   summaries to stdout. AI was previously deducing success only by
@@ -347,7 +356,7 @@ in landing order:
   in-session Bash, just hooks. `orchestrate` JSON now includes
   `memexInstalled` so the skill doesn't have to spawn its own
   `command -v memex` (which AI generalized into also checking
-  `vibebook` on PATH and then bailing).
+  `memarium` on PATH and then bailing).
 - **0.1.9**: SKILL.md fan-out rewrite. Triggers on total source size
   (KB), not session count. Mandates putting all `Agent(...)` calls in
   ONE message for actual parallelism. Requires 3-minute progress
@@ -357,26 +366,26 @@ in landing order:
 
 ## 0.1.0 — 2026-05-12
 
-Initial release. Spun out from `vibebook` npm package
-([june9593/vibebook](https://github.com/june9593/vibebook)) so the
+Initial release. Spun out from `memarium` npm package
+([june9593/memarium](https://github.com/june9593/memarium)) so the
 plugin is independently installable from the Claude Code marketplace.
 
 ### What's in this release
 
-- `/vibebook` skill — project & global mode digest with memex hand-off
-- `/vibebook-recall` skill — three-stage progressive recall
+- `/memarium` skill — project & global mode digest with memex hand-off
+- `/memarium-recall` skill — three-stage progressive recall
 - Self-contained: scans `~/.claude/projects/` directly, no external CLI required
-- One-time first-run nudge mentions the optional `vibebook` npm CLI for cross-device sync
-- Stop hook reminder to run `/vibebook` after each session
+- One-time first-run nudge mentions the optional `memarium` npm CLI for cross-device sync
+- Stop hook reminder to run `/memarium` after each session
 
 ### Compatibility
 
-- `~/.vibebook/session-repo/` schema is the same one used by the
-  optional `vibebook` npm CLI — both can coexist on one machine and
+- `~/.memarium/session-repo/` schema is the same one used by the
+  optional `memarium` npm CLI — both can coexist on one machine and
   write to the same spool with sessionId-keyed entries.
 - The plugin itself does not require the npm CLI to be installed.
 
-### Notes for users with the `vibebook` npm CLI installed
+### Notes for users with the `memarium` npm CLI installed
 
 Existing data keeps working. The plugin and the npm CLI cooperate
 on the spool path: the plugin owns digest + recall; the npm CLI owns

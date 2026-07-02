@@ -1,4 +1,4 @@
-// @sync-from: github.com/june9593/vibebook → src/git-ops.ts
+// @sync-from: github.com/june9593/memarium → src/git-ops.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
 import { simpleGit, SimpleGit } from "simple-git";
@@ -191,7 +191,7 @@ export async function commitAndPush(
 /**
  * Bring the local device branch in sync with origin before we try to push,
  * so the GitHub Action's auto-commits don't cause non-fast-forward push
- * failures on the next `vibebook sync` / `digest` run.
+ * failures on the next `memarium sync` / `digest` run.
  *
  * Sequence:
  *   1. fetch origin
@@ -247,8 +247,8 @@ export async function fastForwardBranch(
 }
 
 /** Ensure localPath is a git repo WITHOUT requiring a remote. mkdir + git init
- *  if absent (self-contained mode — no `vibebook init` / clone needed). Does
- *  NOT configure a remote; an existing origin (from npm `vibebook init`) is
+ *  if absent (self-contained mode — no `memarium init` / clone needed). Does
+ *  NOT configure a remote; an existing origin (from npm `memarium init`) is
  *  left as-is. Sets a LOCAL fallback commit identity only when no git identity
  *  resolves (containers / fresh machines with no global config) so the first
  *  commit can't fail with "Author identity unknown"; an existing global/user
@@ -265,8 +265,8 @@ export async function ensureLocalRepo(localPath: string): Promise<{ git: SimpleG
       .then((s) => s.trim().length > 0)
       .catch(() => false);
     if (!hasIdentity) {
-      await g.addConfig("user.email", "vibebook@localhost");
-      await g.addConfig("user.name", "vibebook");
+      await g.addConfig("user.email", "memarium@localhost");
+      await g.addConfig("user.name", "memarium");
     }
     initialized = true;
   }

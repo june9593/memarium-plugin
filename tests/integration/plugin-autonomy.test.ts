@@ -8,15 +8,15 @@ import { prepareCmd } from "../../src/commands/prepare.js";
 
 /**
  * Autonomy invariant (spec patch 1, §1):
- *   A user with only the plugin (no npm vibebook on PATH, no ~/.vibebook/)
- *   must be able to run /vibebook end-to-end. This test plants jsonl
+ *   A user with only the plugin (no npm memarium on PATH, no ~/.memarium/)
+ *   must be able to run /memarium end-to-end. This test plants jsonl
  *   sessions, runs orchestrate → list-projects → prepare, and asserts each
  *   produces non-empty output.
  *
  * If this test starts failing, plugin autonomy is broken — likely a missing
  * writer step or a stale assumption about config.json existing.
  */
-describe("plugin autonomy (no npm CLI, no ~/.vibebook/ at start)", () => {
+describe("plugin autonomy (no npm CLI, no ~/.memarium/ at start)", () => {
   let fakeHome: string;
   let claudeProjectsDir: string;
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
@@ -25,7 +25,7 @@ describe("plugin autonomy (no npm CLI, no ~/.vibebook/ at start)", () => {
   beforeEach(() => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-aut-"));
     vi.stubEnv("HOME", fakeHome);
-    // Strip PATH so command -v vibebook in first-run cannot accidentally
+    // Strip PATH so command -v memarium in first-run cannot accidentally
     // detect a real npm CLI installation.
     vi.stubEnv("PATH", "/usr/bin:/bin");
     claudeProjectsDir = join(fakeHome, ".claude/projects");
@@ -56,8 +56,8 @@ describe("plugin autonomy (no npm CLI, no ~/.vibebook/ at start)", () => {
     writeFakeJsonl(join(claudeProjectsDir, "-Users-test-edge-src"), "ses-1", "/Users/test/edge/src");
     writeFakeJsonl(join(claudeProjectsDir, "-Users-test-edge-src"), "ses-2", "/Users/test/edge/src");
 
-    // Pre-conditions: no ~/.vibebook/ exists at all.
-    expect(existsSync(join(fakeHome, ".vibebook"))).toBe(false);
+    // Pre-conditions: no ~/.memarium/ exists at all.
+    expect(existsSync(join(fakeHome, ".memarium"))).toBe(false);
 
     // Step 1: orchestrate project mode.
     await orchestrateCmd({ mode: "project", cwd: "/Users/test/edge/src" });
@@ -67,12 +67,12 @@ describe("plugin autonomy (no npm CLI, no ~/.vibebook/ at start)", () => {
     expect(orchestrateOut.scan.imported).toBe(2);
 
     // Spool was created on demand.
-    expect(existsSync(join(fakeHome, ".vibebook/session-repo/raw_sessions"))).toBe(true);
-    expect(existsSync(join(fakeHome, ".vibebook/session-repo/book"))).toBe(true);
+    expect(existsSync(join(fakeHome, ".memarium/session-repo/raw_sessions"))).toBe(true);
+    expect(existsSync(join(fakeHome, ".memarium/session-repo/book"))).toBe(true);
     // index.json was written by plugin (this is the autonomy fix).
-    expect(existsSync(join(fakeHome, ".vibebook/session-repo/.vibebook/index.json"))).toBe(true);
+    expect(existsSync(join(fakeHome, ".memarium/session-repo/.memarium/index.json"))).toBe(true);
     // Plugin did NOT write config.json — that's npm CLI's territory.
-    expect(existsSync(join(fakeHome, ".vibebook/config.json"))).toBe(false);
+    expect(existsSync(join(fakeHome, ".memarium/config.json"))).toBe(false);
 
     // Reset stdout for next call.
     stdoutChunks = [];
@@ -142,14 +142,14 @@ describe("plugin autonomy (no npm CLI, no ~/.vibebook/ at start)", () => {
     expect(orchestrateOut.scan.imported).toBe(2);
 
     // Verify both ended up in the spool, under separate tool subdirs.
-    const claudeSpool = join(fakeHome, ".vibebook/session-repo/raw_sessions/claude");
-    const copilotSpool = join(fakeHome, ".vibebook/session-repo/raw_sessions/copilot");
+    const claudeSpool = join(fakeHome, ".memarium/session-repo/raw_sessions/claude");
+    const copilotSpool = join(fakeHome, ".memarium/session-repo/raw_sessions/copilot");
     expect(existsSync(claudeSpool)).toBe(true);
     expect(existsSync(copilotSpool)).toBe(true);
 
     // Verify the index has 2 entries with correct tool tags.
     const idx = JSON.parse(
-      readFileSync(join(fakeHome, ".vibebook/session-repo/.vibebook/index.json"), "utf8"),
+      readFileSync(join(fakeHome, ".memarium/session-repo/.memarium/index.json"), "utf8"),
     );
     const tools = (Object.values(idx.entries) as Array<{ tool: string }>).map((e) => e.tool).sort();
     expect(tools).toEqual(["claude", "copilot"]);

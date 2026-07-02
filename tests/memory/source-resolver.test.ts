@@ -71,7 +71,7 @@ describe("resolveMemoryView", () => {
     vi.stubEnv("HOME", home);
     repo = join(home, "session-repo");
     overlay = join(home, "aggregated");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
   });
   afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
 
@@ -85,7 +85,7 @@ describe("resolveMemoryView", () => {
 
   it("merges local + overlay; sibling-only entries become visible", () => {
     saveMemoryIndex(repo, idx(mem({ id: "core/own" })));
-    mkdirSync(join(overlay, ".vibebook"), { recursive: true });
+    mkdirSync(join(overlay, ".memarium"), { recursive: true });
     saveMemoryIndex(overlay, idx(mem({ id: "core/own" }), mem({ id: "semantic/p/sibling" })));
     const v = resolveMemoryView(repo, overlay);
     expect(v.overlayPresent).toBe(true);
@@ -104,8 +104,8 @@ describe("resolveMemoryView", () => {
 
   it("corrupt overlay index degrades to local-only entries (no throw)", () => {
     saveMemoryIndex(repo, idx(mem({ id: "core/own" })));
-    mkdirSync(join(overlay, ".vibebook"), { recursive: true });
-    writeFileSync(join(overlay, ".vibebook", "index.memory.json"), "{ not json");
+    mkdirSync(join(overlay, ".memarium"), { recursive: true });
+    writeFileSync(join(overlay, ".memarium", "index.memory.json"), "{ not json");
     const v = resolveMemoryView(repo, overlay);
     // file exists → overlayPresent true, but loadMemoryIndex returns empty on parse error
     expect(v.overlayPresent).toBe(true);

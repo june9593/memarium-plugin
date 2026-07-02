@@ -1,13 +1,36 @@
-// @sync-from: github.com/june9593/vibebook → src/config.ts
+// @sync-from: github.com/june9593/memarium → src/config.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 
-const CONFIG_DIR = join(homedir(), ".vibebook");
-const CONFIG_PATH = join(CONFIG_DIR, "config.json");
+// Resolved lazily (not module-level consts) so they always reflect the current
+// HOME — important for tests that stub HOME, and correct for a CLI in general.
+function configDir(): string { return join(homedir(), ".memarium"); }
+function configPath(): string { return join(configDir(), "config.json"); }
+
+/** One-shot: move the whole config dir from the old `~/.vibebook/` (project's
+ *  pre-rename name) to `~/.memarium/` if the old one exists and the new one
+ *  doesn't. Idempotent, best-effort. Covers config.json, session-repo/,
+ *  aggregated/, usage/, local-proposals/ in one move, then rewrites the
+ *  absolute `~/.vibebook/` paths stored inside config.json. Runs before reads. */
+export function migrateLegacyConfigDir(): void {
+  const legacy = join(homedir(), ".vibebook");
+  const dir = configDir();
+  if (existsSync(dir) || !existsSync(legacy)) return;
+  try {
+    renameSync(legacy, dir);
+    // Fix stored absolute paths (repoPath etc.) that pointed into ~/.vibebook.
+    const p = configPath();
+    if (existsSync(p)) {
+      const raw = readFileSync(p, "utf8");
+      const fixed = raw.split(legacy).join(dir);
+      if (fixed !== raw) writeFileSync(p, fixed);
+    }
+  } catch { /* best-effort */ }
+}
 
 /** Default cap on concurrent runner calls during the threading phase.
  *  claude-cli can comfortably handle 4 (each spawn is its own subprocess
@@ -39,14 +62,15 @@ const Schema = z.object({
 });
 export type Config = z.infer<typeof Schema>;
 
-export function configExists(): boolean { return existsSync(CONFIG_PATH); }
+export function configExists(): boolean { migrateLegacyConfigDir(); return existsSync(configPath()); }
 
 export function readConfig(): Config {
-  if (!existsSync(CONFIG_PATH)) throw new Error("vibebook not initialized. Run `vibebook init <repoUrl>`.");
-  return Schema.parse(JSON.parse(readFileSync(CONFIG_PATH, "utf8")));
+  migrateLegacyConfigDir();
+  if (!existsSync(configPath())) throw new Error("memarium not initialized. Run `memarium init <repoUrl>`.");
+  return Schema.parse(JSON.parse(readFileSync(configPath(), "utf8")));
 }
 
 export function writeConfig(cfg: Config): void {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2) + "\n");
+  mkdirSync(configDir(), { recursive: true });
+  writeFileSync(configPath(), JSON.stringify(cfg, null, 2) + "\n");
 }

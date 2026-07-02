@@ -1,6 +1,6 @@
 // Plugin "borrowed-tenant" invariant enforcement:
-//   - We MAY create raw_sessions/ and book/ inside ~/.vibebook/session-repo/
-//   - We MAY NOT create or modify .git/ or .vibebook/index.* (sync CLI owns those)
+//   - We MAY create raw_sessions/ and book/ inside ~/.memarium/session-repo/
+//   - We MAY NOT create or modify .git/ or .memarium/index.* (sync CLI owns those)
 //   - On a sync-managed spool we coexist; on a plugin-only machine we operate
 //     against a plain directory that just happens to live under that path.
 
@@ -8,7 +8,7 @@ import { mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export const SPOOL_REL_PATH = ".vibebook/session-repo";
+export const SPOOL_REL_PATH = ".memarium/session-repo";
 
 export interface EnsureResult {
   spoolRoot: string;
@@ -27,7 +27,7 @@ export function ensureSpoolDir(): EnsureResult {
 
   mkdirSync(rawSessionsDir, { recursive: true });
   mkdirSync(bookDir, { recursive: true });
-  // Note: we deliberately do NOT mkdir .git or .vibebook here. If sync CLI
+  // Note: we deliberately do NOT mkdir .git or .memarium here. If sync CLI
   // is installed and has run init, those already exist. If not, they stay
   // absent and that is correct.
 

@@ -1,10 +1,11 @@
-// @sync-from: github.com/june9593/vibebook → src/repo-data-dir.ts
+// @sync-from: github.com/june9593/memarium → src/repo-data-dir.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
 /**
- * In-repo data directory used by vibebook to store its index and book
- * index. Historically this was `.memvc/` (project's old name); a one-shot
- * migration in `migrateLegacyDataDir` renames legacy `.memvc/` → `.vibebook/`
+ * In-repo data directory used by memarium to store its index and book
+ * index. The project has been renamed twice: `.memvc/` → `.vibebook/` →
+ * `.memarium/`. A one-shot migration in `migrateLegacyDataDir` renames the
+ * newest legacy dir it finds (`.vibebook/`, else `.memvc/`) → `.memarium/`
  * on first sync/digest run.
  *
  * Use these helpers (not raw string literals) anywhere a path inside this
@@ -12,8 +13,9 @@
  */
 import { join } from "node:path";
 
-export const REPO_DATA_DIR = ".vibebook";
-export const LEGACY_REPO_DATA_DIR = ".memvc";
+export const REPO_DATA_DIR = ".memarium";
+/** Legacy in-repo data dirs to migrate FROM, newest first. */
+export const LEGACY_REPO_DATA_DIRS = [".vibebook", ".memvc"] as const;
 
 export const INDEX_REL = `${REPO_DATA_DIR}/index.json`;
 export const BOOK_INDEX_REL = `${REPO_DATA_DIR}/index.book.json`;

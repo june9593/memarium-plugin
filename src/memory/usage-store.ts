@@ -10,8 +10,8 @@ import type { MemoryEntry } from "./types.js";
 export interface UsageRecord { count: number; lastAccess: string }
 export type UsageMap = Record<string, UsageRecord>;
 
-function vibebookHome(): string {
-  return join(homedir(), ".vibebook");
+function memariumHome(): string {
+  return join(homedir(), ".memarium");
 }
 
 /** Device-local usage dir, OUTSIDE the git repo so accessCount never syncs,
@@ -20,18 +20,18 @@ function vibebookHome(): string {
  *  device can't collide. */
 export function usageDir(repoPath: string): string {
   const repoHash = createHash("sha256").update(resolve(repoPath)).digest("hex").slice(0, 12);
-  return join(vibebookHome(), "usage", repoHash);
+  return join(memariumHome(), "usage", repoHash);
 }
 
 function usageFile(repoPath: string): string {
   return join(usageDir(repoPath), "access.json");
 }
 
-/** Refuse to operate if any component under `~/.vibebook` is a symlink, so the
+/** Refuse to operate if any component under `~/.memarium` is a symlink, so the
  *  sidecar can't be redirected to write elsewhere. (We don't guard
- *  `~/.vibebook` itself — a user may legitimately symlink their vibebook home.) */
+ *  `~/.memarium` itself — a user may legitimately symlink their memarium home.) */
 function guardUsagePath(targetAbs: string): void {
-  assertNoSymlinkedComponent(vibebookHome(), targetAbs, "usage-store");
+  assertNoSymlinkedComponent(memariumHome(), targetAbs, "usage-store");
 }
 
 /** Corrupt-safe load: a missing OR malformed sidecar yields an empty map and

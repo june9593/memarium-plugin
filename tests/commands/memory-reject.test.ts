@@ -9,10 +9,10 @@ describe("memoryRejectCmd", () => {
     home = mkdtempSync(join(tmpdir(), "vbp-rej-"));
     vi.stubEnv("HOME", home);
     vi.resetModules();
-    repo = join(home, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    mkdirSync(join(home, ".vibebook"), { recursive: true });
-    writeFileSync(join(home, ".vibebook/config.json"), JSON.stringify({
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(home, ".memarium"), { recursive: true });
+    writeFileSync(join(home, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
   });

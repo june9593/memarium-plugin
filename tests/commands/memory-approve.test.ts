@@ -9,10 +9,10 @@ describe("memoryApproveCmd", () => {
     home = mkdtempSync(join(tmpdir(), "vbp-appr-"));
     vi.stubEnv("HOME", home);
     vi.resetModules();
-    repo = join(home, ".vibebook/session-repo");
-    mkdirSync(join(repo, ".vibebook"), { recursive: true });
-    mkdirSync(join(home, ".vibebook"), { recursive: true });
-    writeFileSync(join(home, ".vibebook/config.json"), JSON.stringify({
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(home, ".memarium"), { recursive: true });
+    writeFileSync(join(home, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
   });
@@ -46,7 +46,7 @@ describe("memoryApproveCmd", () => {
     const r = await memoryApproveCmd({ id: "core/y" });
     expect(r.applied).toBe(1);
     expect(existsSync(join(repo, "memory/core/_global/y.md"))).toBe(true);
-    const idx = JSON.parse(readFileSync(join(repo, ".vibebook/index.memory.json"), "utf8"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     expect(idx.entries["core/y"].title).toBe("T");
     const { listProposals } = await import("../../src/memory/proposal-store.js");
     expect(listProposals(repo).length).toBe(0);
