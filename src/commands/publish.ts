@@ -142,15 +142,16 @@ export async function publishCmd(opts: PublishOptions): Promise<PublishReport> {
   }
 
   if (opts.cardsPath) {
-    // Deprecated since v0.4: memarium no longer writes its own atomic
-    // cards — that workflow belongs to memex (`/memex-retro` skill).
-    // We still accept --cards for backward compatibility (an old skill
-    // version on disk could still pass this flag), but warn the user.
+    // Deprecated: memarium doesn't write its own atomic cards. Reusable
+    // insight capture is the TYPED MEMORY layer (memory-write / memory-propose),
+    // and the in-session `/memarium-retro` skill captures it live. We still
+    // accept --cards for backward compatibility (an old skill version on disk
+    // could still pass this flag), but warn the user.
     console.error(chalk.yellow(
-      `! --cards is deprecated as of memarium 0.4 — atomic cards now belong to memex.\n` +
-      `  Install memex (npm install -g @touchskyer/memex) and use /memex-retro after\n` +
-      `  the chronicle/topic publish. The cards in your input file will still be written\n` +
-      `  this run for backward compat, but new runs of /memarium won't generate cards.`,
+      `! --cards is deprecated — memarium captures reusable insight as typed memory,\n` +
+      `  not atomic cards. Use the \`/memarium-retro\` skill (in-session) or the memory\n` +
+      `  step of \`/memarium\`. The cards in your input file will still be written this\n` +
+      `  run for backward compat, but new runs won't generate cards.`,
     ));
     const inputs = readJsonInput<CardInput[]>(opts.cardsPath, "cards");
     for (const c of inputs) {

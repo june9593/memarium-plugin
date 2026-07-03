@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.14.0 — 2026-07-03
+
+### Native proactive in-session memory capture + recall (drop the memex dependency)
+
+memarium now does natively what it previously nudged users toward memex for —
+proactively capturing what you learned, in-session, and prompting recall before
+work — using its own typed-memory layer + review gate.
+
+- **New `/memarium-retro` skill** (+ `commands/memarium-retro.md`): the
+  lightweight, in-session counterpart to the batch `/memarium` digest. At task
+  end it distills the ONE reusable insight from the current session, runs a
+  fact-hygiene check (WHO / WHAT-WHEN / RELATIONSHIP), dedups via `memory-query`,
+  and writes it — `memory-write` for `semantic`/`episodic`, `memory-propose`
+  (the v4 review gate) for `core`/`procedural`/pinned/supersede. Coexists with
+  the batch digest by dedup.
+- **Stop hook (`session-end.sh`)** now nudges `/memarium-retro` at turn end
+  ("if you did non-trivial work, capture the insight NOW") instead of only
+  suggesting the batch digest.
+- **SessionStart hook (`session-start.sh`)** adds a recall nudge after the
+  primer — invoke `/memarium-recall` before re-reading code / `git log`.
+- **Dropped the memex integration**: `recall.ts` no longer folds memex cards
+  (`kind: "memex-card"`, `memex read index`), `orchestrator.ts` drops the
+  `memexInstalled` probe, `publish.ts`'s `--cards` deprecation now points at
+  typed memory / `/memarium-retro`, and the skill docs no longer reference
+  memex cards. `~/.memex/` and the `memex` CLI are no longer consulted.
+
+440 tests; tsc clean.
+
 ## 0.13.1 — 2026-07-02
 
 **Fix: config-dir migration broke the aggregated worktree (mirror of npm memarium fix).** `migrateLegacyConfigDir` (added in 0.13.0) bulk-renames `~/.vibebook/` → `~/.memarium/`, but the read-only `aggregated/` git worktree stores its link to `session-repo` as an **absolute** path, so the move staled it. On a dual-install machine where the plugin's SessionStart hook runs the migration before `memarium sync`, cross-device recall silently degraded (the overlay's `.git` file still exists but dangles, and `refreshAggregatedWorktree` only rebuilds when it's *absent*). Fix: after the move, `git worktree repair` the aggregated worktree (keeps `_shared/config.ts` in sync with npm canonical). +4 tests.

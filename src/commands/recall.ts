@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadBookIndexV2 } from "../digest/book-index-v2.js";
@@ -22,32 +21,23 @@ import { projectSlugFromPath } from "../_shared/slug.js";
  *
  * Stage 3: the agent uses the `Read` tool directly on a chronicle's
  * absolute path. No extra recall command needed.
- *
- * Memex integration (optional): when `memex` is on PATH, the stage-1
- * output additionally folds in memex categories from `memex read index`
- * so the agent sees the full atomic-card landscape too. Memex cards
- * are surfaced as `kind: "memex-card"` entries with `path: "memex:<slug>"`
- * so the agent knows to read them via `memex read <slug>`.
  */
 
 export interface RecallEntry {
-  /** topic | chronicle | memex-card.
-   *  In stage 1 (default), only `topic` and `memex-card` entries appear.
-   *  In stage 2 (--topic), `chronicle` entries appear with frontmatter. */
-  kind: "topic" | "chronicle" | "memex-card";
-  /** Project slug ("_memex" for memex-card entries). */
+  /** topic | chronicle.
+   *  In stage 1 (default) only `topic` entries appear; in stage 2 (--topic)
+   *  `chronicle` entries appear with frontmatter. */
+  kind: "topic" | "chronicle";
+  /** Project slug. */
   project: string;
   /** Display title (frontmatter title → first `# heading` → slug). */
   title: string;
   /** Short summary — for topics: 1 sentence from the topic body.
-   *  For chronicles: a synthesized line from frontmatter facts.
-   *  For memex-card: the line memex's own index gave us. */
+   *  For chronicles: a synthesized line from frontmatter facts. */
   summary: string;
-  /** Absolute path the agent should pass to `Read`.
-   *  For memex-card entries this is `memex:<slug>` — agent runs
-   *  `memex read <slug>` instead of using the Read tool. */
+  /** Absolute path the agent should pass to `Read`. */
   path: string;
-  /** Stable id within its kind: topicSlug / threadId / cardSlug. */
+  /** Stable id within its kind: topicSlug / threadId. */
   slug: string;
   /** Frontmatter facts that the agent triages on (chronicles only).
    *  Only populated in stage 2. */
@@ -84,9 +74,7 @@ export interface RecallPayload {
   meta: {
     topics: number;
     chronicles: number;
-    memexCards?: number;
     cwdUnresolved?: boolean;
-    memexQueried?: boolean;
     /** Hint shown by the recall skill when the agent should drill
      *  into a topic next. */
     nextStep?: string;
@@ -102,8 +90,6 @@ export interface RecallOptions {
   /** Catalog every project (no filter). Use sparingly — at scale this
    *  blows past the 30 KB stage-1 budget. */
   all?: boolean;
-  /** Skip the memex source even if memex is available. */
-  noMemex?: boolean;
 }
 
 export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
@@ -121,11 +107,11 @@ export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
 
   // Stage 2 — chronicle list for one topic.
   if (opts.topic) {
-    return buildStage2(cfg.repoPath, bookIndex, projectFilter, opts.topic, opts.noMemex !== true && !cwdUnresolved);
+    return buildStage2(cfg.repoPath, bookIndex, projectFilter, opts.topic);
   }
 
-  // Stage 1 — topic list (+ optional memex).
-  return buildStage1(cfg.repoPath, bookIndex, projectFilter, cwdUnresolved, opts.noMemex !== true);
+  // Stage 1 — topic list.
+  return buildStage1(cfg.repoPath, bookIndex, projectFilter, cwdUnresolved);
 }
 
 // ---------- stage 1: topic list ----------
@@ -135,7 +121,6 @@ function buildStage1(
   bookIndex: ReturnType<typeof loadBookIndexV2>,
   projectFilter: string | null,
   cwdUnresolved: boolean,
-  queryMemex: boolean,
 ): RecallPayload {
   const entries: RecallEntry[] = [];
 
@@ -155,27 +140,10 @@ function buildStage1(
     });
   }
 
-  let memexQueried = false;
-  if (queryMemex) {
-    const memexEntries = loadMemexCatalog();
-    if (memexEntries !== null) {
-      memexQueried = true;
-      entries.push(...memexEntries);
-    }
-  }
+  // Topics newest first.
+  entries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 
-  // Sort: memex-cards first (zero-cost recall when an agent already knows
-  // the gotcha exists), then topics (newest first).
-  const kindOrder: Record<RecallEntry["kind"], number> = {
-    "memex-card": 0, topic: 1, chronicle: 2,
-  };
-  entries.sort((a, b) => {
-    if (a.kind !== b.kind) return kindOrder[a.kind] - kindOrder[b.kind];
-    return a.updatedAt < b.updatedAt ? 1 : -1;
-  });
-
-  const topicCount = entries.filter((e) => e.kind === "topic").length;
-  const memexCount = entries.filter((e) => e.kind === "memex-card").length;
+  const topicCount = entries.length;
   return {
     stage: "stage-1-topics",
     project: projectFilter,
@@ -185,7 +153,6 @@ function buildStage1(
     meta: {
       topics: topicCount,
       chronicles: 0,
-      ...(memexQueried ? { memexQueried, memexCards: memexCount } : {}),
       ...(cwdUnresolved ? { cwdUnresolved: true } : {}),
       nextStep: topicCount > 0
         ? `Pick a relevant topic, then run: \${CLAUDE_PLUGIN_ROOT}/bin/memarium-plugin.js recall --project <slug> --topic <topicSlug>`
@@ -201,7 +168,6 @@ function buildStage2(
   bookIndex: ReturnType<typeof loadBookIndexV2>,
   projectFilter: string | null,
   topicSlug: string,
-  queryMemex: boolean,
 ): RecallPayload {
   const entries: RecallEntry[] = [];
 
@@ -232,30 +198,8 @@ function buildStage2(
     }
   }
 
-  let memexQueried = false;
-  if (queryMemex) {
-    const memexEntries = loadMemexCatalog();
-    if (memexEntries !== null) {
-      memexQueried = true;
-      // In stage 2 we still surface memex cards because they may be the
-      // most relevant atomic insight for the topic at hand. Filter to
-      // those whose category matches the topic loosely; if no match,
-      // surface all (don't drop info just to keep payload small).
-      const filtered = memexEntries.filter((m) =>
-        m.tags.some((tag) => tag.toLowerCase().includes(topicSlug.toLowerCase())),
-      );
-      entries.push(...(filtered.length > 0 ? filtered : memexEntries));
-    }
-  }
-
-  // Sort chronicles newest first; keep memex cards separate at top.
-  const kindOrder: Record<RecallEntry["kind"], number> = {
-    "memex-card": 0, chronicle: 1, topic: 2,
-  };
-  entries.sort((a, b) => {
-    if (a.kind !== b.kind) return kindOrder[a.kind] - kindOrder[b.kind];
-    return a.updatedAt < b.updatedAt ? 1 : -1;
-  });
+  // Chronicles newest first.
+  entries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 
   return {
     stage: "stage-2-articles",
@@ -266,8 +210,7 @@ function buildStage2(
     meta: {
       topics: 0,
       chronicles: entries.filter((e) => e.kind === "chronicle").length,
-      ...(memexQueried ? { memexQueried, memexCards: entries.filter((e) => e.kind === "memex-card").length } : {}),
-      nextStep: "Read full bodies via the Read tool on entry.path. For memex cards: `memex read <slug>`.",
+      nextStep: "Read full bodies via the Read tool on entry.path.",
     },
   };
 }
@@ -379,18 +322,6 @@ function summarizeFrontmatter(fm: ChronicleFrontmatter): string {
   return bits.join(" · ") || "(no AI-first frontmatter — legacy chronicle)";
 }
 
-function typeFromSlug(slug: string): "gotcha" | "pattern" | "decision" | "howto" | "tool" | "other" {
-  const m = slug.match(/^(gotcha|pattern|decision|howto|tool)-/);
-  if (m) return m[1] as "gotcha" | "pattern" | "decision" | "howto" | "tool";
-  return "other";
-}
-
-function prettifySlug(slug: string): string {
-  const stripped = slug.replace(/^(gotcha|pattern|decision|howto|tool)-/, "");
-  const spaced = stripped.replace(/-/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
-
 /** CLI entry: print payload as JSON to stdout. */
 export async function recallCmd(opts: RecallOptions): Promise<void> {
   const payload = buildRecallPayload(opts);
@@ -398,46 +329,3 @@ export async function recallCmd(opts: RecallOptions): Promise<void> {
 }
 
 void projectSlugFromPath;
-void typeFromSlug;  // exported through parseMemexIndex via memex-card type
-
-// ---------- memex source ----------
-
-function loadMemexCatalog(): RecallEntry[] | null {
-  const r = spawnSync("memex", ["read", "index"], {
-    encoding: "utf8",
-    timeout: 2000,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  if (r.error || r.status !== 0) return null;
-  return parseMemexIndex(r.stdout);
-}
-
-export function parseMemexIndex(md: string): RecallEntry[] {
-  const out: RecallEntry[] = [];
-  const today = new Date().toISOString().slice(0, 10);
-  let category = "_memex";
-  for (const raw of md.split("\n")) {
-    const line = raw.trim();
-    const catMatch = line.match(/^##\s+(.+?)\s*$/);
-    if (catMatch) {
-      category = catMatch[1].trim();
-      continue;
-    }
-    const linkMatch = line.match(/^[-*]\s+\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\](?:\s*[—\-:]\s*(.+))?\s*$/);
-    if (!linkMatch) continue;
-    const slug = linkMatch[1].trim();
-    const altText = linkMatch[2]?.trim();
-    const summary = (linkMatch[3] ?? "").trim();
-    out.push({
-      kind: "memex-card",
-      project: "_memex",
-      title: altText || prettifySlug(slug),
-      summary,
-      path: `memex:${slug}`,
-      slug,
-      updatedAt: today,
-      tags: category && category !== "_memex" ? [category] : [],
-    });
-  }
-  return out;
-}

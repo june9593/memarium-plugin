@@ -20,7 +20,7 @@ keyConcepts: [             # one-word/short-phrase tags an agent can match again
   bookmark-bar,
   fullscreen-state-machine
 ]
-relatedCards: [memex:gotcha-immersive-mode-controller-mac-uaf, ...]
+relatedChronicles: [chronicle/fix-fullscreen-bookmark-bar, ...]
 ---
 
 # <title>
@@ -39,9 +39,9 @@ read the chronicles".
 - 2026-03-15 [[chronicle/immersive-mode-rewrite]] — V1→V2 rewrite
 
 ## Active gotchas
-Reference relevant memex cards (or memarium chronicles if no card exists):
-- [[memex:gotcha-immersive-mode-controller-mac-uaf]] — popup destroy order
-- [[memex:pattern-msa-aad-pref-helper]]
+Reference the chronicles / typed-memory that captured them:
+- [[chronicle/immersive-mode-controller-mac-uaf]] — popup destroy order
+- procedural memory: `procedural/<project>/msa-aad-pref-helper`
 ```
 
 Rules:
@@ -61,5 +61,4 @@ Rules:
   topics without loading every chronicle. Keep them in sync.
 - Use the same language as the source content for the body. Section
   headings stay in English for cross-project consistency.
-- Wikilinks: `[[chronicle/<threadId>]]` (memarium), `[[memex:<slug>]]`
-  (memex card, left as text — agents know to `memex read <slug>`).
+- Wikilinks: `[[chronicle/<threadId>]]` to cross-link related chronicles.

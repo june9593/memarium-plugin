@@ -14,7 +14,9 @@ VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"
 if [ -x "$VBP" ]; then
   PRIMER=$("$VBP" memory-primer --cwd "$(pwd)" 2>/dev/null || true)
   if [ -n "$PRIMER" ]; then
-    printf '## 📓 Project memory (memarium)\n\n%s\n\n> Run `/memarium-context` for deeper recall (episodes / conflicts / entities).\n' "$PRIMER"
+    printf '## 📓 Project memory (memarium)\n\n%s\n' "$PRIMER"
+    printf '\n### Recall before you dig in\n'
+    printf 'When the task touches a topic above — or asks how something was solved/decided before — invoke `/memarium-recall` FIRST (it surfaces the chronicle/decision/dead-end context that `git log` strips), before re-reading code or grepping history. For deeper context (episodes / conflicts / entities): `/memarium-context`.\n'
   fi
 fi
 exit 0

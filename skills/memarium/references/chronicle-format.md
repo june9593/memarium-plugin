@@ -113,6 +113,4 @@ aware of before extending the work.
 - **Don't hallucinate.** `status: blocked` + a `blockers` entry beats
   an overstated "Outcome" line. If something didn't land, the
   `status` field already says so.
-- Wikilinks: `[[chronicle/<threadId>]]` (memarium) or
-  `[[memex:<cardSlug>]]` (memex card, left as text — readers know to
-  `memex read <slug>`).
+- Wikilinks: `[[chronicle/<threadId>]]` to cross-link related chronicles.
