@@ -14822,10 +14822,10 @@ async function publishCmd(opts) {
   }
   if (opts.cardsPath) {
     console.error(source_default.yellow(
-      `! --cards is deprecated as of memarium 0.4 \u2014 atomic cards now belong to memex.
-  Install memex (npm install -g @touchskyer/memex) and use /memex-retro after
-  the chronicle/topic publish. The cards in your input file will still be written
-  this run for backward compat, but new runs of /memarium won't generate cards.`
+      `! --cards is deprecated \u2014 memarium captures reusable insight as typed memory,
+  not atomic cards. Use the \`/memarium-retro\` skill (in-session) or the memory
+  step of \`/memarium\`. The cards in your input file will still be written this
+  run for backward compat, but new runs won't generate cards.`
     ));
     const inputs = readJsonInput(opts.cardsPath, "cards");
     for (const c3 of inputs) {
@@ -17339,11 +17339,9 @@ var init_memory_reject = __esm({
 var recall_exports = {};
 __export(recall_exports, {
   buildRecallPayload: () => buildRecallPayload,
-  parseMemexIndex: () => parseMemexIndex,
   recallCmd: () => recallCmd
 });
 import { existsSync as existsSync26, readFileSync as readFileSync23 } from "node:fs";
-import { spawnSync as spawnSync3 } from "node:child_process";
 import { join as join27 } from "node:path";
 function buildRecallPayload(opts = {}) {
   const cfg = readPluginConfig();
@@ -17357,11 +17355,11 @@ function buildRecallPayload(opts = {}) {
     }
   }
   if (opts.topic) {
-    return buildStage2(cfg.repoPath, bookIndex, projectFilter, opts.topic, opts.noMemex !== true && !cwdUnresolved);
+    return buildStage2(cfg.repoPath, bookIndex, projectFilter, opts.topic);
   }
-  return buildStage1(cfg.repoPath, bookIndex, projectFilter, cwdUnresolved, opts.noMemex !== true);
+  return buildStage1(cfg.repoPath, bookIndex, projectFilter, cwdUnresolved);
 }
-function buildStage1(repoPath, bookIndex, projectFilter, cwdUnresolved, queryMemex) {
+function buildStage1(repoPath, bookIndex, projectFilter, cwdUnresolved) {
   const entries = [];
   for (const t2 of Object.values(bookIndex.topics)) {
     const project = t2.project || projectFromPath(t2.path);
@@ -17372,31 +17370,14 @@ function buildStage1(repoPath, bookIndex, projectFilter, cwdUnresolved, queryMem
       project,
       title: titleForArtifact(repoPath, t2.path, t2.topicSlug),
       summary: summaryFor(repoPath, t2.path),
-      path: t2.path,
+      path: join27(repoPath, t2.path),
       slug: t2.topicSlug,
       updatedAt: t2.updatedAt,
       tags: []
     });
   }
-  let memexQueried = false;
-  if (queryMemex) {
-    const memexEntries = loadMemexCatalog();
-    if (memexEntries !== null) {
-      memexQueried = true;
-      entries.push(...memexEntries);
-    }
-  }
-  const kindOrder = {
-    "memex-card": 0,
-    topic: 1,
-    chronicle: 2
-  };
-  entries.sort((a, b2) => {
-    if (a.kind !== b2.kind) return kindOrder[a.kind] - kindOrder[b2.kind];
-    return a.updatedAt < b2.updatedAt ? 1 : -1;
-  });
-  const topicCount = entries.filter((e) => e.kind === "topic").length;
-  const memexCount = entries.filter((e) => e.kind === "memex-card").length;
+  entries.sort((a, b2) => a.updatedAt < b2.updatedAt ? 1 : -1);
+  const topicCount = entries.length;
   return {
     stage: "stage-1-topics",
     project: projectFilter,
@@ -17406,13 +17387,12 @@ function buildStage1(repoPath, bookIndex, projectFilter, cwdUnresolved, queryMem
     meta: {
       topics: topicCount,
       chronicles: 0,
-      ...memexQueried ? { memexQueried, memexCards: memexCount } : {},
       ...cwdUnresolved ? { cwdUnresolved: true } : {},
       nextStep: topicCount > 0 ? `Pick a relevant topic, then run: \${CLAUDE_PLUGIN_ROOT}/bin/memarium-plugin.js recall --project <slug> --topic <topicSlug>` : "No topics yet for this project."
     }
   };
 }
-function buildStage2(repoPath, bookIndex, projectFilter, topicSlug, queryMemex) {
+function buildStage2(repoPath, bookIndex, projectFilter, topicSlug) {
   const entries = [];
   const topic = Object.values(bookIndex.topics).find((t2) => {
     const proj = t2.project || projectFromPath(t2.path);
@@ -17438,26 +17418,7 @@ function buildStage2(repoPath, bookIndex, projectFilter, topicSlug, queryMemex) 
       });
     }
   }
-  let memexQueried = false;
-  if (queryMemex) {
-    const memexEntries = loadMemexCatalog();
-    if (memexEntries !== null) {
-      memexQueried = true;
-      const filtered = memexEntries.filter(
-        (m) => m.tags.some((tag) => tag.toLowerCase().includes(topicSlug.toLowerCase()))
-      );
-      entries.push(...filtered.length > 0 ? filtered : memexEntries);
-    }
-  }
-  const kindOrder = {
-    "memex-card": 0,
-    chronicle: 1,
-    topic: 2
-  };
-  entries.sort((a, b2) => {
-    if (a.kind !== b2.kind) return kindOrder[a.kind] - kindOrder[b2.kind];
-    return a.updatedAt < b2.updatedAt ? 1 : -1;
-  });
+  entries.sort((a, b2) => a.updatedAt < b2.updatedAt ? 1 : -1);
   return {
     stage: "stage-2-articles",
     project: projectFilter,
@@ -17467,8 +17428,7 @@ function buildStage2(repoPath, bookIndex, projectFilter, topicSlug, queryMemex) 
     meta: {
       topics: 0,
       chronicles: entries.filter((e) => e.kind === "chronicle").length,
-      ...memexQueried ? { memexQueried, memexCards: entries.filter((e) => e.kind === "memex-card").length } : {},
-      nextStep: "Read full bodies via the Read tool on entry.path. For memex cards: `memex read <slug>`."
+      nextStep: "Read full bodies via the Read tool on entry.path."
     }
   };
 }
@@ -17556,52 +17516,9 @@ function summarizeFrontmatter(fm) {
   if (fm.blockers?.length) bits.push(`${fm.blockers.length} blockers`);
   return bits.join(" \xB7 ") || "(no AI-first frontmatter \u2014 legacy chronicle)";
 }
-function prettifySlug(slug) {
-  const stripped = slug.replace(/^(gotcha|pattern|decision|howto|tool)-/, "");
-  const spaced = stripped.replace(/-/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
 async function recallCmd(opts) {
   const payload = buildRecallPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
-}
-function loadMemexCatalog() {
-  const r2 = spawnSync3("memex", ["read", "index"], {
-    encoding: "utf8",
-    timeout: 2e3,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  if (r2.error || r2.status !== 0) return null;
-  return parseMemexIndex(r2.stdout);
-}
-function parseMemexIndex(md) {
-  const out = [];
-  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  let category = "_memex";
-  for (const raw of md.split("\n")) {
-    const line = raw.trim();
-    const catMatch = line.match(/^##\s+(.+?)\s*$/);
-    if (catMatch) {
-      category = catMatch[1].trim();
-      continue;
-    }
-    const linkMatch = line.match(/^[-*]\s+\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\](?:\s*[—\-:]\s*(.+))?\s*$/);
-    if (!linkMatch) continue;
-    const slug = linkMatch[1].trim();
-    const altText = linkMatch[2]?.trim();
-    const summary = (linkMatch[3] ?? "").trim();
-    out.push({
-      kind: "memex-card",
-      project: "_memex",
-      title: altText || prettifySlug(slug),
-      summary,
-      path: `memex:${slug}`,
-      slug,
-      updatedAt: today,
-      tags: category && category !== "_memex" ? [category] : []
-    });
-  }
-  return out;
 }
 var init_recall = __esm({
   "src/commands/recall.ts"() {
@@ -17609,7 +17526,6 @@ var init_recall = __esm({
     init_plugin_config();
     init_book_index_v2();
     init_project_resolve();
-    init_slug();
   }
 });
 
@@ -18968,23 +18884,11 @@ var orchestrator_exports = {};
 __export(orchestrator_exports, {
   orchestrateCmd: () => orchestrateCmd
 });
-import { execFileSync as execFileSync2 } from "node:child_process";
-function isMemexOnPath() {
-  try {
-    execFileSync2("/bin/sh", ["-c", "command -v memex >/dev/null 2>&1"], {
-      stdio: "ignore"
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
 async function orchestrateCmd(opts) {
   if (opts.mode !== "project" && opts.mode !== "global") {
     throw new Error(`Invalid mode '${opts.mode}'. Expected 'project' or 'global'.`);
   }
   ensureSpoolDir();
-  const memexInstalled = isMemexOnPath();
   let result;
   if (opts.mode === "project") {
     const cwd = opts.cwd ?? process.cwd();
@@ -18995,8 +18899,7 @@ async function orchestrateCmd(opts) {
       project,
       cwd,
       scan,
-      nextStep: "run-prepare-then-digest",
-      memexInstalled
+      nextStep: "run-prepare-then-digest"
     };
   } else {
     const scan = await scanAndImport({ projectFilter: null });
@@ -19005,8 +18908,7 @@ async function orchestrateCmd(opts) {
       project: null,
       cwd: null,
       scan,
-      nextStep: "run-fanout-then-catalog",
-      memexInstalled
+      nextStep: "run-fanout-then-catalog"
     };
   }
   process.stdout.write(JSON.stringify(result, null, 2) + "\n");

@@ -1,12 +1,12 @@
 ---
-description: Digest synced sessions into chronicles + topics (per-project). Atomic cards delegated to memex when installed.
+description: Digest synced sessions into chronicles + topics (per-project). Capture reusable insights as typed memory via /memarium-retro.
 ---
 
 Invoke the **memarium** skill via the `Skill` tool with `skill: "memarium"`.
 
 The skill walks you through:
 1. Locate the plugin binary (`VBP=$(ls -td ~/.claude/plugins/cache/memarium/memarium/*/bin/memarium-plugin.js | head -1)`).
-2. (If memex is installed) Ask once: also kick off `/memex-retro` afterward?
+2. Ask once: also capture reusable insights as typed memory via `/memarium-retro` afterward?
 3. Run `"$VBP" orchestrate project --cwd "$(pwd)"` to prime the spool and detect mode.
 4. Run `"$VBP" prepare --cwd "$(pwd)"` to discover unprocessed sessions.
 5. For 0.7+ `manifest_version: 1` source md, navigate via the embedded
@@ -17,8 +17,10 @@ The skill walks you through:
    topic pages (mid-grain subsystem index).
 8. Run `"$VBP" publish --chronicles ... --topics ... --no-catalog` to
    commit + push.
-9. If user opted in at step 2: chain into `/memex-retro` for atomic cards.
+9. If user opted in at step 2: chain into `/memarium-retro` to distill the
+   session's one reusable insight into typed memory (semantic/episodic via
+   `memory-write`; core/procedural/pinned/supersede via `memory-propose`).
 
 Per-project isolation is a hard rule (publish.ts rejects missing
-`project` field). Cards are no longer written by memarium itself — that
-workflow belongs to memex.
+`project` field). Reusable-insight capture lives in memarium's own typed
+memory layer now (`/memarium-retro`) — there is no external card tool.

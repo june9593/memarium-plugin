@@ -259,7 +259,7 @@ export function rewriteMarkdownLinks(
 /** Map a `book/<project>/<kind>/<slug>.md` path to a site URL. Returns null
  *  if the path doesn't fit any known shape. (cards/ paths from legacy
  *  memarium installs are deliberately not routed — memarium 0.4+ no longer
- *  ships card pages; that workflow now belongs to memex.) */
+ *  ships card pages; reusable-insight capture lives in typed memory now.) */
 export function mdPathToRoute(repoRel: string, base: string): string | null {
   const parts = repoRel.split("/").filter(Boolean);
   if (parts.length !== 4 || parts[0] !== "book") return null;

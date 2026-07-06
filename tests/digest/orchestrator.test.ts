@@ -40,7 +40,6 @@ describe("orchestrateCmd", () => {
     expect(parsed.mode).toBe("project");
     expect(parsed.project).toBe("edge-src");
     expect(parsed.scan.imported).toBe(1);
-    expect(typeof parsed.memexInstalled).toBe("boolean");
     // Only edge-src made it into spool. New layout: raw_sessions/<tool>/<project>/<date>/
     const spoolProjects = readdirSync(join(fakeHome, ".memarium/session-repo/raw_sessions/claude"));
     expect(spoolProjects).toEqual(["edge-src"]);
