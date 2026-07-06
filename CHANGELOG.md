@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.14.1 — 2026-07-07
+
+### Fix: recall/digest binary discovery used a stale plugin-cache glob
+
+`/memarium-recall` (and `/memarium`) discovered the plugin binary with
+`ls -td ~/.claude/plugins/cache/memarium/memarium/*/bin/memarium-plugin.js`,
+but the marketplace segment of the cache path is `memarium-plugin`, not
+`memarium` — so the first `ls` matched nothing (`no matches found`, empty
+`$VBP`) and the skill only worked if the agent improvised a fallback. Fixed
+to the marketplace-agnostic `cache/*/memarium/*` glob (matching the
+`memarium-context` / `memarium` / `memarium-retro` skills), and gave
+`memarium-recall`'s SKILL.md its own **Step 0 — locate the plugin binary**
+(`$CLAUDE_PLUGIN_ROOT` first, `cache/*/memarium/*` fallback) so it no longer
+inherits the path from the command shell. Docs only; bundle unchanged.
+
 ## 0.14.0 — 2026-07-03
 
 ### Native proactive in-session memory capture + recall (drop the memex dependency)

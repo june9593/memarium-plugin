@@ -29,6 +29,19 @@ work. So we walk from coarse to fine:
 | 2 (`--topic <slug>`) | ~5-15 KB — chronicles in that topic + frontmatter (no body) | "Within this subsystem, which past work is most similar?" |
 | 3 (`Read` tool) | full body, ~2-5 KB per chronicle | "What did past-me actually do here?" |
 
+## Step 0 — locate the plugin binary
+
+```bash
+VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"
+[ -x "$VBP" ] || VBP=$(ls -td ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | head -1)
+```
+
+`$CLAUDE_PLUGIN_ROOT` is set when the skill runs inside the plugin. The `ls`
+fallback globs the plugin cache — the marketplace dir is `memarium-plugin`, so
+match `cache/*/memarium/*` (the `*` covers the marketplace segment), **not**
+`cache/memarium/memarium/*`. If `$VBP` is empty the plugin isn't installed —
+tell the user and stop.
+
 ## Step 1 — Stage 1: topic list
 
 Run this **first**, in the user's current cwd:
