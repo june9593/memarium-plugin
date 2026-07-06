@@ -17370,7 +17370,7 @@ function buildStage1(repoPath, bookIndex, projectFilter, cwdUnresolved) {
       project,
       title: titleForArtifact(repoPath, t2.path, t2.topicSlug),
       summary: summaryFor(repoPath, t2.path),
-      path: t2.path,
+      path: join27(repoPath, t2.path),
       slug: t2.topicSlug,
       updatedAt: t2.updatedAt,
       tags: []
@@ -17526,7 +17526,6 @@ var init_recall = __esm({
     init_plugin_config();
     init_book_index_v2();
     init_project_resolve();
-    init_slug();
   }
 });
 

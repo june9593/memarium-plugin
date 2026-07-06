@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadBookIndexV2 } from "../digest/book-index-v2.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
-import { projectSlugFromPath } from "../_shared/slug.js";
 
 /**
  * `memarium recall` — three-stage progressive catalog.
@@ -133,7 +132,7 @@ function buildStage1(
       project,
       title: titleForArtifact(repoPath, t.path, t.topicSlug),
       summary: summaryFor(repoPath, t.path),
-      path: t.path,
+      path: join(repoPath, t.path),
       slug: t.topicSlug,
       updatedAt: t.updatedAt,
       tags: [],
@@ -327,5 +326,3 @@ export async function recallCmd(opts: RecallOptions): Promise<void> {
   const payload = buildRecallPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
 }
-
-void projectSlugFromPath;
