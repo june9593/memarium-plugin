@@ -64,7 +64,9 @@ digraph retro {
    "$VBP" memory-query --cwd "$(pwd)" --q "<keywords from the insight>"
    ```
    If an entry already covers it, either skip, or write an updated entry that sets
-   `supersedes: <old-id>` (a supersede is a **gated** change — see step 6).
+   `supersedes: <old-id>` (if the old entry is **core/procedural/pinned**, that
+   supersede is a gated change — see step 6; superseding a plain semantic/episodic
+   entry is not gated and goes through `memory-write`).
 
 5. **Set the fields** (same shape as the batch digest's `{ entry, body }`):
    - **`trust` on every `semantic`** (`trusted` | `untrusted` | `unknown`): `trusted`

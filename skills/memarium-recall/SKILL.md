@@ -177,7 +177,7 @@ When you reply to the user:
 - ❌ **Refusing to do the task because old notes contradict it.** Notes
   are dated; code may have moved on. Recall is one input, not a veto.
 
-## Relationship to /memarium, /memarium-retro, /memarium-context
+## Relationship: /memarium vs /memarium-retro vs /memarium-recall
 
 | | `/memarium` (batch write) | `/memarium-retro` (live write) | `/memarium-recall` (read) |
 |---|---|---|---|
