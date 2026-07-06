@@ -5,7 +5,7 @@ description: Digest synced sessions into chronicles + topics (per-project). Capt
 Invoke the **memarium** skill via the `Skill` tool with `skill: "memarium"`.
 
 The skill walks you through:
-1. Locate the plugin binary (`VBP=$(ls -td ~/.claude/plugins/cache/memarium/memarium/*/bin/memarium-plugin.js | head -1)`).
+1. Locate the plugin binary (`VBP=$(ls -td ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js | head -1)`).
 2. Ask once: also capture reusable insights as typed memory via `/memarium-retro` afterward?
 3. Run `"$VBP" orchestrate project --cwd "$(pwd)"` to prime the spool and detect mode.
 4. Run `"$VBP" prepare --cwd "$(pwd)"` to discover unprocessed sessions.
