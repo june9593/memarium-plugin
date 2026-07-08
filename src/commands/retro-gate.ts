@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, openSync, fstatSync, readSync, closeSync } from "node:fs";
 
 /** The Stop-hook event JSON Claude Code pipes to the hook on stdin. */
 export interface StopEvent {
@@ -90,6 +90,29 @@ export function decideRetroGate(evt: StopEvent, rows: Row[]): { block: boolean; 
   return mutated && !didRetro ? { block: true, reason: RETRO_REASON } : { block: false };
 }
 
+/** Read at most the last `cap` bytes of a file as complete lines. Bounds the
+ *  per-Stop cost to the current turn's tail instead of re-reading the whole
+ *  transcript every turn (which is O(total size) per turn, O(n²) over a long
+ *  session). Drops the first, possibly-partial, line when the read didn't start
+ *  at byte 0. The cap is far larger than any single turn, so the last real user
+ *  message is effectively always inside the window. */
+function readTailLines(path: string, cap: number): string[] {
+  const fd = openSync(path, "r");
+  try {
+    const size = fstatSync(fd).size;
+    const start = size > cap ? size - cap : 0;
+    const len = size - start;
+    if (len <= 0) return [];
+    const buf = Buffer.allocUnsafe(len);
+    readSync(fd, buf, 0, len, start);
+    const lines = buf.toString("utf8").split("\n");
+    if (start > 0) lines.shift();
+    return lines.filter(Boolean);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** CLI wrapper backing the Stop hook. Reads the Stop event on stdin, and if the
  *  gate says so, prints `{"decision":"block","reason":...}` to stdout (which
  *  Claude Code feeds back to the agent so it runs /memarium-retro before
@@ -106,8 +129,8 @@ export async function retroGateCmd(): Promise<void> {
     if (evt.stop_hook_active) return;
     const tp = evt.transcript_path;
     if (!tp || !existsSync(tp)) return;
-    const rows: Row[] = readFileSync(tp, "utf8")
-      .split("\n").filter(Boolean)
+    // Tail-read: bound the per-turn cost to ~1 MiB, not the whole transcript.
+    const rows: Row[] = readTailLines(tp, 1024 * 1024)
       .map((l) => { try { return JSON.parse(l) as Row; } catch { return null; } })
       .filter((x): x is Row => x !== null);
     const decision = decideRetroGate(evt, rows);

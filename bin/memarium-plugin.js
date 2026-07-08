@@ -15806,7 +15806,7 @@ __export(retro_gate_exports, {
   decideRetroGate: () => decideRetroGate,
   retroGateCmd: () => retroGateCmd
 });
-import { readFileSync as readFileSync15, existsSync as existsSync17 } from "node:fs";
+import { readFileSync as readFileSync15, existsSync as existsSync17, openSync, fstatSync, readSync, closeSync } from "node:fs";
 function isRetroSignal(tu) {
   if (tu.name === "Skill" && String(tu.input?.skill ?? "").includes("memarium-retro")) return true;
   if (tu.name === "Bash") {
@@ -15843,6 +15843,22 @@ function decideRetroGate(evt, rows) {
   }
   return mutated && !didRetro ? { block: true, reason: RETRO_REASON } : { block: false };
 }
+function readTailLines(path, cap) {
+  const fd = openSync(path, "r");
+  try {
+    const size = fstatSync(fd).size;
+    const start = size > cap ? size - cap : 0;
+    const len = size - start;
+    if (len <= 0) return [];
+    const buf = Buffer.allocUnsafe(len);
+    readSync(fd, buf, 0, len, start);
+    const lines = buf.toString("utf8").split("\n");
+    if (start > 0) lines.shift();
+    return lines.filter(Boolean);
+  } finally {
+    closeSync(fd);
+  }
+}
 async function retroGateCmd() {
   try {
     if (process.stdin.isTTY) return;
@@ -15856,7 +15872,7 @@ async function retroGateCmd() {
     if (evt.stop_hook_active) return;
     const tp = evt.transcript_path;
     if (!tp || !existsSync17(tp)) return;
-    const rows = readFileSync15(tp, "utf8").split("\n").filter(Boolean).map((l) => {
+    const rows = readTailLines(tp, 1024 * 1024).map((l) => {
       try {
         return JSON.parse(l);
       } catch {

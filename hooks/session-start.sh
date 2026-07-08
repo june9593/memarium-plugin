@@ -10,7 +10,7 @@
 # prints to stdout, which Claude Code injects as session context. Never blocks
 # the session — exits 0 unconditionally, silent when there's no project memory.
 VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"
-[ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | sort -V | tail -1)
+[ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-)
 if [ -x "$VBP" ]; then
   PRIMER=$("$VBP" memory-primer --cwd "$(pwd)" 2>/dev/null || true)
   if [ -n "$PRIMER" ]; then

@@ -12,7 +12,7 @@ as a familiar engineer instead of a stranger.
 ## Step -1 — Locate the plugin binary
 
 ```bash
-VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | sort -V | tail -1) && echo "VBP=$VBP"
+VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-) && echo "VBP=$VBP"
 [ -x "$VBP" ] && "$VBP" --version
 ```
 
