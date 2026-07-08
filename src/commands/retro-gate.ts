@@ -8,6 +8,7 @@ export interface StopEvent {
 
 /** A minimal shape of a transcript JSONL row (Claude Code session log). */
 interface Row {
+  isMeta?: boolean;
   message?: { role?: string; content?: unknown };
   role?: string;
   content?: unknown;
@@ -55,6 +56,12 @@ export function decideRetroGate(evt: StopEvent, rows: Row[]): { block: boolean; 
 
   let lastUser = -1;
   rows.forEach((m, i) => {
+    // isMeta rows are system-injected pseudo-messages (slash-command / skill
+    // bodies, command-output replays) that carry role:"user" + text content but
+    // are NOT real human turns. The canonical source parser drops them
+    // (src/_shared/sources/claude-code.ts) — mirror that, or an injected row
+    // would move lastUser past an earlier mutation and misfire the gate.
+    if (m.isMeta === true) return;
     const msg = m.message ?? m;
     if (msg.role !== "user") return;
     const c = (msg as { content?: unknown }).content;
@@ -67,6 +74,7 @@ export function decideRetroGate(evt: StopEvent, rows: Row[]): { block: boolean; 
   let mutated = false;
   let didRetro = false;
   for (const m of rows.slice(lastUser + 1)) {
+    if (m.isMeta === true) continue;
     const msg = m.message ?? m;
     if (msg.role !== "assistant") continue;
     const c = (msg as { content?: unknown }).content;

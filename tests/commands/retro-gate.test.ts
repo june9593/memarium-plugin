@@ -75,4 +75,21 @@ describe("decideRetroGate", () => {
   it("no rows / no user message → no block", () => {
     expect(decideRetroGate({}, []).block).toBe(false);
   });
+
+  it("ignores isMeta pseudo-user rows so an injected skill body can't move the turn boundary past a mutation", () => {
+    // Real turn: user asks → agent edits → a skill fires, injecting its body as
+    // an isMeta role:"user" row. That injected row must NOT be treated as a new
+    // human turn, or the earlier Edit falls outside the scanned slice.
+    const injectedSkillBody = {
+      isMeta: true,
+      message: { role: "user", content: [{ type: "text", text: "Invoke the ... skill via the Skill tool ..." }] },
+    };
+    const rows = [
+      userText("fix the bug and note it"),
+      toolUse("Edit", { file_path: "a.ts" }),
+      injectedSkillBody,
+      toolUse("Bash", { command: "some-other-skill-cli run" }),
+    ];
+    expect(decideRetroGate({}, rows).block).toBe(true);
+  });
 });

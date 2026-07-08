@@ -15819,6 +15819,7 @@ function decideRetroGate(evt, rows) {
   if (evt.stop_hook_active) return { block: false };
   let lastUser = -1;
   rows.forEach((m, i2) => {
+    if (m.isMeta === true) return;
     const msg = m.message ?? m;
     if (msg.role !== "user") return;
     const c3 = msg.content;
@@ -15828,6 +15829,7 @@ function decideRetroGate(evt, rows) {
   let mutated = false;
   let didRetro = false;
   for (const m of rows.slice(lastUser + 1)) {
+    if (m.isMeta === true) continue;
     const msg = m.message ?? m;
     if (msg.role !== "assistant") continue;
     const c3 = msg.content;
