@@ -11,7 +11,7 @@ npm CLI). The skill walks you through three stages:
 
 1. **Stage 1**: `"$VBP" recall --cwd "$(pwd)"` — fetch the project's
    topic list (~5 KB of title + summary). `$VBP` is the plugin binary
-   discovered in the skill's Step 0 (`ls -td ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js | head -1`).
+   discovered in the skill's Step 0 (`ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-`).
 2. **Stage 2**: `"$VBP" recall --cwd "$(pwd)" --topic <slug>` — for
    each topic that matches the task, fetch its chronicles with
    AI-first frontmatter (files_touched / commits / decisions / status).

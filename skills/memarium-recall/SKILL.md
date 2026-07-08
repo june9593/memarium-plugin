@@ -33,7 +33,7 @@ work. So we walk from coarse to fine:
 
 ```bash
 VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"
-[ -x "$VBP" ] || VBP=$(ls -td ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | head -1)
+[ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-)
 ```
 
 `$CLAUDE_PLUGIN_ROOT` is set when the skill runs inside the plugin. The `ls`

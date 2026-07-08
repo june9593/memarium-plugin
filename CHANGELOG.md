@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.15.0 — 2026-07-09
+
+### Fix: proactive retro (Stop hook) never actually fired — now smart-gated
+
+The 0.14.0 "proactive retro" Stop hook only `echo`ed a nudge and `exit 0`ed.
+But a Claude Code **Stop** hook's plain stdout is **not** fed back to the model
+(unlike SessionStart) — so the agent never saw it, and `/memarium-retro` never
+ran on its own. Confirmed by tracing a real session: a clearly retro-worthy turn
+ended with the nudge printed and no retro.
+
+Rewired to actually drive the agent, and gated so it only fires after real work:
+
+- **New `retro-gate` CLI subcommand** (`src/commands/retro-gate.ts`): reads the
+  Stop event JSON on stdin and, **only** when the just-finished turn used a
+  file-mutation tool (`Edit`/`Write`/`NotebookEdit`/`MultiEdit`) and hasn't
+  already retro'd, prints `{"decision":"block","reason":"…run /memarium-retro…"}`
+  — which Claude Code feeds back so the agent captures the insight before
+  stopping. Honours `stop_hook_active` (forces at most one continuation, never
+  loops). Read-only, never throws. Pure `decideRetroGate` core + 9 tests.
+- **`hooks/session-end.sh`** is now a thin pipe: `cat | "$VBP" retro-gate`.
+  Silent on chat/Q&A turns (no more nagging), silent when the plugin isn't
+  found or on any error.
+
+Net effect: retro fires proactively after you change files, and stays quiet on
+pure Q&A turns.
+
+### Fix: binary discovery picked by mtime, could resolve a stale version
+
+Every skill/hook/command fallback discovered the plugin binary with
+`ls -td …/cache/*/memarium/*/…` — newest by **mtime**. With several cached
+version dirs coexisting (`0.13.1` / `0.14.0` / `0.14.1`), mtime order could
+(and did, observed live) resolve an **older** binary than the installed one.
+All eight sites now use `ls -d … | sort -V | tail -1` (highest **semver**),
+with `$CLAUDE_PLUGIN_ROOT` still preferred first.
+
 ## 0.14.1 — 2026-07-07
 
 ### Fix: recall/digest binary discovery used a stale plugin-cache glob

@@ -39,7 +39,7 @@ So before any subcommand, discover the plugin's bin path and stash it
 in a shell variable. Run:
 
 ```bash
-VBP=$(ls -td ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | head -1) && echo "VBP=$VBP"
+VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-) && echo "VBP=$VBP"
 ```
 
 Confirm `$VBP` resolves to an existing file:
