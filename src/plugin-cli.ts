@@ -121,6 +121,14 @@ export async function run(argv: string[]) {
       await memoryPrimerCmd({ cwd: opts.cwd });
     });
 
+  program
+    .command("retro-gate")
+    .description("Read-only: reads the Stop-hook event JSON on stdin and, only when the just-finished turn changed files (and hasn't already retro'd), prints a {decision:block} JSON that makes the agent run /memarium-retro before stopping. Backs the Stop hook. Never writes, never throws.")
+    .action(async () => {
+      const { retroGateCmd } = await import("./commands/retro-gate.js");
+      await retroGateCmd();
+    });
+
   program.command("entity-write")
     .description("Write entity-wiki .md pages + update .memarium/index.entity.json from an agent JSON payload.")
     .option("--input <path>", "path to entity pages JSON")

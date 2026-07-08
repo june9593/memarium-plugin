@@ -16,7 +16,7 @@ them from doubling up.
 
 ```bash
 VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"
-[ -x "$VBP" ] || VBP=$(ls -td ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | head -1)
+[ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | sort -V | tail -1)
 [ -x "$VBP" ] && "$VBP" --version   # sanity check (silent no-op if unresolved)
 ```
 
