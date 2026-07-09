@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.15.1 — 2026-07-09
+
+### Fix: authored memory entries serialized `createdAt: undefined` / `updatedAt: undefined`
+
+`memory-write` / `memory-propose` payloads routinely omit `createdAt` / `updatedAt`,
+and the markdown renderer wrote the literal string `"undefined"` for them —
+breaking every temporal consumer (sort, lint staleness, supersession). `apply.ts`
+now defaults both at write time to a real `YYYY-MM-DD` date (the entry's
+`validFrom` if it set one, else today), only when missing/invalid so an
+author-set timestamp is preserved — mirroring the existing `accessCount` / array
+defaults that keep the live index and a rebuild consistent. +3 tests.
+
+(The 12 already-written files carrying `undefined` were backfilled in the
+session-repo separately.)
+
 ## 0.15.0 — 2026-07-09
 
 ### Fix: proactive retro (Stop hook) never actually fired — now smart-gated

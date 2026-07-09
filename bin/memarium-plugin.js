@@ -15300,6 +15300,10 @@ function applyMemoryItems(repoPath, items) {
     entry.path = canonical;
     if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
     if (entry.lastAccess === void 0) entry.lastAccess = null;
+    const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+    const fallbackDate = isDate(entry.validFrom) ? entry.validFrom.slice(0, 10) : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    if (!isDate(entry.createdAt)) entry.createdAt = fallbackDate;
+    if (!isDate(entry.updatedAt)) entry.updatedAt = fallbackDate;
     if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
     if (typeof entry.summary !== "string") entry.summary = "";
     if (!Array.isArray(entry.sourceSessions)) entry.sourceSessions = [];

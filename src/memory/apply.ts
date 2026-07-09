@@ -78,6 +78,16 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     // (Math.min(undefined,5)=NaN). Write the same defaults parse.ts produces.
     if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
     if (entry.lastAccess === undefined) entry.lastAccess = null;
+    // createdAt/updatedAt: authored entries (memory-write / propose JSON) often
+    // omit them, and the renderer serialized `undefined` as the literal string
+    // "undefined" — which breaks every temporal consumer (sort, lint staleness,
+    // supersession). Default to a real YYYY-MM-DD date (the entry's validFrom if
+    // it set one, else today), matching the format used everywhere else. Only
+    // fill when missing/invalid, so an author-set timestamp is preserved.
+    const isDate = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+    const fallbackDate = isDate(entry.validFrom) ? entry.validFrom.slice(0, 10) : new Date().toISOString().slice(0, 10);
+    if (!isDate(entry.createdAt)) entry.createdAt = fallbackDate;
+    if (!isDate(entry.updatedAt)) entry.updatedAt = fallbackDate;
     // trust: a new entry that didn't set it (or set garbage) defaults to "unknown"
     // — never auto-promote to trusted (#23 decision #3). unknown stays out of the primer.
     if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
