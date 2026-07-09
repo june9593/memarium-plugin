@@ -49,6 +49,36 @@ describe("applyMemoryItems", () => {
     expect(idx.entries["core/thin"].summary).toBe("");
   });
 
+  it("backfills undefined createdAt/updatedAt from validFrom (never the string \"undefined\")", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const e = mk({ id: "core/dated", createdAt: undefined, updatedAt: undefined, validFrom: "2026-05-20" });
+    applyMemoryItems(repo, [{ entry: e, body: "b" }]);
+    const md = readFileSync(join(repo, "memory/core/_global/dated.md"), "utf8");
+    expect(md).toContain("createdAt: 2026-05-20");
+    expect(md).toContain("updatedAt: 2026-05-20");
+    expect(md).not.toContain("undefined");
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    expect(idx.entries["core/dated"].createdAt).toBe("2026-05-20");
+  });
+
+  it("falls back to a valid today-date when there's no validFrom either", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const e = mk({ id: "core/nodate", createdAt: undefined, updatedAt: undefined, validFrom: null });
+    applyMemoryItems(repo, [{ entry: e, body: "b" }]);
+    const md = readFileSync(join(repo, "memory/core/_global/nodate.md"), "utf8");
+    expect(md).not.toContain("undefined");
+    expect(md).toMatch(/createdAt: \d{4}-\d{2}-\d{2}/);
+    expect(md).toMatch(/updatedAt: \d{4}-\d{2}-\d{2}/);
+  });
+
+  it("preserves an author-set createdAt", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const e = mk({ id: "core/keep", createdAt: "2025-01-02", updatedAt: undefined, validFrom: null });
+    applyMemoryItems(repo, [{ entry: e, body: "b" }]);
+    const md = readFileSync(join(repo, "memory/core/_global/keep.md"), "utf8");
+    expect(md).toContain("createdAt: 2025-01-02");
+  });
+
   it("rejects a supplied path that does not match the canonical path", async () => {
     const { applyMemoryItems } = await import("../../src/memory/apply.js");
     expect(() => applyMemoryItems(repo, [{
