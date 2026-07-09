@@ -95,3 +95,20 @@ export function resolveMemoryView(
     overlayPresent,
   };
 }
+
+/**
+ * Resolve an entry's repo-relative `path` to an ABSOLUTE path against the tree
+ * it actually came from — local entries under `repoPath`, overlay-sourced
+ * entries under the read-only overlay worktree. Resolving an overlay entry
+ * against the local repo would yield a path that doesn't exist on disk, so any
+ * consumer that hands the path to a `Read` tool (e.g. recall) must go through
+ * this. Falls back to the local root when the source/overlay root is unknown.
+ */
+export function resolveEntryAbsPath(view: MemoryView, id: string): string | null {
+  const e = view.entries[id];
+  if (!e) return null;
+  const root = view.sources[id] === "overlay" && view.roots.overlay
+    ? view.roots.overlay
+    : view.roots.local;
+  return join(root, e.path);
+}

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.16.0 — 2026-07-09
+
+### Recall is now 2-stage over typed memory (Phase A of the book→memory collapse)
+
+`/memarium-recall` no longer walks `book/` (topics → chronicles → Read). It now
+**scores the typed-memory index** and returns a single relevance-ranked list —
+episodes (past work arcs), semantic facts, procedural gotchas, core rules — each
+with `whyRecalled` and an absolute `path`; the agent then `Read`s the top 1–5.
+
+- `src/commands/recall.ts`: rewritten to reuse the existing recall engine
+  (`resolveMemoryView` + `scoreMemories` + usage overlay), exactly like
+  `memory-query` / `/memarium-context`. New `--q <keywords>` drives scoring;
+  `--topic` is gone. No-query recall returns a scope-eligible overview + primer.
+- Cross-device correct: a new `resolveEntryAbsPath(view,id)` resolves each hit's
+  path against its own tree (local repo vs. the read-only overlay worktree), so
+  a sibling-device (`source:"overlay"`) hit is `Read`-able.
+- Best-effort usage bump on content-hit queries (local sidecar only; never the
+  synced index), same as `memory-query`.
+- Rewrote `skills/memarium-recall/SKILL.md` + `commands/memarium-recall.md` to
+  the 2-stage flow (kept the multilingual trigger block). +6 tests.
+
+This is Phase A; the digest still produces `book/` for now (recall simply stops
+reading it). Phases B/C make the digest memory-only and remove `book/`.
+
 ## 0.15.1 — 2026-07-09
 
 ### Fix: authored memory entries serialized `createdAt: undefined` / `updatedAt: undefined`

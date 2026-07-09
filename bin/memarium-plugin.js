@@ -7657,6 +7657,12 @@ function resolveMemoryView(repoPath, overlayRoot = aggregatedOverlayPath()) {
     overlayPresent
   };
 }
+function resolveEntryAbsPath(view, id) {
+  const e = view.entries[id];
+  if (!e) return null;
+  const root = view.sources[id] === "overlay" && view.roots.overlay ? view.roots.overlay : view.roots.local;
+  return join9(root, e.path);
+}
 var init_source_resolver = __esm({
   "src/memory/source-resolver.ts"() {
     "use strict";
@@ -17441,191 +17447,78 @@ __export(recall_exports, {
   buildRecallPayload: () => buildRecallPayload,
   recallCmd: () => recallCmd
 });
-import { existsSync as existsSync27, readFileSync as readFileSync24 } from "node:fs";
-import { join as join27 } from "node:path";
 function buildRecallPayload(opts = {}) {
   const cfg = readPluginConfig();
-  const bookIndex = loadBookIndexV2(cfg.repoPath);
   let projectFilter = opts.project?.trim() || null;
   let cwdUnresolved = false;
   if (!projectFilter && !opts.all && opts.cwd) {
     projectFilter = resolveProjectFromCwd(opts.cwd, cfg.repoPath);
-    if (!projectFilter) {
-      cwdUnresolved = true;
-    }
+    if (!projectFilter) cwdUnresolved = true;
   }
-  if (opts.topic) {
-    return buildStage2(cfg.repoPath, bookIndex, projectFilter, opts.topic);
-  }
-  return buildStage1(cfg.repoPath, bookIndex, projectFilter, cwdUnresolved);
-}
-function buildStage1(repoPath, bookIndex, projectFilter, cwdUnresolved) {
-  const entries = [];
-  for (const t2 of Object.values(bookIndex.topics)) {
-    const project = t2.project || projectFromPath(t2.path);
-    if (!project) continue;
-    if (projectFilter && project !== projectFilter) continue;
-    entries.push({
-      kind: "topic",
-      project,
-      title: titleForArtifact(repoPath, t2.path, t2.topicSlug),
-      summary: summaryFor(repoPath, t2.path),
-      path: join27(repoPath, t2.path),
-      slug: t2.topicSlug,
-      updatedAt: t2.updatedAt,
-      tags: []
-    });
-  }
-  entries.sort((a, b2) => a.updatedAt < b2.updatedAt ? 1 : -1);
-  const topicCount = entries.length;
-  return {
-    stage: "stage-1-topics",
+  const view = resolveMemoryView(cfg.repoPath);
+  const entries = Object.values(view.entries);
+  const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  overlayUsage(entries, loadUsage(cfg.repoPath));
+  const query = (opts.q ?? "").trim();
+  const scored = scoreMemories(entries, { project: projectFilter, text: query, type: null, now });
+  const limit = opts.limit && opts.limit > 0 ? opts.limit : DEFAULT_LIMIT;
+  const hits = scored.slice(0, limit).map((s) => ({
+    id: s.entry.id,
+    type: s.entry.type,
+    title: s.entry.title,
+    summary: s.entry.summary,
+    score: s.score,
+    whyRecalled: s.whyRecalled,
+    path: resolveEntryAbsPath(view, s.entry.id),
+    updatedAt: s.entry.updatedAt,
+    entities: s.entry.entities,
+    source: view.sources[s.entry.id] ?? "local"
+  }));
+  const payload = {
+    stage: "stage-1-ranked",
     project: projectFilter,
-    topic: null,
-    repoPath,
-    entries,
+    query,
+    repoPath: cfg.repoPath,
+    entries: hits,
     meta: {
-      topics: topicCount,
-      chronicles: 0,
+      total: scored.length,
+      returned: hits.length,
       ...cwdUnresolved ? { cwdUnresolved: true } : {},
-      nextStep: topicCount > 0 ? `Pick a relevant topic, then run: \${CLAUDE_PLUGIN_ROOT}/bin/memarium-plugin.js recall --project <slug> --topic <topicSlug>` : "No topics yet for this project."
+      nextStep: hits.length > 0 ? "Read the top 1\u20135 entry.path with the Read tool for full bodies (episodes carry the arc)." : cwdUnresolved ? "cwd didn't resolve to a synced project \u2014 pass --project <slug> or --all." : "No memory yet for this project. Run /memarium to digest sessions."
     }
   };
-}
-function buildStage2(repoPath, bookIndex, projectFilter, topicSlug) {
-  const entries = [];
-  const topic = Object.values(bookIndex.topics).find((t2) => {
-    const proj = t2.project || projectFromPath(t2.path);
-    return t2.topicSlug === topicSlug && (!projectFilter || proj === projectFilter);
-  });
-  if (topic) {
-    const contributing = new Set(topic.contributingThreads ?? []);
-    for (const c3 of Object.values(bookIndex.chronicles)) {
-      if (c3.skip) continue;
-      if (!contributing.has(c3.threadId)) continue;
-      const project = c3.project || projectFromPath(c3.path) || "_unknown";
-      const fm = readChronicleFrontmatter(repoPath, c3.path);
-      entries.push({
-        kind: "chronicle",
-        project,
-        title: titleForArtifact(repoPath, c3.path, c3.title || c3.threadId),
-        summary: summarizeFrontmatter(fm),
-        path: join27(repoPath, c3.path),
-        slug: c3.threadId,
-        frontmatter: fm,
-        updatedAt: c3.updatedAt,
-        tags: c3.tags ?? []
-      });
-    }
+  if (!query && projectFilter) {
+    const primer = renderPrimer(projectFilter, entries);
+    if (primer.trim()) payload.primer = primer;
   }
-  entries.sort((a, b2) => a.updatedAt < b2.updatedAt ? 1 : -1);
-  return {
-    stage: "stage-2-articles",
-    project: projectFilter,
-    topic: topicSlug,
-    repoPath,
-    entries,
-    meta: {
-      topics: 0,
-      chronicles: entries.filter((e) => e.kind === "chronicle").length,
-      nextStep: "Read full bodies via the Read tool on entry.path."
-    }
-  };
-}
-function projectFromPath(path) {
-  if (!path) return null;
-  const parts = path.split("/").filter(Boolean);
-  if (parts.length < 2 || parts[0] !== "book") return null;
-  return parts[1] || null;
-}
-function titleForArtifact(repoPath, repoRel, fallback) {
-  const abs = join27(repoPath, repoRel);
-  if (!existsSync27(abs)) return fallback;
-  const head = readFileSync24(abs, "utf8").slice(0, 1024);
-  const hMatch = head.match(/^#\s+(.+?)\s*$/m);
-  if (hMatch) return hMatch[1].trim();
-  const fmMatch = head.match(/^---[\s\S]*?\ntitle:\s*(.+?)\s*\n[\s\S]*?---/);
-  if (fmMatch) return fmMatch[1].replace(/^["']|["']$/g, "").trim();
-  return fallback;
-}
-function summaryFor(repoPath, repoRel) {
-  const abs = join27(repoPath, repoRel);
-  if (!existsSync27(abs)) return "";
-  const body = readFileSync24(abs, "utf8");
-  const stripped = body.replace(/^---[\s\S]*?---\s*\n/, "");
-  const lines = stripped.split("\n");
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (line.startsWith("#") || line.startsWith("---")) continue;
-    if (line.startsWith("- ") || line.startsWith("* ")) continue;
-    if (line.startsWith(">") || line.startsWith("```")) continue;
-    const plain = line.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_2, a, b2) => b2 || a).replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/`([^`]+)`/g, "$1");
-    return plain.length > 200 ? plain.slice(0, 200) + "\u2026" : plain;
-  }
-  return "";
-}
-function readChronicleFrontmatter(repoPath, repoRel) {
-  const abs = join27(repoPath, repoRel);
-  if (!existsSync27(abs)) return {};
-  const body = readFileSync24(abs, "utf8");
-  const m = body.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return {};
-  const lines = m[1].split("\n");
-  const result = {};
-  const lists = {};
-  let currentList = null;
-  for (const raw of lines) {
-    const line = raw;
-    if (line.match(/^\s+-\s+/)) {
-      if (currentList) {
-        const item = line.replace(/^\s+-\s+/, "").trim().replace(/^["']|["']$/g, "");
-        if (item) lists[currentList].push(item);
-      }
-      continue;
-    }
-    const m2 = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/);
-    if (!m2) {
-      currentList = null;
-      continue;
-    }
-    const key = m2[1];
-    const after = m2[2].trim();
-    if (after === "") {
-      currentList = key;
-      lists[key] = [];
-    } else {
-      currentList = null;
-      const cleaned = after.replace(/^["']|["']$/g, "");
-      if (key === "status") result.status = cleaned;
-    }
-  }
-  if (lists.files_touched) result.files_touched = lists.files_touched;
-  if (lists.commits) result.commits = lists.commits;
-  if (lists.decisions) result.decisions = lists.decisions;
-  if (lists.blockers) result.blockers = lists.blockers;
-  if (lists.next_steps) result.next_steps = lists.next_steps;
-  return result;
-}
-function summarizeFrontmatter(fm) {
-  const bits = [];
-  if (fm.status) bits.push(`status=${fm.status}`);
-  if (fm.files_touched?.length) bits.push(`${fm.files_touched.length} files`);
-  if (fm.commits?.length) bits.push(`${fm.commits.length} commits`);
-  if (fm.decisions?.length) bits.push(`${fm.decisions.length} decisions`);
-  if (fm.blockers?.length) bits.push(`${fm.blockers.length} blockers`);
-  return bits.join(" \xB7 ") || "(no AI-first frontmatter \u2014 legacy chronicle)";
+  return payload;
 }
 async function recallCmd(opts) {
+  const cfg = readPluginConfig();
   const payload = buildRecallPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+  if (payload.query !== "") {
+    try {
+      const bumpIds = payload.entries.filter((h2) => Number.isFinite(h2.score) && CONTENT_HIT_MARKERS2.some((m) => h2.whyRecalled.includes(m))).slice(0, BUMP_TOP_N2).map((h2) => h2.id);
+      const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      bumpUsage(cfg.repoPath, bumpIds, now);
+    } catch {
+    }
+  }
 }
+var DEFAULT_LIMIT, CONTENT_HIT_MARKERS2, BUMP_TOP_N2;
 var init_recall = __esm({
   "src/commands/recall.ts"() {
     "use strict";
     init_plugin_config();
-    init_book_index_v2();
     init_project_resolve();
+    init_source_resolver();
+    init_score();
+    init_usage_store();
+    init_primer();
+    DEFAULT_LIMIT = 25;
+    CONTENT_HIT_MARKERS2 = ["keyword", "file", "commit"];
+    BUMP_TOP_N2 = 5;
   }
 });
 
@@ -17698,8 +17591,8 @@ __export(site_exports, {
   serveSiteCmd: () => serveSiteCmd
 });
 import { spawn as spawn3 } from "node:child_process";
-import { existsSync as existsSync28, mkdirSync as mkdirSync15, cpSync, readFileSync as readFileSync25, writeFileSync as writeFileSync14, statSync as statSync2, readdirSync as readdirSync8, rmSync as rmSync3 } from "node:fs";
-import { join as join28, dirname as dirname9, resolve as resolve8 } from "node:path";
+import { existsSync as existsSync27, mkdirSync as mkdirSync15, cpSync, readFileSync as readFileSync24, writeFileSync as writeFileSync14, statSync as statSync2, readdirSync as readdirSync8, rmSync as rmSync3 } from "node:fs";
+import { join as join27, dirname as dirname9, resolve as resolve8 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir as homedir7 } from "node:os";
 function siteContext(opts) {
@@ -17713,7 +17606,7 @@ function siteContext(opts) {
     // dist/src/commands/
     resolve8(here, "..", "..", "..", "..", "site-template")
   ];
-  const templateDir = candidates.find((c3) => existsSync28(join28(c3, "package.json")));
+  const templateDir = candidates.find((c3) => existsSync27(join27(c3, "package.json")));
   if (!templateDir) {
     throw new Error(
       `memarium site template not found. Tried:
@@ -17722,7 +17615,7 @@ If you installed memarium from npm, try \`npm install -g memarium@latest\`.`
     );
   }
   const sig = templateSignature(templateDir);
-  const cacheDir = join28(homedir7(), ".memarium", "site-cache", sig);
+  const cacheDir = join27(homedir7(), ".memarium", "site-cache", sig);
   return {
     templateDir,
     cacheDir,
@@ -17732,27 +17625,27 @@ If you installed memarium from npm, try \`npm install -g memarium@latest\`.`
   };
 }
 function templateSignature(templateDir) {
-  const pkg = JSON.parse(readFileSync25(join28(templateDir, "package.json"), "utf8"));
+  const pkg = JSON.parse(readFileSync24(join27(templateDir, "package.json"), "utf8"));
   const seed = JSON.stringify({ name: pkg.name, version: pkg.version, deps: pkg.dependencies });
   return Buffer.from(seed).toString("base64url").slice(0, 12);
 }
 function syncTemplateInto(templateDir, cacheDir) {
-  if (!existsSync28(cacheDir)) mkdirSync15(cacheDir, { recursive: true });
+  if (!existsSync27(cacheDir)) mkdirSync15(cacheDir, { recursive: true });
   const skip = /* @__PURE__ */ new Set(["node_modules", "dist", ".astro"]);
-  const cacheSrc = join28(cacheDir, "src");
-  if (existsSync28(cacheSrc)) rmSync3(cacheSrc, { recursive: true, force: true });
+  const cacheSrc = join27(cacheDir, "src");
+  if (existsSync27(cacheSrc)) rmSync3(cacheSrc, { recursive: true, force: true });
   for (const name of readdirSync8(templateDir)) {
     if (skip.has(name)) continue;
-    const src = join28(templateDir, name);
-    const dst = join28(cacheDir, name);
+    const src = join27(templateDir, name);
+    const dst = join27(cacheDir, name);
     cpSync(src, dst, { recursive: true });
   }
 }
 async function ensureNodeModules(cacheDir) {
-  const nm = join28(cacheDir, "node_modules");
-  if (existsSync28(nm)) {
-    const astroBin = join28(nm, ".bin", "astro");
-    if (existsSync28(astroBin)) return;
+  const nm = join27(cacheDir, "node_modules");
+  if (existsSync27(nm)) {
+    const astroBin = join27(nm, ".bin", "astro");
+    if (existsSync27(astroBin)) return;
   }
   console.log(source_default.cyan(`  installing site template dependencies (one-time, ~1-2 min)...`));
   await runCmd("npm", ["install", "--no-audit", "--no-fund", "--silent"], cacheDir);
@@ -17783,7 +17676,7 @@ async function serveSiteCmd(opts = {}) {
 `));
   await runCmd(
     "node",
-    [join28(ctx.cacheDir, "node_modules", "astro", "astro.js"), "dev"],
+    [join27(ctx.cacheDir, "node_modules", "astro", "astro.js"), "dev"],
     ctx.cacheDir,
     { MEMARIUM_REPO_PATH: ctx.repoPath }
   );
@@ -17796,7 +17689,7 @@ async function buildSiteCmd(opts = {}) {
   memarium build-site \u2014 astro build`));
   await runCmd(
     "node",
-    [join28(ctx.cacheDir, "node_modules", "astro", "astro.js"), "build"],
+    [join27(ctx.cacheDir, "node_modules", "astro", "astro.js"), "build"],
     ctx.cacheDir,
     {
       MEMARIUM_REPO_PATH: ctx.repoPath,
@@ -17804,9 +17697,9 @@ async function buildSiteCmd(opts = {}) {
       MEMARIUM_SITE_URL: ctx.siteUrl
     }
   );
-  const builtDist = join28(ctx.cacheDir, "dist");
-  const repoDist = join28(ctx.repoPath, "site-dist");
-  if (existsSync28(repoDist)) {
+  const builtDist = join27(ctx.cacheDir, "dist");
+  const repoDist = join27(ctx.repoPath, "site-dist");
+  if (existsSync27(repoDist)) {
     rmSync3(repoDist, { recursive: true, force: true });
   }
   cpSync(builtDist, repoDist, { recursive: true });
@@ -17823,17 +17716,17 @@ var init_site = __esm({
 });
 
 // src/spool/plugin-state.ts
-import { existsSync as existsSync29, mkdirSync as mkdirSync16, readFileSync as readFileSync26, writeFileSync as writeFileSync15 } from "node:fs";
+import { existsSync as existsSync28, mkdirSync as mkdirSync16, readFileSync as readFileSync25, writeFileSync as writeFileSync15 } from "node:fs";
 import { homedir as homedir8 } from "node:os";
-import { dirname as dirname10, join as join29 } from "node:path";
+import { dirname as dirname10, join as join28 } from "node:path";
 function statePath() {
-  return join29(homedir8(), ".memarium", ".plugin-state.json");
+  return join28(homedir8(), ".memarium", ".plugin-state.json");
 }
 function loadState() {
   const p2 = statePath();
-  if (!existsSync29(p2)) return {};
+  if (!existsSync28(p2)) return {};
   try {
-    return JSON.parse(readFileSync26(p2, "utf8"));
+    return JSON.parse(readFileSync25(p2, "utf8"));
   } catch {
     return {};
   }
@@ -17885,14 +17778,14 @@ var init_first_run = __esm({
 });
 
 // src/spool/ensure-dir.ts
-import { mkdirSync as mkdirSync17, existsSync as existsSync30 } from "node:fs";
+import { mkdirSync as mkdirSync17, existsSync as existsSync29 } from "node:fs";
 import { homedir as homedir9 } from "node:os";
-import { join as join30 } from "node:path";
+import { join as join29 } from "node:path";
 function ensureSpoolDir() {
-  const spoolRoot = join30(homedir9(), SPOOL_REL_PATH);
-  const created = !existsSync30(spoolRoot);
-  const rawSessionsDir = join30(spoolRoot, "raw_sessions");
-  const bookDir = join30(spoolRoot, "book");
+  const spoolRoot = join29(homedir9(), SPOOL_REL_PATH);
+  const created = !existsSync29(spoolRoot);
+  const rawSessionsDir = join29(spoolRoot, "raw_sessions");
+  const bookDir = join29(spoolRoot, "book");
   mkdirSync17(rawSessionsDir, { recursive: true });
   mkdirSync17(bookDir, { recursive: true });
   return { spoolRoot, rawSessionsDir, bookDir, created };
@@ -17908,12 +17801,12 @@ var init_ensure_dir = __esm({
 // src/_shared/content-project-inference.ts
 import { readdirSync as readdirSync9 } from "node:fs";
 import { homedir as homedir10 } from "node:os";
-import { join as join31 } from "node:path";
+import { join as join30 } from "node:path";
 function decodeProjectDirName(name) {
   if (!name.startsWith("-")) return name;
   return "/" + name.slice(1).replace(/-/g, "/");
 }
-function listKnownProjectRoots(projectsDir = join31(homedir10(), ".claude", "projects")) {
+function listKnownProjectRoots(projectsDir = join30(homedir10(), ".claude", "projects")) {
   let entries;
   try {
     entries = readdirSync9(projectsDir);
@@ -18013,9 +17906,9 @@ var init_content_project_inference = __esm({
 
 // src/_shared/sources/claude-code.ts
 import { createHash as createHash4 } from "node:crypto";
-import { readdirSync as readdirSync10, readFileSync as readFileSync27, statSync as statSync3, existsSync as existsSync31 } from "node:fs";
+import { readdirSync as readdirSync10, readFileSync as readFileSync26, statSync as statSync3, existsSync as existsSync30 } from "node:fs";
 import { homedir as homedir11 } from "node:os";
-import { join as join32, basename } from "node:path";
+import { join as join31, basename } from "node:path";
 function getRoots() {
   if (cachedRoots === null) cachedRoots = listKnownProjectRoots();
   return cachedRoots;
@@ -18162,12 +18055,12 @@ var init_claude_code = __esm({
     init_content_project_inference();
     cachedRoots = null;
     ClaudeCodeAdapter = class {
-      constructor(root = join32(homedir11(), ".claude", "projects")) {
+      constructor(root = join31(homedir11(), ".claude", "projects")) {
         this.root = root;
       }
       name = "claude";
       async *discover() {
-        if (!existsSync31(this.root)) return;
+        if (!existsSync30(this.root)) return;
         const stack = [this.root];
         while (stack.length) {
           const dir = stack.pop();
@@ -18178,14 +18071,14 @@ var init_claude_code = __esm({
             continue;
           }
           for (const e of entries) {
-            const p2 = join32(dir, e.name);
+            const p2 = join31(dir, e.name);
             if (e.isDirectory()) {
               if (dir === this.root && isMemariumOrTmpProjectDir(e.name)) continue;
               if (e.name === "subagents") continue;
               stack.push(p2);
             } else if (e.isFile() && e.name.endsWith(".jsonl")) {
               const st = statSync3(p2);
-              const buf = readFileSync27(p2);
+              const buf = readFileSync26(p2);
               const sha = createHash4("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -18203,20 +18096,20 @@ var init_claude_code = __esm({
 
 // src/_shared/sources/vscode-copilot.ts
 import { createHash as createHash5 } from "node:crypto";
-import { readdirSync as readdirSync11, readFileSync as readFileSync28, statSync as statSync4, existsSync as existsSync32 } from "node:fs";
+import { readdirSync as readdirSync11, readFileSync as readFileSync27, statSync as statSync4, existsSync as existsSync31 } from "node:fs";
 import { homedir as homedir12 } from "node:os";
-import { join as join33, basename as basename2 } from "node:path";
+import { join as join32, basename as basename2 } from "node:path";
 function defaultStorageRoot() {
   if (process.platform === "darwin")
-    return join33(homedir12(), "Library", "Application Support", "Code", "User", "workspaceStorage");
+    return join32(homedir12(), "Library", "Application Support", "Code", "User", "workspaceStorage");
   if (process.platform === "win32")
-    return join33(homedir12(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
-  return join33(homedir12(), ".config", "Code", "User", "workspaceStorage");
+    return join32(homedir12(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
+  return join32(homedir12(), ".config", "Code", "User", "workspaceStorage");
 }
 function readWorkspacePath(workspaceJsonPath) {
-  if (!existsSync32(workspaceJsonPath)) return "";
+  if (!existsSync31(workspaceJsonPath)) return "";
   try {
-    const obj = JSON.parse(readFileSync28(workspaceJsonPath, "utf8"));
+    const obj = JSON.parse(readFileSync27(workspaceJsonPath, "utf8"));
     const u = obj.folder ?? obj.workspace ?? "";
     if (!u) return "";
     return u.startsWith("file://") ? decodeURIComponent(u.slice("file://".length)) : u;
@@ -18437,7 +18330,7 @@ var init_vscode_copilot = __esm({
       }
       name = "copilot";
       async *discover() {
-        if (!existsSync32(this.root)) return;
+        if (!existsSync31(this.root)) return;
         let workspaces;
         try {
           workspaces = readdirSync11(this.root, { withFileTypes: true });
@@ -18446,11 +18339,11 @@ var init_vscode_copilot = __esm({
         }
         for (const w of workspaces) {
           if (!w.isDirectory()) continue;
-          const wsDir = join33(this.root, w.name);
-          const wsPath = readWorkspacePath(join33(wsDir, "workspace.json"));
-          const chatDir = join33(wsDir, "chatSessions");
+          const wsDir = join32(this.root, w.name);
+          const wsPath = readWorkspacePath(join32(wsDir, "workspace.json"));
+          const chatDir = join32(wsDir, "chatSessions");
           const chatSessionIds = /* @__PURE__ */ new Set();
-          if (existsSync32(chatDir)) {
+          if (existsSync31(chatDir)) {
             let files = [];
             try {
               files = readdirSync11(chatDir, { withFileTypes: true });
@@ -18462,11 +18355,11 @@ var init_vscode_copilot = __esm({
               const isJson = f.name.endsWith(".json");
               const isJsonl = f.name.endsWith(".jsonl");
               if (!isJson && !isJsonl) continue;
-              const p2 = join33(chatDir, f.name);
+              const p2 = join32(chatDir, f.name);
               const st = statSync4(p2);
               if (st.size === 0) continue;
               chatSessionIds.add(basename2(f.name, isJsonl ? ".jsonl" : ".json"));
-              const buf = readFileSync28(p2);
+              const buf = readFileSync27(p2);
               const sha = createHash5("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -18476,8 +18369,8 @@ var init_vscode_copilot = __esm({
               };
             }
           }
-          const transcriptsDir = join33(wsDir, "GitHub.copilot-chat", "transcripts");
-          if (existsSync32(transcriptsDir)) {
+          const transcriptsDir = join32(wsDir, "GitHub.copilot-chat", "transcripts");
+          if (existsSync31(transcriptsDir)) {
             let tfiles = [];
             try {
               tfiles = readdirSync11(transcriptsDir, { withFileTypes: true });
@@ -18488,10 +18381,10 @@ var init_vscode_copilot = __esm({
               if (!f.isFile() || !f.name.endsWith(".jsonl")) continue;
               const id = basename2(f.name, ".jsonl");
               if (chatSessionIds.has(id)) continue;
-              const p2 = join33(transcriptsDir, f.name);
+              const p2 = join32(transcriptsDir, f.name);
               const st = statSync4(p2);
               if (st.size === 0) continue;
-              const buf = readFileSync28(p2);
+              const buf = readFileSync27(p2);
               const sha = createHash5("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -18705,18 +18598,18 @@ var init_toc = __esm({
 
 // src/spool/writer.ts
 import { mkdirSync as mkdirSync18, writeFileSync as writeFileSync16 } from "node:fs";
-import { join as join34 } from "node:path";
+import { join as join33 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
-  const dirRel = join34("raw_sessions", s.tool, s.project, date);
-  const absDir = join34(repoRoot, dirRel);
+  const dirRel = join33("raw_sessions", s.tool, s.project, date);
+  const absDir = join33(repoRoot, dirRel);
   mkdirSync18(absDir, { recursive: true });
   const base = `${s.nameSlug}__${s.shortId}`;
-  const mdRel = join34(dirRel, `${base}.md`);
+  const mdRel = join33(dirRel, `${base}.md`);
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults = opts.fullToolResults ?? process.env.MEMARIUM_FULL_TOOL_RESULTS === "1";
   writeFileSync16(
-    join34(repoRoot, mdRel),
+    join33(repoRoot, mdRel),
     renderMarkdown(s, { includeReasoning, fullToolResults })
   );
   return { md: mdRel };
@@ -19040,14 +18933,14 @@ var {
 } = import_index.default;
 
 // src/plugin-cli.ts
-import { readFileSync as readFileSync29 } from "node:fs";
+import { readFileSync as readFileSync28 } from "node:fs";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 import { dirname as dirname11, resolve as resolve9 } from "node:path";
 function readPackageVersion() {
   const here = dirname11(fileURLToPath2(import.meta.url));
   for (const rel of ["../package.json", "../../package.json", "../../../package.json"]) {
     try {
-      return JSON.parse(readFileSync29(resolve9(here, rel), "utf8")).version;
+      return JSON.parse(readFileSync28(resolve9(here, rel), "utf8")).version;
     } catch {
     }
   }
@@ -19155,9 +19048,9 @@ async function run(argv) {
     const r2 = await memoryRejectCmd2({ id: o2.id });
     console.log(JSON.stringify(r2));
   });
-  program2.command("recall").description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.").option("--cwd <path>", "infer project from this cwd").option("--project <slug>", "force a specific project slug").option("--topic <slug>", "stage 2: list chronicles in this topic").action(async (opts) => {
+  program2.command("recall").description("Ranked recall over typed memory. Stage 1 = this command (scored episodes + facts + procedures for --q); stage 2 = Read the top entry paths.").option("--cwd <path>", "infer project from this cwd").option("--project <slug>", "force a specific project slug").option("--q <text>", "task keywords to score against (title/summary/entities + file/commit overlap)").option("--all", "recall across every project (no cwd/project filter)").option("--limit <n>", "max hits to return (default 25)", (v) => parseInt(v, 10)).action(async (opts) => {
     const { recallCmd: recallCmd2 } = await Promise.resolve().then(() => (init_recall(), recall_exports));
-    await recallCmd2({ cwd: opts.cwd, project: opts.project, topic: opts.topic });
+    await recallCmd2({ cwd: opts.cwd, project: opts.project, q: opts.q, all: opts.all, limit: opts.limit });
   });
   program2.command("catalog-regen").description("Rebuild book/index.md after a global sweep.").option("--no-commit", "skip git commit + push of the regenerated catalog").action(async (opts) => {
     const { catalogRegenCmd: catalogRegenCmd2 } = await Promise.resolve().then(() => (init_catalog_regen(), catalog_regen_exports));

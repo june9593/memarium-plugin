@@ -1,33 +1,33 @@
 ---
 name: memarium-recall
 description: |
-  **TRIGGER IMMEDIATELY when the user's question contains retrospective phrasing in ANY language:** 之前是怎么解的 / 之前怎么解的 / 上次怎么处理的 / 上次怎么解决的 / 以前遇到过吗 / 以前我们怎么做 / 之前我们试过吗 / how did we fix X before / how was Y solved / why does Z work this way / what did we try last time / did we already try W. **Also trigger on:** design/architecture/prior-art questions — what pattern should I use for X / how have we approached Y before / what did we decide about Z / is there prior art for W. **Anti-pattern to break before reflex kicks in:** the question often contains clear keywords (file name, crash type, API) and your shortcut instinct is `git log --grep="<keyword>"` — DO NOT. Commit messages strip the conversation context where the user explained what didn't work and why; memarium chronicles preserve decisions, dead ends, trade-offs, and unmerged-attempt context that git history can't surface. Run memarium-recall stage 1 (one CLI call, ~5 KB) FIRST; if no topic matches, *then* fall back to git. Three-stage progressive recall — stage 1 = topic list. Stage 2 (`--topic <slug>`) = chronicles in that topic + frontmatter. Stage 3 = `Read` chronicle bodies. Cheap to invoke; when in doubt, run stage 1 — never deduplicate it away as "git is faster".
+  **TRIGGER IMMEDIATELY when the user's question contains retrospective phrasing in ANY language:** 之前是怎么解的 / 之前怎么解的 / 上次怎么处理的 / 上次怎么解决的 / 以前遇到过吗 / 以前我们怎么做 / 之前我们试过吗 / how did we fix X before / how was Y solved / why does Z work this way / what did we try last time / did we already try W. **Also trigger on:** design/architecture/prior-art questions — what pattern should I use for X / how have we approached Y before / what did we decide about Z / is there prior art for W. **Anti-pattern to break before reflex kicks in:** the question often contains clear keywords (file name, crash type, API) and your shortcut instinct is `git log --grep="<keyword>"` — DO NOT. Commit messages strip the conversation context where the user explained what didn't work and why; memarium's typed memory preserves decisions, dead ends, trade-offs, and unmerged-attempt context that git history can't surface. Run memarium-recall (one CLI call, ~small) FIRST; if nothing matches, *then* fall back to git. Two-stage recall over typed memory — stage 1 = one `recall --q "<task>"` call ranks the project's episodes + semantic facts + procedural gotchas by relevance; stage 2 = `Read` the top 1–5 entry paths for full bodies. Cheap to invoke; when in doubt, run it — never deduplicate it away as "git is faster".
 ---
 
 # /memarium-recall — read your own notes before doing the work
 
 You (in-session Claude) just landed in a project repo. The user has been
-working in this repo (and others) for weeks/months, and the memarium
-plugin has captured every Claude Code + Copilot session into
-`~/.memarium/session-repo/`. The `/memarium` skill has digested those
-sessions into per-project **chronicles** (one per work thread,
-4-section AI-first body) and **topics** (one per subsystem).
+working in this repo (and others) for weeks/months, and the memarium plugin
+has captured every Claude Code + Copilot session into `~/.memarium/session-repo/`.
+The `/memarium` digest distilled those sessions into **typed memory** —
+`episodic` (the arc / dead-ends / decisions of a past work thread), `semantic`
+(durable project facts), `procedural` (how-to playbooks + gotchas), `core`
+(never-forget rules) — one AI-native, scored knowledge layer. (There is no
+human "book" anymore.)
 
-**Your job here**: before you start exploring code, figure out which
-past topic(s) bear on the current task, then read the matching
-chronicles. Past-you may have already debugged exactly this thing.
+**Your job here**: before you explore code, run recall with your task keywords,
+then `Read` the top 1–5 hits. Past-you may have already debugged exactly this.
 
-## Why three-stage recall
-
-A typical project has 5-15 topics and 30-150 chronicles. Loading all
-chronicle bodies = hundreds of KB and crowds out room for the actual
-work. So we walk from coarse to fine:
+## Two-stage recall (low context by design)
 
 | Stage | Payload | Question it answers |
 |---|---|---|
-| 1 (default) | ~5 KB — topics + 1-line summaries | "Which subsystem does my task touch?" |
-| 2 (`--topic <slug>`) | ~5-15 KB — chronicles in that topic + frontmatter (no body) | "Within this subsystem, which past work is most similar?" |
-| 3 (`Read` tool) | full body, ~2-5 KB per chronicle | "What did past-me actually do here?" |
+| 1 (this command) | ranked hits — title + 1-line summary + `whyRecalled` per entry, bodies NOT loaded | "Which past episodes/facts/procedures bear on my task?" |
+| 2 (`Read` tool) | full body, ~1–3 KB per entry | "What did past-me actually do / decide / hit here?" |
+
+The CLI does the ranking (keyword overlap over title/summary/entities + file/commit
+overlap + recency + importance), so you don't triage a topic tree — you get a
+relevance-sorted list directly.
 
 ## Step 0 — locate the plugin binary
 
@@ -37,171 +37,110 @@ VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"
 ```
 
 `$CLAUDE_PLUGIN_ROOT` is set when the skill runs inside the plugin. The `ls`
-fallback globs the plugin cache — the marketplace dir is `memarium-plugin`, so
-match `cache/*/memarium/*` (the `*` covers the marketplace segment), **not**
-`cache/memarium/memarium/*`. If `$VBP` is empty the plugin isn't installed —
-tell the user and stop.
+fallback globs the plugin cache and picks the highest **semver** version (the
+`*` covers the marketplace segment). If `$VBP` is empty the plugin isn't
+installed — tell the user and stop.
 
-## Step 1 — Stage 1: topic list
+## Step 1 — Stage 1: ranked recall
 
-Run this **first**, in the user's current cwd:
-
-```bash
-"$VBP" recall --cwd "$(pwd)"
-```
-
-The output is a JSON payload like:
-
-```json
-{
-  "stage": "stage-1-topics",
-  "project": "edge-src",
-  "repoPath": "/Users/me/.memarium/session-repo",
-  "entries": [
-    {
-      "kind": "topic",
-      "project": "edge-src",
-      "title": "Edge macOS Menu Bar Copilot",
-      "summary": "Edge for Mac places a Copilot icon in the menu bar; left-click opens a floating widget, right-click opens a context menu.",
-      "path": "book/edge-src/topics/menu-bar-copilot-mac.md",
-      "slug": "menu-bar-copilot-mac",
-      "updatedAt": "2026-04-22",
-      "tags": []
-    }
-  ],
-  "meta": {
-    "topics": 5,
-    "chronicles": 0,
-    "nextStep": "Pick a relevant topic, then run: "$VBP" recall --project <slug> --topic <topicSlug>"
-  }
-}
-```
-
-Stage 1 includes:
-- **`kind: "topic"`** — memarium topics for the current project. Read
-  `summary` to gauge subsystem fit.
-
-## Step 2 — Triage topics
-
-For each topic in stage 1, ask: does the title or summary mention what
-I'm about to touch (file / API / bug / feature)? Pick the **1-2 most
-likely** topics. Don't try to read everything — most projects have
-many topics, but only a few will be relevant to a given task.
-
-## Step 3 — Stage 2: chronicles for the chosen topic
-
-For each picked topic, fetch its chronicles:
+Run this in the user's cwd, passing the **task's keywords** (file names, APIs,
+crash types, feature names) as `--q`:
 
 ```bash
-"$VBP" recall --cwd "$(pwd)" --topic <topic-slug>
+"$VBP" recall --cwd "$(pwd)" --q "<keywords from the user's task>"
 ```
 
 Output:
 
 ```json
 {
-  "stage": "stage-2-articles",
-  "project": "edge-src",
-  "topic": "menu-bar-copilot-mac",
+  "stage": "stage-1-ranked",
+  "project": "github.com-june9593-memarium",
+  "query": "stop hook decision block",
   "repoPath": "/Users/me/.memarium/session-repo",
   "entries": [
     {
-      "kind": "chronicle",
-      "project": "edge-src",
-      "title": "Native header + 3 PR landing",
-      "summary": "status=shipped · 4 files · 3 commits · 2 decisions",
-      "path": "/Users/me/.memarium/session-repo/book/edge-src/chronicle/2026-04-25__menu-bar-app-native-header__menu-bar.md",
-      "slug": "menu-bar-app-native-header",
-      "frontmatter": {
-        "files_touched": [
-          "chrome/browser/ui/cocoa/edge_menu_bar/edge_menu_bar_widget_header_view.mm",
-          "chrome/browser/ui/cocoa/edge_menu_bar/edge_menu_bar_prefs.cc"
-        ],
-        "commits": ["7bc9ef48b654", "abcd1234ef56"],
-        "decisions": ["Native C++ header over server-side header (audit blocker)"],
-        "status": "shipped"
-      },
-      "updatedAt": "2026-04-25",
-      "tags": ["copilot", "macos"]
+      "id": "procedural/github.com-june9593-memarium/plugin-hook-block-and-semver-binary-discovery",
+      "type": "procedural",
+      "title": "a Stop hook must emit decision:block; binary discovery must pick by semver",
+      "summary": "Two plugin-mechanics gotchas fixed in 0.15 …",
+      "score": 39.0,
+      "whyRecalled": "keyword×6 scope:project importance:4",
+      "path": "/Users/me/.memarium/session-repo/memory/procedural/…/plugin-hook-block-and-semver-binary-discovery.md",
+      "updatedAt": "2026-07-09",
+      "entities": ["stop-hook", "decision-block", "semver"],
+      "source": "local"
     }
   ],
-  "meta": { "chronicles": 7, "nextStep": "..." }
+  "meta": { "total": 13, "returned": 13, "nextStep": "Read the top 1–5 entry.path …" }
 }
 ```
 
-The frontmatter tells you 80% of what you need *without* reading the body:
-- `files_touched` matches the file you're about to edit?
-- `commits` includes a SHA you're about to revert / cherry-pick?
-- `decisions` already made the architectural call you were about to debate?
-- `status: blocked` means past-you tried this and got stuck — read the
-  body to see why before retrying.
+- **`type`** tells you the grain: `episodic` = a past work thread's arc (best for
+  "how did we do X"); `procedural` = a reusable gotcha/playbook; `semantic` = a
+  durable fact; `core` = a rule.
+- **`whyRecalled`** shows why it ranked (`keyword×N`, `file×N`, `commit×N`,
+  `scope:project`, `importance:N`) — a `keyword`/`file`/`commit` hit is a real
+  content match; scope/importance alone is just baseline.
+- **`source: "overlay"`** means it came from a sibling device (cross-device recall).
+  `path` is already resolved to the right tree — pass it straight to `Read`.
+- With **no `--q`**, recall returns a scope-eligible overview + a `primer` header
+  (like a "what do we know here" catch-up).
 
-## Step 4 — Stage 3: read selectively
+## Step 2 — Read the top hits
 
-For chronicles whose frontmatter looks relevant, use the `Read` tool with
-the absolute `path`:
+Pick the **1–5** highest-scoring, on-topic entries (prefer real content hits and
+episodes for "how did we do X"). `Read` each one's absolute `path`:
 
 ```
-Read /Users/me/.memarium/session-repo/book/edge-src/chronicle/2026-04-25__menu-bar-app-native-header__menu-bar.md
+Read /Users/me/.memarium/session-repo/memory/procedural/…/plugin-hook-block-and-semver-binary-discovery.md
 ```
 
-Chronicles are short (1-3 sentences per section, the body is the receipt
-for the frontmatter). 3-5 reads is usually plenty.
+Bodies are short. 1–5 reads is usually plenty. Don't read the whole list.
 
-## Step 5 — Use what you read
+## Step 3 — Use what you read
 
-When you reply to the user:
-- **Reference the past finding explicitly**: "Per your earlier
-  chronicle `menu-bar-app-native-header`, you decided native C++ header
-  over the server-side approach because of an audit blocker — let me
-  follow the same pattern…"
-- **Don't paraphrase silently** — it should be obvious to the user that
-  you're standing on past work, not re-deriving it.
-- **Update on contradiction**: if what you read no longer reflects
-  current code, mention it. The user may want to update the chronicle.
-- **No relevant chronicle / topic / card?** Say so explicitly: "I
-  didn't find anything in your memarium about X — proceeding fresh."
+- **Reference the past finding explicitly**: "Per your procedural memory
+  `plugin-hook-block-and-semver-binary-discovery`, a Stop hook must emit
+  `decision:block` — let me follow that…"
+- **Don't paraphrase silently** — it should be obvious you're standing on past work.
+- **Update on contradiction**: if what you read no longer reflects current code,
+  say so — the user may want to supersede that memory (`/memarium-retro`).
+- **Nothing relevant?** Say so explicitly: "I didn't find anything in your
+  memarium about X — proceeding fresh."
 
 ## When NOT to invoke recall
 
-- The user's request has nothing to do with code in this repo (e.g.
-  asking you to format JSON, write an essay, debug a config).
-- The user explicitly says "ignore my notes" or "fresh start".
-- `"$VBP" recall` errors with "no synced sessions for cwd" — the user
-  hasn't synced this project. Fall back to normal exploration; don't
-  pester them to sync.
-- You're being asked the same question for the second time in one
-  session — you already loaded the relevant entries the first time.
+- The request has nothing to do with code in this repo (format JSON, write an essay).
+- The user explicitly says "ignore my notes" / "fresh start".
+- `recall` reports `cwdUnresolved` / "No memory yet for this project" — the user
+  hasn't synced/digested this project. Fall back to normal exploration; don't pester.
+- You already ran recall for this task earlier in the session.
 
 ## Failure modes to avoid
 
-- ❌ **Skipping stage 1 and reading a chronicle directly** — without
-  the topic list you don't know which chronicles to even ask for.
-- ❌ **Reading every chronicle in a topic** — stage 2 is the triage
-  layer; only `Read` the 1-3 chronicles whose frontmatter actually
-  matches. Reading 7 chronicles to find the 1 useful one wastes
-  context.
-- ❌ **Treating recall as search** — the catalog is hierarchical
-  (topic → chronicle), not keyword-indexed. Match against
-  `keyConcepts` in topic frontmatter and `files_touched` in chronicle
-  frontmatter.
-- ❌ **Hallucinating "I checked your notes"** when you didn't run the
-  CLI. Always run it explicitly so the user can see you did.
-- ❌ **Refusing to do the task because old notes contradict it.** Notes
-  are dated; code may have moved on. Recall is one input, not a veto.
+- ❌ **Reading a memory body without running recall first** — you don't know which
+  entries are relevant until you rank them.
+- ❌ **Reading every hit** — `Read` only the 1–5 that actually match; the ranked
+  list is the triage layer.
+- ❌ **Recalling with an empty/vague `--q`** when the task has clear keywords —
+  pass the file/API/bug terms so scoring can do its job.
+- ❌ **Hallucinating "I checked your notes"** without running the CLI. Always run it.
+- ❌ **Refusing the task because old notes contradict it.** Notes are dated; code
+  moves on. Recall is one input, not a veto.
 
 ## Relationship: /memarium vs /memarium-retro vs /memarium-recall
 
 | | `/memarium` (batch write) | `/memarium-retro` (live write) | `/memarium-recall` (read) |
 |---|---|---|---|
-| When | After sessions, batch-digest | At the END of a task, in-session | At the START of new work |
+| When | After sessions, batch-digest | At the END of a task, in-session | Before / during new work |
 | Cwd | session-repo (global) or project | The project you worked in | Always a project repo |
-| Reads | raw_sessions/ | the current conversation | book/ (chronicles + topics) |
-| Writes | book/ + typed memory | one typed-memory insight (gated) | nothing |
+| Reads | raw_sessions/ | the current conversation | typed memory (episodes + semantic/procedural/core) |
+| Writes | typed memory | one typed-memory insight (gated) | nothing in the repo (only the local usage sidecar) |
 | LLM | in-session Claude (you) | in-session Claude (you) | in-session Claude (you) |
 
 The skills close the loop:
-- `/memarium` batch-digests synced sessions into chronicles + typed memory.
+- `/memarium` batch-digests synced sessions into typed memory.
 - `/memarium-retro` captures the ONE reusable insight from THIS session, live.
-- `/memarium-recall` lets future-you read the chronicles/topics in one pass
-  (and `/memarium-context` loads the typed-memory primer).
+- `/memarium-recall` ranks + surfaces past memory for the task at hand
+  (and `/memarium-context` loads the broader typed-memory primer at session start).
