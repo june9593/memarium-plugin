@@ -17494,14 +17494,13 @@ function buildRecallPayload(opts = {}) {
   return payload;
 }
 async function recallCmd(opts) {
-  const cfg = readPluginConfig();
   const payload = buildRecallPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
   if (payload.query !== "") {
     try {
       const bumpIds = payload.entries.filter((h2) => Number.isFinite(h2.score) && CONTENT_HIT_MARKERS2.some((m) => h2.whyRecalled.includes(m))).slice(0, BUMP_TOP_N2).map((h2) => h2.id);
       const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-      bumpUsage(cfg.repoPath, bumpIds, now);
+      bumpUsage(payload.repoPath, bumpIds, now);
     } catch {
     }
   }

@@ -145,12 +145,13 @@ export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
 /** CLI entry: print payload as JSON to stdout, and (only on a real content-hit
  *  query) bump the device-local usage sidecar for the top hits. */
 export async function recallCmd(opts: RecallOptions): Promise<void> {
-  const cfg = readPluginConfig();
   const payload = buildRecallPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
 
   // BUMP (the ONLY write side effect) — non-empty query + content hit only.
-  // Best-effort: usage is non-essential telemetry and must never break recall.
+  // Reuse the repoPath buildRecallPayload already resolved (avoids a second
+  // readPluginConfig + its migrate side-effect). Best-effort: usage is
+  // non-essential telemetry and must never break recall.
   if (payload.query !== "") {
     try {
       const bumpIds = payload.entries
@@ -158,7 +159,7 @@ export async function recallCmd(opts: RecallOptions): Promise<void> {
         .slice(0, BUMP_TOP_N)
         .map((h) => h.id);
       const now = new Date().toISOString().slice(0, 10);
-      bumpUsage(cfg.repoPath, bumpIds, now);
+      bumpUsage(payload.repoPath, bumpIds, now);
     } catch { /* usage is non-essential telemetry; never fail a recall over it */ }
   }
 }
