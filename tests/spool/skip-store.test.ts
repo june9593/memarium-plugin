@@ -38,4 +38,9 @@ describe("skip-store", () => {
     writeFileSync(join(repo, SKIP_INDEX_REL), "{ not json");
     expect(loadSkips(repo)).toEqual({ version: 1, sessions: {} });
   });
+
+  it("an array-shaped `sessions` field degrades to empty (arrays drop UUID props on save)", () => {
+    writeFileSync(join(repo, SKIP_INDEX_REL), JSON.stringify({ version: 1, sessions: [] }));
+    expect(loadSkips(repo)).toEqual({ version: 1, sessions: {} });
+  });
 });

@@ -21,7 +21,10 @@ export function loadSkips(repoRoot: string): SkipIndex {
   if (!existsSync(p)) return { version: 1, sessions: {} };
   try {
     const parsed = JSON.parse(readFileSync(p, "utf8")) as SkipIndex;
-    if (parsed?.version !== 1 || typeof parsed.sessions !== "object" || !parsed.sessions) {
+    // `sessions` must be a plain object map. Reject arrays too — `typeof [] ===
+    // "object"`, and upsert would then set UUID props on the array which
+    // JSON.stringify drops (silent data loss: reports success, saves nothing).
+    if (parsed?.version !== 1 || typeof parsed.sessions !== "object" || !parsed.sessions || Array.isArray(parsed.sessions)) {
       return { version: 1, sessions: {} };
     }
     return parsed;

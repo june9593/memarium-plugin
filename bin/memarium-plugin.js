@@ -7341,7 +7341,7 @@ function loadSkips(repoRoot) {
   if (!existsSync5(p2)) return { version: 1, sessions: {} };
   try {
     const parsed = JSON.parse(readFileSync5(p2, "utf8"));
-    if (parsed?.version !== 1 || typeof parsed.sessions !== "object" || !parsed.sessions) {
+    if (parsed?.version !== 1 || typeof parsed.sessions !== "object" || !parsed.sessions || Array.isArray(parsed.sessions)) {
       return { version: 1, sessions: {} };
     }
     return parsed;

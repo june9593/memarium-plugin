@@ -170,13 +170,15 @@ error message, or decision marker.
 Skipped sessions are recorded in the **local skip ledger** (Step P6), NOT as a
 memory — so they don't pollute recall but also aren't re-proposed every digest.
 
-Write the segmentation to `/tmp/memarium-groups.json`:
+Write the segmentation to `/tmp/memarium-groups.json` (use each session's **full
+`sessionId`** from `newSessions`, NOT the 8-char `shortId` — these ids flow into
+`sourceSessions` and the skip ledger):
 
 ```json
 [
   { "threadId": "fix-fullscreen-bookmark-bar", "title": "Fix Edge fullscreen bookmark-bar bug",
-    "sessionIds": ["abc12345", "def67890"], "skip": false },
-  { "threadId": "ping-test", "sessionIds": ["xyz99999"], "skip": true,
+    "sessionIds": ["abc12345-6789-4abc-8def-0123456789ab", "def67890-1234-4cde-9012-3456789abcde"], "skip": false },
+  { "threadId": "ping-test", "sessionIds": ["xyz99999-aaaa-4bbb-8ccc-ddddeeeeffff"], "skip": true,
     "skipReason": "pure ping test, no real work content" }
 ]
 ```
