@@ -104,7 +104,7 @@ export async function run(argv: string[]) {
   program
     .command("skip-write")
     .description("Record intentionally-not-digested sessions in the local skip ledger (.memarium/index.skips.json) so the digest doesn't re-propose them. --input JSON: [{sessionId,reason?}] or {sessions:[...]}.")
-    .option("--input <path>", "path to skip entries JSON")
+    .requiredOption("--input <path>", "path to skip entries JSON (required)")
     .action(async (opts: { input?: string }) => {
       const { skipWriteCmd } = await import("./commands/skip-write.js");
       const report = await skipWriteCmd({ inputPath: opts.input });

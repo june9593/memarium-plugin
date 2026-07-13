@@ -20,6 +20,11 @@ export interface PreparePayload {
   /** Existing episodic memory ids grouped by project, so the skill avoids
    *  writing a duplicate episodic for an already-digested thread. */
   existingEpisodes: Record<string, string[]>;
+  /** Session ids prepare filtered out as memarium meta-sessions (the user
+   *  running /memarium). They never reach newSessions, but they ALSO aren't
+   *  episodic-consumed, so the skill must skip-ledger them (P9) or they stay
+   *  "pending" forever and keep triggering global fan-out. */
+  filteredMetaSessions: string[];
   /** Aggregate counts for the skill's user-facing summary table. */
   meta: {
     totalSessionsInIndex: number;
@@ -108,6 +113,7 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
     newSessionsCount: 0,
   };
   const newSessions: PreparedSession[] = [];
+  const filteredMetaSessions: string[] = [];
   for (const entry of Object.values(indexFile.entries)) {
     meta.totalSessionsInIndex++;
     if (consumed.has(entry.sessionId)) {
@@ -135,6 +141,7 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
       // before the LLM ever sees it. (See SessionSignals docs for the
       // detection heuristics.)
       meta.sessionsFilteredAsMemariumMeta++;
+      filteredMetaSessions.push(entry.sessionId);
       continue;
     }
     const signals = extractSessionSignals(mdBody);
@@ -171,6 +178,7 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
     project: projectFilter,
     newSessions,
     existingEpisodes,
+    filteredMetaSessions,
     meta,
   };
 }

@@ -108,7 +108,7 @@ The payload shape:
 {
   "project": "github.com-acme-edge",
   "newSessions": [
-    { "sessionId": "abc12345", "shortId": "abc12345", "tool": "claude" | "copilot",
+    { "sessionId": "abc12345-6789-4abc-8def-0123456789ab", "shortId": "abc12345", "tool": "claude" | "copilot",
       "endedAt": "2026-04-22T15:30:00Z",
       "mdPath": "raw_sessions/claude/github.com-acme-edge/2026-04-22/...md",
       "preview": "first 300 chars of user's first real message", "insightScore": 0.62 }
@@ -238,7 +238,9 @@ item:
 - `entry`: `id = episodic/<project>/<threadId-kebab>`, `type: "episodic"`,
   `scope: "project:<slug>"`, `project`, `title`, keyword-dense `summary`,
   `status: "active"`, `importance` (0–5), `confidence` (0–1),
-  **`sourceSessions`** (the thread's shortIds — the idempotency receipt),
+  **`sourceSessions`** (the threads' full `sessionId` values from `newSessions` —
+  the idempotency receipt; use the full `sessionId`, **NOT** `shortId`, or the
+  session never counts as digested and re-proposes forever),
   `sourceFiles` (files_touched), `sourceCommits`, `entities` (symbols/APIs/concepts).
 - `body`: `## Context / ## What worked / ## Dead ends / ## Open questions /
   ## Decisions` + a `**Work status:** shipped|in-progress|blocked|abandoned` line.
@@ -369,12 +371,16 @@ you carry forward.
 
 ### Step P9 — Record skips (so they aren't re-proposed)
 
-For every thread you marked `skip: true` in Step P2, record its sessions in the
-local skip ledger — otherwise they'd resurface as "new" every digest. Build a JSON
-array of `{ sessionId, reason }` (one per skipped session across all skip threads):
+Record in the local skip ledger — otherwise these resurface as "new" every digest
+(and keep triggering global fan-out): **(a)** every thread you marked `skip: true`
+in Step P2, **and (b)** every id in `prepare`'s **`filteredMetaSessions`** (the
+memarium meta-sessions prepare already removed from `newSessions` — they're not
+episodic-consumed, so you must ledger them here). Build a JSON array of
+`{ sessionId, reason }` using each session's **full `sessionId`**:
 
 ```json
-[ { "sessionId": "xyz99999", "reason": "pure ping test, no real work content" } ]
+[ { "sessionId": "xyz99999-...-uuid", "reason": "pure ping test, no real work content" },
+  { "sessionId": "abc11111-...-uuid", "reason": "memarium meta-session (filtered by prepare)" } ]
 ```
 
 ```bash
@@ -434,38 +440,55 @@ echo warmup > /tmp/memarium/_warmup.json && rm /tmp/memarium/_warmup.json
 ```
 
 Then dispatch a `general-purpose` Agent per project in parallel (multiple Agent
-calls in one message). Each agent's prompt:
+calls in one message). Agents are **READERS ONLY** — they produce JSON, they do
+NOT persist. (The shared index files `index.{memory,entity,qa,skips}.json` cannot
+be written by parallel agents — concurrent load-mutate-save races drop entries; so
+persistence is serialized by the orchestrator in G3.) Each agent's prompt:
 
 ```
-You are running project-mode /memarium for project '<slug>', per
-skills/memarium/SKILL.md Steps P1–P10 (typed-memory only — NO book):
+You are a READER for project-mode /memarium, project '<slug>', per SKILL.md
+P1–P8 (typed-memory only — NO book — and DO NOT persist anything):
 
   1. "$VBP" prepare --project <slug>
   2. Read each newSession's mdPath. Apply SKIP rules conservatively.
   3. Segment one-thread-per-session by default; merge only if continuous.
-  4. Write an episodic {entry,body} per non-skip thread (episodic-format.md:
-     Context/What worked/Dead ends/Open questions/Decisions; sourceSessions
-     correct; work-status in body, NOT entry.status) + distil semantic/
-     procedural/core facts.
-  5. Persist: memory-write (non-gated) / memory-propose (gated). Then
-     entity-write, qa-write, memory-lint, and skip-write for skipped sessions.
-  Write input JSON under /tmp/memarium/<slug>/ so siblings don't collide.
-  Return a one-line count summary. Do NOT finalize — the orchestrator commits once.
+  4. For each non-skip thread produce an episodic {entry,body} (episodic-format.md:
+     Context/What worked/Dead ends/Open questions/Decisions; sourceSessions = the
+     full sessionId values, NOT shortId; work-status in body, NOT entry.status) +
+     distilled semantic/procedural/core facts + entity {entry,body} + qa {entry,body}.
+  5. Write these as JSON FILES under /tmp/memarium/<slug>/ (use the Write tool):
+     memory.json (episodics + non-gated semantic), gated.json (core/procedural/
+     pinned/supersede/trust-elevation), entities.json, qa.json, and skips.json
+     ([{sessionId,reason}] for both skipped threads AND prepare.filteredMetaSessions).
+  Do NOT run memory-write / memory-propose / entity-write / qa-write / skip-write /
+  finalize — the orchestrator persists SEQUENTIALLY. Return the count per file.
 
 If you hit `permission denied`: STOP, return "permission denied: <pattern>", and
 let the orchestrator re-run warm-up. Do NOT retry — you can't escalate.
 ```
 
-Cap at ~4 agents in flight; queue the rest. If one fails, log it and continue —
-the user can re-run that project in project-mode later.
+Cap at ~4 agents in flight; queue the rest. If one fails, log it and continue.
 
-### Step G3 — Finalize + summary
+### Step G3 — Persist sequentially, then finalize
 
-After all subagents return, commit the whole sweep once:
+The agents only produced JSON. Persist ONE PROJECT AT A TIME (never in parallel —
+that's what avoids the concurrent-index-write races). For each project's
+`/tmp/memarium/<slug>/`, in sequence, run only the files that are non-empty:
+
+```bash
+"$VBP" memory-write   --input /tmp/memarium/<slug>/memory.json
+"$VBP" memory-propose --input /tmp/memarium/<slug>/gated.json     # if any gated
+"$VBP" entity-write   --input /tmp/memarium/<slug>/entities.json  # if any
+"$VBP" qa-write       --input /tmp/memarium/<slug>/qa.json        # if any
+"$VBP" skip-write     --input /tmp/memarium/<slug>/skips.json     # if any
+```
+
+Then surface any gated proposals for review (`"$VBP" memory-diff --json`,
+non-blocking), and commit the whole sweep once:
 
     "$VBP" finalize
 
-Then print a per-project summary (episodics + facts added) and the finalize result.
+Print a per-project summary (episodics + facts added) and the finalize result.
 
 ---
 

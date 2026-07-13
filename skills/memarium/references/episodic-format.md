@@ -23,7 +23,7 @@ the fields can't.
     "status": "active",
     "importance": 3,
     "confidence": 0.9,
-    "sourceSessions": ["<shortId>", "<shortId>"],
+    "sourceSessions": ["abc12345-6789-4abc-8def-0123456789ab"],
     "sourceFiles": ["chrome/browser/ui/.../foo.mm"],
     "sourceCommits": ["7bc9ef48b654"],
     "entities": ["FooController", "NSStatusBar", "fullscreen"]
@@ -36,7 +36,7 @@ the fields can't.
 
 | Old chronicle field | Episodic home |
 |---|---|
-| `sessionIds` | `entry.sourceSessions` — **the idempotency key; must be present + correct** |
+| `sessionIds` | `entry.sourceSessions` — the full `sessionId` from `newSessions` (NOT `shortId`); **the idempotency key; must be present + correct** |
 | `files_touched` | `entry.sourceFiles` (scored via file-overlap) |
 | `commits` | `entry.sourceCommits` (scored via commit-overlap) |
 | symbols / APIs / concepts / tags | `entry.entities` (scored via keyword-overlap; also feeds the entity wiki) |
@@ -84,8 +84,10 @@ If a section is genuinely empty, write `(none)` — an empty section signals
 
 ## Rules
 
-- **`sourceSessions` is load-bearing.** It's the digest receipt; a wrong/missing
-  value means the session re-digests forever (or a real session gets skipped).
+- **`sourceSessions` is load-bearing.** It's the digest receipt; use each session's
+  **full `sessionId`** (from `prepare`'s `newSessions[].sessionId`) — NOT `shortId`
+  (the 8-char truncation), or the session never matches the consumed check and
+  re-digests forever. A wrong/missing value also risks skipping real work.
 - **`summary` is scored** — write it keyword-dense (files, APIs, symptom), not vague.
 - **Keep `threadId` stable** per real thread across re-digests — the `id` upserts,
   so a stable id refines rather than duplicates.

@@ -6,8 +6,9 @@ import { join } from "node:path";
 describe("buildListProjectsPayload — memory-based counts + consumed tracking", () => {
   let fakeHome: string, repo: string;
 
+  const uuid = (id: string) => `${id}-1111-2222-3333-444455556666`;
   const sess = (id: string) => ({
-    sessionId: id, shortId: id, tool: "claude", project: "edge-memvc",
+    sessionId: uuid(id), shortId: id, tool: "claude", project: "edge-memvc",
     projectRaw: "/work/edge-memvc", startedAt: "2026-01-01T00:00:00Z", endedAt: "2026-01-01T00:00:00Z",
     nameSlug: "x", displayName: "x", relativePath: `raw_sessions/claude/edge-memvc/2026-01-01/x__${id}.md`,
     sourcePath: "/x.jsonl", sourceMtimeMs: 1, sourceSha256: "x",
@@ -34,12 +35,12 @@ describe("buildListProjectsPayload — memory-based counts + consumed tracking",
     }));
     writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
       "episodic/edge-memvc/e1": memEntry({ id: "episodic/edge-memvc/e1", type: "episodic",
-        path: "memory/episodic/edge-memvc/e1.md", sourceSessions: ["s1"], updatedAt: "2026-01-05" }),
+        path: "memory/episodic/edge-memvc/e1.md", sourceSessions: [uuid("s1")], updatedAt: "2026-01-05" }),
       "semantic/edge-memvc/f1": memEntry({ id: "semantic/edge-memvc/f1", type: "semantic",
         path: "memory/semantic/edge-memvc/f1.md", updatedAt: "2026-01-03" }),
     } }));
     writeFileSync(join(repo, ".memarium/index.skips.json"), JSON.stringify({
-      version: 1, sessions: { s2: { reason: "meta", at: "2026-07-13" } },
+      version: 1, sessions: { [uuid("s2")]: { reason: "meta", at: "2026-07-13" } },
     }));
   });
   afterEach(() => { vi.unstubAllEnvs(); rmSync(fakeHome, { recursive: true, force: true }); });
@@ -63,7 +64,7 @@ describe("buildListProjectsPayload — memory-based counts + consumed tracking",
     writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
       bad1: 42, bad2: null, bad3: { type: "episodic" /* no project */ },
       good: memEntry({ id: "episodic/edge-memvc/ok", type: "episodic",
-        path: "memory/episodic/edge-memvc/ok.md", sourceSessions: ["s1"] }),
+        path: "memory/episodic/edge-memvc/ok.md", sourceSessions: [uuid("s1")] }),
     } }));
     const { buildListProjectsPayload } = await import("../../src/commands/list-projects.js");
     expect(() => buildListProjectsPayload(repo)).not.toThrow();

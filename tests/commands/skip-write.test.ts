@@ -38,4 +38,16 @@ describe("skipWriteCmd", () => {
     const r2 = await skipWriteCmd({ inputPath: input }); // same input again
     expect(r2).toEqual({ skipped: 0, total: 1 });
   });
+
+  it("throws on a missing --input (a dropped flag must not silently ledger nothing)", async () => {
+    const { skipWriteCmd } = await import("../../src/commands/skip-write.js");
+    await expect(skipWriteCmd({})).rejects.toThrow(/requires --input/);
+  });
+
+  it("throws on a non-array / non-{sessions:[]} payload shape", async () => {
+    const input = join(fakeHome, "bad.json");
+    writeFileSync(input, JSON.stringify({ sessions: {} }));
+    const { skipWriteCmd } = await import("../../src/commands/skip-write.js");
+    await expect(skipWriteCmd({ inputPath: input })).rejects.toThrow(/must be an array/);
+  });
 });

@@ -6,9 +6,12 @@ import { join, dirname } from "node:path";
 describe("buildPreparePayload — consumed = episodic sourceSessions ∪ skip ledger", () => {
   let fakeHome: string, repo: string;
 
+  // shortId is the 8-char truncation of sessionId (they DIFFER in reality) —
+  // sourceSessions/skips must key on the FULL sessionId, not shortId.
+  const uuid = (id: string) => `${id}-1111-2222-3333-444455556666`;
   const rel = (id: string) => `raw_sessions/claude/edge-memvc/2026-01-01/x__${id}.md`;
   const sess = (id: string) => ({
-    sessionId: id, shortId: id, tool: "claude", project: "edge-memvc",
+    sessionId: uuid(id), shortId: id, tool: "claude", project: "edge-memvc",
     projectRaw: "/work/edge-memvc", startedAt: "2026-01-01T00:00:00Z", endedAt: `2026-01-0${id.slice(1)}T00:00:00Z`,
     nameSlug: "x", displayName: "x", relativePath: rel(id),
     sourcePath: "/x.jsonl", sourceMtimeMs: 1, sourceSha256: "x",
@@ -41,16 +44,17 @@ describe("buildPreparePayload — consumed = episodic sourceSessions ∪ skip le
       mkdirSync(dirname(p), { recursive: true });
       writeFileSync(p, `# session ${id}\n\nuser: do a thing in edge-memvc\n`);
     }
-    // memory: s1 consumed by an EPISODIC; s3 referenced ONLY by a SEMANTIC (derived → NOT consumed)
+    // memory: s1 consumed by an EPISODIC (receipt = FULL sessionId); s3 referenced
+    // ONLY by a SEMANTIC (derived → NOT consumed)
     writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
       "episodic/edge-memvc/e1": memEntry({ id: "episodic/edge-memvc/e1", type: "episodic",
-        path: "memory/episodic/edge-memvc/e1.md", sourceSessions: ["s1"] }),
+        path: "memory/episodic/edge-memvc/e1.md", sourceSessions: [uuid("s1")] }),
       "semantic/edge-memvc/f1": memEntry({ id: "semantic/edge-memvc/f1", type: "semantic",
-        path: "memory/semantic/edge-memvc/f1.md", sourceSessions: ["s3"] }),
+        path: "memory/semantic/edge-memvc/f1.md", sourceSessions: [uuid("s3")] }),
     } }));
-    // skip ledger: s2 intentionally skipped
+    // skip ledger: s2 intentionally skipped (keyed by FULL sessionId)
     writeFileSync(join(repo, ".memarium/index.skips.json"), JSON.stringify({
-      version: 1, sessions: { s2: { reason: "meta", at: "2026-07-13" } },
+      version: 1, sessions: { [uuid("s2")]: { reason: "meta", at: "2026-07-13" } },
     }));
   });
   afterEach(() => { vi.unstubAllEnvs(); rmSync(fakeHome, { recursive: true, force: true }); });
@@ -59,10 +63,10 @@ describe("buildPreparePayload — consumed = episodic sourceSessions ∪ skip le
     const { buildPreparePayload } = await import("../../src/commands/prepare.js");
     const p = buildPreparePayload({ project: "edge-memvc" });
     const ids = p.newSessions.map((s) => s.sessionId).sort();
-    // s1 = episodic-consumed, s2 = skip-ledgered → both consumed.
-    // s3 = referenced ONLY by a semantic (derived) → STILL pending (the critical case).
-    // s4 = fresh.
-    expect(ids).toEqual(["s3", "s4"]);
+    // s1 = episodic-consumed, s2 = skip-ledgered → both consumed (matched by FULL
+    // sessionId, not the 8-char shortId). s3 = referenced ONLY by a semantic
+    // (derived) → STILL pending. s4 = fresh.
+    expect(ids).toEqual([uuid("s3"), uuid("s4")]);
     expect(p.meta.sessionsAlreadyDigested).toBe(2);
   });
 

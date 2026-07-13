@@ -13547,6 +13547,7 @@ function buildPreparePayload(opts = {}) {
     newSessionsCount: 0
   };
   const newSessions = [];
+  const filteredMetaSessions = [];
   for (const entry of Object.values(indexFile.entries)) {
     meta.totalSessionsInIndex++;
     if (consumed.has(entry.sessionId)) {
@@ -13569,6 +13570,7 @@ function buildPreparePayload(opts = {}) {
     const mdBody = readFileSync8(mdAbs, "utf8");
     if (isMemariumMetaSession(mdBody)) {
       meta.sessionsFilteredAsMemariumMeta++;
+      filteredMetaSessions.push(entry.sessionId);
       continue;
     }
     const signals = extractSessionSignals(mdBody);
@@ -13601,6 +13603,7 @@ function buildPreparePayload(opts = {}) {
     project: projectFilter,
     newSessions,
     existingEpisodes,
+    filteredMetaSessions,
     meta
   };
 }
@@ -15361,6 +15364,13 @@ function applyMemoryItems(repoPath, items) {
     if (!Array.isArray(entry.sourceCommits)) entry.sourceCommits = [];
     if (!Array.isArray(entry.sourceFiles)) entry.sourceFiles = [];
     if (!Array.isArray(entry.entities)) entry.entities = [];
+    const prior = idx.entries[entry.id];
+    if (prior) {
+      const uni = (next, prev) => Array.from(/* @__PURE__ */ new Set([...prev ?? [], ...next]));
+      entry.sourceSessions = uni(entry.sourceSessions, prior.sourceSessions);
+      entry.sourceFiles = uni(entry.sourceFiles, prior.sourceFiles);
+      entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);
+    }
     if (supersede && idx.entries[supersede.targetId]) {
       idx.entries[supersede.targetId].status = "superseded";
       superseded++;
@@ -15548,13 +15558,13 @@ __export(skip_write_exports, {
 });
 import { readFileSync as readFileSync15 } from "node:fs";
 async function skipWriteCmd(opts) {
+  if (!opts.inputPath) throw new Error("skip-write requires --input <path>");
   const cfg = readPluginConfig();
   const idx = loadSkips(cfg.repoPath);
-  let sessions = [];
-  if (opts.inputPath) {
-    const raw = JSON.parse(readFileSync15(opts.inputPath, "utf8"));
-    const arr4 = Array.isArray(raw) ? raw : Array.isArray(raw?.sessions) ? raw.sessions : [];
-    sessions = arr4;
+  const raw = JSON.parse(readFileSync15(opts.inputPath, "utf8"));
+  const sessions = Array.isArray(raw) ? raw : Array.isArray(raw?.sessions) ? raw.sessions : null;
+  if (sessions === null) {
+    throw new Error("skip-write: --input must be an array of {sessionId,reason?} or {sessions:[...]}");
   }
   const at = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const added = upsertSkips(idx, sessions, at);
@@ -18917,7 +18927,7 @@ async function run(argv) {
     const report = await memoryIndexCmd2();
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
   });
-  program2.command("skip-write").description("Record intentionally-not-digested sessions in the local skip ledger (.memarium/index.skips.json) so the digest doesn't re-propose them. --input JSON: [{sessionId,reason?}] or {sessions:[...]}.").option("--input <path>", "path to skip entries JSON").action(async (opts) => {
+  program2.command("skip-write").description("Record intentionally-not-digested sessions in the local skip ledger (.memarium/index.skips.json) so the digest doesn't re-propose them. --input JSON: [{sessionId,reason?}] or {sessions:[...]}.").requiredOption("--input <path>", "path to skip entries JSON (required)").action(async (opts) => {
     const { skipWriteCmd: skipWriteCmd2 } = await Promise.resolve().then(() => (init_skip_write(), skip_write_exports));
     const report = await skipWriteCmd2({ inputPath: opts.input });
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
