@@ -1,112 +1,90 @@
 ---
 name: memarium
-description: Digest already-synced raw_sessions into TWO things per project — a book (chronicle / topics) AND a typed Memory OS (typed memory, entity wiki, distilled Q&A). Triggers on `/memarium`. Two modes auto-selected by cwd — project-mode (cwd ≠ session-repo, digests just the matching project) or global-mode (cwd = session-repo, fan-out one subagent per pending project then regen catalog). Per-project isolated. The digest is NOT complete when the book is published — it is complete only after the Memory OS layer is written.
+description: Digest already-synced raw_sessions into a per-project typed Memory OS — episodic memories (one per work thread, the arc/dead-ends/decisions), semantic facts, procedural gotchas, plus the derived entity wiki + distilled Q&A. Triggers on `/memarium`. Two modes auto-selected by cwd — project-mode (cwd ≠ session-repo, digests just the matching project) or global-mode (cwd = session-repo, fan-out one subagent per pending project). Per-project isolated. There is ONE knowledge layer — typed memory, read by agents (recall/primer); no human-facing book.
 ---
 
-# /memarium — digest sessions into a book + Memory OS
+# /memarium — digest sessions into the typed Memory OS
 
 This skill walks the **in-session Claude** (you) through digesting the user's
-already-synced AI coding sessions into TWO things per project: **(1) a book**
-(chronicles + topics, Steps P1–P7) and **(2) a typed Memory OS** (typed memory,
-entity wiki, distilled Q&A, consolidate — Steps P7.5–P7.8). **Both halves are
-required.** The digest is NOT complete when the book is published; it is complete
-only after the Memory OS layer is written. Pure mechanical CLI handles I/O
-(`"$VBP" prepare` / `"$VBP" publish` / `"$VBP" memory-write` /
-`"$VBP" list-projects` / `"$VBP" catalog-regen`); the LLM work —
+already-synced AI coding sessions into ONE per-project knowledge layer: **typed
+memory** — `episodic` (one per work thread: the arc, dead-ends, decisions),
+`semantic` (durable facts), `procedural` (how-to playbooks + gotchas), `core`
+(never-forget rules) — plus the two derived layers, the **entity wiki** and
+**distilled Q&A**. It is AI-native: agents read this via `/memarium-recall` and
+the SessionStart primer. There is no human "book" — no chronicles, no topics, no
+reading site.
+
+Pure mechanical CLI handles I/O (`"$VBP" prepare` / `"$VBP" memory-write` /
+`"$VBP" memory-propose` / `"$VBP" entity-write` / `"$VBP" qa-write` /
+`"$VBP" skip-write` / `"$VBP" finalize` / `"$VBP" list-projects`); the LLM work —
 segmentation + writing — is yours, in this conversation, with full context.
 
 ## Inputs you assume
 
-- The plugin's `orchestrate` step (run as Pre-step + Step 0 below) will
-  scan the user's local `~/.claude/projects/` and Copilot Chat session
-  jsonl, then write rendered `.md` + `.raw.json` into the spool at
-  `~/.memarium/session-repo/raw_sessions/...` and update
-  `~/.memarium/session-repo/.memarium/index.json`. **You do not need to
-  check whether sync ran first** — the plugin is self-contained and
-  scans sessions itself on every invocation.
-- If the user has ALSO installed the optional `memarium` npm CLI for
-  cross-device sync, that's fine — both write to the same spool with
-  sessionId-keyed entries. Don't gate plugin work on the npm CLI being
-  present; it is not required.
+- The plugin's `orchestrate` step (Pre-step + Step 0 below) scans the user's
+  local `~/.claude/projects/` + Copilot Chat jsonl, writes rendered `.md` into
+  `~/.memarium/session-repo/raw_sessions/...`, and updates `.memarium/index.json`.
+  **You don't need to check whether sync ran** — the plugin scans on every run.
+- If the user also installed the optional `memarium` npm CLI for cross-device
+  sync, fine — both write the same spool. Don't gate on it; it's not required.
 
 ---
 
 ## Step −1 — Locate the plugin binary (DO THIS FIRST OF ALL)
 
-`${CLAUDE_PLUGIN_ROOT}` is **not** populated in your in-session Bash
-environment — it's only available inside Claude Code's hook subprocess.
-So before any subcommand, discover the plugin's bin path and stash it
-in a shell variable. Run:
+`${CLAUDE_PLUGIN_ROOT}` is **not** populated in your in-session Bash environment,
+so discover the plugin's bin path and stash it in a shell variable:
 
 ```bash
-VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-) && echo "VBP=$VBP"
+VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"
+[ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-)
+echo "VBP=$VBP"
 ```
 
-Confirm `$VBP` resolves to an existing file:
+Confirm it resolves (picks the highest **semver** version):
 
 ```bash
 [ -x "$VBP" ] && "$VBP" --version
 ```
 
-You should see `0.1.x` print. **If `$VBP` is empty or the version doesn't
-print**, the plugin is not installed correctly — STOP and tell the user
-they need to install via `/plugin install memarium` (after adding the
-marketplace `june9593/memarium-plugin`). Do not fall back to checking
-PATH for `memarium` — that's a different (npm) product, not this plugin.
-
-Every command in this skill below uses `$VBP` directly, e.g.
-`"$VBP" prepare --cwd "$(pwd)"`. You must run all subcommands as
-**`$VBP <subcommand>`** in the same shell where you set `$VBP`. If you
-re-set `$VBP` in a later Bash call, that's also fine.
+**If `$VBP` is empty or the version doesn't print**, the plugin isn't installed —
+STOP and tell the user to `/plugin install memarium`. Do not fall back to a PATH
+`memarium` (that's the separate npm CLI). Run every subcommand as `"$VBP" <sub>`
+in the same shell where you set `$VBP`.
 
 ---
 
 ## Pre-step — First-run nudge (silent if already shown)
 
-Before anything else, run:
-
 ```bash
 "$VBP" first-run
 ```
 
-This prints a one-time nudge if the user hasn't installed the optional
-`memarium` npm CLI for cross-device sync. Silent on every subsequent
-invocation. Don't summarize the output to the user — just let it print.
+Prints a one-time nudge about the optional npm CLI. Silent afterwards. Don't
+summarize it — just let it print.
 
 ## Step 0 — Spool warmup + mode detection (DO THIS FIRST)
-
-Before reading any session data, prime the spool:
 
 ```bash
 "$VBP" orchestrate project --cwd "$(pwd)"
 ```
 
-(If you're in `~/.memarium/session-repo/` or in a non-project dir, use
-`orchestrate global` instead — see decision tree below.)
-
-This (a) creates `~/.memarium/session-repo/raw_sessions/` and `book/`
-if absent, and (b) imports any new local `~/.claude/projects/` jsonl
-into the spool. Idempotent. Read the JSON output:
-- `mode`: "project" or "global"
-- `project`: the project slug (project mode only)
-- `scan.imported` / `scan.skipped`: how many sessions were copied this run
-- `nextStep`: hint for what to do next
-
-Then run `list-projects` for the mode-detection table:
+(If you're in `~/.memarium/session-repo/` or a non-project dir, use
+`orchestrate global` — see the mode table.) This imports any new local jsonl into
+the spool. Idempotent. Read the JSON: `mode`, `project`, `scan.imported`,
+`nextStep`. Then get the mode-detection table:
 
 ```bash
 "$VBP" list-projects
 ```
 
-Read `meta.isInSessionRepo` and `meta.sessionRepoPath` in the output.
-
 | `meta.isInSessionRepo` | Mode | What you do |
 |---|---|---|
-| `false` | **project-mode** | Digest only the project matching the user's cwd. Most common case — user opened Claude Code inside a normal coding repo and is asking you to write up that project's recent work. |
-| `true` | **global-mode** | User is sitting in `~/.memarium/session-repo`, asking for a full sweep. Fan out one subagent per project that has pending sessions; finish with a catalog regen. |
+| `false` | **project-mode** | Digest only the project matching the user's cwd. The common case. |
+| `true` | **global-mode** | User is in `~/.memarium/session-repo` asking for a full sweep. Fan out one subagent per project with pending sessions. |
 
-**Tell the user which mode you detected** in one line, then proceed to the
-matching section below. Do not try to guess; trust `list-projects`.
+**Tell the user which mode you detected** in one line, then go to the matching
+section. Trust `list-projects`; don't guess.
 
 ---
 
@@ -120,879 +98,426 @@ matching section below. Do not try to guess; trust `list-projects`.
 "$VBP" prepare --cwd "$(pwd)"
 ```
 
-If this errors with `no synced sessions found for cwd '...'`, the spool
-has no sessions matching the current cwd's project. Tell them which
-`project` slug you tried (`projectSlugFromPath(cwd)`), then either:
-- ask them whether `$(pwd)` is correct (the plugin scans local
-  `~/.claude/projects/` automatically — if they really worked here in
-  Claude Code or Copilot, sessions should be there), or
-- ask them to pass `--project <slug>` if they meant a different project
-  (e.g. they cd'd into a subdir but want the parent project's sessions).
+If it errors `no synced sessions found for cwd '...'`, the spool has nothing for
+this cwd's project. Tell them the `project` slug you tried, and ask whether
+`$(pwd)` is right or whether they meant `--project <slug>`.
 
 The payload shape:
 
 ```json
 {
-  "project": "edge-src",
+  "project": "github.com-acme-edge",
   "newSessions": [
-    {
-      "sessionId": "abc12345", "shortId": "abc12345",
-      "tool": "claude" | "copilot",
+    { "sessionId": "abc12345-6789-4abc-8def-0123456789ab", "shortId": "abc12345", "tool": "claude" | "copilot",
       "endedAt": "2026-04-22T15:30:00Z",
-      "mdPath": "raw_sessions/claude/edge-src/2026-04-22/...md",
-      "preview": "first 300 chars of user's first real message",
-      "insightScore": 0.62
-    }
+      "mdPath": "raw_sessions/claude/github.com-acme-edge/2026-04-22/...md",
+      "preview": "first 300 chars of user's first real message", "insightScore": 0.62 }
   ],
-  "existingTopics": ["native-ui-fullscreen", "bookmark-bar", ...],
-  "existingCards": ["gotcha-immersive-mode-mac-uaf", ...]
+  "existingEpisodes": { "github.com-acme-edge": ["episodic/github.com-acme-edge/fix-fullscreen", ...] },
+  "meta": { "totalSessionsInIndex": 75, "sessionsAlreadyDigested": 68, "newSessionsCount": 4 }
 }
 ```
 
-**Show the user** a summary line (`N new sessions in <project>`) and ask
-to proceed. **Don't print the full table** unless the user asks — just the
-count + first-3 displayName previews so they can sanity-check.
+`newSessions` = sessions NOT yet digested (no episodic references them) and NOT
+skip-ledgered. `existingEpisodes` lets you reuse a thread's episodic `id` instead
+of forking a duplicate. **Show the user** a summary line (`N new sessions in
+<project>`) + first-3 previews; don't dump the full table unless asked.
 
 ### Step P2 — Segment into threads
 
-**Default: one thread = one session.** Only merge sessions if they are
-demonstrably the same continuous effort (same threadId style, same files
-touched, narrative obviously picks up where the previous one left off).
-When in doubt, leave them separate. **Many small chronicles beat one bloated
-mega-thread** — and you will under-count if you over-merge.
+**Default: one thread = one session → one episodic.** Only merge sessions that are
+demonstrably the same continuous effort (same files, narrative picks up where the
+last left off). When in doubt, keep them separate — **many small episodics beat
+one bloated mega-thread**.
 
-**Read the actual md file** (`mdPath`) for every session before deciding —
-not just the preview. The preview can mislead (a session can open with "I
-need to research" but turn into a 6KB debugging session).
+**Read the actual md** (`mdPath`) for every session before deciding — not just the
+preview.
 
 #### Reading a 0.7+ `manifest_version: 1` md (chunked navigation)
 
-memarium 0.7+ writes a per-session manifest + Table of Contents at the top
-of each raw_sessions md, so you can navigate huge sessions (9MB+, 10000+
-turns) without loading the whole body. **Always check for this first:**
+Each raw_sessions md has a manifest + Table of Contents at the top, so you can
+navigate huge sessions (9MB+) without loading the whole body. Always check first:
 
 ```
 Read offset:0 limit:80 <mdPath>
 ```
 
-If the frontmatter contains `manifest_version: 1`, the file is navigable:
+If the frontmatter has `manifest_version: 1`:
+- It carries `user_turns`, `assistant_turns`, `tools_used`, `commits`,
+  `files_touched` (up to 200), `candidate_decisions` (heuristic hints).
+- A `# Table of Contents` follows: each row has `→L<number>` = the turn's line.
+  Markers: 🧑 user turn, ✏️ edit, 💾 commit, 🤖 substantive assistant reply.
 
-- The frontmatter carries `user_turns`, `assistant_turns`, `tools_used`
-  (histogram), `commits`, `files_touched` (deduped, up to 200), and
-  `candidate_decisions` (heuristic — keyword matches like 我决定 / decided to /
-  ok merged — useful hints, not authoritative).
-- A `# Table of Contents` table follows the frontmatter. Each row has a
-  `→L<number>` column = absolute line number of that turn's heading.
-  Marker legend: 🧑 real user turn, ✏️ file edit, 💾 commit/tag, 🤖
-  substantive assistant reply.
+Navigation: read the TOC region (a second Read of ~500 lines), then pull the 3–10
+most relevant rows via `Read offset:<L> limit:200`. The manifest already gives you
+`files_touched` + `commits` — 80% of what an episodic needs. Only whole-file-Read
+if the manifest is missing (pre-0.7 md).
 
-**Navigation pattern:**
+#### SKIP rules — be conservative; skips go to the ledger
 
-1. The first Read (lines 0–80) gave you the frontmatter + start of TOC.
-   Continue reading the TOC region as far as needed (TOC is usually 200–500
-   rows for a long session, plan for a second Read of ~500 lines).
-2. From the manifest, you already know files_touched + commits — that's
-   80% of what most chronicles need.
-3. Pick the 3–10 TOC rows most relevant to the work thread (e.g., commits
-   near a thread's end, decisions, last user turns). Pull each with
-   `Read offset:<L> limit:200`.
-4. Only fall back to whole-file Read if the manifest is missing key
-   context the TOC can't surface (rare — usually the session is genuinely
-   pre-0.7 and lacks manifest_version).
+A session is skipped ONLY when it has **no code change, no debugging conclusion,
+no decision** — pure greeting, a single unanswered question, "test this skill /
+ping", resume noise, or a string of API errors with no reply. **Always skip
+memarium meta-sessions** (the user running `/memarium` — first user message is
+`/memarium…`, or the transcript is dominated by `"$VBP" …` calls).
 
-If the frontmatter does NOT have `manifest_version: 1` (older 0.6 md),
-read the whole file the old way. Existing 0.6 sessions will stay
-pre-manifest until their source jsonl changes and triggers a re-sync.
+**If in doubt, write the episodic.** A "I tried X and it didn't work" session is
+valuable — it records the dead end. Past digests over-skipped and dropped 80%+ of
+real work. Never skip: "continue from where you left off" (merge with the prior
+session), or any session whose body has a commit hash, code block, file path,
+error message, or decision marker.
 
-#### SKIP rules — be conservative
+Skipped sessions are recorded in the **local skip ledger** (Step P6), NOT as a
+memory — so they don't pollute recall but also aren't re-proposed every digest.
 
-A session may be marked `skip: true` ONLY when ALL of these hold:
-
-- It contains **no code change, no debugging conclusion, no decision**.
-- It's one of: pure greeting, single unanswered question, "test this skill /
-  ping", session-resume noise, or a string of API errors with no real reply.
-- The user **explicitly abandoned** it ("nvm, gonna try elsewhere") OR the
-  whole transcript is < ~500 chars of useful content.
-
-**Always SKIP — memarium meta-sessions.** A session whose entire content is
-the user invoking `/memarium` (or otherwise driving this skill) has zero
-chronicle value — it's the user *running* the digest pipeline, not doing
-real work. Detect via any of:
-
-- The first user message is exactly `/memarium` (or `/memarium ...`).
-- The transcript is dominated by `"$VBP" prepare` / `"$VBP" publish` /
-  `"$VBP" list-projects` / `"$VBP" catalog-regen` tool calls.
-- The assistant's output is mostly chronicle/topic/card markdown bodies
-  being written to `/tmp/memarium-*.json` or directly into `book/`.
-- Project slug is `home` or any other pseudo project (already filtered by
-  `isRealProjectPath`, but double-check at thread-segmentation time).
-
-Mark these `skip: true` with `skipReason: "memarium meta-session — user
-running the digest skill, no original work content"`. Do NOT chronicle
-them; they would just be self-referential noise.
-
-**If in doubt, write the chronicle.** A 4-section chronicle for a "I tried X
-and it didn't work" session is still valuable — it records the dead end.
-Past sessions over-SKIPped and dropped 80%+ of real work; do not repeat
-that mistake. The meta-session rule is the ONE exception where SKIP is the
-default, not the conservative choice.
-
-In particular, you must NOT SKIP:
-- "Continue from where you left off" — read the previous session and merge.
-- Sessions whose body has any of: a commit hash, a code block, a file path,
-  an error message, a decision marker ("decided / let's go with / ok merged").
-- Sessions where the user attached an image or a log and asked for analysis,
-  even if your reply was short.
-- Sessions with `untitled` filename — read the body; usually they're real
-  work where the first message wasn't a question.
-
-Write the segmentation to `/tmp/memarium-groups.json`:
+Write the segmentation to `/tmp/memarium-groups.json` (use each session's **full
+`sessionId`** from `newSessions`, NOT the 8-char `shortId` — these ids flow into
+`sourceSessions` and the skip ledger):
 
 ```json
 [
-  { "threadId": "fix-fullscreen-bookmark-bar",
-    "title": "Fix Edge fullscreen bookmark-bar bug",
-    "sessionIds": ["abc12345", "def67890"],
-    "skip": false },
-  { "threadId": "ping-test",
-    "sessionIds": ["xyz99999"],
-    "skip": true, "skipReason": "pure ping test, no real work content" }
+  { "threadId": "fix-fullscreen-bookmark-bar", "title": "Fix Edge fullscreen bookmark-bar bug",
+    "sessionIds": ["abc12345-6789-4abc-8def-0123456789ab", "def67890-1234-4cde-9012-3456789abcde"], "skip": false },
+  { "threadId": "ping-test", "sessionIds": ["xyz99999-aaaa-4bbb-8ccc-ddddeeeeffff"], "skip": true,
+    "skipReason": "pure ping test, no real work content" }
 ]
 ```
 
-Show user the table (one row per non-skip thread) + the skip count + skip
-reasons in one block. Ask to proceed.
+Show the user the table (one row per non-skip thread) + the skip count. Ask to proceed.
 
 ### Step P3 — Read in parallel via subagents (when total source size warrants it)
 
-**When to fan out (NEW heuristic, 0.1.9; refined for 0.7+ chunked reads):**
-
-Don't trigger on session count alone. Trigger on **effective read size** of
-non-skip threads. With 0.7+ `manifest_version: 1` md, the effective read
-size is the manifest + TOC + ~5 targeted segments (~100KB total), NOT the
-full file size. For pre-0.7 md (no manifest), it's the full file size.
+Trigger on **effective read size** of non-skip threads, not session count. With
+`manifest_version: 1` md, effective size ≈ manifest + TOC + ~5 targeted segments
+(~100 KB), not the full file.
 
 | Total effective read size | Strategy |
 |---|---|
-| **< 150 KB** | Inline. One Read per thread, write chronicle in main session. Don't pay subagent overhead for small inputs. |
+| **< 150 KB** | Inline. One Read per thread, write in the main session. Don't pay subagent overhead. |
 | **150 KB – 1 MB** | Fan out, batch ~3–5 threads per agent, **all in one message**. |
-| **> 1 MB** | Same as above BUT **isolate each session whose effective size ≥ 200 KB into its own dedicated agent** — large reads dominate latency, mixing them with small ones blocks the small ones. |
+| **> 1 MB** | Same, BUT isolate each session ≥ 200 KB effective into its own agent. |
 
-For 0.7+ navigable md, a 9MB file's effective read size is only ~100KB
-(header + TOC + selective body reads), so most sessions will land in
-the inline tier even if the on-disk md is huge.
+**Run agents in PARALLEL:** put **multiple `Agent(...)` calls in a single
+assistant message** — one call, wait, another call runs them serially. Total wall
+= max(individual), not sum.
 
-Inline below 150 KB is faster end-to-end because:
-- 5+ threads at 5 KB each = 25 KB total = main session reads them in <10 seconds
-- Each subagent has 3–5 second startup overhead
-- Subagents can't share parsed context across chronicles
-- You won't hit a context window for 25 KB
+**Progress reports:** subagents take 2–10 min each; the user can't tell waiting
+from stuck. Every ~3 min emit a one-line status; use PushNotification for waits
+> 8 min. If one agent runs > 15 min, Stop it and re-dispatch that session solo.
 
-Below the threshold, **just open the files and write**. Don't fan out.
-
-**Anti-pattern:** looping `memarium show <id>` in the main session for 50
-threads — eats your context window and produces lower-quality writing
-because you start cargo-culting your own previous chronicles.
-
-#### CRITICAL — How to actually run agents in PARALLEL
-
-Subagents only run in parallel when you put **multiple `Agent(...)` tool
-calls in a single assistant message**. If you write one `Agent(...)`,
-wait for it to complete, then write another, those run **serially** —
-6 agents at 5 minutes each = 30 minutes wall-clock.
-
-**Correct pattern (parallel):**
-
-In ONE assistant message, emit ALL of:
-```
-Agent(description: "Chronicle batch 1", prompt: "...")
-Agent(description: "Chronicle batch 2", prompt: "...")
-Agent(description: "Chronicle batch 3", prompt: "...")
-```
-
-The harness fires all three concurrently. Total wall = max(individual),
-not sum.
-
-**Wrong pattern (serial, what was happening before this rewrite):**
-
-Message 1: `Agent("...batch 1...")` → wait for completion
-Message 2: `Agent("...batch 2...")` → wait for completion
-
-If you find yourself writing one Agent call, then waiting, then writing
-another, **STOP** and put them all in the next single message.
-
-#### Progress reports — DO NOT silently wait
-
-When you've fanned out N agents, the user will see "Running…" and not
-much else. Subagents writing chronicle bodies routinely take 2–10
-minutes per agent (LLM-bound: read source md → reason → write JSON).
-**The user has no way to tell waiting apart from stuck.**
-
-Required cadence: every **3 minutes of wall-clock**, emit a one-line
-status to the user, e.g.:
-
-> "3 of 6 chronicle agents finished (batch sizes: ✓2 ✓3 ✓2 / ⏳3 ⏳4 ⏳5).
-> Largest pending: 3db31cbd (342 KB md). Estimated 5–8 more minutes."
-
-Use the **PushNotification tool** (when available) for any wait that
-exceeds 8 minutes; the user may have switched away from the terminal.
-The notification body can be one short line — "memarium fan-out: 4/6
-chronicle agents done, 2 still running".
-
-If a single agent has been running > 15 minutes, suspect it's stuck on
-a malformed Read or oversized output. Use Stop Task on it and re-
-dispatch with that one session split off solo.
-
-#### Permission warm-up — DO THIS BEFORE FAN-OUT, ONCE PER SESSION
-
-Subagents in Claude Code **cannot interactively prompt the user for
-Bash / Write permission** — that ability is exclusive to the main
-session. If your fan-out fires before the user has approved the
-patterns subagents need (writing JSON to `/tmp/vb-<project>/`,
-running `"$VBP" publish`, etc.), each subagent will silently
-stall, fall back to a different MCP tool, or return "permission
-denied" without doing the work.
-
-Before the first `Agent(...)` call in P3 (and before P5 / P6 sub-
-fan-outs that write to `/tmp/`), run these warm-ups **inline in the
-main session**. Each will trigger one `[Always allow ?]` prompt the
-user can accept once:
+**Permission warm-up (once per session, BEFORE fan-out):** subagents can't prompt
+for Bash/Write permission. Run inline so the user approves the broad pattern once:
 
 ```bash
 mkdir -p /tmp/vb-<project>/_warmup && rmdir /tmp/vb-<project>/_warmup
-# triggers Bash(mkdir -p /tmp/vb-<project>/*) approval
-
-"$VBP" prepare --help >/dev/null
-"$VBP" publish --help >/dev/null
-# triggers Bash("$VBP" prepare *) and Bash("$VBP" publish *) approval
-
-echo warmup > /tmp/vb-<project>/_warmup.json && rm /tmp/vb-<project>/_warmup.json
-# triggers Write to /tmp/vb-<project>/* approval
+"$VBP" prepare --help >/dev/null       # approve Bash("$VBP" *)
+echo warmup > /tmp/vb-<project>/_warmup.json && rm /tmp/vb-<project>/_warmup.json   # approve Write /tmp/vb-<project>/*
 ```
 
-Replace `<project>` with the actual project slug (e.g. `vb-edge-src`).
-Tell the user to accept the BROAD pattern (the one with `*`) rather
-than the literal call — one acceptance covers every subagent for the
-rest of the session.
+**Probe before big fan-out:** dispatch ONE probe agent that uses the **Write tool**
+(not Bash heredoc) to create `/tmp/vb-<project>/probe.txt`; verify from the main
+session. If Write is unavailable, fall back to inline writing — don't fight it.
 
-**Skip this only if** you've already warmed up earlier in the same
-session, or the user has the patterns pre-approved in
-`~/.claude/settings.json`.
+**Reader subagents return JSON ONLY.** A reader's entire deliverable is its JSON
+file under `/tmp/vb-<project>/agentN.json`. It must NOT write anything else. Put
+this verbatim in every reader prompt:
 
-If a subagent comes back with "permission denied", do NOT have the
-subagent retry — it can't escalate. Run the warm-up from the main
-session, then re-dispatch (or SendMessage to the same agent).
+> "Your ONLY output is the JSON file at /tmp/vb-<project>/agentN.json (use the
+> **Write tool**, not Bash heredoc). Do NOT create or edit any other file — not
+> memory/, not skills, not configs. `memory-write` is the sole writer; you only
+> return `{entry, body}` items for it. If you think you need to write elsewhere,
+> you've misread the task — stop and report."
 
-#### Probe BEFORE big fan-out — catch tool-access gaps early
+Each reader returns the episodic `{entry, body}` items (Step P4 format) for its
+threads. The main session merges them and runs `memory-write` once.
 
-Some users have Claude Code configured so subagents have NO Write
-capability at all (not just path-specific permissions). In that case,
-warm-up doesn't help — subagents will silently complete with no
-output. Dispatching 13 of them and waiting 5 minutes is wasted.
+### Step P4 — Write episodics (one per non-skip thread)
 
-**Before fan-out of N agents, run ONE probe agent first.** The probe
-must exercise the SAME tool the chronicle agents will use (Write,
-not Bash heredoc — see "Force agents to use Write" below):
+For each non-skip thread, author an **episodic** memory using the format in
+`references/episodic-format.md` (same directory). Each is a `{ entry, body }`
+item:
 
-```
-Agent(
-  description: "Probe write access",
-  subagent_type: "general-purpose",
-  prompt: "Use the Write tool (NOT Bash with heredoc) to create /tmp/vb-<project>/probe.txt with the literal contents 'probe-ok'. Then read it back via the Read tool and report what you read. If Write tool is unavailable, say so explicitly."
-)
-```
+- `entry`: `id = episodic/<project>/<threadId-kebab>`, `type: "episodic"`,
+  `scope: "project:<slug>"`, `project`, `title`, keyword-dense `summary`,
+  `status: "active"`, `importance` (0–5), `confidence` (0–1),
+  **`sourceSessions`** (the threads' full `sessionId` values from `newSessions` —
+  the idempotency receipt; use the full `sessionId`, **NOT** `shortId`, or the
+  session never counts as digested and re-proposes forever),
+  `sourceFiles` (files_touched), `sourceCommits`, `entities` (symbols/APIs/concepts).
+- `body`: `## Context / ## What worked / ## Dead ends / ## Open questions /
+  ## Decisions` + a `**Work status:** shipped|in-progress|blocked|abandoned` line.
 
-Then verify from main session:
+**Critical:**
+- **`sourceSessions` must be present + correct** — it's what marks the thread's
+  sessions digested. Wrong/missing → the session re-digests forever.
+- **Work status lives in the BODY.** `entry.status` is the lifecycle axis
+  (`active`/`superseded`/`pinned`) — never set it to a work status.
+- Imperative agent-reuse voice; preserve commit hashes / file paths / DCHECK
+  strings verbatim; at most one small code block per section. Dead ends matter as
+  much as What worked — write `(none)` if genuinely empty, don't omit.
+- Don't hallucinate outcomes; `**Work status:** blocked` beats overstating.
+- Reuse an existing episodic `id` from `existingEpisodes` for a continued thread
+  (it upserts/refines); keep `threadId` stable.
 
-```bash
-cat /tmp/vb-<project>/probe.txt 2>&1 | head -1
-```
+Build the JSON incrementally — `Write` to `/tmp/memarium-episodics.json` (or one
+file per thread, merged with a small Python pass). **Never `cat <<EOF` a big batch
+of bodies in one shot** (Bash-injection prompts + 524s). **Never write a Python
+script that generates the bodies** — the bodies ARE your LLM output; Python is
+only for merging/sorting JSON.
 
-- If you see `probe-ok` AND the agent confirmed using Write tool →
-  subagents work; proceed with full fan-out.
-- If file missing OR agent reported "Write tool unavailable" → **fall
-  back to inline writing in the main session**. Don't fight it. Tell
-  the user once:
-  > "Your Claude Code config doesn't allow subagents the Write tool, so
-  > I'll do all chronicle writing inline. This may take longer for
-  > large session sets."
+### Step P4b — Distill semantic / procedural / core facts
 
-The probe wastes ~20 sec but saves the 30+ min of unattended-serial-
-agent failure that costs much more token + time.
+Episodics capture the *arc*; now extract the durable *facts* worth surfacing on
+their own. Add these to the memory JSON (or a second file):
 
-#### Force agents to use Write tool, not Bash heredoc
+- **semantic** — a durably-true project fact / architecture / decision. Set
+  **`trust`** (`trusted` only when it's the user's OWN work on THIS project —
+  their session / a repo commit / a verified local fact; only trusted semantic
+  auto-injects into the SessionStart primer; default `untrusted` when in doubt).
+  If a new fact replaces an old one, set `supersedes: <old-id>`.
+- **procedural** — a how-to playbook / gotcha ("to add X do Y; watch out for Z").
+- **core** — a never-forget rule (rare). scope `global`/`user`/`project:<slug>`.
 
-In your fan-out agent prompt, **explicitly require the agent to use
-the Write tool** for the JSON output, not Bash with `cat <<EOF` or
-`>` redirection. Reasons:
+`id = <type>/<project|_global>/<kebab-slug>`. Fill `entities`, `importance` (0–5),
+`confidence` (0–1). **Do NOT set `accessCount`** (device-local, auto-maintained).
+Be conservative — a few high-value facts beat many trivial ones; don't duplicate
+what the SessionStart primer already loaded.
 
-- Bash heredoc fails on JSON containing single backticks, certain
-  Unicode, or shell expansions in nested code blocks.
-- Write tool is faster (no shell process).
-- Probe (above) only confirmed Bash works — Write tool may be
-  separately gated; chronicle agents that fall back to Bash silently
-  succeed at writing junk.
+### Step P5 — Persist typed memory (v4 gate: write vs propose)
 
-Add this line to every fan-out agent prompt:
+Split the P4 + P4b items into two arrays by the **v4 gate**. A change is *gated*
+if the entry is `core` or `procedural`, has `status: pinned`, supersedes/edits an
+existing core/procedural/pinned memory, OR elevates an existing memory to
+`trusted`:
 
-> "Output JSON via the Write tool (path: /tmp/vb-<project>/agent<N>.json).
-> Do NOT use Bash heredoc or shell redirection. If Write tool is
-> unavailable, stop and report 'no write tool' — do not fall back."
+- **Non-gated** (`episodic`, plain `semantic`) → `/tmp/memarium-memory.json`:
 
-#### Reader subagents return JSON ONLY — they are not authorized to write artifacts
+      "$VBP" memory-write --input /tmp/memarium-memory.json
 
-A fan-out reader's **entire deliverable is the JSON file** under
-`/tmp/vb-<project>/`. It must NOT create or edit anything else. This is a
-hard contract, not a style note: a strong model handed "read these
-sessions and produce chronicles" will over-interpret and start writing
-`book/<project>/chronicle/*.md` directly, or wander off and author an
-unrelated skill/config (observed in #38 — one of six readers wrote the
-chronicle md by hand AND authored a `~/.claude/skills/.../SKILL.md`).
-Chronicle md written directly bypass `publish`, so they never enter
-`index.book.json` — and the index-driven catalog then silently drops the
-whole project.
+  Writes `memory/<type>/...` md + updates `.memarium/index.memory.json`. The
+  SessionStart primer renders live from the (cross-device) memory view, so new
+  memory shows up next session automatically. (Sanity-check with
+  `"$VBP" memory-query --cwd "$(pwd)" >/dev/null` if you like.)
 
-Put this guardrail verbatim in every fan-out reader prompt:
+- **Gated** (`core` / `procedural` / pinned / supersede-of-gated / trust-elevation)
+  → a separate array + `memory-propose` (same `{entry, body}` items, optional
+  `rationale`/`sourceSession`):
 
-> "Your ONLY output is the JSON file at /tmp/vb-<project>/agent<N>.json.
-> Do NOT write, create, or edit ANY other file — not chronicle/topic
-> markdown under book/, not memory/, not skills, not configs, nothing.
-> `publish` is the sole writer of book/ artifacts; you only return data
-> for it. If you think you need to write something else, you have
-> misread the task — stop and report instead."
+      "$VBP" memory-propose --input /tmp/memarium-gated.json
 
-(Defense in depth: `publish` / `catalog-regen` now self-heal orphan
-chronicle md that slip through, re-registering them into the index — but
-the guardrail is what keeps the data clean and wikilinks resolved.)
-
-
-
-### Step P4 — Write chronicles (AI-first format, agent-reuse body)
-
-For each non-skip thread, write a chronicle markdown using the AI-first
-format spec'd in `references/chronicle-format.md` (same directory).
-Critical rules:
-
-- **Frontmatter is the index.** Fill files_touched / commits / decisions /
-  blockers / next_steps / status from the source session. AI agents
-  triage chronicles by reading frontmatter ONLY — missing fields mean
-  invisible to recall queries.
-- **Body is structured agent-reuse experience, not a weekly report.**
-  Four sections — `## Context`, `## What worked`, `## Dead ends`,
-  `## Open questions`. NOT What/Why/How/Outcome (that was the human-
-  reading template; we deprecated it because agents have to re-parse
-  it back into structured form every time).
-- **Voice = imperative agent-reuse.** "Use X to achieve Y; commit Z" —
-  NOT "we then did X and it was interesting". Imagine the reader is
-  another AI agent on a similar task next month.
-- **Dead ends matter as much as What worked.** Failed approaches save
-  more agent-time than successes by preventing rediscovery. Don't
-  skip the Dead ends section. If genuinely none, write `(none)` —
-  empty section signals "considered, none came up", missing section
-  signals "I forgot to think about it".
-- **Atomic insights → Step P7.5.** If the chronicle inspires a "next time
-  remember X" insight, capture it as `procedural`/`semantic` typed memory in
-  Step P7.5 (not here). Skip atomic-insight prose here.
-- Preserve commit hashes / file paths / code blocks / command lines
-  verbatim. Paste at most ONE small code block per section when the
-  literal form genuinely matters (DCHECK message, magic constant).
-- Do NOT hallucinate. Use `status: blocked` + a `blockers` entry instead
-  of overstating. If something didn't land, the `status` field says so.
-- When writing What worked / Dead ends / Open questions, scan the last
-  few messages of the source session — users often drop "ok merged" /
-  "didn't work" / "still don't know if this races" right at the end.
-
-**Build the JSON incrementally** — `Write` to `/tmp/memarium-chronicles.json`
-one chronicle at a time, OR write each chronicle to
-`/tmp/vb/chronicle-<threadId>.json` and merge at the end with a small Python
-pass. **Never `cat > /tmp/x.json << 'PYEOF'` heredoc with all bodies in
-one shot** — that triggers Bash injection prompts and hits cloudflare 524
-on big batches.
-
-**`project`, `threadId`, `title` MUST appear at the TOP LEVEL of each JSON
-entry, not only inside the markdown frontmatter.** publish reads the JSON
-top level to compute paths; if `project` is missing publish refuses with
-`chronicle.project is required`. The same rule applies to topics
-(`project` + `topicSlug`). Schema:
-
-```json
-[
-  { "threadId": "fix-fullscreen", "project": "edge-src",
-    "title": "Fix Edge fullscreen bookmark-bar bug",
-    "sessionIds": ["abc12345"], "tags": ["fullscreen"],
-    "body": "---\nproject: edge-src\n...\n---\n# ...\n## What...\n" }
-]
-```
-
-**Never write a Python script that generates chronicle bodies.** The bodies
-ARE your output as the LLM. Python is fine for: merging JSON files, sorting,
-deduplicating slugs. NOT for writing prose.
-
-### Step P5 — Update topic pages
-
-Decide which **topic(s)** each non-skip thread touches. Topic = mid-grain
-subsystem (`native-ui-fullscreen`, `bookmark-bar`, `mojo-ipc`,
-`crash-debugging-macos`). Not a single bug; not the whole project.
-
-A thread can touch 0, 1, or many topics. Multiple threads usually touch
-the same topic.
-
-For each affected topic:
-
-- **If it exists** (in `existingTopics[]`): `Read book/<project>/topics/<slug>.md`
-  full text → preserve every historical fact → fold the new thread's facts
-  + relations into a coherent rewrite (`action: "update"`). The publish
-  step backs the old page up to `<slug>.md.bak`.
-- **If it doesn't exist**: create it (`action: "insert"`) with the schema in
-  `references/topic-format.md`.
-- **If a thread is too ad-hoc to fit any topic**: skip topic creation. Not
-  every chronicle needs a topic.
-
-**Wikilinks** — write `[[chronicle/<threadId>]]` directly in topic +
-chronicle bodies as human-friendly placeholders. `"$VBP" publish`
-mechanically rewrites them to real relative-path markdown links. Use
-bare `threadId`, NOT a date-prefixed filename.
-
-Write topics to `/tmp/memarium-topics.json`:
-
-```json
-[
-  { "topicSlug": "native-ui-fullscreen",
-    "project": "edge-src",
-    "action": "update",
-    "contributingThreads": ["fix-fullscreen-bookmark-bar", "immersive-mode-rewrite"],
-    "body": "..." }
-]
-```
-
-### Step P6 — Atomic insights
-
-Atomic "next time remember X" insights are no longer a separate card layer.
-Capture them as `procedural` or `semantic` typed memory in Step P7.5 below.
-Don't write a separate atomic-card artifact here.
-
-### Step P7 — Confirm + publish
-
-Show the user:
-
-```
-About to publish to book/<project>/:
-  Chronicles: N (S SKIP'd)
-  Topics:     M (X update / Y new)
-
-Confirm? (y/n)
-```
-
-If user wants to tweak something, do it now (you can rewrite any artifact —
-just re-emit the JSON). Then publish:
-
-```bash
-"$VBP" publish \
-  --chronicles /tmp/memarium-chronicles.json \
-  --topics /tmp/memarium-topics.json \
-  --no-catalog
-```
-
-`--no-catalog` because project-mode is incremental — the catalog will be
-regenerated next time the user runs global-mode `/memarium`. Skipping it
-here keeps the commit small and avoids touching files for other projects.
-
-publish does:
-
-1. Inserts each chronicle to `<repoPath>/book/<project>/chronicle/...md`
-   (refuses on threadId collision).
-2. Topics: backs old `.md` up to `<slug>.md.bak` if existed, writes new.
-3. Resolves `[[wikilinks]]` against the live BookIndex.
-4. Stages ONLY the files it wrote + `.memarium/index.book.json`.
-5. Commits + pushes the device branch.
-
-If unresolved wikilinks remain, publish prints them at the end. Read the
-warning, fix in a follow-up batch (`"$VBP" publish` is idempotent — already-
-inserted chronicles refuse via threadId collision, so you can re-run with
-just the new artifacts).
-
-> ⚠️ **`publish` is NOT the end of the digest.** The book (chronicles + topics)
-> is only HALF of what `/memarium` produces. The `publish` commit + push just
-> lands the book layer — the **Memory OS layer (typed memory / entities / Q&A)
-> is still unwritten**. You MUST continue through **Steps P7.5–P7.8** before
-> Step P8. Do **not** print a summary, say "done", or stop here just because
-> the book was published and pushed.
-
-### Step P7.5 — Distill typed memory (REQUIRED — do not stop after publish)
-
-**Mandatory, not optional.** This is the half of `/memarium` that makes a new
-session start *already knowing* the project (its rules, facts, gotchas). After
-publish lands the book, you MUST distill durable typed memory for this project.
-You may still write *nothing* if truly nothing durable emerged — but you must
-run the step and consciously decide, **never skip it by treating publish as the
-end**. Write a JSON array to
-`/tmp/memarium-memory.json` where each item is `{ entry, body }`:
-
-- **core** — never-forget rules (rare; e.g. release/workflow rules). scope
-  `global`/`user`/`project:<slug>`.
-- **semantic** — project facts / architecture / decisions that are durably
-  true. If a new fact replaces an old one, set `supersedes: <old-id>`.
-- **procedural** — how-to playbooks + gotchas ("to add X, do Y; watch out for Z").
-- **episodic** — a lightweight pointer per significant thread: title +
-  summary + `sourceSessions`, body = 1-2 lines linking to the chronicle.
-
-The Memory OS has exactly these four typed-memory types (`core` / `semantic` /
-`episodic` / `procedural`); `qa` and `entity` are separate derived layers, not
-memory types.
-
-`id` is a stable globally-unique slug: `<type>/<project|_global>/<kebab-slug>`.
-Fill `entities` with file paths / symbols / APIs the memory is about (powers
-retrieval). Set `importance` 0-5 and `confidence` 0-1. **Do NOT set `accessCount`**
-— it is a device-local usage signal maintained automatically by `memory-query`
-(stored in a sidecar outside the repo, never synced), not something you author;
-leave it at its default.
-
-**Set `trust` on every `semantic` memory** (`trusted` | `untrusted` | `unknown`)
-— it decides whether the fact may be **auto-injected into the SessionStart primer**:
-- `trusted` — the fact comes from the user's own work on THIS project: their own
-  session, a commit in this repo, or a local-repo fact you verified. Only `trusted`
-  semantic auto-loads as project context.
-- `untrusted` — the content's origin is external/unverified: an external repo, a
-  web page, a file the agent read from elsewhere, cross-project carry-over, or a
-  model inference you couldn't confirm. **Default to `untrusted` when in doubt.**
-- `unknown` — can't determine. Like `untrusted`, it does NOT enter the primer.
-
-`untrusted`/`unknown` semantic still gets written and is searchable via explicit
-`/memarium-context` (shown flagged), it just isn't silently auto-injected as fact.
-**Promoting an existing memory up to `trusted` is gated** — `memory-write` rejects
-a trust elevation; route it through `memory-propose` like other gated changes.
-(`core`/`procedural` don't need `trust` for the primer — the v4 gate already
-protects them.) Then:
-
-    "$VBP" memory-write --input /tmp/memarium-memory.json
-
-This writes `memory/<type>/...` md + updates `.memarium/index.memory.json`.
-The SessionStart primer is rendered **live** from the (cross-device) memory
-view, so it picks up new memory automatically — no file refresh needed. (You
-may still run a query to sanity-check what recall now returns:)
-
-    "$VBP" memory-query --cwd "$(pwd)" >/dev/null
-
-**v4 gate — long-term memory goes through review, not direct writes.** A change
-is *gated* if the entry is `core` or `procedural`, has `status: pinned`, OR it
-edits/supersedes an existing core/procedural/pinned memory. Put gated items in a
-SEPARATE JSON array and call `memory-propose` instead of `memory-write` (same
-`{ entry, body }` items, plus optional `rationale` / `sourceSession`); they queue
-locally for human review rather than landing live. Non-gated items (`semantic`,
-`episodic`) use `memory-write` as above. If you call
-`memory-write` with a gated item it errors with "use memory-propose" — re-route
-that item. **Never approve your own proposals.**
+  These queue locally for human review — they do NOT land live. If you call
+  `memory-write` with a gated item it errors "use memory-propose" — re-route it.
+  **Never approve your own proposals.**
 
 **Surface proposals for review — required, but NON-BLOCKING.** After
-`memory-propose`, the digest is not done, but it must NOT stop and wait for the
-user. Save the `targetKeys` the propose report returned, run
-`"$VBP" memory-diff --json`, and present the proposals IN CHAT in your own words.
-Do NOT echo the raw CLI output — a Bash tool result gets collapsed (needs
-Ctrl+O); an assistant message stays visible. Render a tiered summary:
+`memory-propose`, save the returned `targetKeys`, run `"$VBP" memory-diff --json`,
+and present them IN CHAT (don't echo raw CLI output — it collapses): a numbered
+one-line-per-proposal table for THIS round's `targetKeys`
+(`[n] [<type>] <targetKey> — <plain summary> · src <session>`), full body inlined
+for at most 1–3 of the most consequential (core/pinned > procedural > high-importance
+create). Tell the user: "queued for your review — reply `approve 1,3 · reject 2`
+now or later." Only when they name numbers do you run, one at a time,
+`"$VBP" memory-approve --id <targetKey>` / `memory-reject --id <targetKey>`. Never
+blind-approve; the digest completes either way.
 
-- A numbered, one-line-per-proposal table covering ONLY this round's new
-  proposals (filter `memory-diff --json` by the saved `targetKeys`). Each row:
-  `[n] [<type>] <exact targetKey> — <one-line plain-language summary> · src <session>`.
-  Keep the number→targetKey map for this turn so the user can say "approve 1, 3".
-- If the local queue holds OTHER (older) proposals, add ONE line:
-  "另有 N 条旧 proposal,可让我展开" — do not enumerate them.
-- Inline the FULL body for at most 1–3 of the most consequential proposals.
-  Priority: core/pinned `update`/`replace` > procedural `update`/`replace` >
-  high-importance `create` (importance ≥ 4). For the rest say "say 'show <n>' to
-  see its full text" (run `"$VBP" memory-diff --id <targetKey>` on request).
-- Do NOT offer or default to "approve all", and do NOT attach an approval
-  recommendation — state the proposals and stop.
+### Step P6 — Synthesize entity wiki (derived layer)
 
-Then tell the user (this does NOT block the digest from finishing): "These
-core/procedural/pinned changes are queued for your review — reply e.g.
-`approve 1, 3 · reject 2` now, or review later." Only when the user names
-numbers do you map them to targetKeys and run, one at a time,
-`"$VBP" memory-approve --id <targetKey>` or `"$VBP" memory-reject --id <targetKey>`.
-If the user says "approve all", first restate the exact targetKey list and ask
-them to confirm — never blind-approve.
+Grow the project's **entity wiki** — one living page per salient entity
+(file / symbol / API / concept / person) aggregating what's known across sessions.
 
-Be conservative: a few high-value memories beat many trivial ones. Don't
-duplicate what's already in the index (it was loaded at session start via
-`/memarium-context`).
-
-### Step P7.6 — Synthesize entity wiki (personal knowledge base)
-
-After typed memory, grow the project's **entity wiki** — one living page per
-salient entity (file / symbol / API / concept / person) that aggregates what's
-known about it across sessions. This is the knowledge-base layer; it's
-SEPARATE from typed memory (an entity page is a synthesis/reverse-index, not a
-fact with a lifecycle).
-
-1. Pick the few entities this session is genuinely *about* (e.g. a core file
-   you changed, an API you learned, a recurring concept). Be conservative —
-   one page per real entity, not per mention.
-2. For each, pull existing context so you update rather than overwrite:
+1. Pick the few entities this session is genuinely *about* (be conservative).
+2. For each, pull existing context to update rather than overwrite:
 
        "$VBP" entity-query --cwd "$(pwd)" --entity "<name>"
 
-   This returns three things in the JSON payload:
-   - `matchedEntities`: array of `{ entry, body }` — entity pages whose `title`
-     or any `aliases[]` equals `<name>` (case-insensitive), with their full `.md`
-     file contents as `body`. This is the existing page to update in place.
-   - `referencingMemories`: typed memories that mention this entity (by title or
-     `entities[]` field) — your raw material for synthesising the updated page.
-   - `entities`: the full ranked entity list (unfiltered browse), always present.
-3. Write a JSON array to `/tmp/memarium-entities.json` where each item is
-   `{ entry, body }`:
-   - `entry`: `id` = `entity/<project|_global>/<kebab-slug>`, `kind` =
-     `file|symbol|api|concept|person`, `scope`/`project`, `title`, `aliases`,
-     `sourceMemoryIds` (the referencing memory ids), `sourceSessions`,
-     `sourceFiles`, `relatedEntities` (other entity ids — the graph),
-     `createdAt`/`updatedAt`.
-   - `body`: one-line definition + **What it is** + **Key facts** + **Gotchas**
-     + **Related** (reference chronicles/memories/other entities by name; don't
-     copy them). Imperative, agent-reuse voice.
-4. Persist:
+   Returns `matchedEntities` (existing pages + bodies to update in place),
+   `referencingMemories` (raw material), `entities` (ranked browse list).
+3. Write `/tmp/memarium-entities.json` — each `{ entry, body }` with
+   `entry.id = entity/<project|_global>/<kebab-slug>`, `kind`, `title`, `aliases`,
+   `sourceMemoryIds`, `sourceSessions`, `sourceFiles`, `relatedEntities`; body =
+   one-line def + **What it is** / **Key facts** / **Gotchas** / **Related**.
+4. Persist: `"$VBP" entity-write --input /tmp/memarium-entities.json`
 
-       "$VBP" entity-write --input /tmp/memarium-entities.json
+Skip entirely if the session produced no durable entity worth a page.
 
-   Writes `memory/entities/...` md + updates `.memarium/index.entity.json`.
+### Step P7 — Distill Q&A (`qa/` derived layer)
 
-Skip this step entirely if the session produced no durable entity worth a page.
+Scan THIS session for high-reuse question→answer pairs. **Conservative — prefer
+writing nothing.** Write a qa page ONLY when ALL hold: the **user actually asked**
+it, it was **resolved in-session**, the answer has **reuse value**, and it has
+**clear sources**. Only compound questions / troubleshooting conclusions /
+decision rationale / operational routes qualify — ordinary facts belong in typed
+memory. Build `{ entry, body }` (entry has `scope`/`project`/`question`/
+`answerSummary`/`kind`/`tags`/`sources`/`sourceMemoryIds`/`sourceSessions`) and:
 
-### Step P7.7 — Distill Q&A (`qa/` answer layer)
+      "$VBP" qa-write --input <that-json-file>
 
-After typed memory (P7.5) and entity wiki (P7.6), scan THIS session for high-reuse question→answer pairs worth filing as `qa/` pages. **Conservative — prefer writing nothing over writing noise.**
+Re-asking a known question upserts the existing page — don't fork. Nothing
+qualifies → write nothing.
 
-Write a Q&A page ONLY when ALL four hold:
-1. the **user actually asked** the question (not a fact you inferred),
-2. it was **resolved within the session**,
-3. the answer has **reuse value** ("you'll genuinely ask this again"),
-4. it has **clear sources** (chronicle / commit / memory id / session id).
-
-Only these kinds qualify: **compound questions, troubleshooting conclusions, decision rationale, operational routes.** Do NOT rewrite ordinary facts into Q&A form — those belong in typed memory (P7.5) or entity pages (P7.6). A qa page references memories/entities/chronicles via its structured fields; it never duplicates their content.
-
-For each qualifying pair, build an item and call `qa-write` with JSON shaped like:
-
-```json
-[{
-  "entry": {
-    "scope": "project:<slug>",
-    "project": "<slug>",
-    "question": "<the user's question, single line>",
-    "answerSummary": "<one-line gist of the answer>",
-    "kind": "operational",
-    "tags": ["..."],
-    "sources": ["chronicle:<id>", "commit:<sha>"],
-    "sourceMemoryIds": ["<memory id>"],
-    "sourceSessions": ["<session id>"],
-    "relatedEntities": ["entity/<...>"],
-    "createdAt": "<YYYY-MM-DD>",
-    "updatedAt": "<YYYY-MM-DD>"
-  },
-  "body": "<the full reusable answer in markdown — multiple paragraphs OK>"
-}]
-```
-
-Run `memarium-plugin qa-write --input <that-json-file>`. The CLI derives the stable `id`/`path`, normalizes `question`/`answerSummary` to single lines, writes `memory/qa/<project|_global>/<slug>.md`, and updates `.memarium/index.qa.json`. Re-asking a known question upserts (refines) the existing page — do not fork. **If nothing qualifies, write nothing and move on.**
-
-### Step P7.8 — Consolidate (memory health + conservative promotion)
-
-After P7.5–P7.7, run the read-only diagnostic and act on it CONSERVATIVELY:
+### Step P8 — Consolidate (memory health + conservative promotion)
 
 ```bash
-memarium-plugin memory-lint --cwd "$(pwd)" --json
+"$VBP" memory-lint --cwd "$(pwd)" --json
 ```
 
-The report has `issues[]` (objective integrity defects) and `suggestions[]` (semantic-judgment candidates). Read it together with this session's new memories and the existing memory.
+`issues[]` = objective defects; `suggestions[]` = judgment candidates. Act on only
+a FEW high-confidence items — prefer nothing over noise. Non-gated writes go
+through `memory-write`; **gated changes (core/procedural/pinned, or superseding
+one) go through `memory-propose`** (surface for review like above). For plain
+`expired` findings you can `memory-lint --cwd "$(pwd)" --fix` to *queue*
+`status→superseded` proposals. **By default KEEP a source episodic** when
+promoting a stable fact into `semantic`/`procedural` — the episodic is the
+evidence; only supersede it if it's a low-value duplicate pointer whose provenance
+you carry forward.
 
-**Auto-staleness shortcut:** for the common `expired` findings (active memories past
-their `validTo`), you can run `memory-lint --cwd "$(pwd)" --fix` to **queue** a
-`status→superseded` proposal for each — it goes through `memory-diff`/`memory-approve`
-(never a direct write, never touches the repo), so surface those queued fixes for
-review like any other proposal. For anything beyond plain expiry, judge manually below.
+### Step P9 — Record skips (so they aren't re-proposed)
 
-Act on only a FEW high-confidence items — prefer writing nothing over writing noise. Non-gated writes go through `memory-write` (it flips a superseded target's status automatically). **Gated changes — any `core`/`procedural`/pinned memory, or anything that supersedes one — go through `memory-propose`**, which queues them for human review (`memory-diff` / `memory-approve`); consolidation cannot silently rewrite long-term memory. Do NOT batch-fix.
+Record in the local skip ledger — otherwise these resurface as "new" every digest
+(and keep triggering global fan-out): **(a)** every thread you marked `skip: true`
+in Step P2, **and (b)** every id in `prepare`'s **`filteredMetaSessions`** (the
+memarium meta-sessions prepare already removed from `newSessions` — they're not
+episodic-consumed, so you must ledger them here). Build a JSON array of
+`{ sessionId, reason }` using each session's **full `sessionId`**:
 
-- **episodic→semantic / repeated→procedural** (from `suggestions[]`): when a fact is repeatedly confirmed/stable, write a new `semantic` (or `procedural`) memory. **By default KEEP the source episodic** — it is the evidence / chronicle pointer. Only `supersedes` the episodic when it is a low-value duplicate pointer AND the new memory carries its `sourceSessions` / provenance forward.
-- **contradiction / expired**: when a new fact contradicts or replaces an old memory, write the new one with `supersedes: <old-id>`.
-- **duplicate-like** (`issues[]`): if you agree, keep one and `supersedes` the redundant one.
-- Anything you're not confident about → leave it; mention it as a suggestion in your digest summary and write nothing.
+```json
+[ { "sessionId": "xyz99999-...-uuid", "reason": "pure ping test, no real work content" },
+  { "sessionId": "abc11111-...-uuid", "reason": "memarium meta-session (filtered by prepare)" } ]
+```
 
-Any of the above that produces a `core`/`procedural`/pinned memory — or that supersedes one — is a **gated change**: route it through `memory-propose`, not `memory-write`. (Promoting an episodic into an ordinary `semantic` is non-gated and writes directly; promoting into a `procedural` playbook is gated and gets proposed.)
+```bash
+"$VBP" skip-write --input /tmp/memarium-skips.json
+```
 
-(As of P0b the SessionStart primer is rendered **live** from the cross-device memory view, so no explicit primer refresh is needed after writing memory — new memory shows up on the next session automatically.)
+The ledger is `.memarium/index.skips.json` — local-only (never synced), kept OUT
+of recall. This replaces the old book-era `skip:true` chronicle.
 
-### Step P8 — Done
+### Step P10 — Finalize + summary
 
-**Before printing the summary, verify you actually ran the FULL digest, not just
-the book.** If you have not completed Steps P7.5–P7.8 (typed memory → entity wiki
-→ Q&A → consolidate), go back and do them now — a digest that stops at `publish`
-is incomplete and leaves the Memory OS unwritten.
-
-**Finalize — commit the whole round (REQUIRED).** Before printing the summary,
-run the closing commit so the session-repo is never left half-committed:
+**Finalize — commit the round (REQUIRED):**
 
     "$VBP" finalize
 
-This ensures the repo exists (inits it if this is a self-contained, npm-CLI-less
-setup), commits everything this digest wrote — `raw_sessions/`, `book/`,
-`memory/`, and the `.memarium/index*.json` files — and auto-pushes if a remote
-is configured. It only stages memarium's own paths, never foreign files. Read
-its JSON report (`committed`, `staged`, `pushed`, `branch`, `remote`) to fill the
-summary line below — `staged` is the number of files committed (the `<N>` below).
+Ensures the repo exists, commits everything this digest wrote (`raw_sessions/`,
+`memory/`, `.memarium/index.{json,memory,entity,qa}.json`), and auto-pushes
+if a remote is configured. It stages only memarium's own paths, never foreign
+files (`.memarium/index.skips.json` is device-local and never committed). Read its JSON report (`committed`, `staged`, `pushed`, `branch`, `remote`).
 
 Print a one-line-per-layer summary:
 
 ```
-✓ Published to book/<project>/: N chronicles, M topics.
-✓ Memory: A typed (core/semantic/procedural/episodic), B entities, C Q&A pages.
-✓ Consolidated: D promoted/superseded, E proposals queued for review (surfaced above — approve/reject now or later; digest is complete either way).
-✓ Finalized: committed <N> files to session-repo (pushed to <branch> | local-only, no remote).
+✓ Memory: A episodics + B semantic/procedural/core, C entities, D Q&A pages.
+✓ Consolidated: E promoted/superseded, F proposals queued for review (surfaced above).
+✓ Skipped: G sessions ledgered.
+✓ Finalized: committed <N> files (pushed to <branch> | local-only, no remote).
 ```
 
-(Render the Finalized line from `finalize`'s JSON report: if `committed:false`,
-say "nothing new to commit"; if `pushed:false` but `remote:true`, say
-"committed; push deferred (offline) — will sync next run"; if `remote:false`,
-say "local-only, no remote".)
+(If a layer wrote nothing, say so explicitly — `Memory: 0 (nothing durable this
+round)` — so it's clear the step *ran* and chose to write nothing.)
 
-(If a memory layer wrote nothing this round, say so explicitly — e.g.
-`Memory: 0 (nothing durable this round)` — so it's clear the step *ran* and chose
-to write nothing, rather than being skipped.)
-
-That's it for project-mode. The user can now `cd ~/.memarium/session-repo && claude → /memarium`
-later to do a global sweep across all projects.
+That's it for project-mode. The user can `cd ~/.memarium/session-repo && claude →
+/memarium` later for a global sweep.
 
 ---
 
 # Global mode
 
-Triggered when cwd = `~/.memarium/session-repo`. The user wants a full
-sweep across every project. You orchestrate; subagents do the per-project
-work using the same project-mode flow.
+Triggered when cwd = `~/.memarium/session-repo`. You orchestrate; subagents do the
+per-project work using the same project-mode flow.
 
 ### Step G1 — Triage
 
-`"$VBP" list-projects` already ran in Step 0. Show the user the table:
-
-```
-project              total  pending  chronicles  topics  cards  lastTouched
-edge-src                75       68           7       2     12  2026-04-22
-chromium-src            53       43          10       3      8  2026-04-22
-edge-claude-code        21       18           3       1      4  2026-04-15
-...
-edge-misc                4        4           0       0      0  —
-
-12 projects pending; 0 already covered (lastTouched=null AND pending>0 means
-"never digested").
-```
-
-Confirm with user which projects to process this run. Default: every project
-with `pendingSessions > 0`. Let user exclude any.
+`"$VBP" list-projects` already ran in Step 0. Show the table (`project · total ·
+pending · episodes · memories · lastTouched`). Default: every project with
+`pendingSessions > 0`; let the user exclude any.
 
 ### Step G2 — Fan out subagents (one per project)
 
-#### Permission warm-up — DO THIS FIRST
-
-Same rationale as project-mode P3 (subagents can't prompt the user
-for permission). Before the first `Agent(...)` call, run inline:
+**Permission warm-up first** (same as P3 — subagents can't prompt):
 
 ```bash
 mkdir -p /tmp/memarium/_warmup && rmdir /tmp/memarium/_warmup
 "$VBP" prepare --help >/dev/null
-"$VBP" publish --help >/dev/null
 echo warmup > /tmp/memarium/_warmup.json && rm /tmp/memarium/_warmup.json
 ```
 
-Tell the user to approve the BROAD pattern (e.g. `Bash(memarium
-prepare *)`, not the literal `--help` invocation). Skip if already
-warmed up earlier in the session or pre-approved in
-`~/.claude/settings.json`.
-
-#### The actual fan-out
-
-For each project to process, dispatch a `general-purpose` Agent in parallel
-(via multiple Agent tool calls in one message). Each agent's prompt:
+Then dispatch a `general-purpose` Agent per project in parallel (multiple Agent
+calls in one message). Agents are **READERS ONLY** — they produce JSON, they do
+NOT persist. (The shared index files `index.{memory,entity,qa,skips}.json` cannot
+be written by parallel agents — concurrent load-mutate-save races drop entries; so
+persistence is serialized by the orchestrator in G3.) Each agent's prompt:
 
 ```
-You are running project-mode /memarium for project '<slug>'. Steps to follow,
-verbatim from skills/memarium/SKILL.md sections P1–P7:
+You are a READER for project-mode /memarium, project '<slug>', per SKILL.md
+P1–P8 (typed-memory only — NO book — and DO NOT persist anything):
 
-  1. Run: "$VBP" prepare --project <slug>
-  2. For every newSession, Read its mdPath. Apply SKIP rules conservatively
-     (read the SKIP rules in SKILL.md project-mode Step P2 — only ping/greeting/
-     pure-error sessions get skipped; everything else gets a chronicle).
-  3. Segment one-thread-per-session by default; merge only when it's the
-     same continuous effort.
-  4. Write an agent-reuse 4-section chronicle for each non-skip thread
-     (Context / What worked / Dead ends / Open questions; imperative
-     voice; preserve commit hashes / file paths / code blocks verbatim).
-  5. Update or insert topic pages (mid-grain subsystem level). Read existing
-     topic pages and preserve historical facts when rewriting.
-  6. Run: "$VBP" publish --chronicles ... --topics ... --no-catalog
+  1. "$VBP" prepare --project <slug>
+  2. Read each newSession's mdPath. Apply SKIP rules conservatively.
+  3. Segment one-thread-per-session by default; merge only if continuous.
+  4. For each non-skip thread produce an episodic {entry,body} (episodic-format.md:
+     Context/What worked/Dead ends/Open questions/Decisions; sourceSessions = the
+     full sessionId values, NOT shortId; work-status in body, NOT entry.status) +
+     distilled semantic/procedural/core facts + entity {entry,body} + qa {entry,body}.
+  5. Write these as JSON FILES under /tmp/memarium/<slug>/ (use the Write tool):
+     memory.json (episodics + non-gated semantic), gated.json (core/procedural/
+     pinned/supersede/trust-elevation), entities.json, qa.json, and skips.json
+     ([{sessionId,reason}] for both skipped threads AND prepare.filteredMetaSessions).
+  Do NOT run memory-write / memory-propose / entity-write / qa-write / skip-write /
+  finalize — the orchestrator persists SEQUENTIALLY. Return the count per file.
 
-Write your three input JSON files under /tmp/memarium/<slug>/ so we don't
-collide with sibling subagents.
-
-Return a one-line summary of counts. Do NOT regen the catalog — the
-orchestrating session will do that once after all subagents finish.
-
-If you hit a `permission denied` on a Bash or Write tool: STOP, return
-"permission denied: <pattern>" as your summary, and let the orchestrator
-re-run the warm-up. Do NOT retry the same command — you can't escalate.
+If you hit `permission denied`: STOP, return "permission denied: <pattern>", and
+let the orchestrator re-run warm-up. Do NOT retry — you can't escalate.
 ```
 
-**Don't run them all at once if there are 10+ projects** — Claude Code has
-limits on concurrent subagents. Cap at 4 in flight; queue the rest.
+Cap at ~4 agents in flight; queue the rest. If one fails, log it and continue.
 
-If a subagent fails (especially with `permission denied`), log it but
-continue with the next batch — the user can re-run `/memarium` against
-that project later in project-mode after the warm-up has approved the
-needed patterns.
+### Step G3 — Persist sequentially, then finalize
 
-### Step G3 — Catalog regen
-
-After all subagents return:
+The agents only produced JSON. Persist ONE PROJECT AT A TIME (never in parallel —
+that's what avoids the concurrent-index-write races). For each project's
+`/tmp/memarium/<slug>/`, in sequence, run only the files that are non-empty:
 
 ```bash
-"$VBP" catalog-regen
+"$VBP" memory-write   --input /tmp/memarium/<slug>/memory.json
+"$VBP" memory-propose --input /tmp/memarium/<slug>/gated.json     # if any gated
+"$VBP" entity-write   --input /tmp/memarium/<slug>/entities.json  # if any
+"$VBP" qa-write       --input /tmp/memarium/<slug>/qa.json        # if any
+"$VBP" skip-write     --input /tmp/memarium/<slug>/skips.json     # if any
 ```
 
-This regenerates `book/index.md`, `book/_meta/timeline.md`, and
-`book/<project>/index.md` for every project, then commits + pushes.
+Then surface any gated proposals for review (`"$VBP" memory-diff --json`,
+non-blocking), and commit the whole sweep once:
 
-### Step G4 — Summary
+    "$VBP" finalize
 
-```
-✓ Global sweep complete.
-  edge-src:        +6 chronicle, +2 topic
-  chromium-src:    +5 chronicle, +1 topic
-  ...
-  catalog regenerated and pushed.
-```
+Print a per-project summary (episodics + facts added) and the finalize result.
 
 ---
 
 ## Things you should NEVER do
 
-- ❌ `Write` directly into `book/<project>/{chronicle,topics}/*.md` —
-  always go through `"$VBP" publish` so wikilinks resolve and the index
-  stays in sync.
-- ❌ Write a chronicle for a SKIP'd session.
-- ❌ Force-merge unrelated sessions to make a "bigger thread".
-- ❌ Write blogger-style "let me walk you through" / "interestingly
-  enough" / "we then" prose. Body voice is imperative agent-reuse:
-  "Use X to achieve Y" — not "we did X and discovered Y".
-- ❌ Hallucinate outcomes. If user didn't say it worked, don't say it worked.
-- ❌ Cross project boundaries (edge-src content ending up in chromium-src/).
-- ❌ Skip Step P7.5. Distilling typed memory is what lets future sessions start already knowing the project.
-- ❌ Skip the `Read` of an existing topic page before rewriting it.
-- ❌ Touch any file in `raw_sessions/` — those are immutable source data.
-- ❌ Run global-mode `/memarium` with cwd ≠ `~/.memarium/session-repo`. The
-  cwd check is the mode trigger; do not override.
+- ❌ `Write` directly into `memory/**/*.md` — always go through `"$VBP"
+  memory-write` / `memory-propose` so the index + gate stay in sync.
+- ❌ Set `entry.status` to a work status (shipped/blocked/…) — it's the lifecycle
+  axis (`active`/`superseded`/`pinned`); work status goes in the episodic body.
+- ❌ Omit or fake `sourceSessions` on an episodic — it's the digest receipt; a
+  wrong value re-digests the session forever or skips real work.
+- ❌ Write an episodic for a SKIP'd session (ledger it instead), or force-merge
+  unrelated sessions into a "bigger thread".
+- ❌ Approve your own gated proposals, or blind-approve "all".
+- ❌ Blogger voice ("let me walk you through", "we then"). Imperative agent-reuse.
+- ❌ Hallucinate outcomes, or cross project boundaries.
+- ❌ Touch anything in `raw_sessions/` — immutable source data.
+- ❌ Run global-mode with cwd ≠ `~/.memarium/session-repo`.
 
 ## Things you should always do
 
 - ✅ Run `"$VBP" list-projects` FIRST to detect mode.
-- ✅ In project-mode, derive project from cwd (`"$VBP" prepare --cwd`).
 - ✅ Default to one-thread-per-session; merge only when continuous.
-- ✅ Be conservative with SKIP — write the chronicle if in any doubt.
-- ✅ Use Read / Glob / Grep to inspect existing book/ before writing topics.
+- ✅ Be conservative with SKIP — write the episodic if in any doubt.
+- ✅ Set `sourceSessions` correctly; keep `threadId`/episodic `id` stable across re-digests.
 - ✅ Preserve exact code blocks, command lines, file paths, commit hashes.
-- ✅ Mark uncertainty: "unfinished", "unverified", "blocked".
-- ✅ Stop and ask if user said something contradicting your plan.
+- ✅ Route gated (core/procedural/pinned/supersede/trust-elevation) through `memory-propose`.
+- ✅ Record skipped sessions with `skip-write`, and `finalize` at the end.
+
+

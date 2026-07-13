@@ -38,7 +38,7 @@ export async function run(argv: string[]) {
 
   program
     .command("status")
-    .description("Digest coverage: synced sessions vs digested vs pending, plus book + memory layer counts.")
+    .description("Digest coverage: synced sessions vs digested vs pending, plus episode + memory (typed / entities / Q&A) layer counts.")
     .action(async () => {
       const { statusCmd } = await import("./commands/status.js");
       await statusCmd();
@@ -98,6 +98,16 @@ export async function run(argv: string[]) {
     .action(async () => {
       const { memoryIndexCmd } = await import("./commands/memory-index.js");
       const report = await memoryIndexCmd();
+      process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    });
+
+  program
+    .command("skip-write")
+    .description("Record intentionally-not-digested sessions in the local skip ledger (.memarium/index.skips.json) so the digest doesn't re-propose them. --input JSON: [{sessionId,reason?}] or {sessions:[...]}.")
+    .requiredOption("--input <path>", "path to skip entries JSON (required)")
+    .action(async (opts: { input?: string }) => {
+      const { skipWriteCmd } = await import("./commands/skip-write.js");
+      const report = await skipWriteCmd({ inputPath: opts.input });
       process.stdout.write(JSON.stringify(report, null, 2) + "\n");
     });
 
@@ -188,11 +198,10 @@ export async function run(argv: string[]) {
     .description("Read-only integrity diagnostic across memory/entity/qa indexes (never writes the repo). --json for structured output; --fix queues review proposals for expired entries.")
     .option("--cwd <path>", "scope findings to the project at this path (+ global/user); default: lint the whole store")
     .option("--json", "emit the structured LintReport JSON instead of a human report")
-    .option("--stale-days <n>", "age threshold for stale episodic/working (default 90)", (v) => parseInt(v, 10))
     .option("--fix", "queue a review proposal (status→superseded) for each expired entry — goes through memory-diff/approve, never a direct write")
-    .action(async (o: { cwd?: string; json?: boolean; staleDays?: number; fix?: boolean }) => {
+    .action(async (o: { cwd?: string; json?: boolean; fix?: boolean }) => {
       const { memoryLintCmd } = await import("./commands/memory-lint.js");
-      await memoryLintCmd({ cwd: o.cwd, json: o.json, staleDays: o.staleDays, fix: o.fix });
+      await memoryLintCmd({ cwd: o.cwd, json: o.json, fix: o.fix });
     });
 
   program.command("memory-propose")

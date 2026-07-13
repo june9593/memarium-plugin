@@ -79,6 +79,31 @@ describe("applyMemoryItems", () => {
     expect(md).toContain("createdAt: 2025-01-02");
   });
 
+  it("unions sourceSessions/Files/Commits on a same-id upsert (never loses the prior receipt)", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const base = { id: "episodic/p/t", type: "episodic" as const, scope: "project:p", project: "p" };
+    applyMemoryItems(repo, [{ entry: mk({ ...base, sourceSessions: ["s1"], sourceFiles: ["a.ts"], sourceCommits: ["c1"] }), body: "v1" }]);
+    // continuation: re-write the SAME id with ONLY the new provenance
+    applyMemoryItems(repo, [{ entry: mk({ ...base, sourceSessions: ["s2"], sourceFiles: ["b.ts"], sourceCommits: ["c2"] }), body: "v2" }]);
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    const e = idx.entries["episodic/p/t"];
+    expect(e.sourceSessions.sort()).toEqual(["s1", "s2"]);   // unioned, not replaced
+    expect(e.sourceFiles.sort()).toEqual(["a.ts", "b.ts"]);
+    expect(e.sourceCommits.sort()).toEqual(["c1", "c2"]);
+  });
+
+  it("tolerates a malformed prior entry (non-array sourceSessions) on upsert — doesn't throw", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    // seed a parseable-but-corrupt prior entry directly in the index
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "episodic/p/t": { id: "episodic/p/t", type: "episodic", sourceSessions: {}, sourceFiles: null, sourceCommits: "x" },
+    } }));
+    const e = mk({ id: "episodic/p/t", type: "episodic", scope: "project:p", project: "p", sourceSessions: ["s2"] });
+    expect(() => applyMemoryItems(repo, [{ entry: e, body: "v" }])).not.toThrow();
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    expect(idx.entries["episodic/p/t"].sourceSessions).toEqual(["s2"]); // malformed prev → [], unioned with new
+  });
+
   it("rejects a supplied path that does not match the canonical path", async () => {
     const { applyMemoryItems } = await import("../../src/memory/apply.js");
     expect(() => applyMemoryItems(repo, [{

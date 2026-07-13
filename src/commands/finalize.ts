@@ -4,13 +4,13 @@ import { ensureLocalRepo, commitWhitelist } from "../_shared/git-ops.js";
 
 /** Paths the plugin writes during a digest. ONLY these get staged — never
  *  `git add -A`, so foreign files the user dropped in the repo (e.g.
- *  connect_extracts/) are never committed. */
+ *  connect_extracts/) are never committed. NOTE: `.memarium/index.skips.json`
+ *  is deliberately NOT here — the skip ledger is device-local (never synced),
+ *  so it stays an uncommitted local file. */
 const WHITELIST = [
   "raw_sessions",
-  "book",
   "memory",
   ".memarium/index.json",
-  ".memarium/index.book.json",
   ".memarium/index.memory.json",
   ".memarium/index.entity.json",
   ".memarium/index.qa.json",

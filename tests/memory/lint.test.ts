@@ -6,7 +6,7 @@ import { emptyEntityIndex } from "../../src/entity/types.js";
 import { emptyQaIndex } from "../../src/qa/types.js";
 
 const NOW = "2026-06-11";
-const opts = { now: NOW, staleDays: 90, project: null as string | null };
+const opts = { now: NOW, project: null as string | null };
 
 describe("lintMemory", () => {
   it("empty indexes → empty report", () => {
@@ -89,10 +89,11 @@ describe("lintMemory — memory issues", () => {
     expect(checks(run(idxOf(mem({ id: "core/g", type: "core", scope: "global", project: null, sourceSessions: [], sourceCommits: [], sourceFiles: [] }))))).not.toContain("missing-provenance");
     expect(checks(run(idxOf(mem({ id: "semantic/p/pin", status: "pinned", sourceSessions: [], sourceCommits: [], sourceFiles: [] }))))).not.toContain("missing-provenance");
   });
-  it("stale-candidate: episodic+old flagged; semantic+old NOT; accessCount irrelevant", () => {
-    expect(checks(run(idxOf(mem({ id: "episodic/p/e", type: "episodic", updatedAt: "2026-01-01", accessCount: 99 }))))).toContain("stale-candidate");
+  it("stale-candidate: episodic is no longer age-flagged (it's the primary durable per-thread record)", () => {
+    // Episodic used to be flagged stale after staleDays; that check is gone —
+    // episodic is now the archival digest receipt, so age never means "prune".
+    expect(checks(run(idxOf(mem({ id: "episodic/p/e", type: "episodic", updatedAt: "2026-01-01", accessCount: 99 }))))).not.toContain("stale-candidate");
     expect(checks(run(idxOf(mem({ id: "semantic/p/s", type: "semantic", updatedAt: "2026-01-01", accessCount: 0 }))))).not.toContain("stale-candidate");
-    expect(checks(run(idxOf(mem({ id: "episodic/p/r", type: "episodic", updatedAt: "2026-06-10" }))))).not.toContain("stale-candidate");
   });
   it("malformed-date: active episodic with unparseable updatedAt → malformed-date, NOT stale-candidate", () => {
     const r = run(idxOf(mem({ id: "episodic/p/bad", type: "episodic", updatedAt: "not-a-date" })));

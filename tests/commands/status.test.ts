@@ -25,24 +25,27 @@ describe("buildStatusPayload (#22 coverage)", () => {
     writeFileSync(join(repo, ".memarium/index.json"), JSON.stringify({
       version: 1, entries: { "claude:s1": sess("s1"), "claude:s2": sess("s2"), "claude:s3": sess("s3") },
     }));
-    // 1 chronicle consuming s1 → 1 digested, 2 pending
-    writeFileSync(join(repo, ".memarium/index.book.json"), JSON.stringify({
-      version: 2, chronicles: { c1: {
-        threadId: "c1", project: "edge-memvc", title: "T", sessionIds: ["s1"],
-        path: "book/edge-memvc/chronicle/c1.md", createdAt: "2026-01-01", updatedAt: "2026-01-02", tags: [],
-      } }, topics: {}, cards: {},
-    }));
-    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: { a: {}, b: {} } }));
+    // 1 episodic memory consumes s1 → 1 digested, 2 pending; + 1 semantic (typedMemory=2)
+    const memEntry = (over: Record<string, unknown>) => ({
+      scope: "project:edge-memvc", project: "edge-memvc", title: "t", summary: "s",
+      status: "active", confidence: 0.8, importance: 2, createdAt: "2026-01-01", updatedAt: "2026-01-02",
+      validFrom: null, validTo: null, sourceSessions: [], sourceCommits: [], sourceFiles: [],
+      supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null, ...over,
+    });
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "episodic/edge-memvc/e1": memEntry({ id: "episodic/edge-memvc/e1", type: "episodic", path: "memory/episodic/edge-memvc/e1.md", sourceSessions: ["s1"] }),
+      "semantic/edge-memvc/f1": memEntry({ id: "semantic/edge-memvc/f1", type: "semantic", path: "memory/semantic/edge-memvc/f1.md" }),
+    } }));
     writeFileSync(join(repo, ".memarium/index.qa.json"), JSON.stringify({ version: 1, entries: { q: {} } }));
     writeFileSync(join(repo, ".memarium/index.entity.json"), JSON.stringify({ version: 1, entries: { e: {} } }));
   });
   afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
 
-  it("aggregates the session funnel + book/memory layer counts", async () => {
+  it("aggregates the session funnel + memory layer counts", async () => {
     const { buildStatusPayload } = await import("../../src/commands/status.js");
     const s = buildStatusPayload(repo);
     expect(s.sessions).toMatchObject({ total: 3, digested: 1, pending: 2, coveragePct: 33 });
-    expect(s.book.chronicles).toBe(1);
+    expect(s.episodes).toBe(1);
     expect(s.memory).toEqual({ typedMemory: 2, entities: 1, qa: 1 });
     expect(s.pendingByProject).toEqual([{ project: "edge-memvc", pending: 2 }]);
     // P0b: no aggregated overlay → local-only view.
@@ -65,15 +68,15 @@ describe("buildStatusPayload (#22 coverage)", () => {
       version: 1, entries: {
         // truly sibling-only (absent from local)
         "core/sibling": ent({ id: "core/sibling" }),
-        // SHARED id ("a" exists locally), overlay copy strictly newer — must NOT count as sibling-only
-        "a": ent({ id: "a", updatedAt: "2026-12-31", summary: "newer-from-sibling" }),
+        // SHARED id (episodic/edge-memvc/e1 exists locally), overlay copy strictly newer — must NOT count as sibling-only
+        "episodic/edge-memvc/e1": ent({ id: "episodic/edge-memvc/e1", updatedAt: "2026-12-31", summary: "newer-from-sibling" }),
       },
     }));
     const { buildStatusPayload } = await import("../../src/commands/status.js");
     const s = buildStatusPayload(repo);
     expect(s.crossDevice.overlayPresent).toBe(true);
-    // local=2 (ids a + b), merged=3 (+core/sibling), siblingOnly=1 (only core/sibling
-    // is absent from local; "a" exists locally even though the overlay copy won the merge).
+    // local=2 (e1 + f1), merged=3 (+core/sibling), siblingOnly=1 (only core/sibling
+    // is absent from local; e1 exists locally even though the overlay copy won the merge).
     expect(s.crossDevice.memory).toEqual({ local: 2, merged: 3, siblingOnly: 1 });
   });
 

@@ -58,18 +58,19 @@ describe("memoryLintCmd", () => {
     expect(primerExists).toBe(false);
   });
 
-  it("Fix3: NaN staleDays falls back to 90 — old episodic (200d ago) still flagged as stale-candidate", async () => {
-    // updatedAt well over 90 days before today
+  it("old episodic is NOT flagged stale-candidate (episodic is the primary durable per-thread record)", async () => {
+    // updatedAt well over a year before today — used to be a stale-candidate;
+    // that age check was removed (episodic is the archival digest receipt now).
     writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
       "episodic/p/old": { id: "episodic/p/old", type: "episodic", scope: "project:p", project: "p",
         title: "t", summary: "s", path: "memory/x.md", status: "active", confidence: 0.8, importance: 1,
         createdAt: "2025-01-01", updatedAt: "2025-01-01", validFrom: null, validTo: null,
         sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
         entities: [], originDevice: null, accessCount: 0, lastAccess: null } } }));
-    await memoryLintCmd({ json: true, staleDays: NaN });
+    await memoryLintCmd({ json: true });
     const payload = JSON.parse(out.join(""));
     const checks = payload.issues.map((f: { check: string }) => f.check);
-    expect(checks).toContain("stale-candidate");
+    expect(checks).not.toContain("stale-candidate");
   });
 
   it("Fix4: corrupt .memarium/index.json does not crash — emits valid LintReport (project=null fallback)", async () => {
@@ -119,21 +120,6 @@ describe("memoryLintCmd", () => {
     expect(corrupt.length).toBeGreaterThan(0);
     expect(corrupt[0].layer).toBe("memory");
     expect(corrupt[0].severity).toBe("error");
-  });
-
-  it("Fix3 (stale clamp): staleDays=-1 falls back to 90 — a today-dated episodic is NOT flagged stale-candidate", async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
-      "episodic/p/recent": { id: "episodic/p/recent", type: "episodic", scope: "project:p", project: "p",
-        title: "recent thing", summary: "happened today", path: "memory/x.md",
-        status: "active", confidence: 0.8, importance: 1,
-        createdAt: today, updatedAt: today, validFrom: null, validTo: null,
-        sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
-        entities: [], originDevice: null, accessCount: 0, lastAccess: null } } }));
-    await memoryLintCmd({ json: true, staleDays: -1 });
-    const payload = JSON.parse(out.join(""));
-    const stale = payload.issues.filter((f: { check: string }) => f.check === "stale-candidate");
-    expect(stale.length).toBe(0);
   });
 
   it("B: no --cwd → whole-store lint: both project:p and project:q missing-provenance entries appear", async () => {

@@ -100,6 +100,22 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     if (!Array.isArray(entry.sourceFiles)) entry.sourceFiles = [];
     if (!Array.isArray(entry.entities)) entry.entities = [];
 
+    // Continuation upsert: if this id already exists, UNION the provenance arrays
+    // with the prior entry so an agent re-writing a thread with only its NEW
+    // sessions can't erase the old receipt — which would make those raw sessions
+    // "pending" again and re-digest forever. (A supersede targets a DIFFERENT id;
+    // this is the plain create/update-of-same-id path.)
+    const prior = idx.entries[entry.id];
+    if (prior) {
+      // Tolerate a malformed prior entry (a prior sourceSessions:{} would make the
+      // spread throw and break memory-write → the digest). Non-array prev → [].
+      const uni = (next: string[], prev: unknown) =>
+        Array.from(new Set([...(Array.isArray(prev) ? prev : []), ...next]));
+      entry.sourceSessions = uni(entry.sourceSessions, prior.sourceSessions);
+      entry.sourceFiles = uni(entry.sourceFiles, prior.sourceFiles);
+      entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);
+    }
+
     if (supersede && idx.entries[supersede.targetId]) {
       idx.entries[supersede.targetId].status = "superseded";
       superseded++;
