@@ -12,7 +12,7 @@ import { lintMemory, type LintFinding, type LintReport } from "../memory/lint.js
 import { writeProposal, flatTargetKey, type MemoryProposal } from "../memory/proposal-store.js";
 import { targetKey, deriveAction, canonicalMemoryPath } from "../memory/gate.js";
 
-export interface MemoryLintOptions { cwd?: string; json?: boolean; staleDays?: number; fix?: boolean; }
+export interface MemoryLintOptions { cwd?: string; json?: boolean; fix?: boolean; }
 
 /** Recover a memory's body (the prose after the `# title` heading) from its md,
  *  so a --fix proposal preserves content and only flips status. */
@@ -101,13 +101,10 @@ export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
     try { project = resolveProjectFromCwd(opts.cwd, cfg.repoPath); } catch { project = null; }
   }
   const now = new Date().toISOString().slice(0, 10);
-  const staleDays = Number.isFinite(opts.staleDays) && (opts.staleDays as number) > 0
-    ? Math.floor(opts.staleDays as number)
-    : 90;
   const m = readIndexOnce<MemoryIndex>(cfg.repoPath, MEMORY_INDEX_REL, "memory", emptyMemoryIndex());
   const e = readIndexOnce<EntityIndex>(cfg.repoPath, ENTITY_INDEX_REL, "entity", emptyEntityIndex());
   const q = readIndexOnce<QaIndex>(cfg.repoPath, QA_INDEX_REL, "qa", emptyQaIndex());
-  const report = lintMemory(m.index, e.index, q.index, { now, staleDays, project, generatedAt: now });
+  const report = lintMemory(m.index, e.index, q.index, { now, project, generatedAt: now });
   const corrupt = [m.finding, e.finding, q.finding].filter((f): f is LintFinding => f !== null);
   if (corrupt.length) {
     report.issues = [...corrupt, ...report.issues];

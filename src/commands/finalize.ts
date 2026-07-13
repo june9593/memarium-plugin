@@ -7,13 +7,12 @@ import { ensureLocalRepo, commitWhitelist } from "../_shared/git-ops.js";
  *  connect_extracts/) are never committed. */
 const WHITELIST = [
   "raw_sessions",
-  "book",
   "memory",
   ".memarium/index.json",
-  ".memarium/index.book.json",
   ".memarium/index.memory.json",
   ".memarium/index.entity.json",
   ".memarium/index.qa.json",
+  ".memarium/index.skips.json",
 ];
 
 export interface FinalizeOptions { noPush?: boolean; }

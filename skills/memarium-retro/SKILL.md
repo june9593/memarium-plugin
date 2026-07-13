@@ -9,7 +9,7 @@ After completing a task, distill what you learned into memarium's **typed
 memory** so the next session (on this or another device) starts already knowing
 it. This is the *live, proactive* path: one insight from the CURRENT
 conversation, captured now — not the batch `/memarium` digest (which reads
-already-synced sessions and also writes chronicles). Both coexist; dedup keeps
+already-synced sessions and writes richer typed memory). Both coexist; dedup keeps
 them from doubling up.
 
 ## Resolve the plugin CLI once

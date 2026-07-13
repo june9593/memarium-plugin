@@ -9,12 +9,12 @@ export interface StatusPayload {
   /** Session digest funnel, aggregated across all real projects. */
   sessions: {
     total: number;       // synced raw sessions
-    digested: number;    // referenced by ≥1 chronicle (or skip-marked)
+    digested: number;    // digested (referenced by an episodic memory) or skip-ledgered
     pending: number;     // total - digested
     coveragePct: number; // round(digested / total * 100), 0 when no sessions
   };
-  /** Book layer (chronicles / topics / cards) totals. */
-  book: { chronicles: number; topics: number; cards: number };
+  /** Episodic memories = digest receipts (one per work thread), across projects. */
+  episodes: number;
   /** Typed Memory OS layer entry counts (LOCAL device repo). */
   memory: { typedMemory: number; entities: number; qa: number };
   /** Cross-device memory view (P0b): is the aggregated overlay present + fresh,
@@ -38,14 +38,12 @@ export function buildStatusPayload(cwd: string = process.cwd()): StatusPayload {
   const cfg = readPluginConfig();
   const lp = buildListProjectsPayload(cwd);
 
-  let total = 0, digested = 0, pending = 0, chronicles = 0, topics = 0, cards = 0;
+  let total = 0, digested = 0, pending = 0, episodes = 0;
   for (const p of lp.projects) {
     total += p.totalSessions;
     digested += p.consumedSessions;
     pending += p.pendingSessions;
-    chronicles += p.chronicles;
-    topics += p.topics;
-    cards += p.cards;
+    episodes += p.episodes;
   }
 
   const pendingByProject = lp.projects
@@ -66,7 +64,7 @@ export function buildStatusPayload(cwd: string = process.cwd()): StatusPayload {
       total, digested, pending,
       coveragePct: total > 0 ? Math.round((digested / total) * 100) : 0,
     },
-    book: { chronicles, topics, cards },
+    episodes,
     memory: {
       typedMemory: localMem,
       entities: Object.keys(loadEntityIndex(cfg.repoPath).entries).length,

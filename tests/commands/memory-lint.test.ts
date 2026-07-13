@@ -58,18 +58,19 @@ describe("memoryLintCmd", () => {
     expect(primerExists).toBe(false);
   });
 
-  it("Fix3: NaN staleDays falls back to 90 — old episodic (200d ago) still flagged as stale-candidate", async () => {
-    // updatedAt well over 90 days before today
+  it("old episodic is NOT flagged stale-candidate (episodic is the primary durable per-thread record)", async () => {
+    // updatedAt well over a year before today — used to be a stale-candidate;
+    // that age check was removed (episodic is the archival digest receipt now).
     writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
       "episodic/p/old": { id: "episodic/p/old", type: "episodic", scope: "project:p", project: "p",
         title: "t", summary: "s", path: "memory/x.md", status: "active", confidence: 0.8, importance: 1,
         createdAt: "2025-01-01", updatedAt: "2025-01-01", validFrom: null, validTo: null,
         sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
         entities: [], originDevice: null, accessCount: 0, lastAccess: null } } }));
-    await memoryLintCmd({ json: true, staleDays: NaN });
+    await memoryLintCmd({ json: true });
     const payload = JSON.parse(out.join(""));
     const checks = payload.issues.map((f: { check: string }) => f.check);
-    expect(checks).toContain("stale-candidate");
+    expect(checks).not.toContain("stale-candidate");
   });
 
   it("Fix4: corrupt .memarium/index.json does not crash — emits valid LintReport (project=null fallback)", async () => {

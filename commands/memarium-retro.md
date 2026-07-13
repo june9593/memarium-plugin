@@ -20,4 +20,4 @@ The skill:
    (the v4 review gate) for `core`/`procedural`/pinned/supersede changes.
 
 This is the live counterpart to `/memarium` (which batch-digests already-
-synced sessions into chronicles + memory). They coexist by dedup.
+synced sessions into typed memory). They coexist by dedup.

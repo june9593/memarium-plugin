@@ -1,6 +1,7 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadIndex } from "../_shared/index-store.js";
-import { loadBookIndexV2 } from "../digest/book-index-v2.js";
+import { loadMemoryIndex } from "../memory/index-store.js";
+import { consumedSessions } from "../digest/consumed.js";
 import { isRealProjectPath } from "../_shared/digest/project-filter.js";
 
 export interface ProjectStats {
@@ -9,21 +10,18 @@ export interface ProjectStats {
   /** Total sessions synced for this project (including those already
    *  digested into chronicles). */
   totalSessions: number;
-  /** Sessions whose `sessionId` is already referenced by some chronicle
-   *  entry in BookIndex (skip-marked counts too — once "decided", we don't
-   *  reconsider). */
+  /** Sessions already digested (referenced by an episodic memory) or
+   *  skip-ledgered — once "decided", we don't reconsider. */
   consumedSessions: number;
   /** = totalSessions - consumedSessions. Drives the global-mode subagent
    *  fan-out: only project-mode loops over projects with `pendingSessions > 0`. */
   pendingSessions: number;
-  /** Number of chronicle entries currently registered for this project. */
-  chronicles: number;
-  /** Number of topic pages currently registered for this project. */
-  topics: number;
-  /** Number of cards currently registered for this project. */
-  cards: number;
-  /** Most recent updatedAt across this project's chronicles+topics+cards
-   *  (`null` if nothing exists yet). Helpful for users skimming the list. */
+  /** Number of episodic memories (digest receipts) for this project. */
+  episodes: number;
+  /** Total memory entries (all types) for this project. */
+  memories: number;
+  /** Most recent `updatedAt` across this project's memory (`null` if none).
+   *  Helpful for users skimming the list. */
   lastTouchedAt: string | null;
 }
 
@@ -53,12 +51,8 @@ export interface ListProjectsPayload {
 export function buildListProjectsPayload(cwd: string = process.cwd()): ListProjectsPayload {
   const cfg = readPluginConfig();
   const indexFile = loadIndex(cfg.repoPath);
-  const bookIndex = loadBookIndexV2(cfg.repoPath);
-
-  const consumed = new Set<string>();
-  for (const c of Object.values(bookIndex.chronicles)) {
-    for (const sid of c.sessionIds ?? []) consumed.add(sid);
-  }
+  const memIndex = loadMemoryIndex(cfg.repoPath);
+  const consumed = consumedSessions(cfg.repoPath);
 
   const stats = new Map<string, ProjectStats>();
   const ensure = (project: string): ProjectStats => {
@@ -67,7 +61,7 @@ export function buildListProjectsPayload(cwd: string = process.cwd()): ListProje
       s = {
         project,
         totalSessions: 0, consumedSessions: 0, pendingSessions: 0,
-        chronicles: 0, topics: 0, cards: 0, lastTouchedAt: null,
+        episodes: 0, memories: 0, lastTouchedAt: null,
       };
       stats.set(project, s);
     }
@@ -80,21 +74,12 @@ export function buildListProjectsPayload(cwd: string = process.cwd()): ListProje
     s.totalSessions++;
     if (consumed.has(e.sessionId)) s.consumedSessions++;
   }
-  for (const c of Object.values(bookIndex.chronicles)) {
-    if (!isRealProjectPath(c.project)) continue;
-    const s = ensure(c.project);
-    if (!c.skip) s.chronicles++;
-    s.lastTouchedAt = laterOf(s.lastTouchedAt, c.updatedAt);
-  }
-  for (const t of Object.values(bookIndex.topics)) {
-    const s = ensure(t.project);
-    s.topics++;
-    s.lastTouchedAt = laterOf(s.lastTouchedAt, t.updatedAt);
-  }
-  for (const c of Object.values(bookIndex.cards)) {
-    const s = ensure(c.project);
-    s.cards++;
-    s.lastTouchedAt = laterOf(s.lastTouchedAt, c.updatedAt);
+  for (const e of Object.values(memIndex.entries)) {
+    if (!e.project || !isRealProjectPath(e.project)) continue;
+    const s = ensure(e.project);
+    s.memories++;
+    if (e.type === "episodic") s.episodes++;
+    s.lastTouchedAt = laterOf(s.lastTouchedAt, e.updatedAt);
   }
 
   for (const s of stats.values()) {

@@ -1,6 +1,6 @@
 ---
 name: memarium-context
-description: Load the current project's typed memory at the start of a session so you begin already familiar with the project — architecture, setup commands, gotchas, and rules — like an engineer who doesn't re-learn the codebase every task. Triggers at the start of work in any project the user has synced, and on "what do we know about this project", "load project memory", "what's the setup here", "catch me up on this repo". Outputs layered context: Core rules / Procedures & gotchas / Project facts / relevant Episodes (chronicle pointers) / Conflicts (stale or contradicting memories).
+description: Load the current project's typed memory at the start of a session so you begin already familiar with the project — architecture, setup commands, gotchas, and rules — like an engineer who doesn't re-learn the codebase every task. Triggers at the start of work in any project the user has synced, and on "what do we know about this project", "load project memory", "what's the setup here", "catch me up on this repo". Outputs layered context: Core rules / Procedures & gotchas / Project facts / relevant Episodes (past work threads) / Conflicts (stale or contradicting memories).
 ---
 
 # /memarium-context — start already knowing the project
@@ -37,7 +37,7 @@ Read the JSON payload:
   a clearly-marked **"⚠️ unverified"** heading with their source — **never present
   them as established project fact.** If one looks load-bearing, verify it before
   relying on it (and only `memory-propose` can promote it to trusted).
-- `episodes` — pointers to chronicles (do NOT read all; only `Read` the
+- `episodes` — past-work-thread episodic memories (do NOT read all; only `Read` the
   `entry.path` of ones directly relevant to the task).
 - `conflicts` — memories flagged superseded or time-bounded; double-check
   before relying on them.
@@ -111,7 +111,8 @@ are empty, say "no distilled memory for this project yet" and proceed fresh
 
 ## Relationship to /memarium-recall
 
-`/memarium-recall` reads the **book** (chronicles/topics) for deep "翻书"
-dives. `/memarium-context` reads the **typed memory** for fast session-start
-orientation. Use context first; drill into recall when you need the full
+`/memarium-recall` ranks the **typed memory** (episodes / facts / procedures) by
+relevance for deep "翻书" dives into a specific task. `/memarium-context` loads the
+**broad primer** for fast session-start orientation. Use context first; drill into
+recall when you need the full
 narrative of a specific past thread.

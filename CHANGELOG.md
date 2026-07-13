@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.18.0 — 2026-07-09
+
+### Digest is memory-only; consumed-tracking moves to `sourceSessions` (Phase B of book→memory collapse)
+
+`/memarium` no longer produces a `book/` (chronicles + topics + publish + catalog).
+It digests each work thread into a **rich episodic memory** (the arc / dead-ends /
+decisions, in the body; files→`sourceFiles`, commits→`sourceCommits`,
+symbols→`entities`, sessions→`sourceSessions`) plus distilled semantic/procedural/
+core facts, the entity wiki, and Q&A. One AI-native knowledge layer, read by
+recall/primer.
+
+- **Consumed-session tracking** (what stops re-digesting) moved off the book index:
+  `consumed = ∪ episodic.sourceSessions (local index.memory.json) ∪ skip ledger`
+  (`src/digest/consumed.ts`). Episodic-only — semantic/procedural are *derived*, so a
+  session referenced only by a fact stays **pending**. `prepare.ts` / `list-projects.ts`
+  rewritten accordingly (`existingEpisodes`, `sessionsAlreadyDigested`, episode/memory
+  counts). `status.ts` reports episodes instead of book counts.
+- **New skip ledger** replacing book-era `skip:true` chronicles: `.memarium/index.skips.json`
+  via `src/spool/skip-store.ts` + a `skip-write` command. Local-only, kept **out** of recall
+  so meta/ping sessions don't pollute it but also aren't re-proposed.
+- **`finalize`** whitelist drops `book` / `index.book.json`, adds `index.skips.json`.
+- **Episodic is the primary durable per-thread record**, so `memory-lint` no longer age-flags
+  it as `stale-candidate` (the now-dead `--stale-days` option is removed).
+- **SKILL rewrite** (`skills/memarium/SKILL.md` → memory-only P1–P10) + new
+  `references/episodic-format.md` (with the work-status-in-body vs `entry.status`-lifecycle
+  warning); deleted `chronicle-format.md` / `topic-format.md`; updated `/memarium`,
+  `/memarium-retro`, `/memarium-context` docs.
+
++9 tests (skip-store, prepare/list-projects consumed-tracking, skip-write); 468 total.
+Non-destructive: the digest still leaves old `book/` on disk (removed in Phase C2);
+a one-time wipe + re-digest (separate, user-run) rebuilds history under the new model.
+
 ## 0.17.0 — 2026-07-09
 
 ### Removed the local reading website (Phase C1 of the book→memory collapse)

@@ -2,7 +2,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadIndex } from "../_shared/index-store.js";
-import { loadBookIndexV2 } from "../digest/book-index-v2.js";
+import { loadMemoryIndex } from "../memory/index-store.js";
+import { consumedSessions } from "../digest/consumed.js";
 import { extractSessionSignals, isMemariumMetaSession } from "../_shared/digest/session-signal.js";
 import { isRealProjectPath } from "../_shared/digest/project-filter.js";
 import { projectSlugFromPath } from "../_shared/slug.js";
@@ -12,17 +13,17 @@ import type { IndexEntry } from "../_shared/types.js";
 export interface PreparePayload {
   /** Project filter applied (or null for all). */
   project: string | null;
-  /** Sessions in the raw index that aren't yet referenced by any chronicle
-   *  AND survive isRealProjectPath. Sorted by endedAt ascending. */
+  /** Sessions in the raw index that aren't yet digested (no episodic memory
+   *  references them) and aren't skip-ledgered, that survive isRealProjectPath.
+   *  Sorted by endedAt ascending. */
   newSessions: PreparedSession[];
-  /** Existing topic slugs grouped by project, so the skill can dedup. */
-  existingTopics: Record<string, string[]>;
-  /** Existing card slugs grouped by project (incl. "_global"). */
-  existingCards: Record<string, string[]>;
+  /** Existing episodic memory ids grouped by project, so the skill avoids
+   *  writing a duplicate episodic for an already-digested thread. */
+  existingEpisodes: Record<string, string[]>;
   /** Aggregate counts for the skill's user-facing summary table. */
   meta: {
     totalSessionsInIndex: number;
-    sessionsAlreadyChronicled: number;
+    sessionsAlreadyDigested: number;
     sessionsFilteredByProject: number;
     sessionsFilteredAsPseudoProject: number;
     sessionsFilteredAsMemariumMeta: number;
@@ -65,23 +66,20 @@ export interface PrepareOptions {
  *
  * Algorithm:
  *   1. Load raw index (.memarium/index.json) — every synced session.
- *   2. Load book index v2 (.memarium/index.book.json) — every chronicle's
- *      sessionIds, every existing topic + card slug.
- *   3. Build the set of "consumed" session ids (union of all chronicle
- *      sessionIds, including skipped ones — we don't want to re-evaluate
- *      a SKIP'd session every run).
- *   4. For each unconsumed session:
+ *   2. Build the set of "consumed" session ids — already digested (episodic
+ *      memory sourceSessions) or intentionally skipped (skip ledger). See
+ *      src/digest/consumed.ts.
+ *   3. For each unconsumed session:
  *        - apply isRealProjectPath filter
  *        - apply --project filter if given
  *        - read the .md, compute signals
- *   5. Sort by endedAt ASC, return.
+ *   4. Sort by endedAt ASC, return.
  *
  * The skill's "Step 1 — Plan" calls this and prints the count + summary.
  */
 export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
   const cfg = readPluginConfig();
   const indexFile = loadIndex(cfg.repoPath);
-  const bookIndex = loadBookIndexV2(cfg.repoPath);
 
   // Resolve --cwd → project slug. Try the path-derived slug first (matches
   // how the adapters compute `project`); if no session exists for it, fall
@@ -97,16 +95,13 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
     }
   }
 
-  // 3. consumed session ids
-  const consumed = new Set<string>();
-  for (const c of Object.values(bookIndex.chronicles)) {
-    for (const sid of c.sessionIds) consumed.add(sid);
-  }
+  // consumed = already-digested (episodic sourceSessions) ∪ skip ledger
+  const consumed = consumedSessions(cfg.repoPath);
 
   // 4. filter + read
   const meta = {
     totalSessionsInIndex: 0,
-    sessionsAlreadyChronicled: 0,
+    sessionsAlreadyDigested: 0,
     sessionsFilteredByProject: 0,
     sessionsFilteredAsPseudoProject: 0,
     sessionsFilteredAsMemariumMeta: 0,
@@ -116,7 +111,7 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
   for (const entry of Object.values(indexFile.entries)) {
     meta.totalSessionsInIndex++;
     if (consumed.has(entry.sessionId)) {
-      meta.sessionsAlreadyChronicled++;
+      meta.sessionsAlreadyDigested++;
       continue;
     }
     if (!isRealProjectPath(entry.project)) {
@@ -160,23 +155,17 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
   newSessions.sort((a, b) => (a.endedAt < b.endedAt ? -1 : a.endedAt > b.endedAt ? 1 : 0));
   meta.newSessionsCount = newSessions.length;
 
-  // 5. existing topics + cards grouped by project
-  const existingTopics: Record<string, string[]> = {};
-  for (const t of Object.values(bookIndex.topics)) {
-    (existingTopics[t.project] ??= []).push(t.topicSlug);
+  // existing episodic memory ids grouped by project (dedup hint for the skill)
+  const existingEpisodes: Record<string, string[]> = {};
+  for (const e of Object.values(loadMemoryIndex(cfg.repoPath).entries)) {
+    if (e.type === "episodic" && e.project) (existingEpisodes[e.project] ??= []).push(e.id);
   }
-  for (const list of Object.values(existingTopics)) list.sort();
-  const existingCards: Record<string, string[]> = {};
-  for (const c of Object.values(bookIndex.cards)) {
-    (existingCards[c.project] ??= []).push(c.cardSlug);
-  }
-  for (const list of Object.values(existingCards)) list.sort();
+  for (const list of Object.values(existingEpisodes)) list.sort();
 
   return {
     project: projectFilter,
     newSessions,
-    existingTopics,
-    existingCards,
+    existingEpisodes,
     meta,
   };
 }

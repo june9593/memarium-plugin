@@ -46,7 +46,6 @@ export interface LintReport {
 }
 export interface LintOptions {
   now: string;
-  staleDays: number;
   project: string | null;
   generatedAt?: string;
   dupThreshold?: number;
@@ -118,14 +117,16 @@ export function lintMemory(
         issues.push({ check: "missing-provenance", severity: "warning", layer: "memory", id: e.id,
           detail: `no sourceSessions/sourceCommits/sourceFiles — origin not traceable` });
       }
+      // Episodic is now the PRIMARY durable per-thread record (the digest
+      // receipt that replaced chronicles), so it is NOT flagged stale by age —
+      // that would wrongly imply pruning. We still catch a malformed date.
+      // (The `promotion-candidate` clustering below still suggests promoting a
+      // stable fact out of episodic clusters into semantic/procedural.)
       if (e.status === "active" && e.type === "episodic") {
         const age = daysBetween(opts.now, e.updatedAt);
         if (!isFinite(age)) {
           issues.push({ check: "malformed-date", severity: "warning", layer: "memory", id: e.id,
             detail: `unparseable updatedAt=${JSON.stringify(e.updatedAt)}` });
-        } else if (age > opts.staleDays) {
-          issues.push({ check: "stale-candidate", severity: "info", layer: "memory", id: e.id,
-            detail: `${e.type} not updated in >${opts.staleDays}d (updatedAt=${e.updatedAt})` });
         }
       }
     } catch {
