@@ -68,7 +68,6 @@ describe("plugin autonomy (no npm CLI, no ~/.memarium/ at start)", () => {
 
     // Spool was created on demand.
     expect(existsSync(join(fakeHome, ".memarium/session-repo/raw_sessions"))).toBe(true);
-    expect(existsSync(join(fakeHome, ".memarium/session-repo/book"))).toBe(true);
     // index.json was written by plugin (this is the autonomy fix).
     expect(existsSync(join(fakeHome, ".memarium/session-repo/.memarium/index.json"))).toBe(true);
     // Plugin did NOT write config.json — that's npm CLI's territory.

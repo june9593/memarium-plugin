@@ -15,10 +15,11 @@ describe("ensureSpoolDir", () => {
     rmSync(fakeHome, { recursive: true, force: true });
   });
 
-  it("creates raw_sessions/ and book/ when spool root is absent", () => {
+  it("creates raw_sessions/ when spool root is absent", () => {
     const result = ensureSpoolDir();
     expect(existsSync(join(fakeHome, ".memarium/session-repo/raw_sessions"))).toBe(true);
-    expect(existsSync(join(fakeHome, ".memarium/session-repo/book"))).toBe(true);
+    // book/ is NOT created anymore (dropped in the book→memory collapse).
+    expect(existsSync(join(fakeHome, ".memarium/session-repo/book"))).toBe(false);
     expect(result.spoolRoot).toBe(join(fakeHome, ".memarium/session-repo"));
     expect(result.created).toBe(true);
   });
@@ -44,9 +45,8 @@ describe("ensureSpoolDir", () => {
 
     expect(existsSync(join(spool, ".git"))).toBe(true);
     expect(existsSync(join(spool, ".memarium/index.json"))).toBe(true);
-    // raw_sessions/ + book/ were also added next to existing dirs
+    // raw_sessions/ was also added next to existing dirs
     expect(existsSync(join(spool, "raw_sessions"))).toBe(true);
-    expect(existsSync(join(spool, "book"))).toBe(true);
   });
 
   it("returns created=false on second call", () => {

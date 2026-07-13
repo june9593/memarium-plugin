@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.19.0 — 2026-07-13
+
+### Delete the dead book code (Phase C2 of the book→memory collapse)
+
+Phase B (0.18.0) stopped *producing* a `book/`; this removes the now-unreachable
+book machinery. The deleted modules formed a self-contained island — nothing live
+imported them:
+
+- **Removed commands:** `publish` (wrote chronicle/topic md into the book) and
+  `catalog-regen` (rebuilt `book/index.md`). Both were already orphaned once the
+  `/memarium` skill went memory-only.
+- **Removed modules:** `src/commands/publish.ts`, `src/commands/catalog-regen.ts`,
+  `src/digest/book-catalog.ts`, `src/digest/book-index-v2.ts`,
+  `src/digest/reconcile-orphans.ts`, `src/digest/wikilinks.ts` (+ their tests).
+- **`repo-data-dir.ts`:** dropped `BOOK_INDEX_REL` / `bookIndexAbs` (the
+  `.memarium/index.book.json` path helpers) — the index is gone.
+- **`ensure-dir.ts`:** no longer `mkdir`s `book/`; `EnsureResult.bookDir` removed.
+- **`finalize` description + `orchestrator`/`entity-write` comments** de-book'd.
+
+No schema or behavior change to the memory/entity/qa layers. −12 tests (the two
+deleted book test files); **463 total**, tsc + build green. Bundle 632→599 KiB.
+
+The matching npm-side cleanup (drop the `merge-books.mjs` book pass + `MEMARIUM_LOCALE`/
+`bookLocale`) ships separately in memarium (npm).
+
 ## 0.18.0 — 2026-07-09
 
 ### Digest is memory-only; consumed-tracking moves to `sourceSessions` (Phase B of book→memory collapse)

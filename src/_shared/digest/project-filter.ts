@@ -14,7 +14,7 @@
  *   - 20+ pure-hex strings (workspaceStorage hashes)
  *
  * This is a heuristic — it's allowed to be wrong in edge cases. Goal: clean
- * the obviously-junk projects out of book/ TOC.
+ * the obviously-junk projects out of the digested project list.
  */
 export function isRealProjectPath(slugOrPath: string): boolean {
   if (!slugOrPath || slugOrPath === "root" || slugOrPath === "home") return false;

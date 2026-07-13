@@ -18,8 +18,8 @@ export interface SessionSignals {
 /**
  * Detect a "memarium meta-session" — the user invoking the /memarium skill
  * itself, which produces a session whose entire content is the digest
- * pipeline (memarium prepare/publish/etc.) rather than real engineering
- * work. These have zero chronicle value (they're self-referential noise)
+ * pipeline (memarium prepare/memory-write/etc.) rather than real engineering
+ * work. These have zero memory value (they're self-referential noise)
  * so prepare filters them out before the LLM ever sees them.
  *
  * Signals (any one is enough):
