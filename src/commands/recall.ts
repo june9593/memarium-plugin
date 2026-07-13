@@ -1,328 +1,165 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
-import { loadBookIndexV2 } from "../digest/book-index-v2.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
+import { resolveMemoryView, resolveEntryAbsPath } from "../memory/source-resolver.js";
+import { scoreMemories } from "../memory/score.js";
+import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
+import { renderPrimer } from "../memory/primer.js";
+import type { MemoryType } from "../memory/types.js";
 
 /**
- * `memarium recall` — three-stage progressive catalog.
+ * `memarium recall` — 2-stage progressive retrieval over the typed-memory index.
  *
- * Stage 1 (default, ~2-5 KB): a project's TOPIC LIST plus 1-line
- * descriptions. The agent looks at this first to find which subsystem(s)
- * its task touches. Chronicles are NOT listed here — there are too many
- * (typical project: 50+ chronicles), and they aren't the right grain
- * for "is this relevant?" triage.
+ * Stage 1 (this command): score the project's typed memory against the task
+ * keywords (`--q`) and return a ranked list — episodes (the arc / dead-ends /
+ * decisions of past work) alongside matching semantic facts + procedural
+ * gotchas, each with `whyRecalled` and an absolute `path`. ~small: title +
+ * one-line summary per hit, bodies NOT loaded.
  *
- * Stage 2 (--topic <slug>, ~5-15 KB): for one chosen topic, list its
- * contributing CHRONICLES with frontmatter (title, files_touched,
- * commits, decisions, blockers, status). The agent reads the
- * frontmatter to decide which chronicles to fully Read.
+ * Stage 2 (the agent, no extra command): `Read` the top 1–5 `path`s to pull the
+ * full body of the most relevant hits.
  *
- * Stage 3: the agent uses the `Read` tool directly on a chronicle's
- * absolute path. No extra recall command needed.
+ * Reuses the same scoring engine as `memory-query` / `/memarium-context`
+ * (`scoreMemories` over the local+overlay merged view). The old 3-stage walk
+ * over `book/` (topics → chronicles → Read) is gone — there is one AI-native
+ * knowledge layer now.
  */
 
-export interface RecallEntry {
-  /** topic | chronicle.
-   *  In stage 1 (default) only `topic` entries appear; in stage 2 (--topic)
-   *  `chronicle` entries appear with frontmatter. */
-  kind: "topic" | "chronicle";
-  /** Project slug. */
-  project: string;
-  /** Display title (frontmatter title → first `# heading` → slug). */
-  title: string;
-  /** Short summary — for topics: 1 sentence from the topic body.
-   *  For chronicles: a synthesized line from frontmatter facts. */
-  summary: string;
-  /** Absolute path the agent should pass to `Read`. */
-  path: string;
-  /** Stable id within its kind: topicSlug / threadId. */
-  slug: string;
-  /** Frontmatter facts that the agent triages on (chronicles only).
-   *  Only populated in stage 2. */
-  frontmatter?: ChronicleFrontmatter;
-  /** ISO date — last write. */
-  updatedAt: string;
-  /** Tags from BookIndex / topic frontmatter. */
-  tags: string[];
-}
+const DEFAULT_LIMIT = 25;
 
-/** Subset of chronicle frontmatter the recall payload surfaces.
- *  Mirrors the AI-first fields documented in
- *  `skills/memarium/references/chronicle-format.md`. */
-export interface ChronicleFrontmatter {
-  files_touched?: string[];
-  commits?: string[];
-  decisions?: string[];
-  blockers?: string[];
-  next_steps?: string[];
-  status?: string;
+// A real CONTENT hit (vs scope/importance/recency baseline) — same markers
+// memory-query/eval use. Only content-hit results are recorded as an "access".
+const CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
+const BUMP_TOP_N = 5;
+
+export interface RecallHit {
+  id: string;
+  type: MemoryType;
+  title: string;
+  summary: string;
+  score: number;
+  whyRecalled: string;
+  /** Absolute path for the agent's `Read` tool (resolved against the entry's
+   *  own tree — local repo or the read-only overlay worktree). */
+  path: string | null;
+  updatedAt: string;
+  entities: string[];
+  /** Which tree the entry came from. */
+  source: "local" | "overlay";
 }
 
 export interface RecallPayload {
-  /** "stage-1-topics" or "stage-2-articles". Tells the consumer how to
-   *  interpret the entries. */
-  stage: "stage-1-topics" | "stage-2-articles";
-  /** Project the catalog scopes to (null when --all). */
+  stage: "stage-1-ranked";
+  /** Project the recall scopes to (null when --all / unresolved cwd). */
   project: string | null;
-  /** Topic slug being expanded in stage 2 (null otherwise). */
-  topic: string | null;
-  /** Absolute path the LLM should pass to `Read` for chronicle bodies. */
+  /** Echo of the free-text query used for scoring. */
+  query: string;
   repoPath: string;
-  entries: RecallEntry[];
+  entries: RecallHit[];
+  /** Only populated when there's no query — a "what's in this project" overview
+   *  (the same render the SessionStart primer uses). Omitted for a real query. */
+  primer?: string;
   meta: {
-    topics: number;
-    chronicles: number;
+    total: number;
+    returned: number;
     cwdUnresolved?: boolean;
-    /** Hint shown by the recall skill when the agent should drill
-     *  into a topic next. */
-    nextStep?: string;
+    nextStep: string;
   };
 }
 
 export interface RecallOptions {
   cwd?: string;
   project?: string;
-  /** Stage 2: list chronicles for this topic (project must also be set
-   *  or resolvable from cwd). */
-  topic?: string;
-  /** Catalog every project (no filter). Use sparingly — at scale this
-   *  blows past the 30 KB stage-1 budget. */
+  /** Free-text task keywords to score against (title/summary/entities +
+   *  file/commit overlap). Empty → scope/importance/recency baseline. */
+  q?: string;
+  /** Recall across every project (no cwd/project filter). Use sparingly. */
   all?: boolean;
+  /** Max hits returned (default 25). */
+  limit?: number;
 }
 
 export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
   const cfg = readPluginConfig();
-  const bookIndex = loadBookIndexV2(cfg.repoPath);
 
   let projectFilter: string | null = opts.project?.trim() || null;
   let cwdUnresolved = false;
   if (!projectFilter && !opts.all && opts.cwd) {
     projectFilter = resolveProjectFromCwd(opts.cwd, cfg.repoPath);
-    if (!projectFilter) {
-      cwdUnresolved = true;
-    }
+    if (!projectFilter) cwdUnresolved = true;
   }
 
-  // Stage 2 — chronicle list for one topic.
-  if (opts.topic) {
-    return buildStage2(cfg.repoPath, bookIndex, projectFilter, opts.topic);
-  }
+  // Merged local + aggregated-overlay memory (P0b) so recall sees sibling-device
+  // memory. Read-only; pending proposals (outside the repo) are excluded for free.
+  const view = resolveMemoryView(cfg.repoPath);
+  const entries = Object.values(view.entries);
+  const now = new Date().toISOString().slice(0, 10);
 
-  // Stage 1 — topic list.
-  return buildStage1(cfg.repoPath, bookIndex, projectFilter, cwdUnresolved);
-}
+  // Overlay device-local usage before scoring so accessCount affects ranking.
+  overlayUsage(entries, loadUsage(cfg.repoPath));
 
-// ---------- stage 1: topic list ----------
+  const query = (opts.q ?? "").trim();
+  const scored = scoreMemories(entries, { project: projectFilter, text: query, type: null, now });
 
-function buildStage1(
-  repoPath: string,
-  bookIndex: ReturnType<typeof loadBookIndexV2>,
-  projectFilter: string | null,
-  cwdUnresolved: boolean,
-): RecallPayload {
-  const entries: RecallEntry[] = [];
+  const limit = opts.limit && opts.limit > 0 ? opts.limit : DEFAULT_LIMIT;
+  const hits: RecallHit[] = scored.slice(0, limit).map((s) => ({
+    id: s.entry.id,
+    type: s.entry.type,
+    title: s.entry.title,
+    summary: s.entry.summary,
+    score: s.score,
+    whyRecalled: s.whyRecalled,
+    path: resolveEntryAbsPath(view, s.entry.id),
+    updatedAt: s.entry.updatedAt,
+    entities: s.entry.entities,
+    source: view.sources[s.entry.id] ?? "local",
+  }));
 
-  for (const t of Object.values(bookIndex.topics)) {
-    const project = t.project || projectFromPath(t.path);
-    if (!project) continue;
-    if (projectFilter && project !== projectFilter) continue;
-    entries.push({
-      kind: "topic",
-      project,
-      title: titleForArtifact(repoPath, t.path, t.topicSlug),
-      summary: summaryFor(repoPath, t.path),
-      path: join(repoPath, t.path),
-      slug: t.topicSlug,
-      updatedAt: t.updatedAt,
-      tags: [],
-    });
-  }
-
-  // Topics newest first.
-  entries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-
-  const topicCount = entries.length;
-  return {
-    stage: "stage-1-topics",
+  const payload: RecallPayload = {
+    stage: "stage-1-ranked",
     project: projectFilter,
-    topic: null,
-    repoPath,
-    entries,
+    query,
+    repoPath: cfg.repoPath,
+    entries: hits,
     meta: {
-      topics: topicCount,
-      chronicles: 0,
+      total: scored.length,
+      returned: hits.length,
       ...(cwdUnresolved ? { cwdUnresolved: true } : {}),
-      nextStep: topicCount > 0
-        ? `Pick a relevant topic, then run: \${CLAUDE_PLUGIN_ROOT}/bin/memarium-plugin.js recall --project <slug> --topic <topicSlug>`
-        : "No topics yet for this project.",
+      nextStep: hits.length > 0
+        ? "Read the top 1–5 entry.path with the Read tool for full bodies (episodes carry the arc)."
+        : (cwdUnresolved
+            ? "cwd didn't resolve to a synced project — pass --project <slug> or --all."
+            : "No memory yet for this project. Run /memarium to digest sessions."),
     },
   };
-}
 
-// ---------- stage 2: chronicle list for one topic ----------
-
-function buildStage2(
-  repoPath: string,
-  bookIndex: ReturnType<typeof loadBookIndexV2>,
-  projectFilter: string | null,
-  topicSlug: string,
-): RecallPayload {
-  const entries: RecallEntry[] = [];
-
-  // Find the topic so we know which contributing chronicles to surface.
-  const topic = Object.values(bookIndex.topics).find((t) => {
-    const proj = t.project || projectFromPath(t.path);
-    return t.topicSlug === topicSlug && (!projectFilter || proj === projectFilter);
-  });
-
-  if (topic) {
-    const contributing = new Set(topic.contributingThreads ?? []);
-    for (const c of Object.values(bookIndex.chronicles)) {
-      if (c.skip) continue;
-      if (!contributing.has(c.threadId)) continue;
-      const project = c.project || projectFromPath(c.path) || "_unknown";
-      const fm = readChronicleFrontmatter(repoPath, c.path);
-      entries.push({
-        kind: "chronicle",
-        project,
-        title: titleForArtifact(repoPath, c.path, c.title || c.threadId),
-        summary: summarizeFrontmatter(fm),
-        path: join(repoPath, c.path),
-        slug: c.threadId,
-        frontmatter: fm,
-        updatedAt: c.updatedAt,
-        tags: c.tags ?? [],
-      });
-    }
+  // No query → this is a "what do we know here" overview; include the primer
+  // (same live render as the SessionStart hook) as a coarse header.
+  if (!query && projectFilter) {
+    const primer = renderPrimer(projectFilter, entries);
+    if (primer.trim()) payload.primer = primer;
   }
 
-  // Chronicles newest first.
-  entries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-
-  return {
-    stage: "stage-2-articles",
-    project: projectFilter,
-    topic: topicSlug,
-    repoPath,
-    entries,
-    meta: {
-      topics: 0,
-      chronicles: entries.filter((e) => e.kind === "chronicle").length,
-      nextStep: "Read full bodies via the Read tool on entry.path.",
-    },
-  };
+  return payload;
 }
 
-// ---------- helpers ----------
-
-function projectFromPath(path: string | undefined): string | null {
-  if (!path) return null;
-  const parts = path.split("/").filter(Boolean);
-  if (parts.length < 2 || parts[0] !== "book") return null;
-  return parts[1] || null;
-}
-
-function titleForArtifact(repoPath: string, repoRel: string, fallback: string): string {
-  const abs = join(repoPath, repoRel);
-  if (!existsSync(abs)) return fallback;
-  const head = readFileSync(abs, "utf8").slice(0, 1024);
-  const hMatch = head.match(/^#\s+(.+?)\s*$/m);
-  if (hMatch) return hMatch[1].trim();
-  const fmMatch = head.match(/^---[\s\S]*?\ntitle:\s*(.+?)\s*\n[\s\S]*?---/);
-  if (fmMatch) return fmMatch[1].replace(/^["']|["']$/g, "").trim();
-  return fallback;
-}
-
-function summaryFor(repoPath: string, repoRel: string): string {
-  const abs = join(repoPath, repoRel);
-  if (!existsSync(abs)) return "";
-  const body = readFileSync(abs, "utf8");
-  const stripped = body.replace(/^---[\s\S]*?---\s*\n/, "");
-  const lines = stripped.split("\n");
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (line.startsWith("#") || line.startsWith("---")) continue;
-    if (line.startsWith("- ") || line.startsWith("* ")) continue;
-    if (line.startsWith(">") || line.startsWith("```")) continue;
-    const plain = line
-      .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, a, b) => b || a)
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .replace(/`([^`]+)`/g, "$1");
-    return plain.length > 200 ? plain.slice(0, 200) + "…" : plain;
-  }
-  return "";
-}
-
-/** Parse the AI-first frontmatter fields out of a chronicle md.
- *  Tiny line-based YAML subset parser: supports `key: scalar` and
- *  `key:\n  - item\n  - item` shapes. Avoids pulling in a full YAML
- *  dep just for the recall payload's narrow needs. */
-function readChronicleFrontmatter(repoPath: string, repoRel: string): ChronicleFrontmatter {
-  const abs = join(repoPath, repoRel);
-  if (!existsSync(abs)) return {};
-  const body = readFileSync(abs, "utf8");
-  const m = body.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return {};
-
-  const lines = m[1].split("\n");
-  const result: ChronicleFrontmatter = {};
-  const lists: Record<string, string[]> = {};
-  let currentList: string | null = null;
-
-  // Walk line-by-line so list items only attach to the key whose block
-  // they're under (regex-only approach over-matched into sibling keys).
-  for (const raw of lines) {
-    const line = raw;
-    if (line.match(/^\s+-\s+/)) {
-      // List item: belongs to currentList if we're under one.
-      if (currentList) {
-        const item = line.replace(/^\s+-\s+/, "").trim().replace(/^["']|["']$/g, "");
-        if (item) lists[currentList]!.push(item);
-      }
-      continue;
-    }
-    // Top-level key.
-    const m2 = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/);
-    if (!m2) {
-      currentList = null;
-      continue;
-    }
-    const key = m2[1];
-    const after = m2[2].trim();
-    if (after === "") {
-      // List or block scalar.
-      currentList = key;
-      lists[key] = [];
-    } else {
-      currentList = null;
-      // Scalar value.
-      const cleaned = after.replace(/^["']|["']$/g, "");
-      if (key === "status") result.status = cleaned;
-    }
-  }
-
-  if (lists.files_touched) result.files_touched = lists.files_touched;
-  if (lists.commits) result.commits = lists.commits;
-  if (lists.decisions) result.decisions = lists.decisions;
-  if (lists.blockers) result.blockers = lists.blockers;
-  if (lists.next_steps) result.next_steps = lists.next_steps;
-  return result;
-}
-
-function summarizeFrontmatter(fm: ChronicleFrontmatter): string {
-  const bits: string[] = [];
-  if (fm.status) bits.push(`status=${fm.status}`);
-  if (fm.files_touched?.length) bits.push(`${fm.files_touched.length} files`);
-  if (fm.commits?.length) bits.push(`${fm.commits.length} commits`);
-  if (fm.decisions?.length) bits.push(`${fm.decisions.length} decisions`);
-  if (fm.blockers?.length) bits.push(`${fm.blockers.length} blockers`);
-  return bits.join(" · ") || "(no AI-first frontmatter — legacy chronicle)";
-}
-
-/** CLI entry: print payload as JSON to stdout. */
+/** CLI entry: print payload as JSON to stdout, and (only on a real content-hit
+ *  query) bump the device-local usage sidecar for the top hits. */
 export async function recallCmd(opts: RecallOptions): Promise<void> {
   const payload = buildRecallPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+
+  // BUMP (the ONLY write side effect) — non-empty query + content hit only.
+  // Reuse the repoPath buildRecallPayload already resolved (avoids a second
+  // readPluginConfig + its migrate side-effect). Best-effort: usage is
+  // non-essential telemetry and must never break recall.
+  if (payload.query !== "") {
+    try {
+      const bumpIds = payload.entries
+        .filter((h) => Number.isFinite(h.score) && CONTENT_HIT_MARKERS.some((m) => h.whyRecalled.includes(m)))
+        .slice(0, BUMP_TOP_N)
+        .map((h) => h.id);
+      const now = new Date().toISOString().slice(0, 10);
+      bumpUsage(payload.repoPath, bumpIds, now);
+    } catch { /* usage is non-essential telemetry; never fail a recall over it */ }
+  }
 }

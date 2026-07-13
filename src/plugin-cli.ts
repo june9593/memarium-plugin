@@ -233,13 +233,15 @@ export async function run(argv: string[]) {
 
   program
     .command("recall")
-    .description("Three-stage progressive recall. Stage 1 = topics; --topic = stage 2; Read tool = stage 3.")
+    .description("Ranked recall over typed memory. Stage 1 = this command (scored episodes + facts + procedures for --q); stage 2 = Read the top entry paths.")
     .option("--cwd <path>", "infer project from this cwd")
     .option("--project <slug>", "force a specific project slug")
-    .option("--topic <slug>", "stage 2: list chronicles in this topic")
-    .action(async (opts: { cwd?: string; project?: string; topic?: string }) => {
+    .option("--q <text>", "task keywords to score against (title/summary/entities + file/commit overlap)")
+    .option("--all", "recall across every project (no cwd/project filter)")
+    .option("--limit <n>", "max hits to return (default 25)", (v) => parseInt(v, 10))
+    .action(async (opts: { cwd?: string; project?: string; q?: string; all?: boolean; limit?: number }) => {
       const { recallCmd } = await import("./commands/recall.js");
-      await recallCmd({ cwd: opts.cwd, project: opts.project, topic: opts.topic });
+      await recallCmd({ cwd: opts.cwd, project: opts.project, q: opts.q, all: opts.all, limit: opts.limit });
     });
 
   program
@@ -252,21 +254,6 @@ export async function run(argv: string[]) {
       // Print JSON summary so callers don't have to parse stderr noise from
       // git's progress output to figure out what happened.
       process.stdout.write(JSON.stringify(report, null, 2) + "\n");
-    });
-
-  program
-    .command("site <action>")
-    .description("Render the book as a static site. Actions: serve | build")
-    .action(async (action: string) => {
-      if (action === "serve") {
-        const { serveSiteCmd } = await import("./commands/site.js");
-        await serveSiteCmd();
-      } else if (action === "build") {
-        const { buildSiteCmd } = await import("./commands/site.js");
-        await buildSiteCmd();
-      } else {
-        throw new Error(`Unknown site action "${action}". Expected "serve" or "build".`);
-      }
     });
 
   program
