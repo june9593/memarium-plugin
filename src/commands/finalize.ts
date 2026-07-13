@@ -56,7 +56,7 @@ export async function finalizeCmd(opts: FinalizeOptions = {}): Promise<FinalizeR
     const r = await commitWhitelist(
       git,
       repoPath,
-      "memarium: finalize digest (raw_sessions + book + memory)",
+      "memarium: finalize digest (raw_sessions + memory)",
       WHITELIST,
       { push: remote && !opts.noPush, branch },
       (s) => console.error(chalk.gray(`  ${s}`)),

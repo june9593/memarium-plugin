@@ -14303,7 +14303,7 @@ async function finalizeCmd(opts = {}) {
     const r2 = await commitWhitelist(
       git,
       repoPath,
-      "memarium: finalize digest (raw_sessions + book + memory)",
+      "memarium: finalize digest (raw_sessions + memory)",
       WHITELIST,
       { push: remote && !opts.noPush, branch },
       (s) => console.error(source_default.gray(`  ${s}`))
