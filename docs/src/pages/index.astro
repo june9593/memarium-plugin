@@ -2,17 +2,18 @@
 import Base from "../layouts/Base.astro";
 ---
 <Base
-  title="memarium plugin — searchable book of your AI coding sessions"
-  description="Claude Code plugin that turns past AI sessions into chronicles + topics, then recalls them before new work. Standalone — no extra CLI required."
+  title="memarium plugin — typed memory for your AI coding sessions"
+  description="Claude Code plugin that distills past AI sessions into typed memory — episodes, decisions, dead ends, durable facts — then recalls what's relevant before new work. Standalone; no extra CLI required."
 >
   <section class="hero container">
     <h1>Don't re-derive what past-you already figured out.</h1>
     <p class="lede">
-      <strong>memarium plugin</strong> turns your past Claude Code and
-      VS Code Copilot Chat sessions into a searchable book of decisions,
-      dead ends, and fixes. Run <code>/memarium</code> once a week to
-      digest; run <code>/memarium-recall</code> before any non-trivial
-      task to surface what's relevant.
+      <strong>memarium plugin</strong> distills your past Claude Code and
+      VS Code Copilot Chat sessions into a <strong>typed memory</strong> your
+      agent can recall — the episodes, decisions, dead ends, and durable facts
+      behind each project. Run <code>/memarium</code> to digest; run
+      <code>/memarium-recall</code> before any non-trivial task to surface
+      what's relevant.
     </p>
     <div class="badges">
       <span class="badge">Claude Code plugin</span>
@@ -36,8 +37,8 @@ import Base from "../layouts/Base.astro";
     </p>
     <p class="lede" style="margin-top: var(--space-5);">
       Your Claude Code session-history is right there in
-      <code>~/.claude/projects/</code>. memarium reads it, structures
-      it, and lets future sessions stand on it.
+      <code>~/.claude/projects/</code>. memarium reads it, distills it into
+      typed memory, and lets future sessions stand on it.
     </p>
   </section>
 
@@ -48,16 +49,18 @@ import Base from "../layouts/Base.astro";
         <h3><code>/memarium</code></h3>
         <p>
           Walks <code>~/.claude/projects/</code> and your Copilot Chat
-          history, then digests each session into per-project artifacts:
+          history, then distills each session into <strong>typed memory</strong>:
         </p>
         <ul style="color: var(--olive-gray); padding-left: var(--space-6);">
-          <li><strong>chronicles</strong> — one per work thread, with
-            AI-first frontmatter (<code>files_touched</code>,
-            <code>commits</code>, <code>decisions</code>,
-            <code>blockers</code>, <code>status</code>) plus a 4-section
-            body (Context / What worked / Dead ends / Open questions).</li>
-          <li><strong>topics</strong> — one per subsystem, cross-references
-            the chronicles that contributed.</li>
+          <li><strong>episodes</strong> — one per work thread, carrying the
+            arc in the body (Context / What worked / Dead ends / Open questions
+            / Decisions) plus AI-first metadata
+            (<code>files_touched</code>, <code>commits</code>,
+            <code>entities</code>, <code>sourceSessions</code>).</li>
+          <li><strong>facts</strong> — distilled <code>semantic</code> /
+            <code>procedural</code> / <code>core</code> memory, an
+            <strong>entity wiki</strong>, and a <strong>Q&amp;A</strong> layer,
+            scored for recall.</li>
         </ul>
         <p>
           Auto-detects project from cwd; in non-project dirs it asks before
@@ -67,14 +70,14 @@ import Base from "../layouts/Base.astro";
       <div class="feature-card">
         <h3><code>/memarium-recall</code></h3>
         <p>
-          Three-stage progressive recall before new work. Designed for AI
-          agents to consume cheaply:
+          Two-stage recall before new work. Designed for AI agents to
+          consume cheaply:
         </p>
         <ul style="color: var(--olive-gray); padding-left: var(--space-6);">
-          <li><strong>Stage 1</strong> — project's topic list (~5 KB).</li>
-          <li><strong>Stage 2</strong> — chronicles in one topic, frontmatter
-            only (no bodies).</li>
-          <li><strong>Stage 3</strong> — Read the chronicles you actually
+          <li><strong>Stage 1</strong> — one ranked query over the typed-memory
+            index: the top episodes + matching facts, each with a
+            <code>whyRecalled</code> reason (cheap, no full bodies).</li>
+          <li><strong>Stage 2</strong> — Read the few entries you actually
             need, full body.</li>
         </ul>
         <p>
@@ -97,10 +100,10 @@ import Base from "../layouts/Base.astro";
       <p>
         You didn't ask "have we seen this before". You asked for a fix.
         But Claude reads "flaky test" as a recall trigger and runs
-        <code>/memarium-recall</code> stage 1 first — a 5 KB topic list,
-        cheap. Stage 1 surfaces a topic <code>flaky-tests</code> with
-        two contributing chronicles. Claude drills into the relevant
-        one and pulls back a structured summary:
+        <code>/memarium-recall</code> stage 1 first — a ranked query over
+        your memory, cheap. Stage 1 surfaces an episode
+        <code>flaky-test-investigation</code> at the top. Claude reads
+        its body and pulls back a structured summary:
       </p>
       <ul style="color: var(--ivory); padding-left: var(--space-6);">
         <li><strong>Real root cause (last time)</strong> — the test
@@ -120,17 +123,17 @@ import Base from "../layouts/Base.astro";
       <p>
         Now Claude tells you up front:
       </p>
-      <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md); font-size: 0.95rem;">Per chronicle <code style="color: inherit;">flaky-test-investigation</code>: this same suite was flaky in
+      <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md); font-size: 0.95rem;">Per episode <code style="color: inherit;">flaky-test-investigation</code>: this same suite was flaky in
 March, root cause was a timezone assumption. The mutex / timeout /
 bisect paths were already tried and ruled out. Want me to apply the
 same fixed-zone fix here, plus prophylactically patch the other
-three suspect call sites flagged in the chronicle?</pre>
+three suspect call sites flagged in the episode?</pre>
       <p>
         That last paragraph is what makes recall worth invoking
         unprompted. Without it, Claude would have walked the same dead
         ends — <code>git log</code> would have shown a "fix flaky test"
         commit, but commit messages don't record what you ruled out
-        along the way. Chronicles preserve both halves; recall surfaces
+        along the way. Episodes preserve both halves; recall surfaces
         them before Claude burns context exploring them again.
       </p>
     </div>
@@ -157,10 +160,10 @@ three suspect call sites flagged in the chronicle?</pre>
       Everything stays under <code>~/.memarium/session-repo/</code>:
     </p>
     <ul style="color: var(--olive-gray); padding-left: var(--space-6); font-family: var(--font-mono); font-size: 0.95rem;">
-      <li><code>raw_sessions/&lt;tool&gt;/&lt;project&gt;/&lt;date&gt;/*.&#123;md,raw.json&#125;</code> — rendered copies of your sessions</li>
-      <li><code>book/&lt;project&gt;/&#123;chronicle,topics&#125;/*.md</code> — digested book</li>
+      <li><code>raw_sessions/&lt;tool&gt;/&lt;project&gt;/&lt;date&gt;/*.md</code> — rendered copies of your sessions</li>
+      <li><code>memory/&#123;core,semantic,episodic,procedural&#125;/*.md</code> — typed memory (+ <code>entities/</code> wiki, <code>qa/</code>)</li>
       <li><code>.memarium/index.json</code> — per-session entry index</li>
-      <li><code>.memarium/index.book.json</code> — chronicle / topic catalog</li>
+      <li><code>.memarium/index.memory.json</code> — typed-memory index (+ <code>index.entity.json</code> / <code>index.qa.json</code>)</li>
     </ul>
     <p style="margin-top: var(--space-4);">
       The plugin <strong>does not</strong> create or modify <code>.git/</code>
@@ -172,8 +175,8 @@ three suspect call sites flagged in the chronicle?</pre>
   <section class="container">
     <h2>Cross-device sync (optional)</h2>
     <p>
-      To carry your sessions across multiple machines, install the
-      optional <strong>memarium</strong> npm CLI:
+      To carry your sessions and memory across multiple machines, install
+      the optional <strong>memarium</strong> npm CLI:
     </p>
     <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md);">npm i -g memarium
 memarium init</pre>
@@ -188,23 +191,6 @@ memarium init</pre>
     </p>
   </section>
 
-  <section class="container">
-    <h2>Memex hand-off (optional)</h2>
-    <p>
-      For atomic Zettelkasten cards (one insight per card with backlinks,
-      organize, orphan detection), memarium delegates to
-      <a href="https://github.com/iamtouchskyer/memex">memex</a>. Install
-      it and the <code>/memarium</code> skill will offer to chain
-      <code>/memex-retro</code> after writing chronicles. <code>/memarium-recall</code>
-      folds memex's catalog into stage 1 so agents see both layers in
-      one triage pass.
-    </p>
-    <p>
-      Memex is optional — memarium works fine without it; you just won't
-      have an atomic-card layer.
-    </p>
-  </section>
-
   <section class="container" style="padding-bottom: var(--space-24);">
     <h2>Project</h2>
     <ul style="color: var(--olive-gray); padding-left: var(--space-6);">
@@ -214,8 +200,8 @@ memarium init</pre>
       <li><a href="https://github.com/june9593/memarium">Sibling: memarium npm CLI for cross-device sync</a></li>
     </ul>
     <p class="muted small" style="margin-top: var(--space-6);">
-      MIT licensed · 22-test suite covering autonomy, scan, orchestrator
-      and config tolerance · Self-contained 386 KB esbuild bundle, no
+      MIT licensed · comprehensive Vitest suite covering autonomy, scan,
+      orchestrator, digest and memory · self-contained esbuild bundle, no
       runtime <code>npm install</code> required.
     </p>
   </section>

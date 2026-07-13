@@ -18,6 +18,8 @@ describe("ensureSpoolDir", () => {
   it("creates raw_sessions/ when spool root is absent", () => {
     const result = ensureSpoolDir();
     expect(existsSync(join(fakeHome, ".memarium/session-repo/raw_sessions"))).toBe(true);
+    // book/ is NOT created anymore (dropped in the book→memory collapse).
+    expect(existsSync(join(fakeHome, ".memarium/session-repo/book"))).toBe(false);
     expect(result.spoolRoot).toBe(join(fakeHome, ".memarium/session-repo"));
     expect(result.created).toBe(true);
   });
