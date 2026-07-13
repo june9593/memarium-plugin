@@ -139,7 +139,7 @@ The plugin **does not** create or modify `.git/` or the npm CLI's config files �
 - `commands/` — slash-command thin wrappers · `hooks/` — SessionStart primer + Stop nudge.
 - `bin/memarium-plugin.js` — bundled CLI invoked by the skills (single esbuild output; not on PATH).
 - `src/` — TypeScript source · `tests/` — vitest suite (`npm install && npx vitest run`).
-- `site-template/` — Astro template for the optional local book site · `docs/` — GitHub Pages source.
+- `docs/` — GitHub Pages source (product landing page).
 
 ### Contributing
 
@@ -241,7 +241,7 @@ memarium resume <sessionId>
 - `commands/` —— slash 命令薄壳 · `hooks/` —— SessionStart primer + Stop 提醒。
 - `bin/memarium-plugin.js` —— skill 调用的打包 CLI(单 esbuild 输出;不进 PATH)。
 - `src/` —— TypeScript 源 · `tests/` —— vitest(`npm install && npx vitest run`)。
-- `site-template/` —— 本地笔记站点的 Astro 模板 · `docs/` —— GitHub Pages 源。
+- `docs/` —— GitHub Pages 源(产品落地页)。
 
 ### 贡献
 

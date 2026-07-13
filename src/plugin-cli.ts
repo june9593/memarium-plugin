@@ -257,21 +257,6 @@ export async function run(argv: string[]) {
     });
 
   program
-    .command("site <action>")
-    .description("Render the book as a static site. Actions: serve | build")
-    .action(async (action: string) => {
-      if (action === "serve") {
-        const { serveSiteCmd } = await import("./commands/site.js");
-        await serveSiteCmd();
-      } else if (action === "build") {
-        const { buildSiteCmd } = await import("./commands/site.js");
-        await buildSiteCmd();
-      } else {
-        throw new Error(`Unknown site action "${action}". Expected "serve" or "build".`);
-      }
-    });
-
-  program
     .command("first-run")
     .description("Show one-time onboarding tip if not shown before. Used by skill at start.")
     .action(async () => {

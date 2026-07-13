@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.17.0 — 2026-07-09
+
+### Removed the local reading website (Phase C1 of the book→memory collapse)
+
+memarium is AI-native — the knowledge base is read by agents (recall/primer),
+not browsed by humans — so the optional Astro "book site" is gone. Deleted
+`src/commands/site.ts`, the entire `site-template/` Astro project, the
+`site serve|build` CLI command, and the `site-template/` entry in `package.json`
+`files`. The separate `docs/` product landing page (GitHub Pages) is untouched.
+
+Independent of the recall/digest changes; no runtime behavior beyond dropping
+the `site` command. `book/` itself is still produced by the digest for now
+(removed in Phase C2).
+
 ## 0.16.0 — 2026-07-09
 
 ### Recall is now 2-stage over typed memory (Phase A of the book→memory collapse)
