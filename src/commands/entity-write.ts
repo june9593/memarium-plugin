@@ -49,12 +49,8 @@ export async function entityWriteCmd(opts: EntityWriteOptions): Promise<EntityWr
       throw new Error(`entity-write: refusing to write outside memory/entities/ (symlink guard): ${entry.path}`);
     }
 
-    // Wikilink resolution: resolveWikiLinks requires a BookIndexV2 context
-    // (chronicles/topics/cards) which is not applicable to entity bodies.
-    // Skipping wikilink resolution — entity bodies are written verbatim.
-    // NOTE: skipped because the ResolveContext.bookIndex shape (BookIndexV2) has
-    // no overlap with entity-wiki content; entity bodies reference other entities
-    // via plain text, not book-chronicle/topic/card wikilinks.
+    // Entity bodies are written verbatim — they reference other entities via
+    // plain text, so there is no wikilink-resolution step here.
     const resolvedBody = body;
 
     writeFileSync(abs, renderEntityMarkdown(entry, resolvedBody));

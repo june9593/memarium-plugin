@@ -1904,10 +1904,10 @@ Expecting one of '${allowedValues.join("', '")}'`);
         args = args.slice();
         let launchWithNode = false;
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
-        function findFile(baseDir, baseName2) {
-          const localBin = path.resolve(baseDir, baseName2);
+        function findFile(baseDir, baseName) {
+          const localBin = path.resolve(baseDir, baseName);
           if (fs.existsSync(localBin)) return localBin;
-          if (sourceExt.includes(path.extname(baseName2))) return void 0;
+          if (sourceExt.includes(path.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
             (ext) => fs.existsSync(`${localBin}${ext}`)
           );
@@ -7246,13 +7246,12 @@ import { join as join3 } from "node:path";
 function dataDirAbs(repoPath) {
   return join3(repoPath, REPO_DATA_DIR);
 }
-var REPO_DATA_DIR, INDEX_REL, BOOK_INDEX_REL;
+var REPO_DATA_DIR, INDEX_REL;
 var init_repo_data_dir = __esm({
   "src/_shared/repo-data-dir.ts"() {
     "use strict";
     REPO_DATA_DIR = ".memarium";
     INDEX_REL = `${REPO_DATA_DIR}/index.json`;
-    BOOK_INDEX_REL = `${REPO_DATA_DIR}/index.book.json`;
   }
 });
 
@@ -14146,171 +14145,15 @@ var init_source = __esm({
   }
 });
 
-// src/digest/book-index-v2.ts
-import { mkdirSync as mkdirSync7, readFileSync as readFileSync9, writeFileSync as writeFileSync7, existsSync as existsSync10, copyFileSync } from "node:fs";
-import { join as join11 } from "node:path";
-function topicKey(project, topicSlug) {
-  return `${project}/${topicSlug}`;
-}
-function cardKey(project, cardSlug) {
-  return `${project}/${cardSlug}`;
-}
-function loadBookIndexV2(repoRoot) {
-  const p2 = join11(repoRoot, BOOK_INDEX_REL);
-  if (!existsSync10(p2)) {
-    return { version: 2, chronicles: {}, topics: {}, cards: {} };
-  }
-  const parsed = JSON.parse(readFileSync9(p2, "utf8"));
-  if (parsed.version === 2) return validateV2(parsed);
-  if (parsed.version === 1) {
-    const v1 = parsed;
-    const migrated = migrateV1ToV2(v1);
-    try {
-      copyFileSync(p2, p2 + ".v1.bak");
-    } catch {
-    }
-    saveBookIndexV2(repoRoot, migrated);
-    return migrated;
-  }
-  throw new Error(`unsupported book index version: ${parsed.version}`);
-}
-function saveBookIndexV2(repoRoot, idx) {
-  mkdirSync7(dataDirAbs(repoRoot), { recursive: true });
-  writeFileSync7(join11(repoRoot, BOOK_INDEX_REL), JSON.stringify(idx, null, 2) + "\n");
-}
-function validateV2(idx) {
-  if (idx.version !== 2) throw new Error(`expected v2, got ${idx.version}`);
-  if (!idx.chronicles || typeof idx.chronicles !== "object") {
-    throw new Error("index.book.json v2 malformed: missing 'chronicles'");
-  }
-  if (!idx.topics || typeof idx.topics !== "object") {
-    throw new Error("index.book.json v2 malformed: missing 'topics'");
-  }
-  if (!idx.cards || typeof idx.cards !== "object") {
-    throw new Error("index.book.json v2 malformed: missing 'cards'");
-  }
-  return idx;
-}
-function migrateV1ToV2(v1) {
-  const chronicles = {};
-  for (const [threadId, t2] of Object.entries(v1.threads)) {
-    chronicles[threadId] = {
-      threadId,
-      project: t2.project,
-      title: t2.title,
-      sessionIds: t2.sessionIds,
-      // v1 articlePath was book/<proj>/articles/<file>.md; we keep that path
-      // verbatim — `memarium publish` won't touch it because v2 chronicles
-      // live under book/<proj>/chronicle/, so the old article files just
-      // become orphaned data on disk. User can delete manually.
-      path: t2.articlePath,
-      createdAt: t2.updatedAt,
-      updatedAt: t2.updatedAt,
-      tags: [],
-      ...t2.skip ? { skip: true, skipReason: t2.skipReason } : {}
-    };
-  }
-  return { version: 2, chronicles, topics: {}, cards: {} };
-}
-function insertChronicle(idx, entry) {
-  if (idx.chronicles[entry.threadId]) {
-    throw new Error(
-      `chronicle threadId '${entry.threadId}' already exists (at ${idx.chronicles[entry.threadId].path}). Refusing to insert.`
-    );
-  }
-  idx.chronicles[entry.threadId] = entry;
-}
-function upsertTopic(idx, entry) {
-  idx.topics[topicKey(entry.project, entry.topicSlug)] = entry;
-}
-function upsertCard(idx, entry) {
-  idx.cards[cardKey(entry.project, entry.cardSlug)] = entry;
-}
-var init_book_index_v2 = __esm({
-  "src/digest/book-index-v2.ts"() {
-    "use strict";
-    init_repo_data_dir();
-  }
-});
-
 // src/_shared/git-ops.ts
-import { existsSync as existsSync11, mkdirSync as mkdirSync8, readdirSync } from "node:fs";
+import { existsSync as existsSync10, mkdirSync as mkdirSync7, readdirSync } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { join as join12, resolve } from "node:path";
+import { join as join11, resolve } from "node:path";
 import { spawn as spawn2 } from "node:child_process";
 function expandHome(p2) {
   if (p2 === "~") return homedir4();
-  if (p2.startsWith("~/")) return join12(homedir4(), p2.slice(2));
+  if (p2.startsWith("~/")) return join11(homedir4(), p2.slice(2));
   return p2;
-}
-function cloneWithProgress(repoUrl, dest) {
-  return new Promise((resolve9, reject) => {
-    const env2 = { ...process.env };
-    if (!process.stdin.isTTY) env2.GIT_TERMINAL_PROMPT = "0";
-    const p2 = spawn2("git", ["clone", "--progress", repoUrl, dest], {
-      stdio: "inherit",
-      env: env2
-    });
-    p2.on("error", reject);
-    p2.on("close", (code) => {
-      if (code === 0) resolve9();
-      else reject(new Error(`git clone exited with code ${code}. If this is an HTTPS URL needing auth, prefer SSH (git@github.com:...) or store a PAT via 'git config credential.helper'.`));
-    });
-  });
-}
-async function materializeRepoAtPath(localPath, repoUrl) {
-  const path = resolve(expandHome(localPath));
-  if (!existsSync11(path)) {
-    mkdirSync8(path, { recursive: true });
-    await cloneWithProgress(repoUrl, path);
-    return { kind: "cloned" };
-  }
-  const entries = readdirSync(path);
-  if (entries.length === 0) {
-    await cloneWithProgress(repoUrl, path);
-    return { kind: "cloned" };
-  }
-  if (entries.includes(".git")) {
-    const git = simpleGit(path);
-    let remote = "";
-    try {
-      remote = (await git.getConfig("remote.origin.url")).value ?? "";
-    } catch {
-    }
-    return { kind: "existing", existingRemote: remote };
-  }
-  throw new Error(
-    `${path} is not empty and is not a git repo. Pick another path or empty this one first.`
-  );
-}
-async function ensureRepo(localPath, repoUrl) {
-  await materializeRepoAtPath(localPath, repoUrl);
-  const git = simpleGit(localPath);
-  if (!existsSync11(join12(localPath, ".git"))) {
-    await git.init();
-    await git.addRemote("origin", repoUrl).catch(() => {
-    });
-  }
-  return git;
-}
-async function ensureDeviceBranch(git, branch) {
-  const local = await git.branchLocal();
-  if (local.all.includes(branch)) {
-    if (local.current !== branch) await git.checkout(branch);
-    return;
-  }
-  let remoteHas = false;
-  try {
-    const remote = await git.branch(["-r"]);
-    remoteHas = remote.all.includes(`origin/${branch}`);
-  } catch {
-  }
-  if (remoteHas) {
-    await git.checkout(["-b", branch, "--track", `origin/${branch}`]);
-    return;
-  }
-  await git.checkout(["--orphan", branch]);
-  await git.raw(["rm", "-rf", "--cached", "--ignore-unmatch", "."]);
 }
 function pushWithProgress(cwd, branch) {
   return new Promise((resolve9) => {
@@ -14341,19 +14184,6 @@ function pushWithProgress(cwd, branch) {
       });
     });
   });
-}
-async function commitAndPush(git, message, paths, branch, onProgress) {
-  if (paths.length === 0) return { committed: false, pushed: false };
-  onProgress?.(`git add (${paths.length} paths)...`);
-  await git.add(paths);
-  const status = await git.status();
-  if (status.staged.length === 0) return { committed: false, pushed: false };
-  onProgress?.(`git commit (${status.staged.length} staged)...`);
-  await git.commit(message);
-  onProgress?.(`git push origin ${branch} (live progress below):`);
-  const cwd = await git.revparse(["--show-toplevel"]).then((s) => s.trim());
-  const r2 = await pushWithProgress(cwd, branch);
-  return { committed: true, pushed: r2.ok, pushResult: r2 };
 }
 async function fastForwardBranch(git, branch, onProgress) {
   let hasRemote = false;
@@ -14398,8 +14228,8 @@ ${msg}`
 async function ensureLocalRepo(localPath) {
   const path = resolve(expandHome(localPath));
   let initialized = false;
-  if (!existsSync11(join12(path, ".git"))) {
-    mkdirSync8(path, { recursive: true });
+  if (!existsSync10(join11(path, ".git"))) {
+    mkdirSync7(path, { recursive: true });
     const g = simpleGit(path);
     await g.init();
     const hasIdentity = await g.raw(["config", "user.email"]).then((s) => s.trim().length > 0).catch(() => false);
@@ -14412,7 +14242,7 @@ async function ensureLocalRepo(localPath) {
   return { git: simpleGit(path), initialized, path };
 }
 async function commitWhitelist(git, repoPath, message, candidatePaths, opts, onProgress) {
-  const existing = candidatePaths.filter((p2) => existsSync11(join12(repoPath, p2)));
+  const existing = candidatePaths.filter((p2) => existsSync10(join11(repoPath, p2)));
   if (existing.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
   onProgress?.(`git add (${existing.length} whitelist paths)...`);
   await git.add(existing);
@@ -14443,679 +14273,6 @@ var init_git_ops = __esm({
     "use strict";
     init_esm();
     SECRET_BLOCK_RE = /GH013|push protection|secret-scanning/i;
-  }
-});
-
-// src/digest/book-catalog.ts
-import { mkdirSync as mkdirSync9, writeFileSync as writeFileSync8 } from "node:fs";
-import { join as join13, dirname as dirname4 } from "node:path";
-function generateBookCatalog(repoRoot, idx) {
-  const written = [];
-  const chroniclesByProject = bucketBy(Object.values(idx.chronicles), (c3) => c3.project);
-  const topicsByProject = bucketBy(Object.values(idx.topics), (t2) => t2.project);
-  const cardsByProject = bucketBy(Object.values(idx.cards), (c3) => c3.project);
-  const projectSet = /* @__PURE__ */ new Set();
-  for (const p2 of chroniclesByProject.keys()) projectSet.add(p2);
-  for (const p2 of topicsByProject.keys()) projectSet.add(p2);
-  for (const p2 of cardsByProject.keys()) projectSet.add(p2);
-  const projects = [...projectSet].sort((a, b2) => {
-    if (a === "_global") return 1;
-    if (b2 === "_global") return -1;
-    return a.localeCompare(b2);
-  });
-  const frontPath = "book/index.md";
-  writeRel(repoRoot, frontPath, renderFront({
-    projects,
-    chroniclesByProject,
-    topicsByProject,
-    cardsByProject,
-    latestUpdate: latestUpdate(idx)
-  }));
-  written.push(frontPath);
-  const timelinePath = "book/_meta/timeline.md";
-  writeRel(repoRoot, timelinePath, renderTimeline(idx));
-  written.push(timelinePath);
-  for (const p2 of projects) {
-    const path = `book/${p2}/index.md`;
-    writeRel(repoRoot, path, renderProjectIndex(p2, {
-      chronicles: chroniclesByProject.get(p2) ?? [],
-      topics: topicsByProject.get(p2) ?? [],
-      cards: cardsByProject.get(p2) ?? []
-    }));
-    written.push(path);
-  }
-  return { written };
-}
-function renderFront(args) {
-  const totalChronicles = sumMapSizes(args.chroniclesByProject, (c3) => !c3.skip);
-  const totalTopics = sumMapSizes(args.topicsByProject);
-  const totalCards = sumMapSizes(args.cardsByProject);
-  const lines = [];
-  lines.push("---");
-  lines.push("title: memarium");
-  lines.push(`updated: ${args.latestUpdate}`);
-  lines.push("---");
-  lines.push("");
-  lines.push("# memarium");
-  lines.push("");
-  lines.push(
-    `Updated **${args.latestUpdate}** \xB7 ${args.projects.length} projects \xB7 ${totalChronicles} chronicles \xB7 ${totalTopics} topics \xB7 ${totalCards} cards`
-  );
-  lines.push("");
-  lines.push("> Generated by `/memarium` skill. Don't edit by hand \u2014 re-runs overwrite.");
-  lines.push("");
-  lines.push("## Projects");
-  lines.push("");
-  for (const p2 of args.projects) {
-    const chrs = (args.chroniclesByProject.get(p2) ?? []).filter((c3) => !c3.skip);
-    const tops = args.topicsByProject.get(p2) ?? [];
-    const crds = args.cardsByProject.get(p2) ?? [];
-    if (chrs.length === 0 && tops.length === 0 && crds.length === 0) continue;
-    const lastActive = projectLastActive(chrs, tops, crds);
-    lines.push(`### ${p2}`);
-    lines.push(`Last active: ${lastActive}`);
-    lines.push("");
-    if (chrs.length > 0) {
-      lines.push(`**${chrs.length} chronicle${chrs.length === 1 ? "" : "s"}** \u2014 most recent:`);
-      for (const c3 of recent(chrs, 3)) {
-        lines.push(`  - [${c3.title}](${c3.path}) \u2014 ${c3.updatedAt}`);
-      }
-    }
-    if (tops.length > 0) {
-      lines.push(`**${tops.length} topic${tops.length === 1 ? "" : "s"}**: ${tops.map((t2) => `[${t2.topicSlug}](${t2.path})`).join(", ")}`);
-    }
-    if (crds.length > 0) {
-      const byType = bucketBy(crds, (c3) => c3.type);
-      const breakdown = [...byType.entries()].sort().map(([type, list]) => `${list.length} ${type}`).join(" / ");
-      lines.push(`**${crds.length} card${crds.length === 1 ? "" : "s"}**: ${breakdown}`);
-    }
-    lines.push("");
-  }
-  lines.push("---");
-  lines.push("");
-  lines.push("- [Global timeline](_meta/timeline.md)");
-  lines.push("");
-  return lines.join("\n");
-}
-function renderTimeline(idx) {
-  const events = [];
-  for (const c3 of Object.values(idx.chronicles)) {
-    if (c3.skip) continue;
-    events.push({
-      date: c3.updatedAt.slice(0, 10),
-      ts: c3.updatedAt,
-      line: `\u{1F4DD} [${c3.title}](../${c3.path}) \u2014 _${c3.project}_ chronicle`
-    });
-  }
-  for (const t2 of Object.values(idx.topics)) {
-    events.push({
-      date: t2.updatedAt.slice(0, 10),
-      ts: t2.updatedAt,
-      line: `\u{1F4DA} [${t2.topicSlug}](../${t2.path}) \u2014 _${t2.project}_ topic updated`
-    });
-  }
-  for (const c3 of Object.values(idx.cards)) {
-    events.push({
-      date: c3.updatedAt.slice(0, 10),
-      ts: c3.updatedAt,
-      line: `\u{1F4A1} [${c3.cardSlug}](../${c3.path}) \u2014 _${c3.project}_ ${c3.type} card`
-    });
-  }
-  events.sort((a, b2) => a.ts < b2.ts ? 1 : a.ts > b2.ts ? -1 : 0);
-  const lines = [];
-  lines.push("# Global timeline");
-  lines.push("");
-  lines.push("Newest first across every project.");
-  lines.push("");
-  let lastDate = "";
-  for (const e of events) {
-    if (e.date !== lastDate) {
-      lines.push("");
-      lines.push(`## ${e.date}`);
-      lines.push("");
-      lastDate = e.date;
-    }
-    lines.push(`- ${e.line}`);
-  }
-  lines.push("");
-  return lines.join("\n");
-}
-function renderProjectIndex(project, args) {
-  const chrs = args.chronicles.filter((c3) => !c3.skip);
-  const lines = [];
-  lines.push("---");
-  lines.push(`title: ${project}`);
-  lines.push("---");
-  lines.push("");
-  lines.push(`# ${project}`);
-  lines.push("");
-  lines.push(`${chrs.length} chronicle${chrs.length === 1 ? "" : "s"} \xB7 ${args.topics.length} topic${args.topics.length === 1 ? "" : "s"} \xB7 ${args.cards.length} card${args.cards.length === 1 ? "" : "s"}`);
-  lines.push("");
-  if (args.topics.length > 0) {
-    lines.push("## Topics");
-    lines.push("");
-    for (const t2 of [...args.topics].sort((a, b2) => a.topicSlug.localeCompare(b2.topicSlug))) {
-      lines.push(`- [${t2.topicSlug}](topics/${t2.topicSlug}.md) \u2014 ${t2.contributingThreads.length} threads, updated ${t2.updatedAt}`);
-    }
-    lines.push("");
-  }
-  if (chrs.length > 0) {
-    lines.push("## Chronicles (newest first)");
-    lines.push("");
-    for (const c3 of [...chrs].sort((a, b2) => a.updatedAt < b2.updatedAt ? 1 : -1)) {
-      lines.push(`- [${c3.title}](chronicle/${baseName(c3.path)}) \u2014 ${c3.updatedAt}`);
-    }
-    lines.push("");
-  }
-  if (args.cards.length > 0) {
-    lines.push("## Cards");
-    lines.push("");
-    const byType = bucketBy(args.cards, (c3) => c3.type);
-    for (const [type, list] of [...byType.entries()].sort()) {
-      lines.push(`### ${type}`);
-      for (const c3 of list.sort((a, b2) => a.cardSlug.localeCompare(b2.cardSlug))) {
-        lines.push(`- [${c3.cardSlug}](cards/${c3.cardSlug}.md)`);
-      }
-      lines.push("");
-    }
-  }
-  return lines.join("\n");
-}
-function bucketBy(xs, key) {
-  const m = /* @__PURE__ */ new Map();
-  for (const x2 of xs) {
-    const k2 = key(x2);
-    let arr4 = m.get(k2);
-    if (!arr4) {
-      arr4 = [];
-      m.set(k2, arr4);
-    }
-    arr4.push(x2);
-  }
-  return m;
-}
-function sumMapSizes(m, filter) {
-  let total = 0;
-  for (const list of m.values()) total += filter ? list.filter(filter).length : list.length;
-  return total;
-}
-function recent(chrs, n) {
-  return [...chrs].sort((a, b2) => a.updatedAt < b2.updatedAt ? 1 : -1).slice(0, n);
-}
-function projectLastActive(chrs, tops, crds) {
-  const ts = [];
-  for (const c3 of chrs) ts.push(c3.updatedAt);
-  for (const t2 of tops) ts.push(t2.updatedAt);
-  for (const c3 of crds) ts.push(c3.updatedAt);
-  if (ts.length === 0) return "\u2014";
-  ts.sort();
-  return ts[ts.length - 1].slice(0, 10);
-}
-function latestUpdate(idx) {
-  const ts = [];
-  for (const c3 of Object.values(idx.chronicles)) ts.push(c3.updatedAt);
-  for (const t2 of Object.values(idx.topics)) ts.push(t2.updatedAt);
-  for (const c3 of Object.values(idx.cards)) ts.push(c3.updatedAt);
-  if (ts.length === 0) return "\u2014";
-  ts.sort();
-  return ts[ts.length - 1].slice(0, 10);
-}
-function baseName(path) {
-  const ix = path.lastIndexOf("/");
-  return ix < 0 ? path : path.slice(ix + 1);
-}
-function writeRel(repoRoot, relPath, body) {
-  const abs = join13(repoRoot, relPath);
-  mkdirSync9(dirname4(abs), { recursive: true });
-  writeFileSync8(abs, body);
-}
-var init_book_catalog = __esm({
-  "src/digest/book-catalog.ts"() {
-    "use strict";
-  }
-});
-
-// src/digest/reconcile-orphans.ts
-import { readdirSync as readdirSync2, readFileSync as readFileSync10, existsSync as existsSync12, statSync } from "node:fs";
-import { join as join14 } from "node:path";
-function parseArr(v) {
-  const t2 = (v ?? "").trim();
-  if (t2 === "[]" || t2 === "") return [];
-  return t2.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
-}
-function unquote(v) {
-  const t2 = (v ?? "").trim();
-  return t2.replace(/^["']|["']$/g, "");
-}
-function reconcileOrphanChronicles(repoRoot, idx) {
-  const healed = [];
-  const skipped = [];
-  const bookRoot = join14(repoRoot, "book");
-  if (!existsSync12(bookRoot)) return { healed, skipped };
-  const indexedPaths = /* @__PURE__ */ new Set();
-  for (const c3 of Object.values(idx.chronicles)) if (c3.path) indexedPaths.add(c3.path);
-  for (const project of readdirSync2(bookRoot)) {
-    if (project === "_meta") continue;
-    const chronDir = join14(bookRoot, project, "chronicle");
-    if (!existsSync12(chronDir) || !statSync(chronDir).isDirectory()) continue;
-    for (const file of readdirSync2(chronDir).sort()) {
-      if (!file.endsWith(".md")) continue;
-      const relPath = `book/${project}/chronicle/${file}`;
-      if (indexedPaths.has(relPath)) continue;
-      let entry;
-      try {
-        entry = parseChronicleMd(readFileSync10(join14(chronDir, file), "utf8"), project, relPath);
-      } catch (err) {
-        skipped.push({ path: relPath, reason: err.message });
-        continue;
-      }
-      if (!entry) {
-        skipped.push({ path: relPath, reason: "missing/invalid frontmatter (need threadId, title, sessionIds)" });
-        continue;
-      }
-      if (idx.chronicles[entry.threadId]) {
-        skipped.push({ path: relPath, reason: `threadId '${entry.threadId}' already indexed at ${idx.chronicles[entry.threadId].path}` });
-        continue;
-      }
-      insertChronicle(idx, entry);
-      healed.push(relPath);
-    }
-  }
-  return { healed, skipped };
-}
-function parseChronicleMd(md, project, relPath) {
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  const fm = {};
-  for (const line of m[1].split("\n")) {
-    const i2 = line.indexOf(":");
-    if (i2 === -1) continue;
-    fm[line.slice(0, i2).trim()] = line.slice(i2 + 1).trim();
-  }
-  const threadId = unquote(fm.threadId);
-  const title = unquote(fm.title);
-  const sessionIds = parseArr(fm.sessionIds);
-  if (!threadId || !title || sessionIds.length === 0) return null;
-  const created = unquote(fm.created) || unquote(fm.createdAt);
-  const updated = unquote(fm.updated) || unquote(fm.updatedAt) || created;
-  return {
-    threadId,
-    project,
-    title,
-    sessionIds,
-    path: relPath,
-    createdAt: created || updated,
-    updatedAt: updated || created,
-    tags: parseArr(fm.tags),
-    skip: false
-  };
-}
-var init_reconcile_orphans = __esm({
-  "src/digest/reconcile-orphans.ts"() {
-    "use strict";
-    init_book_index_v2();
-  }
-});
-
-// src/digest/wikilinks.ts
-import { posix, relative, dirname as nodeDirname } from "node:path";
-function resolveWikiLinks(body, ctx) {
-  const unresolved = [];
-  const fromDir = nodeDirname(ctx.fromPath);
-  const out = body.replace(WIKILINK_RE, (whole, target, alt) => {
-    const t2 = target.trim();
-    const altText = alt?.trim();
-    if (t2.startsWith("chronicle/")) {
-      const threadId = t2.slice("chronicle/".length);
-      const entry = findChronicleByThreadId(ctx.bookIndex, threadId);
-      if (entry && entry.path) {
-        const rel = posix.relative(fromDir, entry.path);
-        const text = altText ?? entry.title ?? threadId;
-        return `[${text}](${rel})`;
-      }
-      unresolved.push(t2);
-      return whole;
-    }
-    if (t2.startsWith("topic/") || t2.startsWith("topics/")) {
-      const topicSlug = t2.slice(t2.indexOf("/") + 1);
-      const topic = findTopicBySlug(ctx.bookIndex, topicSlug, ctx.fromProject);
-      if (topic && topic.path) {
-        const rel = posix.relative(fromDir, topic.path);
-        const text = altText ?? topicSlug;
-        return `[${text}](${rel})`;
-      }
-      unresolved.push(t2);
-      return whole;
-    }
-    const cardSlug = t2.startsWith("cards/") ? t2.slice("cards/".length) : t2;
-    const card = findCardBySlug(ctx.bookIndex, cardSlug, ctx.fromProject);
-    if (card && card.path) {
-      const rel = posix.relative(fromDir, card.path);
-      const text = altText ?? cardSlug;
-      return `[${text}](${rel})`;
-    }
-    unresolved.push(t2);
-    return whole;
-  });
-  return { body: out, unresolved };
-}
-function findChronicleByThreadId(bookIndex, threadId) {
-  const direct = bookIndex.chronicles[threadId];
-  if (direct && !direct.skip && direct.path) return direct;
-  for (const c3 of Object.values(bookIndex.chronicles)) {
-    if (c3.threadId === threadId && !c3.skip && c3.path) return c3;
-  }
-  return void 0;
-}
-function findCardBySlug(bookIndex, cardSlug, preferredProject) {
-  const candidates = Object.values(bookIndex.cards).filter((c3) => c3.cardSlug === cardSlug);
-  if (candidates.length === 0) return void 0;
-  return candidates.find((c3) => c3.project === preferredProject) ?? candidates.find((c3) => c3.project === "_global") ?? candidates[0];
-}
-function findTopicBySlug(bookIndex, topicSlug, preferredProject) {
-  const candidates = Object.values(bookIndex.topics).filter((t2) => t2.topicSlug === topicSlug);
-  if (candidates.length === 0) return void 0;
-  return candidates.find((t2) => t2.project === preferredProject) ?? candidates[0];
-}
-var WIKILINK_RE;
-var init_wikilinks = __esm({
-  "src/digest/wikilinks.ts"() {
-    "use strict";
-    WIKILINK_RE = /\[\[([^\[\]\|]+?)(?:\|([^\[\]]+?))?\]\]/g;
-  }
-});
-
-// src/commands/publish.ts
-var publish_exports = {};
-__export(publish_exports, {
-  publishCmd: () => publishCmd
-});
-import { readFileSync as readFileSync11, writeFileSync as writeFileSync9, mkdirSync as mkdirSync10, existsSync as existsSync13, copyFileSync as copyFileSync2 } from "node:fs";
-import { join as join15, dirname as dirname5 } from "node:path";
-async function publishCmd(opts) {
-  const cfg = readPluginConfig();
-  const bookIndex = loadBookIndexV2(cfg.repoPath);
-  const report = {
-    chroniclesInserted: 0,
-    chroniclesSkipped: 0,
-    topicsUpdated: 0,
-    topicsInserted: 0,
-    cardsInserted: 0,
-    cardsUpdated: 0,
-    bookIndexFiles: [],
-    committed: false,
-    pushed: false
-  };
-  const chronicleWrites = [];
-  const topicWrites = [];
-  const cardWrites = [];
-  if (opts.chroniclesPath) {
-    const inputs = readJsonInput(opts.chroniclesPath, "chronicles");
-    for (const c3 of inputs) {
-      try {
-        const r2 = registerChronicle(cfg.repoPath, bookIndex, c3);
-        if (r2.skipped) report.chroniclesSkipped++;
-        else {
-          report.chroniclesInserted++;
-          if (r2.write) chronicleWrites.push(r2.write);
-        }
-      } catch (err) {
-        throw new Error(`chronicle threadId='${c3?.threadId ?? "?"}' project='${c3?.project ?? "?"}': ${err.message}`);
-      }
-    }
-  }
-  if (opts.topicsPath) {
-    const inputs = readJsonInput(opts.topicsPath, "topics");
-    for (const t2 of inputs) {
-      try {
-        const r2 = registerTopic(cfg.repoPath, bookIndex, t2);
-        if (r2.updated) report.topicsUpdated++;
-        else report.topicsInserted++;
-        topicWrites.push(r2.write);
-      } catch (err) {
-        throw new Error(`topic slug='${t2?.topicSlug ?? "?"}' project='${t2?.project ?? "?"}': ${err.message}`);
-      }
-    }
-  }
-  if (opts.cardsPath) {
-    console.error(source_default.yellow(
-      `! --cards is deprecated \u2014 memarium captures reusable insight as typed memory,
-  not atomic cards. Use the \`/memarium-retro\` skill (in-session) or the memory
-  step of \`/memarium\`. The cards in your input file will still be written this
-  run for backward compat, but new runs won't generate cards.`
-    ));
-    const inputs = readJsonInput(opts.cardsPath, "cards");
-    for (const c3 of inputs) {
-      try {
-        const r2 = registerCard(cfg.repoPath, bookIndex, c3);
-        if (r2.updated) report.cardsUpdated++;
-        else report.cardsInserted++;
-        cardWrites.push(r2.write);
-      } catch (err) {
-        throw new Error(`card slug='${c3?.cardSlug ?? "?"}' project='${c3?.project ?? "?"}': ${err.message}`);
-      }
-    }
-  }
-  const allUnresolved = [];
-  const writeWithLinks = (absPath, body, project, repoRel) => {
-    const r2 = resolveWikiLinks(body, { fromPath: repoRel, fromProject: project, bookIndex });
-    for (const u of r2.unresolved) allUnresolved.push({ from: repoRel, target: u });
-    mkdirSync10(dirname5(absPath), { recursive: true });
-    writeFileSync9(absPath, r2.body.endsWith("\n") ? r2.body : r2.body + "\n");
-  };
-  for (const w of chronicleWrites) {
-    writeWithLinks(w.absPath, w.body, w.project, repoRelOf(cfg.repoPath, w.absPath));
-  }
-  for (const w of topicWrites) {
-    if (w.backupOf && existsSync13(w.absPath)) copyFileSync2(w.absPath, w.backupOf);
-    writeWithLinks(w.absPath, w.body, w.project, repoRelOf(cfg.repoPath, w.absPath));
-  }
-  for (const w of cardWrites) {
-    writeWithLinks(w.absPath, w.body, w.project, repoRelOf(cfg.repoPath, w.absPath));
-  }
-  if (allUnresolved.length > 0) {
-    console.error(source_default.yellow(`
-  ${allUnresolved.length} unresolved wikilink(s):`));
-    for (const u of allUnresolved.slice(0, 10)) {
-      console.error(source_default.gray(`    in ${u.from}: [[${u.target}]]`));
-    }
-    if (allUnresolved.length > 10) {
-      console.error(source_default.gray(`    ... and ${allUnresolved.length - 10} more`));
-    }
-  }
-  let healedOrphans = [];
-  if (!opts.noCatalog) {
-    const orphans = reconcileOrphanChronicles(cfg.repoPath, bookIndex);
-    healedOrphans = orphans.healed;
-    if (orphans.healed.length > 0) {
-      console.error(source_default.cyan(`+ reconciled ${orphans.healed.length} orphan chronicle(s) into the index (written directly, bypassing publish):`));
-      for (const p2 of orphans.healed) console.error(source_default.gray(`    ${p2}`));
-    }
-    for (const s of orphans.skipped) {
-      console.error(source_default.yellow(`! skipped orphan ${s.path}: ${s.reason}`));
-    }
-    const catalog = generateBookCatalog(cfg.repoPath, bookIndex);
-    report.bookIndexFiles = catalog.written;
-  }
-  saveBookIndexV2(cfg.repoPath, bookIndex);
-  if (!opts.noCommit && cfg.repoUrl && cfg.deviceBranch) {
-    const stagedRel = [];
-    const pushRel = (abs) => stagedRel.push(repoRelOf(cfg.repoPath, abs));
-    for (const w of chronicleWrites) pushRel(w.absPath);
-    for (const w of topicWrites) {
-      pushRel(w.absPath);
-      if (w.backupOf) pushRel(w.backupOf);
-    }
-    for (const w of cardWrites) pushRel(w.absPath);
-    for (const f of report.bookIndexFiles) stagedRel.push(repoRelOf(cfg.repoPath, f));
-    for (const p2 of healedOrphans) stagedRel.push(p2);
-    stagedRel.push(".memarium/index.book.json");
-    const r2 = await commitAndPushBook(cfg.repoPath, cfg.repoUrl, cfg.deviceBranch, report, stagedRel);
-    report.committed = r2.committed;
-    report.pushed = r2.pushed;
-  }
-  return report;
-}
-function registerChronicle(repoRoot, bookIndex, c3) {
-  assertNonEmpty("chronicle.project", c3.project);
-  assertNonEmpty("chronicle.threadId", c3.threadId);
-  assertNonEmpty("chronicle.title", c3.title);
-  assertNonEmptyArray("chronicle.sessionIds", c3.sessionIds);
-  const dateStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  if (c3.skip) {
-    insertChronicle(bookIndex, {
-      threadId: c3.threadId,
-      project: c3.project,
-      title: c3.title,
-      sessionIds: c3.sessionIds,
-      path: "",
-      createdAt: dateStr,
-      updatedAt: dateStr,
-      tags: c3.tags ?? [],
-      skip: true,
-      skipReason: c3.skipReason
-    });
-    return { skipped: true };
-  }
-  const filename = chronicleFilename(c3, dateStr);
-  const relPath = `book/${c3.project}/chronicle/${filename}`;
-  insertChronicle(bookIndex, {
-    threadId: c3.threadId,
-    project: c3.project,
-    title: c3.title,
-    sessionIds: c3.sessionIds,
-    path: relPath,
-    createdAt: dateStr,
-    updatedAt: dateStr,
-    tags: c3.tags ?? []
-  });
-  return {
-    skipped: false,
-    write: { absPath: join15(repoRoot, relPath), body: c3.body, project: c3.project }
-  };
-}
-function chronicleFilename(c3, dateStr) {
-  const tid8 = c3.threadId.slice(0, 8);
-  return `${dateStr}__${c3.threadId}__${tid8}.md`;
-}
-function registerTopic(repoRoot, bookIndex, t2) {
-  assertNonEmpty("topic.project", t2.project);
-  assertNonEmpty("topic.topicSlug", t2.topicSlug);
-  const relPath = `book/${t2.project}/topics/${t2.topicSlug}.md`;
-  const absPath = join15(repoRoot, relPath);
-  const dateStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  const existing = bookIndex.topics[topicKey(t2.project, t2.topicSlug)];
-  const incomingThreads = Array.isArray(t2.contributingThreads) ? t2.contributingThreads : [];
-  const entry = {
-    topicSlug: t2.topicSlug,
-    project: t2.project,
-    path: relPath,
-    createdAt: existing?.createdAt ?? dateStr,
-    updatedAt: dateStr,
-    contributingThreads: dedupArray([
-      ...existing?.contributingThreads ?? [],
-      ...incomingThreads
-    ])
-  };
-  upsertTopic(bookIndex, entry);
-  return {
-    updated: !!existing,
-    write: {
-      absPath,
-      body: t2.body,
-      project: t2.project,
-      // Topic full-rewrite rule (SKILL.md step 4): the LLM was supposed to
-      // read the old page and preserve historical fact, but if it screwed up,
-      // .bak gives the user a recovery path.
-      backupOf: existsSync13(absPath) ? absPath + ".bak" : void 0
-    }
-  };
-}
-function registerCard(repoRoot, bookIndex, c3) {
-  assertNonEmpty("card.project", c3.project);
-  assertNonEmpty("card.cardSlug", c3.cardSlug);
-  const relPath = `book/${c3.project}/cards/${c3.cardSlug}.md`;
-  const dateStr = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  const existing = bookIndex.cards[cardKey(c3.project, c3.cardSlug)];
-  const entry = {
-    cardSlug: c3.cardSlug,
-    project: c3.project,
-    type: c3.type,
-    path: relPath,
-    createdAt: existing?.createdAt ?? dateStr,
-    updatedAt: dateStr,
-    tags: c3.tags ?? []
-  };
-  upsertCard(bookIndex, entry);
-  return {
-    updated: !!existing,
-    write: { absPath: join15(repoRoot, relPath), body: c3.body, project: c3.project }
-  };
-}
-function repoRelOf(repoRoot, absPath) {
-  return absPath.startsWith(repoRoot + "/") ? absPath.slice(repoRoot.length + 1) : absPath;
-}
-function readJsonInput(path, label) {
-  if (!existsSync13(path)) throw new Error(`${label} input not found: ${path}`);
-  try {
-    return JSON.parse(readFileSync11(path, "utf8"));
-  } catch (e) {
-    throw new Error(`${label} input ${path} is not valid JSON: ${e.message}`);
-  }
-}
-function assertNonEmpty(label, v) {
-  if (typeof v !== "string" || v.trim().length === 0) {
-    throw new Error(
-      `${label} is required and must be a non-empty string (got ${JSON.stringify(v)}). If you wrote the value only in YAML frontmatter, also add it to the top level of the JSON entry.`
-    );
-  }
-}
-function assertNonEmptyArray(label, v) {
-  if (!Array.isArray(v) || v.length === 0 || !v.every((x2) => typeof x2 === "string" && x2.trim().length > 0)) {
-    throw new Error(
-      `${label} is required and must be a non-empty array of strings (got ${JSON.stringify(v)}). If you wrote the value only in YAML frontmatter, also add it to the top level of the JSON entry.`
-    );
-  }
-}
-function dedupArray(xs) {
-  const seen = /* @__PURE__ */ new Set();
-  const out = [];
-  for (const x2 of xs) {
-    if (!seen.has(x2)) {
-      seen.add(x2);
-      out.push(x2);
-    }
-  }
-  return out;
-}
-async function commitAndPushBook(repoPath, repoUrl, deviceBranch, report, paths) {
-  const git = await ensureRepo(repoPath, repoUrl);
-  try {
-    await git.fetch();
-  } catch {
-  }
-  await ensureDeviceBranch(git, deviceBranch);
-  try {
-    await fastForwardBranch(git, deviceBranch, (s) => console.log(source_default.gray(`  ${s}`)));
-  } catch (err) {
-    console.log(source_default.red(`! could not sync with origin: ${err instanceof Error ? err.message : String(err)}`));
-    console.log(source_default.cyan(`  Files written + book index updated, but push skipped.`));
-    return { committed: false, pushed: false };
-  }
-  const msg = `memarium: +${report.chroniclesInserted} chronicle, ${report.topicsInserted}+${report.topicsUpdated} topic, ${report.cardsInserted}+${report.cardsUpdated} card`;
-  const r2 = await commitAndPush(git, msg, paths, deviceBranch, (stage) => console.log(source_default.gray(`  ${stage}`)));
-  return { committed: r2.committed, pushed: r2.pushed };
-}
-var init_publish = __esm({
-  "src/commands/publish.ts"() {
-    "use strict";
-    init_source();
-    init_plugin_config();
-    init_book_index_v2();
-    init_git_ops();
-    init_book_catalog();
-    init_reconcile_orphans();
-    init_wikilinks();
   }
 });
 
@@ -15285,14 +14442,14 @@ var init_gate = __esm({
 
 // src/qa/path-guard.ts
 import { lstatSync } from "node:fs";
-import { join as join16, relative as relative2, sep } from "node:path";
+import { join as join12, relative, sep } from "node:path";
 function assertNoSymlinkedComponent(repoPath, targetAbs, label) {
-  const rel = relative2(repoPath, targetAbs);
+  const rel = relative(repoPath, targetAbs);
   if (rel === "" || rel === ".." || rel.startsWith(".." + sep)) return;
   let cur = repoPath;
   for (const seg of rel.split(sep)) {
     if (!seg) continue;
-    cur = join16(cur, seg);
+    cur = join12(cur, seg);
     let st;
     try {
       st = lstatSync(cur);
@@ -15312,14 +14469,14 @@ var init_path_guard = __esm({
 });
 
 // src/memory/apply.ts
-import { existsSync as existsSync14, mkdirSync as mkdirSync11, readFileSync as readFileSync12, writeFileSync as writeFileSync10 } from "node:fs";
-import { dirname as dirname6, join as join17, resolve as resolve2, sep as sep2 } from "node:path";
+import { existsSync as existsSync11, mkdirSync as mkdirSync8, readFileSync as readFileSync9, writeFileSync as writeFileSync7 } from "node:fs";
+import { dirname as dirname4, join as join13, resolve as resolve2, sep as sep2 } from "node:path";
 function normalizeRel(p2) {
   return p2.split("\\").join("/");
 }
 function applyMemoryItems(repoPath, items) {
   const idx = loadMemoryIndex(repoPath);
-  const memRoot = resolve2(join17(repoPath, "memory"));
+  const memRoot = resolve2(join13(repoPath, "memory"));
   const willExist = { ...idx.entries };
   const planned = [];
   for (const { entry, body } of items) {
@@ -15329,7 +14486,7 @@ function applyMemoryItems(repoPath, items) {
         `memory apply: entry.path "${entry.path}" does not match canonical path for ${entry.id} ("${canonical}")`
       );
     }
-    const abs = resolve2(join17(repoPath, canonical));
+    const abs = resolve2(join13(repoPath, canonical));
     if (abs !== memRoot && !abs.startsWith(memRoot + sep2)) {
       throw new Error(`memory apply: refusing to write outside memory/: ${canonical}`);
     }
@@ -15338,7 +14495,7 @@ function applyMemoryItems(repoPath, items) {
     const sup = supersedesId(entry);
     if (sup && willExist[sup]) {
       const target = willExist[sup];
-      const tabs = resolve2(join17(repoPath, canonicalMemoryPath(target)));
+      const tabs = resolve2(join13(repoPath, canonicalMemoryPath(target)));
       let mdPath = null;
       if (tabs === memRoot || tabs.startsWith(memRoot + sep2)) {
         assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
@@ -15375,13 +14532,13 @@ function applyMemoryItems(repoPath, items) {
     if (supersede && idx.entries[supersede.targetId]) {
       idx.entries[supersede.targetId].status = "superseded";
       superseded++;
-      if (supersede.mdPath && existsSync14(supersede.mdPath)) {
-        const md = readFileSync12(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
-        writeFileSync10(supersede.mdPath, md);
+      if (supersede.mdPath && existsSync11(supersede.mdPath)) {
+        const md = readFileSync9(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
+        writeFileSync7(supersede.mdPath, md);
       }
     }
-    mkdirSync11(dirname6(abs), { recursive: true });
-    writeFileSync10(abs, renderMemoryMarkdown(entry, body));
+    mkdirSync8(dirname4(abs), { recursive: true });
+    writeFileSync7(abs, renderMemoryMarkdown(entry, body));
     upsertMemory(idx, entry);
     written++;
     paths.push(canonical);
@@ -15404,12 +14561,12 @@ var memory_write_exports = {};
 __export(memory_write_exports, {
   memoryWriteCmd: () => memoryWriteCmd
 });
-import { existsSync as existsSync15, readFileSync as readFileSync13 } from "node:fs";
+import { existsSync as existsSync12, readFileSync as readFileSync10 } from "node:fs";
 async function memoryWriteCmd(opts) {
-  if (!opts.inputPath || !existsSync15(opts.inputPath)) {
+  if (!opts.inputPath || !existsSync12(opts.inputPath)) {
     throw new Error(`memory-write: --input JSON not found: ${opts.inputPath}`);
   }
-  const items = JSON.parse(readFileSync13(opts.inputPath, "utf8"));
+  const items = JSON.parse(readFileSync10(opts.inputPath, "utf8"));
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
   for (const { entry } of items) {
@@ -15432,7 +14589,7 @@ var init_memory_write = __esm({
 });
 
 // src/memory/parse.ts
-function parseArr2(v) {
+function parseArr(v) {
   const t2 = v.trim();
   if (t2 === "[]" || t2 === "") return [];
   return t2.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -15462,8 +14619,8 @@ function parseMemoryMarkdown(md) {
   if (!fm.id || !fm.type) return null;
   const scope = fm.scope;
   const project = parseScalar(fm.project);
-  const sourceSessions = parseArr2(fm.sourceSessions ?? "[]");
-  const sourceCommits = parseArr2(fm.sourceCommits ?? "[]");
+  const sourceSessions = parseArr(fm.sourceSessions ?? "[]");
+  const sourceCommits = parseArr(fm.sourceCommits ?? "[]");
   const trust = fm.trust !== void 0 ? coerceTrust(fm.trust) : deriveLegacyTrust(sourceSessions, sourceCommits, scope, project);
   return {
     id: fm.id,
@@ -15483,9 +14640,9 @@ function parseMemoryMarkdown(md) {
     validTo: parseScalar(fm.validTo ?? "null"),
     sourceSessions,
     sourceCommits,
-    sourceFiles: parseArr2(fm.sourceFiles ?? "[]"),
+    sourceFiles: parseArr(fm.sourceFiles ?? "[]"),
     supersedes: parseScalar(fm.supersedes ?? "null"),
-    entities: parseArr2(fm.entities ?? "[]"),
+    entities: parseArr(fm.entities ?? "[]"),
     trust,
     originDevice: parseScalar(fm.originDevice ?? "null"),
     accessCount: 0,
@@ -15503,8 +14660,8 @@ var memory_index_exports = {};
 __export(memory_index_exports, {
   memoryIndexCmd: () => memoryIndexCmd
 });
-import { existsSync as existsSync16, readFileSync as readFileSync14, readdirSync as readdirSync3 } from "node:fs";
-import { join as join18, relative as relative3 } from "node:path";
+import { existsSync as existsSync13, readFileSync as readFileSync11, readdirSync as readdirSync2 } from "node:fs";
+import { join as join14, relative as relative2 } from "node:path";
 function walkMd(dir) {
   const out = [];
   const stack = [dir];
@@ -15512,12 +14669,12 @@ function walkMd(dir) {
     const cur = stack.pop();
     let entries;
     try {
-      entries = readdirSync3(cur, { withFileTypes: true });
+      entries = readdirSync2(cur, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const e of entries) {
-      const p2 = join18(cur, e.name);
+      const p2 = join14(cur, e.name);
       if (e.isDirectory()) stack.push(p2);
       else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
     }
@@ -15526,15 +14683,15 @@ function walkMd(dir) {
 }
 async function memoryIndexCmd() {
   const cfg = readPluginConfig();
-  const memRoot = join18(cfg.repoPath, "memory");
+  const memRoot = join14(cfg.repoPath, "memory");
   const idx = emptyMemoryIndex();
   let indexed = 0;
-  if (existsSync16(memRoot)) {
+  if (existsSync13(memRoot)) {
     for (const abs of walkMd(memRoot)) {
-      if (abs.includes(`${join18("memory", "_primer")}/`)) continue;
-      const entry = parseMemoryMarkdown(readFileSync14(abs, "utf8"));
+      if (abs.includes(`${join14("memory", "_primer")}/`)) continue;
+      const entry = parseMemoryMarkdown(readFileSync11(abs, "utf8"));
       if (!entry) continue;
-      entry.path = relative3(cfg.repoPath, abs);
+      entry.path = relative2(cfg.repoPath, abs);
       upsertMemory(idx, entry);
       indexed++;
     }
@@ -15557,12 +14714,12 @@ var skip_write_exports = {};
 __export(skip_write_exports, {
   skipWriteCmd: () => skipWriteCmd
 });
-import { readFileSync as readFileSync15 } from "node:fs";
+import { readFileSync as readFileSync12 } from "node:fs";
 async function skipWriteCmd(opts) {
   if (!opts.inputPath) throw new Error("skip-write requires --input <path>");
   const cfg = readPluginConfig();
   const idx = loadSkips(cfg.repoPath);
-  const raw = JSON.parse(readFileSync15(opts.inputPath, "utf8"));
+  const raw = JSON.parse(readFileSync12(opts.inputPath, "utf8"));
   const sessions = Array.isArray(raw) ? raw : Array.isArray(raw?.sessions) ? raw.sessions : null;
   if (sessions === null) {
     throw new Error("skip-write: --input must be an array of {sessionId,reason?} or {sessions:[...]}");
@@ -15667,18 +14824,18 @@ var init_score = __esm({
 
 // src/memory/usage-store.ts
 import { createHash } from "node:crypto";
-import { existsSync as existsSync17, mkdirSync as mkdirSync12, readFileSync as readFileSync16, renameSync as renameSync2, writeFileSync as writeFileSync11 } from "node:fs";
+import { existsSync as existsSync14, mkdirSync as mkdirSync9, readFileSync as readFileSync13, renameSync as renameSync2, writeFileSync as writeFileSync8 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { join as join19, resolve as resolve3 } from "node:path";
+import { join as join15, resolve as resolve3 } from "node:path";
 function memariumHome() {
-  return join19(homedir5(), ".memarium");
+  return join15(homedir5(), ".memarium");
 }
 function usageDir(repoPath) {
   const repoHash = createHash("sha256").update(resolve3(repoPath)).digest("hex").slice(0, 12);
-  return join19(memariumHome(), "usage", repoHash);
+  return join15(memariumHome(), "usage", repoHash);
 }
 function usageFile(repoPath) {
-  return join19(usageDir(repoPath), "access.json");
+  return join15(usageDir(repoPath), "access.json");
 }
 function guardUsagePath(targetAbs) {
   assertNoSymlinkedComponent(memariumHome(), targetAbs, "usage-store");
@@ -15695,10 +14852,10 @@ function loadUsage(repoPath) {
   } catch {
     return {};
   }
-  if (!existsSync17(file)) return {};
+  if (!existsSync14(file)) return {};
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync16(file, "utf8"));
+    parsed = JSON.parse(readFileSync13(file, "utf8"));
   } catch {
     return {};
   }
@@ -15720,10 +14877,10 @@ function loadUsage(repoPath) {
 function saveUsage(repoPath, usage) {
   const dir = usageDir(repoPath);
   guardUsagePath(dir);
-  mkdirSync12(dir, { recursive: true });
+  mkdirSync9(dir, { recursive: true });
   const file = usageFile(repoPath);
-  const tmp = join19(dir, `access.json.tmp-${process.pid}`);
-  writeFileSync11(tmp, JSON.stringify(usage, null, 2) + "\n");
+  const tmp = join15(dir, `access.json.tmp-${process.pid}`);
+  writeFileSync8(tmp, JSON.stringify(usage, null, 2) + "\n");
   renameSync2(tmp, file);
 }
 function bumpUsage(repoPath, ids, now) {
@@ -15905,7 +15062,7 @@ __export(retro_gate_exports, {
   decideRetroGate: () => decideRetroGate,
   retroGateCmd: () => retroGateCmd
 });
-import { readFileSync as readFileSync17, existsSync as existsSync18, openSync, fstatSync, readSync, closeSync } from "node:fs";
+import { readFileSync as readFileSync14, existsSync as existsSync15, openSync, fstatSync, readSync, closeSync } from "node:fs";
 function isRetroSignal(tu) {
   if (tu.name === "Skill" && String(tu.input?.skill ?? "").includes("memarium-retro")) return true;
   if (tu.name === "Bash") {
@@ -15963,14 +15120,14 @@ async function retroGateCmd() {
     if (process.stdin.isTTY) return;
     let raw = "";
     try {
-      raw = readFileSync17(0, "utf8");
+      raw = readFileSync14(0, "utf8");
     } catch {
       return;
     }
     const evt = raw.trim() ? JSON.parse(raw) : {};
     if (evt.stop_hook_active) return;
     const tp = evt.transcript_path;
-    if (!tp || !existsSync18(tp)) return;
+    if (!tp || !existsSync15(tp)) return;
     const rows = readTailLines(tp, 1024 * 1024).map((l) => {
       try {
         return JSON.parse(l);
@@ -16037,39 +15194,39 @@ var entity_write_exports = {};
 __export(entity_write_exports, {
   entityWriteCmd: () => entityWriteCmd
 });
-import { existsSync as existsSync19, mkdirSync as mkdirSync13, readFileSync as readFileSync18, realpathSync, writeFileSync as writeFileSync12 } from "node:fs";
-import { dirname as dirname7, join as join20, resolve as resolve4, sep as sep3 } from "node:path";
+import { existsSync as existsSync16, mkdirSync as mkdirSync10, readFileSync as readFileSync15, realpathSync, writeFileSync as writeFileSync9 } from "node:fs";
+import { dirname as dirname5, join as join16, resolve as resolve4, sep as sep3 } from "node:path";
 function entityPath(e) {
   const scopeDir = e.project ?? "_global";
   const slug = e.id.split("/").pop() ?? e.id;
   return `memory/entities/${scopeDir}/${slug}.md`;
 }
 async function entityWriteCmd(opts) {
-  if (!opts.inputPath || !existsSync19(opts.inputPath)) {
+  if (!opts.inputPath || !existsSync16(opts.inputPath)) {
     throw new Error(`entity-write: --input JSON not found: ${opts.inputPath}`);
   }
-  const items = JSON.parse(readFileSync18(opts.inputPath, "utf8"));
+  const items = JSON.parse(readFileSync15(opts.inputPath, "utf8"));
   const cfg = readPluginConfig();
   const idx = loadEntityIndex(cfg.repoPath);
   let written = 0;
   const paths = [];
   for (const { entry, body } of items) {
     if (!entry.path) entry.path = entityPath(entry);
-    const entRoot = resolve4(join20(cfg.repoPath, "memory", "entities"));
-    mkdirSync13(entRoot, { recursive: true });
+    const entRoot = resolve4(join16(cfg.repoPath, "memory", "entities"));
+    mkdirSync10(entRoot, { recursive: true });
     const memRoot = entRoot;
-    const abs = resolve4(join20(cfg.repoPath, entry.path));
+    const abs = resolve4(join16(cfg.repoPath, entry.path));
     if (abs !== memRoot && !abs.startsWith(memRoot + sep3)) {
       throw new Error(`entity-write: refusing to write outside memory/entities/: ${entry.path}`);
     }
-    mkdirSync13(dirname7(abs), { recursive: true });
-    const realParent = realpathSync(dirname7(abs));
+    mkdirSync10(dirname5(abs), { recursive: true });
+    const realParent = realpathSync(dirname5(abs));
     const realRoot = realpathSync(entRoot);
     if (realParent !== realRoot && !realParent.startsWith(realRoot + sep3)) {
       throw new Error(`entity-write: refusing to write outside memory/entities/ (symlink guard): ${entry.path}`);
     }
     const resolvedBody = body;
-    writeFileSync12(abs, renderEntityMarkdown(entry, resolvedBody));
+    writeFileSync9(abs, renderEntityMarkdown(entry, resolvedBody));
     upsertEntity(idx, entry);
     written++;
     paths.push(entry.path);
@@ -16087,7 +15244,7 @@ var init_entity_write = __esm({
 });
 
 // src/entity/parse.ts
-function parseArr3(v) {
+function parseArr2(v) {
   const t2 = v.trim();
   if (t2 === "" || t2 === "[]") return [];
   if (t2.startsWith("[")) {
@@ -16119,11 +15276,11 @@ function parseEntityMarkdown(md) {
     scope: fm.scope ?? "",
     project: parseScalar2(fm.project ?? "null"),
     title: fm.title ?? "",
-    aliases: parseArr3(fm.aliases ?? "[]"),
-    sourceMemoryIds: parseArr3(fm.sourceMemoryIds ?? "[]"),
-    sourceSessions: parseArr3(fm.sourceSessions ?? "[]"),
-    sourceFiles: parseArr3(fm.sourceFiles ?? "[]"),
-    relatedEntities: parseArr3(fm.relatedEntities ?? "[]"),
+    aliases: parseArr2(fm.aliases ?? "[]"),
+    sourceMemoryIds: parseArr2(fm.sourceMemoryIds ?? "[]"),
+    sourceSessions: parseArr2(fm.sourceSessions ?? "[]"),
+    sourceFiles: parseArr2(fm.sourceFiles ?? "[]"),
+    relatedEntities: parseArr2(fm.relatedEntities ?? "[]"),
     path: "",
     // filled by caller from the file path
     createdAt: fm.createdAt ?? "",
@@ -16141,8 +15298,8 @@ var entity_index_exports = {};
 __export(entity_index_exports, {
   entityIndexCmd: () => entityIndexCmd
 });
-import { existsSync as existsSync20, readFileSync as readFileSync19, readdirSync as readdirSync4 } from "node:fs";
-import { join as join21, relative as relative4 } from "node:path";
+import { existsSync as existsSync17, readFileSync as readFileSync16, readdirSync as readdirSync3 } from "node:fs";
+import { join as join17, relative as relative3 } from "node:path";
 function walkMd2(dir) {
   const out = [];
   const stack = [dir];
@@ -16150,12 +15307,12 @@ function walkMd2(dir) {
     const cur = stack.pop();
     let entries;
     try {
-      entries = readdirSync4(cur, { withFileTypes: true });
+      entries = readdirSync3(cur, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const e of entries) {
-      const p2 = join21(cur, e.name);
+      const p2 = join17(cur, e.name);
       if (e.isDirectory()) stack.push(p2);
       else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
     }
@@ -16164,14 +15321,14 @@ function walkMd2(dir) {
 }
 async function entityIndexCmd() {
   const cfg = readPluginConfig();
-  const entitiesRoot = join21(cfg.repoPath, "memory", "entities");
+  const entitiesRoot = join17(cfg.repoPath, "memory", "entities");
   const idx = emptyEntityIndex();
   let indexed = 0;
-  if (existsSync20(entitiesRoot)) {
+  if (existsSync17(entitiesRoot)) {
     for (const abs of walkMd2(entitiesRoot)) {
-      const entry = parseEntityMarkdown(readFileSync19(abs, "utf8"));
+      const entry = parseEntityMarkdown(readFileSync16(abs, "utf8"));
       if (!entry) continue;
-      entry.path = relative4(cfg.repoPath, abs);
+      entry.path = relative3(cfg.repoPath, abs);
       upsertEntity(idx, entry);
       indexed++;
     }
@@ -16248,8 +15405,8 @@ var entity_query_exports = {};
 __export(entity_query_exports, {
   entityQueryCmd: () => entityQueryCmd
 });
-import { existsSync as existsSync21, readFileSync as readFileSync20, realpathSync as realpathSync2 } from "node:fs";
-import { join as join22, resolve as resolve5, sep as sep4 } from "node:path";
+import { existsSync as existsSync18, readFileSync as readFileSync17, realpathSync as realpathSync2 } from "node:fs";
+import { join as join18, resolve as resolve5, sep as sep4 } from "node:path";
 function isKind(s) {
   const ok = ["file", "symbol", "api", "concept", "person"];
   return s && ok.includes(s) ? s : null;
@@ -16299,21 +15456,21 @@ async function entityQueryCmd(opts) {
     }));
     payload.referencingMemories = referencingMemories;
     const nameSlug = entityName.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    const entRoot = resolve5(join22(cfg.repoPath, "memory", "entities"));
+    const entRoot = resolve5(join18(cfg.repoPath, "memory", "entities"));
     const matchedEntities = entries.filter((e) => isEligibleEntity(e, project)).filter((e) => {
       const titleMatch = e.title.toLowerCase() === entityName;
       const aliasMatch = (Array.isArray(e.aliases) ? e.aliases : []).some((a) => typeof a === "string" && a.toLowerCase() === entityName);
       const slugMatch = nameSlug.length > 0 && e.id.toLowerCase().endsWith("/" + nameSlug);
       return titleMatch || aliasMatch || slugMatch;
     }).map((e) => {
-      const abs = resolve5(join22(cfg.repoPath, e.path));
+      const abs = resolve5(join18(cfg.repoPath, e.path));
       const inRoot = abs === entRoot || abs.startsWith(entRoot + sep4);
       let body = "";
-      if (inRoot && existsSync21(abs)) {
-        const realRoot = existsSync21(entRoot) ? realpathSync2(entRoot) : entRoot;
+      if (inRoot && existsSync18(abs)) {
+        const realRoot = existsSync18(entRoot) ? realpathSync2(entRoot) : entRoot;
         const real = realpathSync2(abs);
         if (real === realRoot || real.startsWith(realRoot + sep4)) {
-          body = readFileSync20(abs, "utf8");
+          body = readFileSync17(abs, "utf8");
         }
       }
       return { entry: e, body };
@@ -16401,8 +15558,8 @@ var qa_write_exports = {};
 __export(qa_write_exports, {
   qaWriteCmd: () => qaWriteCmd
 });
-import { existsSync as existsSync22, lstatSync as lstatSync2, mkdirSync as mkdirSync14, readFileSync as readFileSync21, realpathSync as realpathSync3, writeFileSync as writeFileSync13 } from "node:fs";
-import { dirname as dirname8, join as join23, resolve as resolve6, sep as sep5 } from "node:path";
+import { existsSync as existsSync19, lstatSync as lstatSync2, mkdirSync as mkdirSync11, readFileSync as readFileSync18, realpathSync as realpathSync3, writeFileSync as writeFileSync10 } from "node:fs";
+import { dirname as dirname6, join as join19, resolve as resolve6, sep as sep5 } from "node:path";
 function isUnder(child, parent) {
   return child === parent || child.startsWith(parent + sep5);
 }
@@ -16419,10 +15576,10 @@ function qaPath(e) {
   return `memory/qa/${scopeDir}/${slug}.md`;
 }
 async function qaWriteCmd(opts) {
-  if (!opts.inputPath || !existsSync22(opts.inputPath)) {
+  if (!opts.inputPath || !existsSync19(opts.inputPath)) {
     throw new Error(`qa-write: --input JSON not found: ${opts.inputPath}`);
   }
-  const items = JSON.parse(readFileSync21(opts.inputPath, "utf8"));
+  const items = JSON.parse(readFileSync18(opts.inputPath, "utf8"));
   const cfg = readPluginConfig();
   const idx = loadQaIndex(cfg.repoPath);
   let written = 0;
@@ -16447,20 +15604,20 @@ async function qaWriteCmd(opts) {
     }
     entry.id = qaId(entry.scope, entry.project, entry.question);
     entry.path = qaPath(entry);
-    const qaRoot = resolve6(join23(cfg.repoPath, "memory", "qa"));
-    const abs = resolve6(join23(cfg.repoPath, entry.path));
-    assertNoSymlinkedComponent(cfg.repoPath, dirname8(abs), "qa-write");
+    const qaRoot = resolve6(join19(cfg.repoPath, "memory", "qa"));
+    const abs = resolve6(join19(cfg.repoPath, entry.path));
+    assertNoSymlinkedComponent(cfg.repoPath, dirname6(abs), "qa-write");
     if (abs !== qaRoot && !abs.startsWith(qaRoot + sep5)) {
       throw new Error(`qa-write: refusing to write outside memory/qa/: ${entry.path}`);
     }
-    mkdirSync14(qaRoot, { recursive: true });
+    mkdirSync11(qaRoot, { recursive: true });
     const realRepo = realpathSync3(cfg.repoPath);
     const realRoot = realpathSync3(qaRoot);
     if (!isUnder(realRoot, realRepo)) {
       throw new Error(`qa-write: refusing to write outside memory/qa/ (symlink guard): ${entry.path}`);
     }
-    mkdirSync14(dirname8(abs), { recursive: true });
-    const realParent = realpathSync3(dirname8(abs));
+    mkdirSync11(dirname6(abs), { recursive: true });
+    const realParent = realpathSync3(dirname6(abs));
     if (!isUnder(realParent, realRoot)) {
       throw new Error(`qa-write: refusing to write outside memory/qa/ (symlink guard): ${entry.path}`);
     }
@@ -16473,7 +15630,7 @@ async function qaWriteCmd(opts) {
     if (leafStat?.isSymbolicLink()) {
       throw new Error(`qa-write: refusing to write through a symlinked target file (symlink guard): ${entry.path}`);
     }
-    writeFileSync13(abs, renderQaMarkdown(entry, body));
+    writeFileSync10(abs, renderQaMarkdown(entry, body));
     upsertQa(idx, entry);
     written++;
     paths.push(entry.path);
@@ -16495,7 +15652,7 @@ var init_qa_write = __esm({
 });
 
 // src/qa/parse.ts
-function parseArr4(v) {
+function parseArr3(v) {
   const t2 = v.trim();
   if (t2 === "" || t2 === "[]") return [];
   if (t2.startsWith("[")) {
@@ -16548,11 +15705,11 @@ function parseQaMarkdown(md) {
     question: parseQuoted(fm.question ?? ""),
     answerSummary: parseQuoted(fm.answerSummary ?? ""),
     kind: fm.kind,
-    tags: parseArr4(fm.tags ?? "[]"),
-    sources: parseArr4(fm.sources ?? "[]"),
-    sourceMemoryIds: parseArr4(fm.sourceMemoryIds ?? "[]"),
-    sourceSessions: parseArr4(fm.sourceSessions ?? "[]"),
-    relatedEntities: parseArr4(fm.relatedEntities ?? "[]"),
+    tags: parseArr3(fm.tags ?? "[]"),
+    sources: parseArr3(fm.sources ?? "[]"),
+    sourceMemoryIds: parseArr3(fm.sourceMemoryIds ?? "[]"),
+    sourceSessions: parseArr3(fm.sourceSessions ?? "[]"),
+    relatedEntities: parseArr3(fm.relatedEntities ?? "[]"),
     path: "",
     createdAt: fm.createdAt ?? "",
     updatedAt: fm.updatedAt ?? ""
@@ -16569,8 +15726,8 @@ var qa_index_exports = {};
 __export(qa_index_exports, {
   qaIndexCmd: () => qaIndexCmd
 });
-import { existsSync as existsSync23, readFileSync as readFileSync22, readdirSync as readdirSync5 } from "node:fs";
-import { join as join24, relative as relative5 } from "node:path";
+import { existsSync as existsSync20, readFileSync as readFileSync19, readdirSync as readdirSync4 } from "node:fs";
+import { join as join20, relative as relative4 } from "node:path";
 function walkMd3(dir) {
   const out = [];
   const stack = [dir];
@@ -16578,12 +15735,12 @@ function walkMd3(dir) {
     const cur = stack.pop();
     let entries;
     try {
-      entries = readdirSync5(cur, { withFileTypes: true });
+      entries = readdirSync4(cur, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const e of entries) {
-      const p2 = join24(cur, e.name);
+      const p2 = join20(cur, e.name);
       if (e.isDirectory()) stack.push(p2);
       else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
     }
@@ -16592,15 +15749,15 @@ function walkMd3(dir) {
 }
 async function qaIndexCmd() {
   const cfg = readPluginConfig();
-  const qaRoot = join24(cfg.repoPath, "memory", "qa");
+  const qaRoot = join20(cfg.repoPath, "memory", "qa");
   const idx = emptyQaIndex();
   let indexed = 0;
   assertNoSymlinkedComponent(cfg.repoPath, qaRoot, "qa-index");
-  if (existsSync23(qaRoot)) {
+  if (existsSync20(qaRoot)) {
     for (const abs of walkMd3(qaRoot)) {
-      const entry = parseQaMarkdown(readFileSync22(abs, "utf8"));
+      const entry = parseQaMarkdown(readFileSync19(abs, "utf8"));
       if (!entry) continue;
-      entry.path = relative5(cfg.repoPath, abs);
+      entry.path = relative4(cfg.repoPath, abs);
       upsertQa(idx, entry);
       indexed++;
     }
@@ -17019,15 +16176,15 @@ var init_lint = __esm({
 
 // src/memory/proposal-store.ts
 import { createHash as createHash3 } from "node:crypto";
-import { existsSync as existsSync24, mkdirSync as mkdirSync15, readFileSync as readFileSync23, readdirSync as readdirSync6, rmSync, writeFileSync as writeFileSync14 } from "node:fs";
+import { existsSync as existsSync21, mkdirSync as mkdirSync12, readFileSync as readFileSync20, readdirSync as readdirSync5, rmSync, writeFileSync as writeFileSync11 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
-import { join as join25, resolve as resolve7 } from "node:path";
+import { join as join21, resolve as resolve7 } from "node:path";
 function memariumHome2() {
-  return join25(homedir6(), ".memarium");
+  return join21(homedir6(), ".memarium");
 }
 function proposalsDir(repoPath) {
   const repoHash = createHash3("sha256").update(resolve7(repoPath)).digest("hex").slice(0, 12);
-  return join25(memariumHome2(), "local-proposals", repoHash);
+  return join21(memariumHome2(), "local-proposals", repoHash);
 }
 function guardQueuePath(targetAbs) {
   assertNoSymlinkedComponent(memariumHome2(), targetAbs, "proposal-store");
@@ -17044,14 +16201,14 @@ function flatTargetKey(targetKey2) {
 }
 function fileFor(repoPath, idOrKey) {
   const flat = idOrKey.includes("/") ? flatTargetKey(idOrKey) : flatTargetKey(idOrKey.split("__").join("/"));
-  return join25(proposalsDir(repoPath), `${flat}.json`);
+  return join21(proposalsDir(repoPath), `${flat}.json`);
 }
 function writeProposal(repoPath, p2) {
   const dir = proposalsDir(repoPath);
-  const file = join25(dir, `${flatTargetKey(p2.targetKey)}.json`);
+  const file = join21(dir, `${flatTargetKey(p2.targetKey)}.json`);
   guardQueuePath(file);
-  mkdirSync15(dir, { recursive: true });
-  writeFileSync14(file, JSON.stringify(p2, null, 2) + "\n");
+  mkdirSync12(dir, { recursive: true });
+  writeFileSync11(file, JSON.stringify(p2, null, 2) + "\n");
   return file;
 }
 function readProposal(repoPath, idOrKey) {
@@ -17062,9 +16219,9 @@ function readProposal(repoPath, idOrKey) {
     return null;
   }
   guardQueuePath(file);
-  if (!existsSync24(file)) return null;
+  if (!existsSync21(file)) return null;
   try {
-    return JSON.parse(readFileSync23(file, "utf8"));
+    return JSON.parse(readFileSync20(file, "utf8"));
   } catch {
     return null;
   }
@@ -17072,14 +16229,14 @@ function readProposal(repoPath, idOrKey) {
 function listProposals(repoPath) {
   const dir = proposalsDir(repoPath);
   guardQueuePath(dir);
-  if (!existsSync24(dir)) return [];
+  if (!existsSync21(dir)) return [];
   const out = [];
-  for (const name of readdirSync6(dir).sort()) {
+  for (const name of readdirSync5(dir).sort()) {
     if (!name.endsWith(".json")) continue;
-    const file = join25(dir, name);
+    const file = join21(dir, name);
     guardQueuePath(file);
     try {
-      out.push(JSON.parse(readFileSync23(file, "utf8")));
+      out.push(JSON.parse(readFileSync20(file, "utf8")));
     } catch {
     }
   }
@@ -17093,7 +16250,7 @@ function deleteProposal(repoPath, idOrKey) {
     return null;
   }
   guardQueuePath(file);
-  if (!existsSync24(file)) return null;
+  if (!existsSync21(file)) return null;
   rmSync(file);
   return file;
 }
@@ -17109,11 +16266,11 @@ var memory_lint_exports = {};
 __export(memory_lint_exports, {
   memoryLintCmd: () => memoryLintCmd
 });
-import { existsSync as existsSync25, readFileSync as readFileSync24 } from "node:fs";
-import { join as join26 } from "node:path";
+import { existsSync as existsSync22, readFileSync as readFileSync21 } from "node:fs";
+import { join as join22 } from "node:path";
 function readBody(repoPath, entry) {
   try {
-    const md = readFileSync24(join26(repoPath, entry.path), "utf8");
+    const md = readFileSync21(join22(repoPath, entry.path), "utf8");
     const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
     return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();
   } catch {
@@ -17146,11 +16303,11 @@ function proposeStalenessFixes(repoPath, idx, report, now) {
   return queued;
 }
 function readIndexOnce(repoPath, rel, layer, empty) {
-  const p2 = join26(repoPath, rel);
-  if (!existsSync25(p2)) return { index: empty, finding: null };
+  const p2 = join22(repoPath, rel);
+  if (!existsSync22(p2)) return { index: empty, finding: null };
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync24(p2, "utf8"));
+    parsed = JSON.parse(readFileSync21(p2, "utf8"));
   } catch {
     return { index: empty, finding: {
       check: "corrupt-index",
@@ -17243,12 +16400,12 @@ var memory_propose_exports = {};
 __export(memory_propose_exports, {
   memoryProposeCmd: () => memoryProposeCmd
 });
-import { existsSync as existsSync26, readFileSync as readFileSync25 } from "node:fs";
+import { existsSync as existsSync23, readFileSync as readFileSync22 } from "node:fs";
 async function memoryProposeCmd(opts) {
-  if (!opts.inputPath || !existsSync26(opts.inputPath)) {
+  if (!opts.inputPath || !existsSync23(opts.inputPath)) {
     throw new Error(`memory-propose: --input JSON not found: ${opts.inputPath}`);
   }
-  const items = JSON.parse(readFileSync25(opts.inputPath, "utf8"));
+  const items = JSON.parse(readFileSync22(opts.inputPath, "utf8"));
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
   for (const { entry } of items) {
@@ -17438,26 +16595,26 @@ var memory_approve_exports = {};
 __export(memory_approve_exports, {
   memoryApproveCmd: () => memoryApproveCmd
 });
-import { existsSync as existsSync27, readdirSync as readdirSync7, rmSync as rmSync2 } from "node:fs";
-import { join as join27 } from "node:path";
+import { existsSync as existsSync24, readdirSync as readdirSync6, rmSync as rmSync2 } from "node:fs";
+import { join as join23 } from "node:path";
 function refreshPrimers(repoPath, entry) {
-  const dir = join27(repoPath, "memory", "_primer");
-  if (!existsSync27(dir)) return [];
+  const dir = join23(repoPath, "memory", "_primer");
+  if (!existsSync24(dir)) return [];
   assertNoSymlinkedComponent(repoPath, dir, "memory-approve");
   const deleted = [];
   const del = (file) => {
-    if (!existsSync27(file)) return;
+    if (!existsSync24(file)) return;
     assertNoSymlinkedComponent(repoPath, file, "memory-approve");
     rmSync2(file);
     deleted.push(file);
   };
   const deleteAll = () => {
-    for (const name of readdirSync7(dir)) if (name.endsWith(".md")) del(join27(dir, name));
+    for (const name of readdirSync6(dir)) if (name.endsWith(".md")) del(join23(dir, name));
   };
   const scope = typeof entry.scope === "string" ? entry.scope : "";
   const project = scope.startsWith("project:") ? scope.slice("project:".length) : null;
   if (project && isSafePathSegment(project)) {
-    del(join27(dir, `${project}.md`));
+    del(join23(dir, `${project}.md`));
   } else {
     deleteAll();
   }
@@ -17601,88 +16758,26 @@ var init_recall = __esm({
   }
 });
 
-// src/commands/catalog-regen.ts
-var catalog_regen_exports = {};
-__export(catalog_regen_exports, {
-  catalogRegenCmd: () => catalogRegenCmd
-});
-async function catalogRegenCmd(opts) {
-  const cfg = readPluginConfig();
-  const bookIndex = loadBookIndexV2(cfg.repoPath);
-  const orphans = reconcileOrphanChronicles(cfg.repoPath, bookIndex);
-  if (orphans.healed.length > 0) {
-    console.log(source_default.cyan(`+ reconciled ${orphans.healed.length} orphan chronicle(s) into the index (written directly, bypassing publish):`));
-    for (const p2 of orphans.healed) console.log(source_default.gray(`    ${p2}`));
-    saveBookIndexV2(cfg.repoPath, bookIndex);
-  }
-  for (const s of orphans.skipped) {
-    console.log(source_default.yellow(`! skipped orphan ${s.path}: ${s.reason}`));
-  }
-  const catalog = generateBookCatalog(cfg.repoPath, bookIndex);
-  const report = {
-    written: catalog.written,
-    healed: orphans.healed,
-    committed: false,
-    pushed: false
-  };
-  if (opts.noCommit || !cfg.repoUrl || !cfg.deviceBranch) return report;
-  const git = await ensureRepo(cfg.repoPath, cfg.repoUrl);
-  try {
-    await git.fetch();
-  } catch {
-  }
-  await ensureDeviceBranch(git, cfg.deviceBranch);
-  try {
-    await fastForwardBranch(git, cfg.deviceBranch, (s) => console.log(source_default.gray(`  ${s}`)));
-  } catch (err) {
-    console.log(source_default.red(`! could not sync with origin: ${err instanceof Error ? err.message : String(err)}`));
-    console.log(source_default.cyan(`  Catalog regenerated locally; push skipped.`));
-    return report;
-  }
-  const staged = [...catalog.written, ...orphans.healed, ".memarium/index.book.json"];
-  const r2 = await commitAndPush(
-    git,
-    "memarium: regen catalog",
-    staged,
-    cfg.deviceBranch,
-    (stage) => console.log(source_default.gray(`  ${stage}`))
-  );
-  report.committed = r2.committed;
-  report.pushed = r2.pushed;
-  return report;
-}
-var init_catalog_regen = __esm({
-  "src/commands/catalog-regen.ts"() {
-    "use strict";
-    init_source();
-    init_plugin_config();
-    init_book_index_v2();
-    init_book_catalog();
-    init_reconcile_orphans();
-    init_git_ops();
-  }
-});
-
 // src/spool/plugin-state.ts
-import { existsSync as existsSync28, mkdirSync as mkdirSync16, readFileSync as readFileSync26, writeFileSync as writeFileSync15 } from "node:fs";
+import { existsSync as existsSync25, mkdirSync as mkdirSync13, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
 import { homedir as homedir7 } from "node:os";
-import { dirname as dirname9, join as join28 } from "node:path";
+import { dirname as dirname7, join as join24 } from "node:path";
 function statePath() {
-  return join28(homedir7(), ".memarium", ".plugin-state.json");
+  return join24(homedir7(), ".memarium", ".plugin-state.json");
 }
 function loadState() {
   const p2 = statePath();
-  if (!existsSync28(p2)) return {};
+  if (!existsSync25(p2)) return {};
   try {
-    return JSON.parse(readFileSync26(p2, "utf8"));
+    return JSON.parse(readFileSync23(p2, "utf8"));
   } catch {
     return {};
   }
 }
 function saveState(state) {
   const p2 = statePath();
-  mkdirSync16(dirname9(p2), { recursive: true });
-  writeFileSync15(p2, JSON.stringify(state, null, 2) + "\n");
+  mkdirSync13(dirname7(p2), { recursive: true });
+  writeFileSync12(p2, JSON.stringify(state, null, 2) + "\n");
 }
 var init_plugin_state = __esm({
   "src/spool/plugin-state.ts"() {
@@ -17726,17 +16821,15 @@ var init_first_run = __esm({
 });
 
 // src/spool/ensure-dir.ts
-import { mkdirSync as mkdirSync17, existsSync as existsSync29 } from "node:fs";
+import { mkdirSync as mkdirSync14, existsSync as existsSync26 } from "node:fs";
 import { homedir as homedir8 } from "node:os";
-import { join as join29 } from "node:path";
+import { join as join25 } from "node:path";
 function ensureSpoolDir() {
-  const spoolRoot = join29(homedir8(), SPOOL_REL_PATH);
-  const created = !existsSync29(spoolRoot);
-  const rawSessionsDir = join29(spoolRoot, "raw_sessions");
-  const bookDir = join29(spoolRoot, "book");
-  mkdirSync17(rawSessionsDir, { recursive: true });
-  mkdirSync17(bookDir, { recursive: true });
-  return { spoolRoot, rawSessionsDir, bookDir, created };
+  const spoolRoot = join25(homedir8(), SPOOL_REL_PATH);
+  const created = !existsSync26(spoolRoot);
+  const rawSessionsDir = join25(spoolRoot, "raw_sessions");
+  mkdirSync14(rawSessionsDir, { recursive: true });
+  return { spoolRoot, rawSessionsDir, created };
 }
 var SPOOL_REL_PATH;
 var init_ensure_dir = __esm({
@@ -17747,17 +16840,17 @@ var init_ensure_dir = __esm({
 });
 
 // src/_shared/content-project-inference.ts
-import { readdirSync as readdirSync8 } from "node:fs";
+import { readdirSync as readdirSync7 } from "node:fs";
 import { homedir as homedir9 } from "node:os";
-import { join as join30 } from "node:path";
+import { join as join26 } from "node:path";
 function decodeProjectDirName(name) {
   if (!name.startsWith("-")) return name;
   return "/" + name.slice(1).replace(/-/g, "/");
 }
-function listKnownProjectRoots(projectsDir = join30(homedir9(), ".claude", "projects")) {
+function listKnownProjectRoots(projectsDir = join26(homedir9(), ".claude", "projects")) {
   let entries;
   try {
-    entries = readdirSync8(projectsDir);
+    entries = readdirSync7(projectsDir);
   } catch {
     return [];
   }
@@ -17854,9 +16947,9 @@ var init_content_project_inference = __esm({
 
 // src/_shared/sources/claude-code.ts
 import { createHash as createHash4 } from "node:crypto";
-import { readdirSync as readdirSync9, readFileSync as readFileSync27, statSync as statSync2, existsSync as existsSync30 } from "node:fs";
+import { readdirSync as readdirSync8, readFileSync as readFileSync24, statSync, existsSync as existsSync27 } from "node:fs";
 import { homedir as homedir10 } from "node:os";
-import { join as join31, basename } from "node:path";
+import { join as join27, basename } from "node:path";
 function getRoots() {
   if (cachedRoots === null) cachedRoots = listKnownProjectRoots();
   return cachedRoots;
@@ -18003,30 +17096,30 @@ var init_claude_code = __esm({
     init_content_project_inference();
     cachedRoots = null;
     ClaudeCodeAdapter = class {
-      constructor(root = join31(homedir10(), ".claude", "projects")) {
+      constructor(root = join27(homedir10(), ".claude", "projects")) {
         this.root = root;
       }
       name = "claude";
       async *discover() {
-        if (!existsSync30(this.root)) return;
+        if (!existsSync27(this.root)) return;
         const stack = [this.root];
         while (stack.length) {
           const dir = stack.pop();
           let entries;
           try {
-            entries = readdirSync9(dir, { withFileTypes: true });
+            entries = readdirSync8(dir, { withFileTypes: true });
           } catch {
             continue;
           }
           for (const e of entries) {
-            const p2 = join31(dir, e.name);
+            const p2 = join27(dir, e.name);
             if (e.isDirectory()) {
               if (dir === this.root && isMemariumOrTmpProjectDir(e.name)) continue;
               if (e.name === "subagents") continue;
               stack.push(p2);
             } else if (e.isFile() && e.name.endsWith(".jsonl")) {
-              const st = statSync2(p2);
-              const buf = readFileSync27(p2);
+              const st = statSync(p2);
+              const buf = readFileSync24(p2);
               const sha = createHash4("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -18044,20 +17137,20 @@ var init_claude_code = __esm({
 
 // src/_shared/sources/vscode-copilot.ts
 import { createHash as createHash5 } from "node:crypto";
-import { readdirSync as readdirSync10, readFileSync as readFileSync28, statSync as statSync3, existsSync as existsSync31 } from "node:fs";
+import { readdirSync as readdirSync9, readFileSync as readFileSync25, statSync as statSync2, existsSync as existsSync28 } from "node:fs";
 import { homedir as homedir11 } from "node:os";
-import { join as join32, basename as basename2 } from "node:path";
+import { join as join28, basename as basename2 } from "node:path";
 function defaultStorageRoot() {
   if (process.platform === "darwin")
-    return join32(homedir11(), "Library", "Application Support", "Code", "User", "workspaceStorage");
+    return join28(homedir11(), "Library", "Application Support", "Code", "User", "workspaceStorage");
   if (process.platform === "win32")
-    return join32(homedir11(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
-  return join32(homedir11(), ".config", "Code", "User", "workspaceStorage");
+    return join28(homedir11(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
+  return join28(homedir11(), ".config", "Code", "User", "workspaceStorage");
 }
 function readWorkspacePath(workspaceJsonPath) {
-  if (!existsSync31(workspaceJsonPath)) return "";
+  if (!existsSync28(workspaceJsonPath)) return "";
   try {
-    const obj = JSON.parse(readFileSync28(workspaceJsonPath, "utf8"));
+    const obj = JSON.parse(readFileSync25(workspaceJsonPath, "utf8"));
     const u = obj.folder ?? obj.workspace ?? "";
     if (!u) return "";
     return u.startsWith("file://") ? decodeURIComponent(u.slice("file://".length)) : u;
@@ -18278,23 +17371,23 @@ var init_vscode_copilot = __esm({
       }
       name = "copilot";
       async *discover() {
-        if (!existsSync31(this.root)) return;
+        if (!existsSync28(this.root)) return;
         let workspaces;
         try {
-          workspaces = readdirSync10(this.root, { withFileTypes: true });
+          workspaces = readdirSync9(this.root, { withFileTypes: true });
         } catch {
           return;
         }
         for (const w of workspaces) {
           if (!w.isDirectory()) continue;
-          const wsDir = join32(this.root, w.name);
-          const wsPath = readWorkspacePath(join32(wsDir, "workspace.json"));
-          const chatDir = join32(wsDir, "chatSessions");
+          const wsDir = join28(this.root, w.name);
+          const wsPath = readWorkspacePath(join28(wsDir, "workspace.json"));
+          const chatDir = join28(wsDir, "chatSessions");
           const chatSessionIds = /* @__PURE__ */ new Set();
-          if (existsSync31(chatDir)) {
+          if (existsSync28(chatDir)) {
             let files = [];
             try {
-              files = readdirSync10(chatDir, { withFileTypes: true });
+              files = readdirSync9(chatDir, { withFileTypes: true });
             } catch {
               files = [];
             }
@@ -18303,11 +17396,11 @@ var init_vscode_copilot = __esm({
               const isJson = f.name.endsWith(".json");
               const isJsonl = f.name.endsWith(".jsonl");
               if (!isJson && !isJsonl) continue;
-              const p2 = join32(chatDir, f.name);
-              const st = statSync3(p2);
+              const p2 = join28(chatDir, f.name);
+              const st = statSync2(p2);
               if (st.size === 0) continue;
               chatSessionIds.add(basename2(f.name, isJsonl ? ".jsonl" : ".json"));
-              const buf = readFileSync28(p2);
+              const buf = readFileSync25(p2);
               const sha = createHash5("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -18317,11 +17410,11 @@ var init_vscode_copilot = __esm({
               };
             }
           }
-          const transcriptsDir = join32(wsDir, "GitHub.copilot-chat", "transcripts");
-          if (existsSync31(transcriptsDir)) {
+          const transcriptsDir = join28(wsDir, "GitHub.copilot-chat", "transcripts");
+          if (existsSync28(transcriptsDir)) {
             let tfiles = [];
             try {
-              tfiles = readdirSync10(transcriptsDir, { withFileTypes: true });
+              tfiles = readdirSync9(transcriptsDir, { withFileTypes: true });
             } catch {
               tfiles = [];
             }
@@ -18329,10 +17422,10 @@ var init_vscode_copilot = __esm({
               if (!f.isFile() || !f.name.endsWith(".jsonl")) continue;
               const id = basename2(f.name, ".jsonl");
               if (chatSessionIds.has(id)) continue;
-              const p2 = join32(transcriptsDir, f.name);
-              const st = statSync3(p2);
+              const p2 = join28(transcriptsDir, f.name);
+              const st = statSync2(p2);
               if (st.size === 0) continue;
-              const buf = readFileSync28(p2);
+              const buf = readFileSync25(p2);
               const sha = createHash5("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -18545,19 +17638,19 @@ var init_toc = __esm({
 });
 
 // src/spool/writer.ts
-import { mkdirSync as mkdirSync18, writeFileSync as writeFileSync16 } from "node:fs";
-import { join as join33 } from "node:path";
+import { mkdirSync as mkdirSync15, writeFileSync as writeFileSync13 } from "node:fs";
+import { join as join29 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
-  const dirRel = join33("raw_sessions", s.tool, s.project, date);
-  const absDir = join33(repoRoot, dirRel);
-  mkdirSync18(absDir, { recursive: true });
+  const dirRel = join29("raw_sessions", s.tool, s.project, date);
+  const absDir = join29(repoRoot, dirRel);
+  mkdirSync15(absDir, { recursive: true });
   const base = `${s.nameSlug}__${s.shortId}`;
-  const mdRel = join33(dirRel, `${base}.md`);
+  const mdRel = join29(dirRel, `${base}.md`);
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults = opts.fullToolResults ?? process.env.MEMARIUM_FULL_TOOL_RESULTS === "1";
-  writeFileSync16(
-    join33(repoRoot, mdRel),
+  writeFileSync13(
+    join29(repoRoot, mdRel),
     renderMarkdown(s, { includeReasoning, fullToolResults })
   );
   return { md: mdRel };
@@ -18881,14 +17974,14 @@ var {
 } = import_index.default;
 
 // src/plugin-cli.ts
-import { readFileSync as readFileSync29 } from "node:fs";
+import { readFileSync as readFileSync26 } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname as dirname10, resolve as resolve8 } from "node:path";
+import { dirname as dirname8, resolve as resolve8 } from "node:path";
 function readPackageVersion() {
-  const here = dirname10(fileURLToPath(import.meta.url));
+  const here = dirname8(fileURLToPath(import.meta.url));
   for (const rel of ["../package.json", "../../package.json", "../../../package.json"]) {
     try {
-      return JSON.parse(readFileSync29(resolve8(here, rel), "utf8")).version;
+      return JSON.parse(readFileSync26(resolve8(here, rel), "utf8")).version;
     } catch {
     }
   }
@@ -18909,16 +18002,7 @@ async function run(argv) {
     const { prepareCmd: prepareCmd2 } = await Promise.resolve().then(() => (init_prepare(), prepare_exports));
     await prepareCmd2({ cwd: opts.cwd, project: opts.project });
   });
-  program2.command("publish").description("Write chronicle/topic md files emitted by the /memarium skill into the book.").option("--chronicles <path>", "path to chronicles JSON").option("--topics <path>", "path to topics JSON").option("--no-catalog", "skip book/index.md regen (caller will batch)").action(async (opts) => {
-    const { publishCmd: publishCmd2 } = await Promise.resolve().then(() => (init_publish(), publish_exports));
-    const report = await publishCmd2({
-      chroniclesPath: opts.chronicles,
-      topicsPath: opts.topics,
-      noCatalog: opts.catalog === false
-    });
-    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
-  });
-  program2.command("finalize").description("Ensure the session-repo is a git repo, commit all plugin-written paths (raw_sessions/book/memory/index), and push if a remote is configured. Never stages foreign files.").option("--no-push", "commit locally only; never push even if a remote is configured").action(async (o2) => {
+  program2.command("finalize").description("Ensure the session-repo is a git repo, commit all plugin-written paths (raw_sessions/memory/index), and push if a remote is configured. Never stages foreign files.").option("--no-push", "commit locally only; never push even if a remote is configured").action(async (o2) => {
     const { finalizeCmd: finalizeCmd2 } = await Promise.resolve().then(() => (init_finalize(), finalize_exports));
     const r2 = await finalizeCmd2({ noPush: o2.push === false });
     process.stdout.write(JSON.stringify(r2, null, 2) + "\n");
@@ -19004,11 +18088,6 @@ async function run(argv) {
   program2.command("recall").description("Ranked recall over typed memory. Stage 1 = this command (scored episodes + facts + procedures for --q); stage 2 = Read the top entry paths.").option("--cwd <path>", "infer project from this cwd").option("--project <slug>", "force a specific project slug").option("--q <text>", "task keywords to score against (title/summary/entities + file/commit overlap)").option("--all", "recall across every project (no cwd/project filter)").option("--limit <n>", "max hits to return (default 25)", (v) => parseInt(v, 10)).action(async (opts) => {
     const { recallCmd: recallCmd2 } = await Promise.resolve().then(() => (init_recall(), recall_exports));
     await recallCmd2({ cwd: opts.cwd, project: opts.project, q: opts.q, all: opts.all, limit: opts.limit });
-  });
-  program2.command("catalog-regen").description("Rebuild book/index.md after a global sweep.").option("--no-commit", "skip git commit + push of the regenerated catalog").action(async (opts) => {
-    const { catalogRegenCmd: catalogRegenCmd2 } = await Promise.resolve().then(() => (init_catalog_regen(), catalog_regen_exports));
-    const report = await catalogRegenCmd2({ noCommit: opts.commit === false });
-    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
   });
   program2.command("first-run").description("Show one-time onboarding tip if not shown before. Used by skill at start.").action(async () => {
     const { firstRunCmd: firstRunCmd2 } = await Promise.resolve().then(() => (init_first_run(), first_run_exports));

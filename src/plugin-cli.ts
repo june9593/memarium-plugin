@@ -54,27 +54,8 @@ export async function run(argv: string[]) {
       await prepareCmd({ cwd: opts.cwd, project: opts.project });
     });
 
-  program
-    .command("publish")
-    .description("Write chronicle/topic md files emitted by the /memarium skill into the book.")
-    .option("--chronicles <path>", "path to chronicles JSON")
-    .option("--topics <path>", "path to topics JSON")
-    .option("--no-catalog", "skip book/index.md regen (caller will batch)")
-    .action(async (opts: { chronicles?: string; topics?: string; catalog?: boolean }) => {
-      const { publishCmd } = await import("./commands/publish.js");
-      const report = await publishCmd({
-        chroniclesPath: opts.chronicles,
-        topicsPath: opts.topics,
-        noCatalog: opts.catalog === false,
-      });
-      // Print a JSON summary so the calling skill (or CI) can confirm what
-      // landed without resorting to "rerun and check for already-exists
-      // errors". Always written to stdout, even on zero-insert runs.
-      process.stdout.write(JSON.stringify(report, null, 2) + "\n");
-    });
-
   program.command("finalize")
-    .description("Ensure the session-repo is a git repo, commit all plugin-written paths (raw_sessions/book/memory/index), and push if a remote is configured. Never stages foreign files.")
+    .description("Ensure the session-repo is a git repo, commit all plugin-written paths (raw_sessions/memory/index), and push if a remote is configured. Never stages foreign files.")
     .option("--no-push", "commit locally only; never push even if a remote is configured")
     .action(async (o: { push?: boolean }) => {
       const { finalizeCmd } = await import("./commands/finalize.js");
@@ -251,18 +232,6 @@ export async function run(argv: string[]) {
     .action(async (opts: { cwd?: string; project?: string; q?: string; all?: boolean; limit?: number }) => {
       const { recallCmd } = await import("./commands/recall.js");
       await recallCmd({ cwd: opts.cwd, project: opts.project, q: opts.q, all: opts.all, limit: opts.limit });
-    });
-
-  program
-    .command("catalog-regen")
-    .description("Rebuild book/index.md after a global sweep.")
-    .option("--no-commit", "skip git commit + push of the regenerated catalog")
-    .action(async (opts: { commit?: boolean }) => {
-      const { catalogRegenCmd } = await import("./commands/catalog-regen.js");
-      const report = await catalogRegenCmd({ noCommit: opts.commit === false });
-      // Print JSON summary so callers don't have to parse stderr noise from
-      // git's progress output to figure out what happened.
-      process.stdout.write(JSON.stringify(report, null, 2) + "\n");
     });
 
   program
