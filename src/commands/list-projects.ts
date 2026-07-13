@@ -75,11 +75,14 @@ export function buildListProjectsPayload(cwd: string = process.cwd()): ListProje
     if (consumed.has(e.sessionId)) s.consumedSessions++;
   }
   for (const e of Object.values(memIndex.entries)) {
-    if (!e.project || !isRealProjectPath(e.project)) continue;
-    const s = ensure(e.project);
+    // Defensive: a parseable-but-malformed index must not break mode detection.
+    if (!e || typeof e !== "object") continue;
+    const m = e as { project?: unknown; type?: unknown; updatedAt?: unknown };
+    if (typeof m.project !== "string" || !isRealProjectPath(m.project)) continue;
+    const s = ensure(m.project);
     s.memories++;
-    if (e.type === "episodic") s.episodes++;
-    s.lastTouchedAt = laterOf(s.lastTouchedAt, e.updatedAt);
+    if (m.type === "episodic") s.episodes++;
+    if (typeof m.updatedAt === "string") s.lastTouchedAt = laterOf(s.lastTouchedAt, m.updatedAt);
   }
 
   for (const s of stats.values()) {

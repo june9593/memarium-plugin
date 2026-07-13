@@ -21,9 +21,11 @@ import { loadSkips } from "../spool/skip-store.js";
 export function consumedSessions(repoPath: string): Set<string> {
   const consumed = new Set<string>();
   for (const e of Object.values(loadMemoryIndex(repoPath).entries)) {
-    if (e.type === "episodic") {
-      for (const sid of e.sourceSessions ?? []) consumed.add(sid);
-    }
+    // Defensive: a parseable-but-malformed index must never break the digest.
+    if (!e || typeof e !== "object") continue;
+    if ((e as { type?: unknown }).type !== "episodic") continue;
+    const ss = (e as { sourceSessions?: unknown }).sourceSessions;
+    if (Array.isArray(ss)) for (const sid of ss) if (typeof sid === "string") consumed.add(sid);
   }
   for (const sid of Object.keys(loadSkips(repoPath).sessions)) consumed.add(sid);
   return consumed;

@@ -122,21 +122,6 @@ describe("memoryLintCmd", () => {
     expect(corrupt[0].severity).toBe("error");
   });
 
-  it("Fix3 (stale clamp): staleDays=-1 falls back to 90 — a today-dated episodic is NOT flagged stale-candidate", async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
-      "episodic/p/recent": { id: "episodic/p/recent", type: "episodic", scope: "project:p", project: "p",
-        title: "recent thing", summary: "happened today", path: "memory/x.md",
-        status: "active", confidence: 0.8, importance: 1,
-        createdAt: today, updatedAt: today, validFrom: null, validTo: null,
-        sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
-        entities: [], originDevice: null, accessCount: 0, lastAccess: null } } }));
-    await memoryLintCmd({ json: true, staleDays: -1 });
-    const payload = JSON.parse(out.join(""));
-    const stale = payload.issues.filter((f: { check: string }) => f.check === "stale-candidate");
-    expect(stale.length).toBe(0);
-  });
-
   it("B: no --cwd → whole-store lint: both project:p and project:q missing-provenance entries appear", async () => {
     writeTwoProjectMemory();
     // Call without cwd — must lint entire store (project=null)

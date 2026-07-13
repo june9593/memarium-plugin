@@ -158,7 +158,12 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
   // existing episodic memory ids grouped by project (dedup hint for the skill)
   const existingEpisodes: Record<string, string[]> = {};
   for (const e of Object.values(loadMemoryIndex(cfg.repoPath).entries)) {
-    if (e.type === "episodic" && e.project) (existingEpisodes[e.project] ??= []).push(e.id);
+    // Defensive: a parseable-but-malformed index must not break the digest.
+    if (!e || typeof e !== "object") continue;
+    const ep = e as { type?: unknown; project?: unknown; id?: unknown };
+    if (ep.type === "episodic" && typeof ep.project === "string" && typeof ep.id === "string") {
+      (existingEpisodes[ep.project] ??= []).push(ep.id);
+    }
   }
   for (const list of Object.values(existingEpisodes)) list.sort();
 

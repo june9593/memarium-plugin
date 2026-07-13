@@ -58,4 +58,17 @@ describe("buildListProjectsPayload — memory-based counts + consumed tracking",
     expect((s as unknown as Record<string, unknown>).chronicles).toBeUndefined();
     expect((s as unknown as Record<string, unknown>).topics).toBeUndefined();
   });
+
+  it("survives a parseable-but-malformed memory index (non-object / missing-field entries)", async () => {
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
+      bad1: 42, bad2: null, bad3: { type: "episodic" /* no project */ },
+      good: memEntry({ id: "episodic/edge-memvc/ok", type: "episodic",
+        path: "memory/episodic/edge-memvc/ok.md", sourceSessions: ["s1"] }),
+    } }));
+    const { buildListProjectsPayload } = await import("../../src/commands/list-projects.js");
+    expect(() => buildListProjectsPayload(repo)).not.toThrow();
+    const s = buildListProjectsPayload(repo).projects.find((x) => x.project === "edge-memvc")!;
+    expect(s.episodes).toBe(1); // only the well-formed entry counted
+    expect(s.consumedSessions).toBe(2); // s1 (good episodic) + s2 (skip ledger)
+  });
 });

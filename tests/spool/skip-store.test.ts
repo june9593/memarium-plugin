@@ -21,9 +21,11 @@ describe("skip-store", () => {
     expect(Object.keys(reloaded.sessions).sort()).toEqual(["s1", "s2"]);
     expect(reloaded.sessions.s1).toEqual({ reason: "meta", at: "2026-07-13" });
     expect(reloaded.sessions.s2.reason).toBe("skipped");
-    // re-upsert s1 with a later date → NOT newly added, original `at` kept
+    // re-upsert s1 with a later date + NO reason → NOT newly added; original `at`
+    // AND original reason preserved (a later upsert must not clobber the reason)
     expect(upsertSkips(reloaded, [{ sessionId: "s1" }], "2026-08-01")).toBe(0);
     expect(reloaded.sessions.s1.at).toBe("2026-07-13");
+    expect(reloaded.sessions.s1.reason).toBe("meta");
   });
 
   it("ignores blank/whitespace sessionIds", () => {

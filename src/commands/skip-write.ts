@@ -16,7 +16,8 @@ export async function skipWriteCmd(opts: SkipWriteOptions): Promise<SkipWriteRep
   let sessions: Array<{ sessionId: string; reason?: string }> = [];
   if (opts.inputPath) {
     const raw = JSON.parse(readFileSync(opts.inputPath, "utf8"));
-    sessions = Array.isArray(raw) ? raw : (raw?.sessions ?? []);
+    const arr = Array.isArray(raw) ? raw : (Array.isArray(raw?.sessions) ? raw.sessions : []);
+    sessions = arr;
   }
   const at = new Date().toISOString().slice(0, 10);
   const added = upsertSkips(idx, sessions, at);

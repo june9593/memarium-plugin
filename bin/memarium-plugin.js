@@ -7359,7 +7359,9 @@ function upsertSkips(idx, sessions, at) {
     const id = (s?.sessionId ?? "").trim();
     if (!id) continue;
     if (!idx.sessions[id]) added++;
-    idx.sessions[id] = { reason: (s.reason ?? "skipped").slice(0, 200), at: idx.sessions[id]?.at ?? at };
+    const prev = idx.sessions[id];
+    const reason = s.reason && s.reason.trim() ? s.reason.slice(0, 200) : prev?.reason ?? "skipped";
+    idx.sessions[id] = { reason, at: prev?.at ?? at };
   }
   return added;
 }
@@ -7376,8 +7378,11 @@ var init_skip_store = __esm({
 function consumedSessions(repoPath) {
   const consumed = /* @__PURE__ */ new Set();
   for (const e of Object.values(loadMemoryIndex(repoPath).entries)) {
-    if (e.type === "episodic") {
-      for (const sid of e.sourceSessions ?? []) consumed.add(sid);
+    if (!e || typeof e !== "object") continue;
+    if (e.type !== "episodic") continue;
+    const ss = e.sourceSessions;
+    if (Array.isArray(ss)) {
+      for (const sid of ss) if (typeof sid === "string") consumed.add(sid);
     }
   }
   for (const sid of Object.keys(loadSkips(repoPath).sessions)) consumed.add(sid);
@@ -7443,11 +7448,13 @@ function buildListProjectsPayload(cwd = process.cwd()) {
     if (consumed.has(e.sessionId)) s.consumedSessions++;
   }
   for (const e of Object.values(memIndex.entries)) {
-    if (!e.project || !isRealProjectPath(e.project)) continue;
-    const s = ensure(e.project);
+    if (!e || typeof e !== "object") continue;
+    const m = e;
+    if (typeof m.project !== "string" || !isRealProjectPath(m.project)) continue;
+    const s = ensure(m.project);
     s.memories++;
-    if (e.type === "episodic") s.episodes++;
-    s.lastTouchedAt = laterOf(s.lastTouchedAt, e.updatedAt);
+    if (m.type === "episodic") s.episodes++;
+    if (typeof m.updatedAt === "string") s.lastTouchedAt = laterOf(s.lastTouchedAt, m.updatedAt);
   }
   for (const s of stats.values()) {
     s.pendingSessions = s.totalSessions - s.consumedSessions;
@@ -13583,7 +13590,11 @@ function buildPreparePayload(opts = {}) {
   meta.newSessionsCount = newSessions.length;
   const existingEpisodes = {};
   for (const e of Object.values(loadMemoryIndex(cfg.repoPath).entries)) {
-    if (e.type === "episodic" && e.project) (existingEpisodes[e.project] ??= []).push(e.id);
+    if (!e || typeof e !== "object") continue;
+    const ep = e;
+    if (ep.type === "episodic" && typeof ep.project === "string" && typeof ep.id === "string") {
+      (existingEpisodes[ep.project] ??= []).push(ep.id);
+    }
   }
   for (const list of Object.values(existingEpisodes)) list.sort();
   return {
@@ -15542,7 +15553,8 @@ async function skipWriteCmd(opts) {
   let sessions = [];
   if (opts.inputPath) {
     const raw = JSON.parse(readFileSync15(opts.inputPath, "utf8"));
-    sessions = Array.isArray(raw) ? raw : raw?.sessions ?? [];
+    const arr4 = Array.isArray(raw) ? raw : Array.isArray(raw?.sessions) ? raw.sessions : [];
+    sessions = arr4;
   }
   const at = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const added = upsertSkips(idx, sessions, at);
