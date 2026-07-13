@@ -74,11 +74,14 @@ export function buildListProjectsPayload(cwd: string = process.cwd()): ListProje
     s.totalSessions++;
     if (consumed.has(e.sessionId)) s.consumedSessions++;
   }
+  const MEMORY_TYPES = new Set(["core", "semantic", "episodic", "procedural"]);
   for (const e of Object.values(memIndex.entries)) {
-    // Defensive: a parseable-but-malformed index must not break mode detection.
+    // Defensive: a parseable-but-malformed index must not break mode detection,
+    // and a malformed entry (invalid `type`) must NOT inflate the counts.
     if (!e || typeof e !== "object") continue;
     const m = e as { project?: unknown; type?: unknown; updatedAt?: unknown };
     if (typeof m.project !== "string" || !isRealProjectPath(m.project)) continue;
+    if (typeof m.type !== "string" || !MEMORY_TYPES.has(m.type)) continue;
     const s = ensure(m.project);
     s.memories++;
     if (m.type === "episodic") s.episodes++;

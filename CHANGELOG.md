@@ -28,7 +28,7 @@ recall/primer.
   warning); deleted `chronicle-format.md` / `topic-format.md`; updated `/memarium`,
   `/memarium-retro`, `/memarium-context` docs.
 
-+9 tests (skip-store, prepare/list-projects consumed-tracking, skip-write); 468 total.
++15 tests (skip-store, prepare/list-projects consumed-tracking, skip-write, apply provenance-union); 474 total.
 Non-destructive: the digest still leaves old `book/` on disk (removed in Phase C2);
 a one-time wipe + re-digest (separate, user-run) rebuilds history under the new model.
 

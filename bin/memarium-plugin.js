@@ -7447,10 +7447,12 @@ function buildListProjectsPayload(cwd = process.cwd()) {
     s.totalSessions++;
     if (consumed.has(e.sessionId)) s.consumedSessions++;
   }
+  const MEMORY_TYPES2 = /* @__PURE__ */ new Set(["core", "semantic", "episodic", "procedural"]);
   for (const e of Object.values(memIndex.entries)) {
     if (!e || typeof e !== "object") continue;
     const m = e;
     if (typeof m.project !== "string" || !isRealProjectPath(m.project)) continue;
+    if (typeof m.type !== "string" || !MEMORY_TYPES2.has(m.type)) continue;
     const s = ensure(m.project);
     s.memories++;
     if (m.type === "episodic") s.episodes++;
@@ -13594,7 +13596,7 @@ function buildPreparePayload(opts = {}) {
   for (const e of Object.values(loadMemoryIndex(cfg.repoPath).entries)) {
     if (!e || typeof e !== "object") continue;
     const ep = e;
-    if (ep.type === "episodic" && ep.status !== "superseded" && typeof ep.project === "string" && typeof ep.id === "string") {
+    if (ep.type === "episodic" && ep.status === "active" && typeof ep.project === "string" && typeof ep.id === "string") {
       (existingEpisodes[ep.project] ??= []).push(ep.id);
     }
   }
@@ -15168,8 +15170,7 @@ var init_finalize = __esm({
       ".memarium/index.json",
       ".memarium/index.memory.json",
       ".memarium/index.entity.json",
-      ".memarium/index.qa.json",
-      ".memarium/index.skips.json"
+      ".memarium/index.qa.json"
     ];
   }
 });

@@ -76,7 +76,15 @@ describe("buildPreparePayload — consumed = episodic sourceSessions ∪ skip le
     expect(p.meta.sessionsAlreadyDigested).toBe(2);
   });
 
-  it("exposes existing episodic ids per project (dedup hint), not topics/cards", async () => {
+  it("exposes only ACTIVE episodic ids as reuse hints (excludes superseded + pinned)", async () => {
+    // active e1 stays; a superseded and a pinned episodic must NOT be reuse
+    // candidates (superseded → don't resurrect; pinned → gated, would fail the
+    // non-gated memory-write batch on reuse).
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "episodic/edge-memvc/e1": memEntry({ id: "episodic/edge-memvc/e1", type: "episodic", path: "memory/episodic/edge-memvc/e1.md" }),
+      "episodic/edge-memvc/old": memEntry({ id: "episodic/edge-memvc/old", type: "episodic", status: "superseded", path: "memory/episodic/edge-memvc/old.md" }),
+      "episodic/edge-memvc/pin": memEntry({ id: "episodic/edge-memvc/pin", type: "episodic", status: "pinned", path: "memory/episodic/edge-memvc/pin.md" }),
+    } }));
     const { buildPreparePayload } = await import("../../src/commands/prepare.js");
     const p = buildPreparePayload({ project: "edge-memvc" }) as unknown as Record<string, unknown>;
     expect(p.existingEpisodes).toEqual({ "edge-memvc": ["episodic/edge-memvc/e1"] });

@@ -168,9 +168,10 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
     // Defensive: a parseable-but-malformed index must not break the digest.
     if (!e || typeof e !== "object") continue;
     const ep = e as { type?: unknown; project?: unknown; id?: unknown; status?: unknown };
-    // Only surface ACTIVE episodics as reuse candidates — a superseded (retired)
-    // one must not be resurrected via an upsert back to status:active.
-    if (ep.type === "episodic" && ep.status !== "superseded" &&
+    // Only surface ACTIVE episodics as reuse candidates. A superseded one must not
+    // be resurrected; a PINNED one is gated, so reusing its id in the non-gated
+    // memory-write batch would make isGatedChange reject the whole batch.
+    if (ep.type === "episodic" && ep.status === "active" &&
         typeof ep.project === "string" && typeof ep.id === "string") {
       (existingEpisodes[ep.project] ??= []).push(ep.id);
     }

@@ -120,7 +120,7 @@ memarium resume <sessionId>         # copies jsonl into ~/.claude/projects/ + pr
 
 - `~/.memarium/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` — rendered session (single `.md`: YAML frontmatter w/ `manifest_version: 1` + `tools_used` / `commits` / `files_touched`, a Table-of-Contents block, then the body).
 - `~/.memarium/session-repo/memory/<type>/<project>/*.md` — the typed Memory OS (episodic / semantic / procedural / core + entities + Q&A).
-- `~/.memarium/session-repo/.memarium/index.{json,memory,entity,qa,skips}.json` — indexes (`skips` = the local digest-skip ledger; there is no `index.book` — the book layer is gone).
+- `~/.memarium/session-repo/.memarium/index.{json,memory,entity,qa}.json` — the synced indexes. `index.skips.json` is a **local-only** digest-skip ledger (never committed/synced). The digest no longer reads or writes `index.book` (a legacy one may linger from a pre-0.18 install until Phase C2 removes it).
 - `~/.memarium/local-proposals/<repoHash>/*.json` — **local-only** memory-PR queue (never synced).
 
 The plugin **does not** create or modify `.git/` or the npm CLI's config files — those are owned by the optional CLI.
@@ -221,8 +221,7 @@ memarium resume <sessionId>
 
 - `~/.memarium/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` —— 渲染过的会话(单 `.md`:YAML frontmatter + 目录块 + 正文)。
 - `~/.memarium/session-repo/memory/<type>/<project>/*.md` —— 有类型的 Memory OS(episodic / semantic / procedural / core + 实体 + Q&A)。
-- `~/.memarium/session-repo/memory/{<type>,entities,qa,_primer}/...` —— Memory OS 存储。
-- `~/.memarium/session-repo/.memarium/index.{json,book,memory,entity,qa}.json` —— 索引。
+- `~/.memarium/session-repo/.memarium/index.{json,memory,entity,qa}.json` —— 同步的索引。`index.skips.json` 是**仅本地**的 digest-skip 账本(从不 commit/同步)。digest 不再读写 `index.book`(pre-0.18 安装可能残留一个,直到 Phase C2 删除)。
 - `~/.memarium/local-proposals/<repoHash>/*.json` —— **仅本地**的 memory-PR 队列(从不同步)。
 
 插件**不会**创建或修改 `.git/` 或 npm CLI 的配置文件 —— 那些归可选 CLI 管。
