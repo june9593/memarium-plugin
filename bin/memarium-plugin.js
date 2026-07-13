@@ -13594,7 +13594,7 @@ function buildPreparePayload(opts = {}) {
   for (const e of Object.values(loadMemoryIndex(cfg.repoPath).entries)) {
     if (!e || typeof e !== "object") continue;
     const ep = e;
-    if (ep.type === "episodic" && typeof ep.project === "string" && typeof ep.id === "string") {
+    if (ep.type === "episodic" && ep.status !== "superseded" && typeof ep.project === "string" && typeof ep.id === "string") {
       (existingEpisodes[ep.project] ??= []).push(ep.id);
     }
   }
@@ -18895,7 +18895,7 @@ async function run(argv) {
     const { listProjectsCmd: listProjectsCmd2 } = await Promise.resolve().then(() => (init_list_projects(), list_projects_exports));
     await listProjectsCmd2();
   });
-  program2.command("status").description("Digest coverage: synced sessions vs digested vs pending, plus book + memory layer counts.").action(async () => {
+  program2.command("status").description("Digest coverage: synced sessions vs digested vs pending, plus episode + memory (typed / entities / Q&A) layer counts.").action(async () => {
     const { statusCmd: statusCmd2 } = await Promise.resolve().then(() => (init_status(), status_exports));
     await statusCmd2();
   });

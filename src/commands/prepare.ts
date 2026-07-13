@@ -167,8 +167,11 @@ export function buildPreparePayload(opts: PrepareOptions = {}): PreparePayload {
   for (const e of Object.values(loadMemoryIndex(cfg.repoPath).entries)) {
     // Defensive: a parseable-but-malformed index must not break the digest.
     if (!e || typeof e !== "object") continue;
-    const ep = e as { type?: unknown; project?: unknown; id?: unknown };
-    if (ep.type === "episodic" && typeof ep.project === "string" && typeof ep.id === "string") {
+    const ep = e as { type?: unknown; project?: unknown; id?: unknown; status?: unknown };
+    // Only surface ACTIVE episodics as reuse candidates — a superseded (retired)
+    // one must not be resurrected via an upsert back to status:active.
+    if (ep.type === "episodic" && ep.status !== "superseded" &&
+        typeof ep.project === "string" && typeof ep.id === "string") {
       (existingEpisodes[ep.project] ??= []).push(ep.id);
     }
   }

@@ -38,7 +38,7 @@ export async function run(argv: string[]) {
 
   program
     .command("status")
-    .description("Digest coverage: synced sessions vs digested vs pending, plus book + memory layer counts.")
+    .description("Digest coverage: synced sessions vs digested vs pending, plus episode + memory (typed / entities / Q&A) layer counts.")
     .action(async () => {
       const { statusCmd } = await import("./commands/status.js");
       await statusCmd();

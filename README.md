@@ -22,8 +22,7 @@ flowchart LR
   end
   A & B -->|extract| SP[raw_sessions/*.md<br/>spool]
   SP -->|/memarium digest<br/>in-session agent| D{Distill}
-  D --> CH[chronicles + topics]
-  D --> M[typed memory<br/>4 types]
+  D --> M[typed memory<br/>4 types incl. episodic]
   D --> E[entity wiki]
   D --> Q[distilled Q&A]
   M & E & Q --> IDX[(.memarium/index.*.json)]
@@ -49,7 +48,7 @@ flowchart TD
 
 ### What it is
 
-A Claude Code plugin that gives an AI coding agent **long-term memory it can trust**. Run `/memarium` to digest your sessions into per-project chronicles **and** a typed memory store; a SessionStart hook then auto-loads a compact *primer* so every new session begins already knowing the project's rules, setup, facts, and gotchas — instead of re-deriving them every time.
+A Claude Code plugin that gives an AI coding agent **long-term memory it can trust**. Run `/memarium` to digest your sessions into a per-project typed memory store; a SessionStart hook then auto-loads a compact *primer* so every new session begins already knowing the project's rules, setup, facts, and gotchas — instead of re-deriving them every time.
 
 Self-contained: no extra CLI required, no cloud service, your data stays local and human-readable.
 
@@ -75,20 +74,20 @@ memarium is deliberately grounded in published research and a clear set of trade
 | **Scorer regression eval** | **LongMemEval** (Wu et al., 2024) — long-term memory benchmark for chat assistants | Inspiration for the ability axes (info-extraction, multi-session, temporal, knowledge-update, abstention), which are exercised against a fixture corpus to catch scorer regressions — not a benchmark of real-corpus recall. |
 | **Markdown-first, local, git-synced, no vector DB** | A deliberate counter-position to vector/graph memory stacks like **mem0**, **Letta / MemGPT**, **Zep / Graphiti**, **A-MEM** | Auditability and ownership: memory is human-readable, diff-able, and version-controlled. The cost — lexical (term-overlap) retrieval — is a known trade-off (see [Limitations](#limitations--roadmap)). |
 | **Memory-PR governance gate** | (novel) — most memory frameworks let the agent self-edit long-term memory freely | Governance: long-term, behavior-shaping memory changes get human review before they persist. |
-| **Entity wiki + distilled Q&A** | Personal-knowledge-base / Zettelkasten practice (linked atomic notes) | A reverse-index synthesis layer on top of episodic chronicles. |
+| **Entity wiki + distilled Q&A** | Personal-knowledge-base / Zettelkasten practice (linked atomic notes) | A reverse-index synthesis layer on top of episodic memories. |
 
 > **Honest positioning:** the taxonomy, scorer, and governance gate are aligned with — and in places ahead of — mainstream agent-memory tooling; the eval harness is a CI regression guard (held-out real-corpus recall benchmarking is ongoing, not yet shipped). The one intentional gap is **lexical-only retrieval** (no embeddings/graph); see the roadmap below for how we plan to close it without giving up auditability.
 
 ### Commands & skills
 
 **Skills (slash commands — the everyday surface):**
-- **`/memarium`** — digest synced sessions into per-project chronicles + topics, and author typed memory + entity wiki + distilled Q&A (with a conservative consolidation pass).
+- **`/memarium`** — digest synced sessions into per-project typed memory (episodic + semantic/procedural/core) + entity wiki + distilled Q&A (with a conservative consolidation pass).
 - **`/memarium-context`** — load this project's memory at the start of work: *Core rules / Procedures & gotchas / Project facts / Episodes / Conflicts / Entities / Past Q&A / Pending memory proposals.*
-- **`/memarium-recall`** — three-stage progressive recall of past chronicles & topics (topic list → frontmatter → bodies).
+- **`/memarium-recall`** — 2-stage ranked recall over typed memory (score the index → Read the top entries).
 - **SessionStart hook** — auto-injects the project primer so a new session starts informed.
 
 **Underlying `bin/memarium-plugin.js` subcommands** (the skills call these; pure I/O, no LLM):
-`memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `catalog-regen` · `site` · `list-projects` · `status` · `prepare` · `publish`.
+`memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `skip-write` · `list-projects` · `status` · `prepare`.
 
 ### Install
 
@@ -108,7 +107,7 @@ npm i -g memarium
 memarium init
 ```
 
-It syncs `~/.memarium/session-repo/` (sessions, chronicles, **and** the `memory/` layer) to a private GitHub repo, aggregating across devices on the `main` branch. The CLI also resumes a session on another machine:
+It syncs `~/.memarium/session-repo/` (sessions **and** the `memory/` layer) to a private GitHub repo, aggregating across devices on the `main` branch. The CLI also resumes a session on another machine:
 
 ```sh
 memarium list-sessions --since 1d   # find the sessionId
@@ -120,7 +119,7 @@ memarium resume <sessionId>         # copies jsonl into ~/.claude/projects/ + pr
 ### Files written
 
 - `~/.memarium/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` — rendered session (single `.md`: YAML frontmatter w/ `manifest_version: 1` + `tools_used` / `commits` / `files_touched`, a Table-of-Contents block, then the body).
-- `~/.memarium/session-repo/book/<project>/{chronicle,topics}/*.md` — digested book.
+- `~/.memarium/session-repo/memory/<type>/<project>/*.md` — the typed Memory OS (episodic / semantic / procedural / core + entities + Q&A).
 - `~/.memarium/session-repo/memory/{<type>,entities,qa,_primer}/...` — the Memory OS store.
 - `~/.memarium/session-repo/.memarium/index.{json,book,memory,entity,qa}.json` — indexes.
 - `~/.memarium/local-proposals/<repoHash>/*.json` — **local-only** memory-PR queue (never synced).
@@ -151,7 +150,7 @@ PRs welcome. Open an issue first for anything beyond a typo — design changes a
 
 ### 这是什么
 
-一个 Claude Code 插件,给 AI 编程 agent 一套**可信赖的长期记忆**。跑 `/memarium` 把会话整理成按项目分组的 chronicle,**同时**生成一套有类型的记忆;之后 SessionStart hook 会自动加载一份精简的 *primer*,让每个新会话一开始就知道这个项目的规则、配置、事实和坑 —— 而不是每次都重新摸索。
+一个 Claude Code 插件,给 AI 编程 agent 一套**可信赖的长期记忆**。跑 `/memarium` 把会话整理成按项目分组的、有类型的长期记忆;之后 SessionStart hook 会自动加载一份精简的 *primer*,让每个新会话一开始就知道这个项目的规则、配置、事实和坑 —— 而不是每次都重新摸索。
 
 独立运行:不需要额外 CLI、不需要云服务,数据全部留在本地、人类可读。
 
@@ -177,20 +176,20 @@ memarium 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 | **Scorer 回归评估** | **LongMemEval**(Wu 等, 2024)长期记忆基准 | 借鉴其能力维度(信息抽取/多会话/时序/知识更新/弃答),在 fixture 语料上跑来防 scorer 回归 —— 不是真实语料召回的基准。 |
 | **markdown 优先、本地、git 同步、不用向量库** | 对 **mem0**、**Letta / MemGPT**、**Zep / Graphiti**、**A-MEM** 这类向量/图记忆栈的刻意反向选择 | 可审计、可拥有:记忆人类可读、可 diff、可版本控制。代价是词法(term-overlap)召回 —— 一个已知取舍(见[局限](#局限与路线图))。 |
 | **memory-PR 治理门禁** | (新)—— 多数记忆框架让 agent 自由自改长期记忆 | 治理:会长期影响行为的记忆改动落库前先经人审。 |
-| **entity wiki + 精炼 Q&A** | 个人知识库 / Zettelkasten 实践(链接式原子笔记) | 在 episodic chronicle 之上的反向索引综合层。 |
+| **entity wiki + 精炼 Q&A** | 个人知识库 / Zettelkasten 实践(链接式原子笔记) | 在 episodic 记忆之上的反向索引综合层。 |
 
 > **如实定位:** 分类法、打分器、治理门禁与主流 agent 记忆工具持平,有些地方还领先;评估 harness 是 CI 回归护栏(真实语料的 held-out 召回基准还在进行、尚未上线)。唯一刻意的缺口是**纯词法召回**(没有 embedding / 图);路线图里写了如何在不放弃可审计的前提下补上它。
 
 ### 命令与 skills
 
 **Skills(斜杠命令 —— 日常入口):**
-- **`/memarium`** —— 把会话整理成 chronicle + topic,并生成 typed memory + entity wiki + 精炼 Q&A(带保守整合)。
+- **`/memarium`** —— 把会话整理成按项目的 typed memory(episodic + semantic/procedural/core)+ entity wiki + 精炼 Q&A(带保守整合)。
 - **`/memarium-context`** —— 工作开始时加载本项目记忆:核心规则 / 操作与坑 / 项目事实 / 片段 / 冲突 / 实体 / 历史 Q&A / 待审记忆提案。
-- **`/memarium-recall`** —— 三阶段渐进召回历史 chronicle 与 topic(topic 列表 → frontmatter → 正文)。
+- **`/memarium-recall`** —— 两阶段召回 typed memory(给 index 打分 → Read 命中的条目)。
 - **SessionStart hook** —— 自动注入项目 primer,新会话一开始就有底。
 
 **底层 `bin/memarium-plugin.js` 子命令**(skills 调用;纯 I/O,不调 LLM):
-`memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `catalog-regen` · `site` · `list-projects` · `status` · `prepare` · `publish`。
+`memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `skip-write` · `list-projects` · `status` · `prepare`。
 
 ### 安装
 
@@ -210,7 +209,7 @@ npm i -g memarium
 memarium init
 ```
 
-它把 `~/.memarium/session-repo/`(会话、chronicle、**以及** `memory/` 层)同步到私有 GitHub repo,并在 `main` 分支跨设备聚合。CLI 也能在另一台机器 resume 会话:
+它把 `~/.memarium/session-repo/`(会话**以及** `memory/` 层)同步到私有 GitHub repo,并在 `main` 分支跨设备聚合。CLI 也能在另一台机器 resume 会话:
 
 ```sh
 memarium list-sessions --since 1d
@@ -222,7 +221,7 @@ memarium resume <sessionId>
 ### 写到哪里
 
 - `~/.memarium/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` —— 渲染过的会话(单 `.md`:YAML frontmatter + 目录块 + 正文)。
-- `~/.memarium/session-repo/book/<project>/{chronicle,topics}/*.md` —— 整理出的笔记本。
+- `~/.memarium/session-repo/memory/<type>/<project>/*.md` —— 有类型的 Memory OS(episodic / semantic / procedural / core + 实体 + Q&A)。
 - `~/.memarium/session-repo/memory/{<type>,entities,qa,_primer}/...` —— Memory OS 存储。
 - `~/.memarium/session-repo/.memarium/index.{json,book,memory,entity,qa}.json` —— 索引。
 - `~/.memarium/local-proposals/<repoHash>/*.json` —— **仅本地**的 memory-PR 队列(从不同步)。

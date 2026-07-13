@@ -48,7 +48,9 @@ digraph retro {
 2. **Pick the type** (`id` = `<type>/<project|_global>/<kebab-slug>`):
    - **semantic** — a durably-true project fact / architecture / decision.
    - **procedural** — a how-to playbook or gotcha ("to add X do Y, watch out for Z").
-   - **episodic** — a lightweight pointer to what happened this session (title + summary + `sourceSessions`).
+   - **episodic** — a lightweight pointer to what happened this session (title +
+     summary). Prefer `semantic`/`procedural` for a reusable insight; use
+     `episodic` only for a genuine "what happened" note.
    - **core** — a never-forget rule (rare). scope `global`/`user`/`project:<slug>`.
 
 3. **Fact-hygiene check** — before writing, scan the draft for implicit context a
@@ -76,7 +78,12 @@ digraph retro {
      → `untrusted`. **Default `untrusted` when in doubt.**
    - `entities` = file paths / symbols / APIs the memory is about (powers recall).
    - `importance` 0–5, `confidence` 0–1. **Do NOT set `accessCount`** (device-local, auto-maintained).
-   - Provenance: set `sourceSessions` to the current session id if you know it; else leave `[]` (the batch digest fills it later).
+   - Provenance: **leave `sourceSessions` empty (`[]`)** on a live retro. That
+     field is the batch `/memarium` digest's consumed-**receipt** — if a retro
+     episodic claims the current session there, the batch digest treats the
+     session as fully digested and never writes its full episodic (arc / dead
+     ends / decisions). Reference the session in the body if useful; set
+     `sourceFiles` / `sourceCommits` freely.
 
 6. **Write — respecting the v4 gate.** Split items into two arrays:
    - **Non-gated** (`semantic`, `episodic`) → `/tmp/memarium-retro.json`, then:

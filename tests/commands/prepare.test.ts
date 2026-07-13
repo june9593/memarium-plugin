@@ -36,14 +36,20 @@ describe("buildPreparePayload — consumed = episodic sourceSessions ∪ skip le
     // 4 synced sessions, each with a (non-meta) .md on disk
     writeFileSync(join(repo, ".memarium/index.json"), JSON.stringify({
       version: 1, entries: {
-        "claude:s1": sess("s1"), "claude:s2": sess("s2"), "claude:s3": sess("s3"), "claude:s4": sess("s4"),
+        "claude:s1": sess("s1"), "claude:s2": sess("s2"), "claude:s3": sess("s3"),
+        "claude:s4": sess("s4"), "claude:s5": sess("s5"),
       },
     }));
     for (const id of ["s1", "s2", "s3", "s4"]) {
       const p = join(repo, rel(id));
       mkdirSync(dirname(p), { recursive: true });
-      writeFileSync(p, `# session ${id}\n\nuser: do a thing in edge-memvc\n`);
+      writeFileSync(p, `# session ${id}\n\n## User\n\ndo a thing in edge-memvc\n`);
     }
+    // s5 is a memarium meta-session (first user turn is /memarium) — prepare
+    // filters it out of newSessions but must return it in filteredMetaSessions.
+    const p5 = join(repo, rel("s5"));
+    mkdirSync(dirname(p5), { recursive: true });
+    writeFileSync(p5, `# session s5\n\n## User\n\n/memarium\n`);
     // memory: s1 consumed by an EPISODIC (receipt = FULL sessionId); s3 referenced
     // ONLY by a SEMANTIC (derived → NOT consumed)
     writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
@@ -76,5 +82,12 @@ describe("buildPreparePayload — consumed = episodic sourceSessions ∪ skip le
     expect(p.existingEpisodes).toEqual({ "edge-memvc": ["episodic/edge-memvc/e1"] });
     expect(p.existingTopics).toBeUndefined();
     expect(p.existingCards).toBeUndefined();
+  });
+
+  it("filters memarium meta-sessions out of newSessions but returns their FULL sessionId in filteredMetaSessions", async () => {
+    const { buildPreparePayload } = await import("../../src/commands/prepare.js");
+    const p = buildPreparePayload({ project: "edge-memvc" });
+    expect(p.newSessions.map((s) => s.sessionId)).not.toContain(uuid("s5"));
+    expect(p.filteredMetaSessions).toEqual([uuid("s5")]); // full id, so P9 can skip-ledger it
   });
 });
