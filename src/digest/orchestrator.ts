@@ -22,7 +22,7 @@ export interface OrchestrateOutput {
   project: string | null;
   cwd: string | null;
   scan: ScanResult;
-  nextStep: "run-prepare-then-digest" | "run-fanout-then-catalog";
+  nextStep: "run-prepare-then-digest" | "run-fanout-then-finalize";
 }
 
 export async function orchestrateCmd(opts: OrchestrateOptions): Promise<void> {
@@ -51,7 +51,7 @@ export async function orchestrateCmd(opts: OrchestrateOptions): Promise<void> {
       project: null,
       cwd: null,
       scan,
-      nextStep: "run-fanout-then-catalog",
+      nextStep: "run-fanout-then-finalize",
     };
   }
 

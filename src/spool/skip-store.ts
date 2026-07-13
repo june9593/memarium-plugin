@@ -47,14 +47,14 @@ export function upsertSkips(
 ): number {
   let added = 0;
   for (const s of sessions) {
-    const id = (s?.sessionId ?? "").trim();
+    const id = typeof s?.sessionId === "string" ? s.sessionId.trim() : "";
     if (!id) continue;
     if (!idx.sessions[id]) added++;
     const prev = idx.sessions[id];
     // Idempotent: keep the first-skip `at`, and preserve the existing reason
     // unless a new NON-EMPTY reason is supplied (a later upsert that omits
     // reason must not clobber it to the default).
-    const reason = s.reason && s.reason.trim() ? s.reason.slice(0, 200) : (prev?.reason ?? "skipped");
+    const reason = typeof s.reason === "string" && s.reason.trim() ? s.reason.slice(0, 200) : (prev?.reason ?? "skipped");
     idx.sessions[id] = { reason, at: prev?.at ?? at };
   }
   return added;

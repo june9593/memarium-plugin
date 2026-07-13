@@ -7356,11 +7356,11 @@ function saveSkips(repoRoot, idx) {
 function upsertSkips(idx, sessions, at) {
   let added = 0;
   for (const s of sessions) {
-    const id = (s?.sessionId ?? "").trim();
+    const id = typeof s?.sessionId === "string" ? s.sessionId.trim() : "";
     if (!id) continue;
     if (!idx.sessions[id]) added++;
     const prev = idx.sessions[id];
-    const reason = s.reason && s.reason.trim() ? s.reason.slice(0, 200) : prev?.reason ?? "skipped";
+    const reason = typeof s.reason === "string" && s.reason.trim() ? s.reason.slice(0, 200) : prev?.reason ?? "skipped";
     idx.sessions[id] = { reason, at: prev?.at ?? at };
   }
   return added;
@@ -15567,6 +15567,11 @@ async function skipWriteCmd(opts) {
   if (sessions === null) {
     throw new Error("skip-write: --input must be an array of {sessionId,reason?} or {sessions:[...]}");
   }
+  for (const s of sessions) {
+    if (!s || typeof s.sessionId !== "string" || s.reason !== void 0 && typeof s.reason !== "string") {
+      throw new Error("skip-write: each item must be { sessionId: string, reason?: string }");
+    }
+  }
   const at = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const added = upsertSkips(idx, sessions, at);
   saveSkips(cfg.repoPath, idx);
@@ -18844,7 +18849,7 @@ async function orchestrateCmd(opts) {
       project: null,
       cwd: null,
       scan,
-      nextStep: "run-fanout-then-catalog"
+      nextStep: "run-fanout-then-finalize"
     };
   }
   process.stdout.write(JSON.stringify(result, null, 2) + "\n");

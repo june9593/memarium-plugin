@@ -50,4 +50,16 @@ describe("skipWriteCmd", () => {
     const { skipWriteCmd } = await import("../../src/commands/skip-write.js");
     await expect(skipWriteCmd({ inputPath: input })).rejects.toThrow(/must be an array/);
   });
+
+  it("rejects malformed items (non-string sessionId / non-string reason) with a schema error, not a TypeError", async () => {
+    const { skipWriteCmd } = await import("../../src/commands/skip-write.js");
+    for (const bad of [[{ sessionId: 42 }], [{ sessionId: "s1", reason: 42 }], [null], ["s1"]]) {
+      const input = join(fakeHome, "bad-item.json");
+      writeFileSync(input, JSON.stringify(bad));
+      await expect(skipWriteCmd({ inputPath: input })).rejects.toThrow(/each item must be/);
+    }
+    // and nothing was written to the ledger
+    const { loadSkips } = await import("../../src/spool/skip-store.js");
+    expect(Object.keys(loadSkips(repo).sessions)).toEqual([]);
+  });
 });

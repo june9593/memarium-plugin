@@ -19,6 +19,11 @@ export async function skipWriteCmd(opts: SkipWriteOptions): Promise<SkipWriteRep
   if (sessions === null) {
     throw new Error("skip-write: --input must be an array of {sessionId,reason?} or {sessions:[...]}");
   }
+  for (const s of sessions) {
+    if (!s || typeof s.sessionId !== "string" || (s.reason !== undefined && typeof s.reason !== "string")) {
+      throw new Error("skip-write: each item must be { sessionId: string, reason?: string }");
+    }
+  }
   const at = new Date().toISOString().slice(0, 10);
   const added = upsertSkips(idx, sessions, at);
   saveSkips(cfg.repoPath, idx);

@@ -399,9 +399,9 @@ of recall. This replaces the old book-era `skip:true` chronicle.
     "$VBP" finalize
 
 Ensures the repo exists, commits everything this digest wrote (`raw_sessions/`,
-`memory/`, `.memarium/index.{json,memory,entity,qa,skips}.json`), and auto-pushes
+`memory/`, `.memarium/index.{json,memory,entity,qa}.json`), and auto-pushes
 if a remote is configured. It stages only memarium's own paths, never foreign
-files. Read its JSON report (`committed`, `staged`, `pushed`, `branch`, `remote`).
+files (`.memarium/index.skips.json` is device-local and never committed). Read its JSON report (`committed`, `staged`, `pushed`, `branch`, `remote`).
 
 Print a one-line-per-layer summary:
 

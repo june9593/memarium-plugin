@@ -20,7 +20,8 @@ recall/primer.
 - **New skip ledger** replacing book-era `skip:true` chronicles: `.memarium/index.skips.json`
   via `src/spool/skip-store.ts` + a `skip-write` command. Local-only, kept **out** of recall
   so meta/ping sessions don't pollute it but also aren't re-proposed.
-- **`finalize`** whitelist drops `book` / `index.book.json`, adds `index.skips.json`.
+- **`finalize`** whitelist drops `book` / `index.book.json`. `index.skips.json` stays **out**
+  of the whitelist — it's device-local and intentionally never committed or synced.
 - **Episodic is the primary durable per-thread record**, so `memory-lint` no longer age-flags
   it as `stale-candidate` (the now-dead `--stale-days` option is removed).
 - **SKILL rewrite** (`skills/memarium/SKILL.md` → memory-only P1–P10) + new
@@ -28,7 +29,7 @@ recall/primer.
   warning); deleted `chronicle-format.md` / `topic-format.md`; updated `/memarium`,
   `/memarium-retro`, `/memarium-context` docs.
 
-+15 tests (skip-store, prepare/list-projects consumed-tracking, skip-write, apply provenance-union); 474 total.
++16 tests (skip-store, prepare/list-projects consumed-tracking, skip-write incl. malformed-item rejection, apply provenance-union); 475 total.
 Non-destructive: the digest still leaves old `book/` on disk (removed in Phase C2);
 a one-time wipe + re-digest (separate, user-run) rebuilds history under the new model.
 
