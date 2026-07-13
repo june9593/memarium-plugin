@@ -92,6 +92,18 @@ describe("applyMemoryItems", () => {
     expect(e.sourceCommits.sort()).toEqual(["c1", "c2"]);
   });
 
+  it("tolerates a malformed prior entry (non-array sourceSessions) on upsert — doesn't throw", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    // seed a parseable-but-corrupt prior entry directly in the index
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "episodic/p/t": { id: "episodic/p/t", type: "episodic", sourceSessions: {}, sourceFiles: null, sourceCommits: "x" },
+    } }));
+    const e = mk({ id: "episodic/p/t", type: "episodic", scope: "project:p", project: "p", sourceSessions: ["s2"] });
+    expect(() => applyMemoryItems(repo, [{ entry: e, body: "v" }])).not.toThrow();
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    expect(idx.entries["episodic/p/t"].sourceSessions).toEqual(["s2"]); // malformed prev → [], unioned with new
+  });
+
   it("rejects a supplied path that does not match the canonical path", async () => {
     const { applyMemoryItems } = await import("../../src/memory/apply.js");
     expect(() => applyMemoryItems(repo, [{

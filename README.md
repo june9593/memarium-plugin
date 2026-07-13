@@ -120,8 +120,7 @@ memarium resume <sessionId>         # copies jsonl into ~/.claude/projects/ + pr
 
 - `~/.memarium/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` — rendered session (single `.md`: YAML frontmatter w/ `manifest_version: 1` + `tools_used` / `commits` / `files_touched`, a Table-of-Contents block, then the body).
 - `~/.memarium/session-repo/memory/<type>/<project>/*.md` — the typed Memory OS (episodic / semantic / procedural / core + entities + Q&A).
-- `~/.memarium/session-repo/memory/{<type>,entities,qa,_primer}/...` — the Memory OS store.
-- `~/.memarium/session-repo/.memarium/index.{json,book,memory,entity,qa}.json` — indexes.
+- `~/.memarium/session-repo/.memarium/index.{json,memory,entity,qa,skips}.json` — indexes (`skips` = the local digest-skip ledger; there is no `index.book` — the book layer is gone).
 - `~/.memarium/local-proposals/<repoHash>/*.json` — **local-only** memory-PR queue (never synced).
 
 The plugin **does not** create or modify `.git/` or the npm CLI's config files — those are owned by the optional CLI.

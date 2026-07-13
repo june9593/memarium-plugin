@@ -15366,7 +15366,7 @@ function applyMemoryItems(repoPath, items) {
     if (!Array.isArray(entry.entities)) entry.entities = [];
     const prior = idx.entries[entry.id];
     if (prior) {
-      const uni = (next, prev) => Array.from(/* @__PURE__ */ new Set([...prev ?? [], ...next]));
+      const uni = (next, prev) => Array.from(/* @__PURE__ */ new Set([...Array.isArray(prev) ? prev : [], ...next]));
       entry.sourceSessions = uni(entry.sourceSessions, prior.sourceSessions);
       entry.sourceFiles = uni(entry.sourceFiles, prior.sourceFiles);
       entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);

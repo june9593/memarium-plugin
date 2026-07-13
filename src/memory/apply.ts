@@ -107,7 +107,10 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     // this is the plain create/update-of-same-id path.)
     const prior = idx.entries[entry.id];
     if (prior) {
-      const uni = (next: string[], prev: string[] | undefined) => Array.from(new Set([...(prev ?? []), ...next]));
+      // Tolerate a malformed prior entry (a prior sourceSessions:{} would make the
+      // spread throw and break memory-write → the digest). Non-array prev → [].
+      const uni = (next: string[], prev: unknown) =>
+        Array.from(new Set([...(Array.isArray(prev) ? prev : []), ...next]));
       entry.sourceSessions = uni(entry.sourceSessions, prior.sourceSessions);
       entry.sourceFiles = uni(entry.sourceFiles, prior.sourceFiles);
       entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);

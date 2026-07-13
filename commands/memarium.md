@@ -5,7 +5,7 @@ description: Digest already-synced sessions into a per-project typed Memory OS â
 Invoke the **memarium** skill via the `Skill` tool with `skill: "memarium"`.
 
 The skill walks you through (typed-memory only â€” there is no book/chronicles/topics):
-1. Locate the plugin binary (`VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-)`).
+1. Locate the plugin binary (`VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"; [ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-)`).
 2. Run `"$VBP" orchestrate project --cwd "$(pwd)"` to prime the spool and detect mode.
 3. Run `"$VBP" prepare --cwd "$(pwd)"` to discover un-digested sessions (those not
    referenced by an episodic memory and not skip-ledgered).
