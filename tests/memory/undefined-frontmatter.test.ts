@@ -255,4 +255,16 @@ describe("#54 — healUndefinedFrontmatter helper", () => {
     expect(healed).toContain("tags: []");
     expect(healed).not.toContain("undefined");
   });
+
+  it("is CRLF-aware: heals a Windows-checkout file and preserves CRLF line endings (#55)", () => {
+    const crlf = "---\r\nid: e\r\nsupersedes: undefined\r\nrelatedEntities: undefined\r\n---\r\n\r\n# e\r\n\r\nbody\r\n";
+    const healed = healUndefinedFrontmatter(crlf, "2026-07-14");
+    expect(healed).not.toBeNull();
+    expect(healed).toContain("supersedes: null\r\n");   // CRLF preserved on healed line
+    expect(healed).toContain("relatedEntities: []\r\n");
+    expect(healed).not.toContain("undefined");
+    // memory parser is CRLF-safe too
+    const memCrlf = "---\r\nid: semantic/p/x\r\ntype: semantic\r\nscope: project:p\r\nproject: p\r\ntitle: X\r\nsupersedes: undefined\r\n---\r\n\r\n# X\r\n\r\nbody\r\n";
+    expect(parseMemoryMarkdown(memCrlf)?.supersedes).toBeNull();
+  });
 });

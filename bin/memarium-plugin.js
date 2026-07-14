@@ -14633,6 +14633,7 @@ function deriveLegacyTrust(sourceSessions, sourceCommits, scope, project) {
   return ownProvenance && projectScoped ? "trusted" : "unknown";
 }
 function parseMemoryMarkdown(md) {
+  md = md.replace(/\r\n/g, "\n");
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
   const fm = {};
@@ -14684,10 +14685,10 @@ var init_parse = __esm({
 
 // src/_shared/heal-frontmatter.ts
 function healUndefinedFrontmatter(md, fallbackDate) {
-  const m = md.match(/^(---\n)([\s\S]*?)(\n---)/);
+  const m = md.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
   if (!m) return null;
   const before = m[2];
-  const after = before.replace(/^(project|validFrom|validTo|supersedes|originDevice|relatedTo): undefined[ \t]*$/gm, "$1: null").replace(/^status: undefined[ \t]*$/gm, "status: active").replace(/^confidence:[ \t]*(?:undefined|null)[ \t]*$/gm, "confidence: 0.5").replace(/^importance:[ \t]*(?:undefined|null)[ \t]*$/gm, "importance: 0").replace(/^(sourceSessions|sourceCommits|sourceFiles|entities|aliases|sourceMemoryIds|relatedEntities|tags|sources):[ \t]*undefined[ \t]*$/gm, "$1: []").replace(/^(createdAt|updatedAt):[ \t]*(?:undefined|null)[ \t]*$/gm, `$1: ${fallbackDate}`);
+  const after = before.replace(/^(project|validFrom|validTo|supersedes|originDevice|relatedTo):[ \t]*undefined[ \t]*(\r?)$/gm, "$1: null$2").replace(/^status:[ \t]*undefined[ \t]*(\r?)$/gm, "status: active$1").replace(/^confidence:[ \t]*(?:undefined|null)[ \t]*(\r?)$/gm, "confidence: 0.5$1").replace(/^importance:[ \t]*(?:undefined|null)[ \t]*(\r?)$/gm, "importance: 0$1").replace(/^(sourceSessions|sourceCommits|sourceFiles|entities|aliases|sourceMemoryIds|relatedEntities|tags|sources):[ \t]*undefined[ \t]*(\r?)$/gm, "$1: []$2").replace(/^(createdAt|updatedAt):[ \t]*(?:undefined|null)[ \t]*(\r?)$/gm, `$1: ${fallbackDate}$2`);
   if (after === before) return null;
   return m[1] + after + m[3] + md.slice(m[0].length);
 }
@@ -15330,6 +15331,7 @@ function parseDate2(v) {
   return t2 === "undefined" || t2 === "null" ? "" : t2;
 }
 function parseEntityMarkdown(md) {
+  md = md.replace(/\r\n/g, "\n");
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
   const fm = {};

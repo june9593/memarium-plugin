@@ -47,6 +47,7 @@ function deriveLegacyTrust(sourceSessions: string[], sourceCommits: string[], sc
 
 /** Inverse of renderMemoryMarkdown: parse frontmatter (+ ignore body) → MemoryEntry. */
 export function parseMemoryMarkdown(md: string): MemoryEntry | null {
+  md = md.replace(/\r\n/g, "\n"); // CRLF-safe (Windows checkouts)
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
   const fm: Record<string, string> = {};

@@ -25,6 +25,7 @@ function parseDate(v: string | undefined): string {
 
 /** Inverse of renderEntityMarkdown: parse frontmatter (+ ignore body) → EntityPage. */
 export function parseEntityMarkdown(md: string): EntityPage | null {
+  md = md.replace(/\r\n/g, "\n"); // CRLF-safe (Windows checkouts)
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
   const fm: Record<string, string> = {};
