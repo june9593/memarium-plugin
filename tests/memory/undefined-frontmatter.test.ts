@@ -48,7 +48,7 @@ describe("#54 — render never serializes the literal \"undefined\"", () => {
     }), "body");
     expect(md).not.toContain("undefined");
     expect(md).toContain("status: active");
-    expect(md).toContain("confidence: 0");
+    expect(md).toContain("confidence: 0.5");
     expect(md).toContain("importance: 0");
   });
 
@@ -128,6 +128,20 @@ describe("#54 — apply persists no \"undefined\" and lints clean (the issue rep
     expect(checks).not.toContain("malformed-date");
     expect(checks).not.toContain("malformed-entry");
   });
+
+  it("live index == a parse-of-md rebuild for omitted confidence/importance (no drift, #55)", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const { loadMemoryIndex } = await import("../../src/memory/index-store.js");
+    applyMemoryItems(repo, [{ entry: authored({ confidence: undefined, importance: undefined }), body: "b" }]);
+    // LIVE index carries the render/parse defaults (not undefined → dropped-key).
+    const live = loadMemoryIndex(repo).entries["episodic/edge-memvc/thread-x"];
+    expect(live.confidence).toBe(0.5);   // the scorer's neutral default
+    expect(live.importance).toBe(0);
+    // A rebuild (parse of the persisted md) yields the SAME values → no drift.
+    const rebuilt = parseMemoryMarkdown(readFileSync(join(repo, "memory/episodic/edge-memvc/thread-x.md"), "utf8"))!;
+    expect(rebuilt.confidence).toBe(live.confidence);
+    expect(rebuilt.importance).toBe(live.importance);
+  });
 });
 
 describe("#54 — reindex self-heals legacy \"undefined\" md text + index", () => {
@@ -166,7 +180,7 @@ describe("#54 — reindex self-heals legacy \"undefined\" md text + index", () =
     expect(md).not.toContain("undefined");
     expect(md).toContain("supersedes: null");
     expect(md).toContain("status: active");
-    expect(md).toContain("confidence: 0");
+    expect(md).toContain("confidence: 0.5");
     expect(md).toContain("importance: 0");
     expect(md).toMatch(/createdAt: \d{4}-\d{2}-\d{2}/);      // backfilled from mtime
     expect(md).toContain("the body — MUST survive byte-for-byte"); // body intact
@@ -191,7 +205,7 @@ describe("#54 — healUndefinedFrontmatter helper", () => {
     const healed = healUndefinedFrontmatter(dirty, "2026-07-14")!;
     expect(healed).toContain("supersedes: null");
     expect(healed).toContain("status: active");
-    expect(healed).toContain("confidence: 0");
+    expect(healed).toContain("confidence: 0.5");
     expect(healed).toContain("importance: 0");
     expect(healed).toContain("createdAt: 2026-07-14");
     // the word "undefined" INSIDE the body is untouched
@@ -199,5 +213,12 @@ describe("#54 — healUndefinedFrontmatter helper", () => {
     // a clean md returns null (no churn)
     const clean = "---\nid: x\nsupersedes: null\nstatus: active\nconfidence: 0.8\ncreatedAt: 2026-07-14\n---\n\n# x\n\nbody\n";
     expect(healUndefinedFrontmatter(clean, "2026-07-14")).toBeNull();
+  });
+
+  it("does NOT treat a fresh empty date as legacy corruption (#55)", () => {
+    // The entity/qa renderers can emit `createdAt: ` (blank) for an omitted date;
+    // the heal must not rewrite that to a bogus mtime (only the literal counts).
+    const freshBlank = "---\nid: x\ncreatedAt: \nupdatedAt: \n---\n\n# x\n\nbody\n";
+    expect(healUndefinedFrontmatter(freshBlank, "2026-07-14")).toBeNull();
   });
 });

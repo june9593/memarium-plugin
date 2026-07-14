@@ -32,7 +32,7 @@ export function renderMemoryMarkdown(entry: MemoryEntry, body: string): string {
     `title: ${entry.title}`,
     `summary: ${entry.summary ?? ""}`,
     `status: ${req(entry.status, "active")}`,
-    `confidence: ${req(entry.confidence, "0")}`,
+    `confidence: ${req(entry.confidence, "0.5")}`,
     `importance: ${req(entry.importance, "0")}`,
     `createdAt: ${req(entry.createdAt, "")}`,
     `updatedAt: ${req(entry.updatedAt, "")}`,

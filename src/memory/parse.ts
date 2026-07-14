@@ -68,7 +68,7 @@ export function parseMemoryMarkdown(md: string): MemoryEntry | null {
     title: fm.title ?? "", summary: fm.summary ?? "",
     path: "", // filled by caller from the file path
     status: status as MemoryEntry["status"],
-    confidence: parseNum(fm.confidence, 0), importance: parseNum(fm.importance, 0),
+    confidence: parseNum(fm.confidence, 0.5), importance: parseNum(fm.importance, 0),
     createdAt: parseDate(fm.createdAt), updatedAt: parseDate(fm.updatedAt),
     validFrom: parseScalar(fm.validFrom ?? "null"), validTo: parseScalar(fm.validTo ?? "null"),
     sourceSessions,

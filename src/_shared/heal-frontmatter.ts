@@ -21,12 +21,16 @@ export function healUndefinedFrontmatter(md: string, fallbackDate: string): stri
     .replace(/^(project|validFrom|validTo|supersedes|originDevice|relatedTo): undefined[ \t]*$/gm, "$1: null")
     // lifecycle status → active
     .replace(/^status: undefined[ \t]*$/gm, "status: active")
-    // numeric fields → 0 (a legacy "undefined"/"null" here becomes NaN in the
-    // rebuilt index and poisons the scorer)
-    .replace(/^(confidence|importance):[ \t]*(?:undefined|null)[ \t]*$/gm, "$1: 0")
-    // dates: literal undefined/null (or empty from a prior partial heal) → the
-    // fallback date. A real date value never matches (non-whitespace tail).
-    .replace(/^(createdAt|updatedAt):[ \t]*(?:undefined|null)?[ \t]*$/gm, `$1: ${fallbackDate}`);
+    // numeric fields: a legacy "undefined"/"null" becomes NaN in the rebuilt
+    // index and poisons the scorer. Use the SAME defaults as render/parse/apply
+    // (the original value is unrecoverable): confidence → 0.5 (neutral),
+    // importance → 0.
+    .replace(/^confidence:[ \t]*(?:undefined|null)[ \t]*$/gm, "confidence: 0.5")
+    .replace(/^importance:[ \t]*(?:undefined|null)[ \t]*$/gm, "importance: 0")
+    // dates: ONLY the literal undefined/null → the fallback date. A real date
+    // never matches; a legitimately-empty date from a fresh 0.19.x write is NOT
+    // treated as legacy corruption (that would rewrite fresh files, #55).
+    .replace(/^(createdAt|updatedAt):[ \t]*(?:undefined|null)[ \t]*$/gm, `$1: ${fallbackDate}`);
   if (after === before) return null;
   return m[1] + after + m[3] + md.slice(m[0].length);
 }

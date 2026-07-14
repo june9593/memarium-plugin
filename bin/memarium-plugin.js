@@ -14353,7 +14353,7 @@ function renderMemoryMarkdown(entry, body) {
     `title: ${entry.title}`,
     `summary: ${entry.summary ?? ""}`,
     `status: ${req(entry.status, "active")}`,
-    `confidence: ${req(entry.confidence, "0")}`,
+    `confidence: ${req(entry.confidence, "0.5")}`,
     `importance: ${req(entry.importance, "0")}`,
     `createdAt: ${req(entry.createdAt, "")}`,
     `updatedAt: ${req(entry.updatedAt, "")}`,
@@ -14527,6 +14527,9 @@ function applyMemoryItems(repoPath, items) {
     if (entry.validFrom === void 0) entry.validFrom = null;
     if (entry.validTo === void 0) entry.validTo = null;
     if (entry.originDevice === void 0) entry.originDevice = null;
+    if (entry.project === void 0) entry.project = null;
+    if (typeof entry.confidence !== "number" || !isFinite(entry.confidence)) entry.confidence = 0.5;
+    if (typeof entry.importance !== "number" || !isFinite(entry.importance)) entry.importance = 0;
     if (typeof entry.summary !== "string") entry.summary = "";
     if (!Array.isArray(entry.sourceSessions)) entry.sourceSessions = [];
     if (!Array.isArray(entry.sourceCommits)) entry.sourceCommits = [];
@@ -14652,7 +14655,7 @@ function parseMemoryMarkdown(md) {
     path: "",
     // filled by caller from the file path
     status,
-    confidence: parseNum(fm.confidence, 0),
+    confidence: parseNum(fm.confidence, 0.5),
     importance: parseNum(fm.importance, 0),
     createdAt: parseDate(fm.createdAt),
     updatedAt: parseDate(fm.updatedAt),
@@ -14680,7 +14683,7 @@ function healUndefinedFrontmatter(md, fallbackDate) {
   const m = md.match(/^(---\n)([\s\S]*?)(\n---)/);
   if (!m) return null;
   const before = m[2];
-  const after = before.replace(/^(project|validFrom|validTo|supersedes|originDevice|relatedTo): undefined[ \t]*$/gm, "$1: null").replace(/^status: undefined[ \t]*$/gm, "status: active").replace(/^(confidence|importance):[ \t]*(?:undefined|null)[ \t]*$/gm, "$1: 0").replace(/^(createdAt|updatedAt):[ \t]*(?:undefined|null)?[ \t]*$/gm, `$1: ${fallbackDate}`);
+  const after = before.replace(/^(project|validFrom|validTo|supersedes|originDevice|relatedTo): undefined[ \t]*$/gm, "$1: null").replace(/^status: undefined[ \t]*$/gm, "status: active").replace(/^confidence:[ \t]*(?:undefined|null)[ \t]*$/gm, "confidence: 0.5").replace(/^importance:[ \t]*(?:undefined|null)[ \t]*$/gm, "importance: 0").replace(/^(createdAt|updatedAt):[ \t]*(?:undefined|null)[ \t]*$/gm, `$1: ${fallbackDate}`);
   if (after === before) return null;
   return m[1] + after + m[3] + md.slice(m[0].length);
 }
@@ -15261,6 +15264,11 @@ async function entityWriteCmd(opts) {
   let written = 0;
   const paths = [];
   for (const { entry, body } of items) {
+    if (entry.project === void 0) entry.project = null;
+    const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    if (!isDate(entry.createdAt)) entry.createdAt = today;
+    if (!isDate(entry.updatedAt)) entry.updatedAt = today;
     if (!entry.path) entry.path = entityPath(entry);
     const entRoot = resolve4(join16(cfg.repoPath, "memory", "entities"));
     mkdirSync10(entRoot, { recursive: true });
@@ -15656,6 +15664,12 @@ async function qaWriteCmd(opts) {
   for (const { entry, body } of items) {
     entry.question = normalizeSingleLine(entry.question);
     entry.answerSummary = normalizeSingleLine(entry.answerSummary);
+    {
+      const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+      const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      if (!isDate(entry.createdAt)) entry.createdAt = today;
+      if (!isDate(entry.updatedAt)) entry.updatedAt = today;
+    }
     if (entry.scope.startsWith("project:")) {
       const slug = entry.scope.slice("project:".length).trim();
       if (!isSafeProjectSlug(slug)) {
