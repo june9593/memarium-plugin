@@ -1,13 +1,31 @@
 import type { MemoryEntry, MemoryType, MemoryTrust } from "./types.js";
 
-function parseArr(v: string): string[] {
-  const t = v.trim();
-  if (t === "[]" || t === "") return [];
+function parseArr(v: string | undefined): string[] {
+  const t = (v ?? "").trim();
+  if (t === "[]" || t === "" || t === "undefined" || t === "null") return [];
   return t.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
 }
-function parseScalar(v: string): string | null {
-  const t = v.trim();
-  return t === "null" ? null : t;
+function parseScalar(v: string | undefined): string | null {
+  const t = (v ?? "").trim();
+  // "undefined" (from the pre-#54 renderer bug) and "" are treated as absent —
+  // so a reindex of legacy md self-heals the value to null instead of a literal.
+  // Accept `undefined` (an absent frontmatter line) instead of throwing on .trim().
+  return (t === "null" || t === "undefined" || t === "") ? null : t;
+}
+/** A date field: strip the pre-#54 literal "undefined"/"null" back to "" (absent),
+ *  so callers/lint see an unset date rather than an unparseable string. */
+function parseDate(v: string | undefined): string {
+  const t = (v ?? "").trim();
+  return (t === "undefined" || t === "null") ? "" : t;
+}
+/** Numeric field: NaN-safe AND absent-safe. `Number("")` is a finite 0 and
+ *  `Number("null")` is NaN, so check the token before converting — treat "",
+ *  "undefined", "null" as absent → fallback (not a bogus 0). */
+function parseNum(v: string | undefined, fallback: number): number {
+  const t = (v ?? "").trim();
+  if (t === "" || t === "undefined" || t === "null") return fallback;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 /** Coerce a frontmatter trust value to the enum; anything unexpected → unknown. */
@@ -30,6 +48,7 @@ function deriveLegacyTrust(sourceSessions: string[], sourceCommits: string[], sc
 
 /** Inverse of renderMemoryMarkdown: parse frontmatter (+ ignore body) → MemoryEntry. */
 export function parseMemoryMarkdown(md: string): MemoryEntry | null {
+  md = md.replace(/\r\n/g, "\n"); // CRLF-safe (Windows checkouts)
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
   const fm: Record<string, string> = {};
@@ -47,13 +66,16 @@ export function parseMemoryMarkdown(md: string): MemoryEntry | null {
   const trust = fm.trust !== undefined
     ? coerceTrust(fm.trust)
     : deriveLegacyTrust(sourceSessions, sourceCommits, scope, project);
+  const statusRaw = (fm.status ?? "").trim();
+  const status = (statusRaw === "" || statusRaw === "undefined" || statusRaw === "null")
+    ? "active" : statusRaw;
   return {
     id: fm.id, type: fm.type as MemoryType, scope, project,
     title: fm.title ?? "", summary: fm.summary ?? "",
     path: "", // filled by caller from the file path
-    status: (fm.status as MemoryEntry["status"]) ?? "active",
-    confidence: Number(fm.confidence ?? 0), importance: Number(fm.importance ?? 0),
-    createdAt: fm.createdAt ?? "", updatedAt: fm.updatedAt ?? "",
+    status: status as MemoryEntry["status"],
+    confidence: parseNum(fm.confidence, 0.5), importance: parseNum(fm.importance, 0),
+    createdAt: parseDate(fm.createdAt), updatedAt: parseDate(fm.updatedAt),
     validFrom: parseScalar(fm.validFrom ?? "null"), validTo: parseScalar(fm.validTo ?? "null"),
     sourceSessions,
     sourceCommits,

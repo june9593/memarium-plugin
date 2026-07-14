@@ -50,6 +50,18 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
   for (const { entry, body } of items) {
     entry.question = normalizeSingleLine(entry.question);
     entry.answerSummary = normalizeSingleLine(entry.answerSummary);
+    // Backfill missing dates → today so the persisted md + live index agree with a
+    // later rebuild (the renderer otherwise emits blanks; #55). project is set below.
+    {
+      const isDate = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+      const today = new Date().toISOString().slice(0, 10);
+      if (!isDate(entry.createdAt)) entry.createdAt = today;
+      if (!isDate(entry.updatedAt)) entry.updatedAt = today;
+      // Arrays default to [] so md + live index agree with a rebuild. #55.
+      for (const k of ["tags", "sources", "sourceMemoryIds", "sourceSessions", "relatedEntities"] as const) {
+        if (!Array.isArray(entry[k])) entry[k] = [];
+      }
+    }
     // scope is authoritative for project membership. Derive a trimmed, validated
     // project slug, then canonicalize entry.scope so the stored scope matches
     // exactly what the scorer compares against (`project:<slug>`). Otherwise an

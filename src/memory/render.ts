@@ -4,34 +4,45 @@ function arr(xs: string[] | undefined): string {
   const a = xs ?? [];
   return a.length === 0 ? "[]" : `[${a.join(", ")}]`;
 }
-function scalar(v: string | number | null): string {
-  return v === null ? "null" : String(v);
+/** Nullable frontmatter scalar: unset (null OR undefined) → the YAML literal
+ *  `null`, never the string "undefined". `== null` deliberately catches both —
+ *  the old `=== null` let `undefined` fall through to `String(undefined)` =
+ *  "undefined", which parse then read back as a real id/date (#54). */
+function nullable(v: string | number | null | undefined): string {
+  return v == null ? "null" : String(v);
+}
+/** Required scalar with a fallback, so an omitted field never serializes as the
+ *  literal "undefined". Also NaN/Infinity-safe: a non-finite number would
+ *  otherwise `String()` to "NaN"/"Infinity" — invalid numeric frontmatter. */
+function req(v: string | number | null | undefined, fallback: string): string {
+  if (v == null || v === "") return fallback;
+  if (typeof v === "number" && !Number.isFinite(v)) return fallback;
+  return String(v);
 }
 
 /** Render a memory .md = YAML frontmatter (from the structured entry) + body.
- *  Tolerates missing array fields / summary: authored entries (memory-write /
- *  propose) routinely omit sourceSessions/sourceCommits/sourceFiles/entities/
- *  summary, and a thin queued proposal is re-rendered at approve time — neither
- *  should throw. apply.ts normalizes the persisted entry; this is the second
- *  guard so render never sees `undefined.length`. */
+ *  Tolerates missing optional fields: authored entries (memory-write / propose)
+ *  routinely omit summary / supersedes / validFrom / validTo / originDevice /
+ *  the source arrays. apply.ts normalizes the persisted entry; this renderer is
+ *  the serialization boundary and must NEVER emit the literal "undefined". */
 export function renderMemoryMarkdown(entry: MemoryEntry, body: string): string {
   const fm = [
     "---",
     `id: ${entry.id}`,
     `type: ${entry.type}`,
     `scope: ${entry.scope}`,
-    `project: ${scalar(entry.project)}`,
+    `project: ${nullable(entry.project)}`,
     `title: ${entry.title}`,
     `summary: ${entry.summary ?? ""}`,
-    `status: ${entry.status}`,
-    `confidence: ${entry.confidence}`,
-    `importance: ${entry.importance}`,
-    `createdAt: ${entry.createdAt}`,
-    `updatedAt: ${entry.updatedAt}`,
-    `validFrom: ${scalar(entry.validFrom)}`,
-    `validTo: ${scalar(entry.validTo)}`,
-    `supersedes: ${scalar(entry.supersedes)}`,
-    `originDevice: ${scalar(entry.originDevice)}`,
+    `status: ${req(entry.status, "active")}`,
+    `confidence: ${req(entry.confidence, "0.5")}`,
+    `importance: ${req(entry.importance, "0")}`,
+    `createdAt: ${req(entry.createdAt, "")}`,
+    `updatedAt: ${req(entry.updatedAt, "")}`,
+    `validFrom: ${nullable(entry.validFrom)}`,
+    `validTo: ${nullable(entry.validTo)}`,
+    `supersedes: ${nullable(entry.supersedes)}`,
+    `originDevice: ${nullable(entry.originDevice)}`,
     `sourceSessions: ${arr(entry.sourceSessions)}`,
     `sourceCommits: ${arr(entry.sourceCommits)}`,
     `sourceFiles: ${arr(entry.sourceFiles)}`,

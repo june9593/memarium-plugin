@@ -1,11 +1,13 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { emptyEntityIndex, type EntityIndex } from "../entity/types.js";
 import { saveEntityIndex, upsertEntity } from "../entity/index-store.js";
 import { parseEntityMarkdown } from "../entity/parse.js";
+import { healUndefinedFrontmatter } from "../_shared/heal-frontmatter.js";
+import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 
-export interface EntityIndexReport { indexed: number; }
+export interface EntityIndexReport { indexed: number; healed: number; }
 
 function walkMd(dir: string): string[] {
   const out: string[] = [];
@@ -28,10 +30,18 @@ export async function entityIndexCmd(): Promise<EntityIndexReport> {
   const entitiesRoot = join(cfg.repoPath, "memory", "entities");
   const idx: EntityIndex = emptyEntityIndex();
   let indexed = 0;
+  let healed = 0;
 
+  // The heal step now writes md, so refuse to traverse/rewrite through a
+  // symlinked ancestor or the memory/entities leaf (could escape the repo).
+  assertNoSymlinkedComponent(cfg.repoPath, entitiesRoot, "entity-index");
   if (existsSync(entitiesRoot)) {
     for (const abs of walkMd(entitiesRoot)) {
-      const entry = parseEntityMarkdown(readFileSync(abs, "utf8"));
+      let md = readFileSync(abs, "utf8");
+      const mtimeDate = new Date(statSync(abs).mtimeMs).toISOString().slice(0, 10);
+      const fixed = healUndefinedFrontmatter(md, mtimeDate);
+      if (fixed !== null) { writeFileSync(abs, fixed); md = fixed; healed++; }
+      const entry = parseEntityMarkdown(md);
       if (!entry) continue;
       entry.path = relative(cfg.repoPath, abs);
       upsertEntity(idx, entry);
@@ -40,5 +50,5 @@ export async function entityIndexCmd(): Promise<EntityIndexReport> {
   }
 
   saveEntityIndex(cfg.repoPath, idx);
-  return { indexed };
+  return { indexed, healed };
 }

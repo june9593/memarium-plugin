@@ -1,10 +1,16 @@
 import type { EntityPage } from "./types.js";
 
-function arr(xs: string[]): string {
-  return JSON.stringify(xs);
+function arr(xs: string[] | undefined): string {
+  return JSON.stringify(xs ?? []);
 }
-function scalar(v: string | null): string {
-  return v === null ? "null" : v;
+/** Nullable scalar → YAML `null` for unset (null OR undefined), never the string
+ *  "undefined" (#54). */
+function nullable(v: string | null | undefined): string {
+  return v == null ? "null" : v;
+}
+/** Required scalar with a fallback so an omitted field never serializes "undefined". */
+function req(v: string | null | undefined, fallback: string): string {
+  return v == null || v === "" ? fallback : String(v);
 }
 
 /** Render an entity page .md = YAML frontmatter (from the structured entry) + body. */
@@ -14,15 +20,15 @@ export function renderEntityMarkdown(entry: EntityPage, body: string): string {
     `id: ${entry.id}`,
     `kind: ${entry.kind}`,
     `scope: ${entry.scope}`,
-    `project: ${scalar(entry.project)}`,
+    `project: ${nullable(entry.project)}`,
     `title: ${entry.title}`,
     `aliases: ${arr(entry.aliases)}`,
     `sourceMemoryIds: ${arr(entry.sourceMemoryIds)}`,
     `sourceSessions: ${arr(entry.sourceSessions)}`,
     `sourceFiles: ${arr(entry.sourceFiles)}`,
     `relatedEntities: ${arr(entry.relatedEntities)}`,
-    `createdAt: ${entry.createdAt}`,
-    `updatedAt: ${entry.updatedAt}`,
+    `createdAt: ${req(entry.createdAt, "")}`,
+    `updatedAt: ${req(entry.updatedAt, "")}`,
     "---",
   ].join("\n");
   const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");

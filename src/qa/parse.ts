@@ -1,8 +1,10 @@
 import type { QaEntry, QaKind } from "./types.js";
 
-function parseArr(v: string): string[] {
-  const t = v.trim();
-  if (t === "" || t === "[]") return [];
+function parseArr(v: string | undefined): string[] {
+  const t = (v ?? "").trim();
+  // "undefined"/"null" (pre-#54 renderer bug) → [] so a direct parse doesn't
+  // rebuild a bogus ["undefined"] element (not just the index-command heal).
+  if (t === "" || t === "[]" || t === "undefined" || t === "null") return [];
   if (t.startsWith("[")) {
     try {
       const parsed = JSON.parse(t);
@@ -15,11 +17,16 @@ function parseArr(v: string): string[] {
 }
 function parseProject(v: string): string | null {
   const t = v.trim();
-  if (t === "null") return null;
+  // "undefined" (pre-#54 renderer bug) and "" → absent, so a reindex self-heals.
+  if (t === "null" || t === "undefined" || t === "") return null;
   if (t.startsWith('"')) {
     try { const p = JSON.parse(t); if (typeof p === "string") return p; } catch { /* fall through */ }
   }
   return t; // legacy unquoted non-null value
+}
+function parseDate(v: string | undefined): string {
+  const t = (v ?? "").trim();
+  return (t === "undefined" || t === "null") ? "" : t;
 }
 function parseQuoted(v: string): string {
   const t = v.trim();
@@ -55,7 +62,7 @@ export function parseQaMarkdown(md: string): QaEntry | null {
     sourceSessions: parseArr(fm.sourceSessions ?? "[]"),
     relatedEntities: parseArr(fm.relatedEntities ?? "[]"),
     path: "",
-    createdAt: fm.createdAt ?? "",
-    updatedAt: fm.updatedAt ?? "",
+    createdAt: parseDate(fm.createdAt),
+    updatedAt: parseDate(fm.updatedAt),
   };
 }

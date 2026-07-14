@@ -1,12 +1,13 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { emptyQaIndex, type QaIndex } from "../qa/types.js";
 import { saveQaIndex, upsertQa } from "../qa/index-store.js";
 import { parseQaMarkdown } from "../qa/parse.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
+import { healUndefinedFrontmatter } from "../_shared/heal-frontmatter.js";
 
-export interface QaIndexReport { indexed: number; }
+export interface QaIndexReport { indexed: number; healed: number; }
 
 function walkMd(dir: string): string[] {
   const out: string[] = [];
@@ -29,6 +30,7 @@ export async function qaIndexCmd(): Promise<QaIndexReport> {
   const qaRoot = join(cfg.repoPath, "memory", "qa");
   const idx: QaIndex = emptyQaIndex();
   let indexed = 0;
+  let healed = 0;
 
   // Refuse to index through a symlinked ancestor or the memory/qa leaf itself
   // (could pull in files from outside the repo). Component walk uses lstatSync
@@ -37,7 +39,11 @@ export async function qaIndexCmd(): Promise<QaIndexReport> {
 
   if (existsSync(qaRoot)) {
     for (const abs of walkMd(qaRoot)) {
-      const entry = parseQaMarkdown(readFileSync(abs, "utf8"));
+      let md = readFileSync(abs, "utf8");
+      const mtimeDate = new Date(statSync(abs).mtimeMs).toISOString().slice(0, 10);
+      const fixed = healUndefinedFrontmatter(md, mtimeDate);
+      if (fixed !== null) { writeFileSync(abs, fixed); md = fixed; healed++; }
+      const entry = parseQaMarkdown(md);
       if (!entry) continue;
       entry.path = relative(cfg.repoPath, abs);
       upsertQa(idx, entry);
@@ -46,5 +52,5 @@ export async function qaIndexCmd(): Promise<QaIndexReport> {
   }
 
   saveQaIndex(cfg.repoPath, idx);
-  return { indexed };
+  return { indexed, healed };
 }

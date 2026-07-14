@@ -28,6 +28,20 @@ export async function entityWriteCmd(opts: EntityWriteOptions): Promise<EntityWr
   const paths: string[] = [];
 
   for (const { entry, body } of items) {
+    // Normalize optional fields so the persisted md + live index agree with a
+    // later rebuild: unset project → null, missing dates → today. Without this the
+    // renderer emits blanks/nulls that a rebuild would fill differently (#55).
+    if (entry.project === undefined) entry.project = null;
+    const isDate = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+    const today = new Date().toISOString().slice(0, 10);
+    if (!isDate(entry.createdAt)) entry.createdAt = today;
+    if (!isDate(entry.updatedAt)) entry.updatedAt = today;
+    // Arrays: default to [] so the persisted md and the live index agree with a
+    // rebuild (an omitted array would otherwise serialize/upsert inconsistently). #55.
+    for (const k of ["aliases", "sourceMemoryIds", "sourceSessions", "sourceFiles", "relatedEntities"] as const) {
+      if (!Array.isArray(entry[k])) entry[k] = [];
+    }
+
     if (!entry.path) entry.path = entityPath(entry);
 
     // path-traversal guard: final resolved path must be within <repoPath>/memory/entities/
