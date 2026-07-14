@@ -99,6 +99,29 @@ describe("#54 — parse coerces a legacy literal \"undefined\" back to absent", 
     expect(back.supersedes).toBeNull();
     expect(back.validTo).toBeNull();
   });
+
+  it("numeric fields are absent-safe on parse: empty/null/undefined confidence → 0.5 default", () => {
+    const mk = (confLine: string) => [
+      "---", "id: episodic/p/n", "type: episodic", "scope: project:p", "project: p",
+      "title: N", "summary: s", "status: active", confLine, "importance: 2",
+      "createdAt: 2026-07-14", "updatedAt: 2026-07-14", "sourceSessions: [s1]", "trust: untrusted",
+      "---", "", "# N", "b",
+    ].join("\n");
+    // Number("") is a finite 0 and Number("null") is NaN — both must fall back to 0.5.
+    expect(parseMemoryMarkdown(mk("confidence:"))!.confidence).toBe(0.5);
+    expect(parseMemoryMarkdown(mk("confidence: null"))!.confidence).toBe(0.5);
+    expect(parseMemoryMarkdown(mk("confidence: undefined"))!.confidence).toBe(0.5);
+    expect(parseMemoryMarkdown(mk("confidence: 0.8"))!.confidence).toBe(0.8);
+    expect(parseMemoryMarkdown(mk("confidence: 0"))!.confidence).toBe(0); // an explicit 0 is honored
+  });
+
+  it("render is NaN/Infinity-safe for numeric fields (never serializes NaN/Infinity)", () => {
+    const md = renderMemoryMarkdown(authored({ confidence: NaN, importance: Infinity }), "b");
+    expect(md).not.toContain("NaN");
+    expect(md).not.toContain("Infinity");
+    expect(md).toContain("confidence: 0.5");
+    expect(md).toContain("importance: 0");
+  });
 });
 
 describe("#54 — apply persists no \"undefined\" and lints clean (the issue repro)", () => {

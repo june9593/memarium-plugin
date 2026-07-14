@@ -14341,7 +14341,9 @@ function nullable(v) {
   return v == null ? "null" : String(v);
 }
 function req(v, fallback) {
-  return v == null || v === "" ? fallback : String(v);
+  if (v == null || v === "") return fallback;
+  if (typeof v === "number" && !Number.isFinite(v)) return fallback;
+  return String(v);
 }
 function renderMemoryMarkdown(entry, body) {
   const fm = [
@@ -14616,7 +14618,9 @@ function parseDate(v) {
   return t2 === "undefined" || t2 === "null" ? "" : t2;
 }
 function parseNum(v, fallback) {
-  const n = Number((v ?? "").trim());
+  const t2 = (v ?? "").trim();
+  if (t2 === "" || t2 === "undefined" || t2 === "null") return fallback;
+  const n = Number(t2);
   return Number.isFinite(n) ? n : fallback;
 }
 function coerceTrust(v) {

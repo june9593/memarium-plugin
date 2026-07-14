@@ -9,8 +9,9 @@
  * rewrite files that actually carry the bug — clean files see zero churn).
  *
  * `fallbackDate` (YYYY-MM-DD, typically the file's mtime) backfills
- * `createdAt`/`updatedAt` when they were the literal "undefined"/"null"/absent,
- * so a legacy entry lints clean instead of tripping `malformed-date`.
+ * `createdAt`/`updatedAt` when they were the literal "undefined"/"null", so a
+ * legacy entry lints clean instead of tripping `malformed-date`. (A field with
+ * no line at all can't be matched — this is a literal-only migration.)
  */
 export function healUndefinedFrontmatter(md: string, fallbackDate: string): string | null {
   const m = md.match(/^(---\n)([\s\S]*?)(\n---)/);

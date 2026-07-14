@@ -17,9 +17,13 @@ function parseDate(v: string | undefined): string {
   const t = (v ?? "").trim();
   return (t === "undefined" || t === "null") ? "" : t;
 }
-/** Numeric field: NaN-safe (`Number("undefined")` = NaN poisons the scorer). */
+/** Numeric field: NaN-safe AND absent-safe. `Number("")` is a finite 0 and
+ *  `Number("null")` is NaN, so check the token before converting — treat "",
+ *  "undefined", "null" as absent → fallback (not a bogus 0). */
 function parseNum(v: string | undefined, fallback: number): number {
-  const n = Number((v ?? "").trim());
+  const t = (v ?? "").trim();
+  if (t === "" || t === "undefined" || t === "null") return fallback;
+  const n = Number(t);
   return Number.isFinite(n) ? n : fallback;
 }
 

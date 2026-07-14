@@ -12,9 +12,12 @@ function nullable(v: string | number | null | undefined): string {
   return v == null ? "null" : String(v);
 }
 /** Required scalar with a fallback, so an omitted field never serializes as the
- *  literal "undefined". */
+ *  literal "undefined". Also NaN/Infinity-safe: a non-finite number would
+ *  otherwise `String()` to "NaN"/"Infinity" — invalid numeric frontmatter. */
 function req(v: string | number | null | undefined, fallback: string): string {
-  return v == null || v === "" ? fallback : String(v);
+  if (v == null || v === "") return fallback;
+  if (typeof v === "number" && !Number.isFinite(v)) return fallback;
+  return String(v);
 }
 
 /** Render a memory .md = YAML frontmatter (from the structured entry) + body.
