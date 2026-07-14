@@ -91,6 +91,17 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     // trust: a new entry that didn't set it (or set garbage) defaults to "unknown"
     // — never auto-promote to trusted (#23 decision #3). unknown stays out of the primer.
     if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
+    // status: authored entries routinely omit it; default to "active" (never let it
+    // reach the renderer as undefined → the literal "undefined" string, #54).
+    if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
+      entry.status = "active";
+    }
+    // Optional nullable fields: normalize undefined → null so the persisted md and
+    // the live index agree (the renderer emits `null`, and a rebuild would too). #54.
+    if (entry.supersedes === undefined) entry.supersedes = null;
+    if (entry.validFrom === undefined) entry.validFrom = null;
+    if (entry.validTo === undefined) entry.validTo = null;
+    if (entry.originDevice === undefined) entry.originDevice = null;
     // Provenance arrays + summary are de-facto required but routinely omitted in
     // authored JSON (#37). Default them so render() never hits undefined.length and
     // the persisted md/index stay consistent (no live-vs-rebuild drift).

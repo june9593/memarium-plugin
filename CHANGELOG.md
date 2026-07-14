@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.19.1 — 2026-07-14
+
+### Fix: `memory-write` serialized unset optional fields as the literal `"undefined"` (#54)
+
+The md renderers stringified unset optional `MemoryEntry` fields as the literal
+string `undefined` (`supersedes: undefined`, `validTo: undefined`,
+`status: undefined`, …). `memory-lint` then read those back as real values and
+flagged **every** fresh entry — `dangling-supersedes` (error) + `malformed-date`
+(warning) — and `memory-index` propagated the literals into the rebuilt index,
+so the problem compounded on a reindex instead of clearing.
+
+- **Renderers (memory/entity/qa `render.ts`):** the `scalar()` helper used
+  `=== null`, letting `undefined` fall through to `String(undefined)`. Now every
+  field routes through `nullable()` (`== null` → `null`) or `req()` (fallback),
+  so a renderer can never emit `"undefined"`. Fixes `supersedes` / `validFrom` /
+  `validTo` / `originDevice` / `project` / `status` / `createdAt` / `updatedAt`
+  (+ NaN-safe `confidence` / `importance`).
+- **Parsers (memory/entity/qa `parse.ts`):** treat a legacy literal
+  `"undefined"` / `""` as absent (→ `null` / defaults), so a reindex reads clean
+  values back instead of the literal.
+- **`apply.ts`:** normalize `status` → `active` and `supersedes` / `validFrom` /
+  `validTo` / `originDevice` `undefined` → `null` alongside the existing
+  createdAt/updatedAt/trust normalization.
+- **`memory-index` / `entity-index` / `qa-index`:** self-heal legacy md in place
+  — a reindex rewrites only files that carry the literal (frontmatter-only, body
+  byte-identical; dates backfilled from file mtime), so you no longer have to
+  `sed` them by hand. Report gains a `healed` count.
+
+A brand-new digest now lints clean, and `<index>` + `memory-lint` reach
+`issues: 0` on upgraded 0.13.x data without manual intervention. +9 tests (472).
+
 ## 0.19.0 — 2026-07-13
 
 ### Delete the dead book code (Phase C2 of the book→memory collapse)

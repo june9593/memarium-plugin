@@ -1,11 +1,12 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { emptyMemoryIndex, type MemoryIndex } from "../memory/types.js";
 import { saveMemoryIndex, upsertMemory } from "../memory/index-store.js";
 import { parseMemoryMarkdown } from "../memory/parse.js";
+import { healUndefinedFrontmatter } from "../_shared/heal-frontmatter.js";
 
-export interface MemoryIndexReport { indexed: number; }
+export interface MemoryIndexReport { indexed: number; healed: number; }
 
 function walkMd(dir: string): string[] {
   const out: string[] = [];
@@ -28,11 +29,18 @@ export async function memoryIndexCmd(): Promise<MemoryIndexReport> {
   const memRoot = join(cfg.repoPath, "memory");
   const idx: MemoryIndex = emptyMemoryIndex();
   let indexed = 0;
+  let healed = 0;
   if (existsSync(memRoot)) {
     for (const abs of walkMd(memRoot)) {
       // skip the generated primers
       if (abs.includes(`${join("memory", "_primer")}/`)) continue;
-      const entry = parseMemoryMarkdown(readFileSync(abs, "utf8"));
+      let md = readFileSync(abs, "utf8");
+      // Self-heal legacy `key: undefined` frontmatter (pre-#54) in place, so a
+      // reindex clears the literals out of the md text — not just the index.
+      const mtimeDate = new Date(statSync(abs).mtimeMs).toISOString().slice(0, 10);
+      const fixed = healUndefinedFrontmatter(md, mtimeDate);
+      if (fixed !== null) { writeFileSync(abs, fixed); md = fixed; healed++; }
+      const entry = parseMemoryMarkdown(md);
       if (!entry) continue;
       entry.path = relative(cfg.repoPath, abs);
       upsertMemory(idx, entry);
@@ -40,5 +48,5 @@ export async function memoryIndexCmd(): Promise<MemoryIndexReport> {
     }
   }
   saveMemoryIndex(cfg.repoPath, idx);
-  return { indexed };
+  return { indexed, healed };
 }

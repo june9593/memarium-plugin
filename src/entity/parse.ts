@@ -15,7 +15,12 @@ function parseArr(v: string): string[] {
 }
 function parseScalar(v: string): string | null {
   const t = v.trim();
-  return t === "null" ? null : t;
+  // "undefined" (pre-#54 renderer bug) and "" → absent, so a reindex self-heals.
+  return (t === "null" || t === "undefined" || t === "") ? null : t;
+}
+function parseDate(v: string | undefined): string {
+  const t = (v ?? "").trim();
+  return (t === "undefined" || t === "null") ? "" : t;
 }
 
 /** Inverse of renderEntityMarkdown: parse frontmatter (+ ignore body) → EntityPage. */
@@ -41,7 +46,7 @@ export function parseEntityMarkdown(md: string): EntityPage | null {
     sourceFiles: parseArr(fm.sourceFiles ?? "[]"),
     relatedEntities: parseArr(fm.relatedEntities ?? "[]"),
     path: "", // filled by caller from the file path
-    createdAt: fm.createdAt ?? "",
-    updatedAt: fm.updatedAt ?? "",
+    createdAt: parseDate(fm.createdAt),
+    updatedAt: parseDate(fm.updatedAt),
   };
 }

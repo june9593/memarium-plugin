@@ -7,7 +7,20 @@ function parseArr(v: string): string[] {
 }
 function parseScalar(v: string): string | null {
   const t = v.trim();
-  return t === "null" ? null : t;
+  // "undefined" (from the pre-#54 renderer bug) and "" are treated as absent —
+  // so a reindex of legacy md self-heals the value to null instead of a literal.
+  return (t === "null" || t === "undefined" || t === "") ? null : t;
+}
+/** A date field: strip the pre-#54 literal "undefined"/"null" back to "" (absent),
+ *  so callers/lint see an unset date rather than an unparseable string. */
+function parseDate(v: string | undefined): string {
+  const t = (v ?? "").trim();
+  return (t === "undefined" || t === "null") ? "" : t;
+}
+/** Numeric field: NaN-safe (`Number("undefined")` = NaN poisons the scorer). */
+function parseNum(v: string | undefined, fallback: number): number {
+  const n = Number((v ?? "").trim());
+  return Number.isFinite(n) ? n : fallback;
 }
 
 /** Coerce a frontmatter trust value to the enum; anything unexpected → unknown. */
@@ -47,13 +60,16 @@ export function parseMemoryMarkdown(md: string): MemoryEntry | null {
   const trust = fm.trust !== undefined
     ? coerceTrust(fm.trust)
     : deriveLegacyTrust(sourceSessions, sourceCommits, scope, project);
+  const statusRaw = (fm.status ?? "").trim();
+  const status = (statusRaw === "" || statusRaw === "undefined" || statusRaw === "null")
+    ? "active" : statusRaw;
   return {
     id: fm.id, type: fm.type as MemoryType, scope, project,
     title: fm.title ?? "", summary: fm.summary ?? "",
     path: "", // filled by caller from the file path
-    status: (fm.status as MemoryEntry["status"]) ?? "active",
-    confidence: Number(fm.confidence ?? 0), importance: Number(fm.importance ?? 0),
-    createdAt: fm.createdAt ?? "", updatedAt: fm.updatedAt ?? "",
+    status: status as MemoryEntry["status"],
+    confidence: parseNum(fm.confidence, 0), importance: parseNum(fm.importance, 0),
+    createdAt: parseDate(fm.createdAt), updatedAt: parseDate(fm.updatedAt),
     validFrom: parseScalar(fm.validFrom ?? "null"), validTo: parseScalar(fm.validTo ?? "null"),
     sourceSessions,
     sourceCommits,
