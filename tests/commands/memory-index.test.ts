@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderMemoryMarkdown } from "../../src/memory/render.js";
@@ -41,5 +41,27 @@ describe("memoryIndexCmd (rebuild from md)", () => {
     expect(e.entities).toEqual(["spool", "writer"]);
     expect(e.sourceFiles).toEqual(["src/writer.ts"]);
     expect(e.validTo).toBeNull();
+  });
+});
+
+describe("memoryIndexCmd — symlink guard (the heal step writes md)", () => {
+  let home: string, repo: string;
+  const trySymlink = (t: string, l: string) => { try { symlinkSync(t, l); return true; } catch { return false; } };
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "vbp-memidx-sym-"));
+    vi.stubEnv("HOME", home); vi.resetModules();
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(repo, { recursive: true });
+    mkdirSync(join(home, ".memarium"), { recursive: true });
+    writeFileSync(join(home, ".memarium/config.json"), JSON.stringify({
+      repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli" }));
+  });
+  afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
+
+  it("refuses to index/heal through a symlinked memory/ leaf", async () => {
+    const target = join(home, "outside-dir"); mkdirSync(target, { recursive: true });
+    if (!trySymlink(target, join(repo, "memory"))) return; // symlinks unsupported here — skip
+    const { memoryIndexCmd } = await import("../../src/commands/memory-index.js");
+    await expect(memoryIndexCmd()).rejects.toThrow(/symlink/);
   });
 });

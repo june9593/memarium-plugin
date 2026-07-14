@@ -5,6 +5,7 @@ import { emptyMemoryIndex, type MemoryIndex } from "../memory/types.js";
 import { saveMemoryIndex, upsertMemory } from "../memory/index-store.js";
 import { parseMemoryMarkdown } from "../memory/parse.js";
 import { healUndefinedFrontmatter } from "../_shared/heal-frontmatter.js";
+import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 
 export interface MemoryIndexReport { indexed: number; healed: number; }
 
@@ -30,6 +31,9 @@ export async function memoryIndexCmd(): Promise<MemoryIndexReport> {
   const idx: MemoryIndex = emptyMemoryIndex();
   let indexed = 0;
   let healed = 0;
+  // The heal step now writes md, so refuse to traverse/rewrite through a
+  // symlinked ancestor or the memory/ leaf (could rewrite files outside the repo).
+  assertNoSymlinkedComponent(cfg.repoPath, memRoot, "memory-index");
   if (existsSync(memRoot)) {
     for (const abs of walkMd(memRoot)) {
       // skip the generated primers

@@ -14680,7 +14680,7 @@ function healUndefinedFrontmatter(md, fallbackDate) {
   const m = md.match(/^(---\n)([\s\S]*?)(\n---)/);
   if (!m) return null;
   const before = m[2];
-  const after = before.replace(/^(project|validFrom|validTo|supersedes|originDevice|relatedTo): undefined[ \t]*$/gm, "$1: null").replace(/^status: undefined[ \t]*$/gm, "status: active").replace(/^(createdAt|updatedAt):[ \t]*(?:undefined|null)?[ \t]*$/gm, `$1: ${fallbackDate}`);
+  const after = before.replace(/^(project|validFrom|validTo|supersedes|originDevice|relatedTo): undefined[ \t]*$/gm, "$1: null").replace(/^status: undefined[ \t]*$/gm, "status: active").replace(/^(confidence|importance):[ \t]*(?:undefined|null)[ \t]*$/gm, "$1: 0").replace(/^(createdAt|updatedAt):[ \t]*(?:undefined|null)?[ \t]*$/gm, `$1: ${fallbackDate}`);
   if (after === before) return null;
   return m[1] + after + m[3] + md.slice(m[0].length);
 }
@@ -14722,6 +14722,7 @@ async function memoryIndexCmd() {
   const idx = emptyMemoryIndex();
   let indexed = 0;
   let healed = 0;
+  assertNoSymlinkedComponent(cfg.repoPath, memRoot, "memory-index");
   if (existsSync13(memRoot)) {
     for (const abs of walkMd(memRoot)) {
       if (abs.includes(`${join14("memory", "_primer")}/`)) continue;
@@ -14751,6 +14752,7 @@ var init_memory_index = __esm({
     init_index_store2();
     init_parse();
     init_heal_frontmatter();
+    init_path_guard();
   }
 });
 
@@ -15377,6 +15379,7 @@ async function entityIndexCmd() {
   const idx = emptyEntityIndex();
   let indexed = 0;
   let healed = 0;
+  assertNoSymlinkedComponent(cfg.repoPath, entitiesRoot, "entity-index");
   if (existsSync17(entitiesRoot)) {
     for (const abs of walkMd2(entitiesRoot)) {
       let md = readFileSync16(abs, "utf8");
@@ -15405,6 +15408,7 @@ var init_entity_index = __esm({
     init_index_store4();
     init_parse2();
     init_heal_frontmatter();
+    init_path_guard();
   }
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderEntityMarkdown } from "../../src/entity/render.js";
@@ -119,5 +119,25 @@ describe("entityIndexCmd (rebuild from md)", () => {
     expect(idx.entries["entity/edge-memvc/spool-writer"]).toBeDefined();
     expect(idx.entries["entity/_global/typescript"]).toBeDefined();
     expect(idx.entries["entity/_global/typescript"].project).toBeNull();
+  });
+
+  it("refuses to index/heal through a symlinked memory/entities leaf (heal writes md)", async () => {
+    const home2 = mkdtempSync(join(tmpdir(), "vbp-entidx-sym-"));
+    const repo2 = join(home2, ".memarium/session-repo");
+    mkdirSync(join(repo2, "memory"), { recursive: true });
+    mkdirSync(join(home2, ".memarium"), { recursive: true });
+    writeFileSync(join(home2, ".memarium/config.json"), JSON.stringify({
+      repoPath: repo2, repoUrl: "", deviceBranch: "test", runner: "claude-cli" }));
+    const target = join(home2, "outside-dir"); mkdirSync(target, { recursive: true });
+    let made = true;
+    try { symlinkSync(target, join(repo2, "memory", "entities")); } catch { made = false; }
+    vi.resetModules(); vi.stubEnv("HOME", home2);
+    try {
+      if (!made) return; // symlinks unsupported here — skip
+      const { entityIndexCmd } = await import("../../src/commands/entity-index.js");
+      await expect(entityIndexCmd()).rejects.toThrow(/symlink/);
+    } finally {
+      rmSync(home2, { recursive: true, force: true });
+    }
   });
 });

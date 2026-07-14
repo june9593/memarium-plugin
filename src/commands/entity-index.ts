@@ -5,6 +5,7 @@ import { emptyEntityIndex, type EntityIndex } from "../entity/types.js";
 import { saveEntityIndex, upsertEntity } from "../entity/index-store.js";
 import { parseEntityMarkdown } from "../entity/parse.js";
 import { healUndefinedFrontmatter } from "../_shared/heal-frontmatter.js";
+import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 
 export interface EntityIndexReport { indexed: number; healed: number; }
 
@@ -31,6 +32,9 @@ export async function entityIndexCmd(): Promise<EntityIndexReport> {
   let indexed = 0;
   let healed = 0;
 
+  // The heal step now writes md, so refuse to traverse/rewrite through a
+  // symlinked ancestor or the memory/entities leaf (could escape the repo).
+  assertNoSymlinkedComponent(cfg.repoPath, entitiesRoot, "entity-index");
   if (existsSync(entitiesRoot)) {
     for (const abs of walkMd(entitiesRoot)) {
       let md = readFileSync(abs, "utf8");

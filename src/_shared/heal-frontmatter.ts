@@ -21,6 +21,9 @@ export function healUndefinedFrontmatter(md: string, fallbackDate: string): stri
     .replace(/^(project|validFrom|validTo|supersedes|originDevice|relatedTo): undefined[ \t]*$/gm, "$1: null")
     // lifecycle status → active
     .replace(/^status: undefined[ \t]*$/gm, "status: active")
+    // numeric fields → 0 (a legacy "undefined"/"null" here becomes NaN in the
+    // rebuilt index and poisons the scorer)
+    .replace(/^(confidence|importance):[ \t]*(?:undefined|null)[ \t]*$/gm, "$1: 0")
     // dates: literal undefined/null (or empty from a prior partial heal) → the
     // fallback date. A real date value never matches (non-whitespace tail).
     .replace(/^(createdAt|updatedAt):[ \t]*(?:undefined|null)?[ \t]*$/gm, `$1: ${fallbackDate}`);

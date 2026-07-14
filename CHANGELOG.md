@@ -25,8 +25,10 @@ so the problem compounded on a reindex instead of clearing.
   createdAt/updatedAt/trust normalization.
 - **`memory-index` / `entity-index` / `qa-index`:** self-heal legacy md in place
   — a reindex rewrites only files that carry the literal (frontmatter-only, body
-  byte-identical; dates backfilled from file mtime), so you no longer have to
-  `sed` them by hand. Report gains a `healed` count.
+  byte-identical; dates backfilled from file mtime, numeric literals → `0`), so
+  you no longer have to `sed` them by hand. Report gains a `healed` count. Since
+  the heal now writes md, all three commands run the symlink-component guard
+  before traversal (previously only `qa-index` did).
 
 A brand-new digest now lints clean, and `<index>` + `memory-lint` reach
 `issues: 0` on upgraded 0.13.x data without manual intervention. +9 tests (472).

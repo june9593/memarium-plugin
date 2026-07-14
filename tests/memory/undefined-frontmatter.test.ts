@@ -143,7 +143,7 @@ describe("#54 — reindex self-heals legacy \"undefined\" md text + index", () =
     const legacy = [
       "---", "id: episodic/edge-memvc/legacy", "type: episodic", "scope: project:edge-memvc",
       "project: edge-memvc", "title: Legacy", "summary: s", "status: undefined",
-      "confidence: 0.8", "importance: 3", "createdAt: undefined", "updatedAt: undefined",
+      "confidence: undefined", "importance: undefined", "createdAt: undefined", "updatedAt: undefined",
       "validFrom: undefined", "validTo: undefined", "supersedes: undefined", "originDevice: undefined",
       "sourceSessions: [s1]", "sourceCommits: []", "sourceFiles: []", "entities: []", "trust: untrusted",
       "---", "", "# Legacy", "", "the body — MUST survive byte-for-byte", "",
@@ -166,6 +166,8 @@ describe("#54 — reindex self-heals legacy \"undefined\" md text + index", () =
     expect(md).not.toContain("undefined");
     expect(md).toContain("supersedes: null");
     expect(md).toContain("status: active");
+    expect(md).toContain("confidence: 0");
+    expect(md).toContain("importance: 0");
     expect(md).toMatch(/createdAt: \d{4}-\d{2}-\d{2}/);      // backfilled from mtime
     expect(md).toContain("the body — MUST survive byte-for-byte"); // body intact
 
@@ -185,15 +187,17 @@ describe("#54 — reindex self-heals legacy \"undefined\" md text + index", () =
 
 describe("#54 — healUndefinedFrontmatter helper", () => {
   it("fixes only frontmatter, leaves body byte-identical, returns null for clean md", () => {
-    const dirty = "---\nid: x\nsupersedes: undefined\nstatus: undefined\ncreatedAt: undefined\n---\n\n# x\n\nbody: undefined stays in body\n";
+    const dirty = "---\nid: x\nsupersedes: undefined\nstatus: undefined\nconfidence: undefined\nimportance: undefined\ncreatedAt: undefined\n---\n\n# x\n\nbody: undefined stays in body\n";
     const healed = healUndefinedFrontmatter(dirty, "2026-07-14")!;
     expect(healed).toContain("supersedes: null");
     expect(healed).toContain("status: active");
+    expect(healed).toContain("confidence: 0");
+    expect(healed).toContain("importance: 0");
     expect(healed).toContain("createdAt: 2026-07-14");
     // the word "undefined" INSIDE the body is untouched
     expect(healed).toContain("body: undefined stays in body");
     // a clean md returns null (no churn)
-    const clean = "---\nid: x\nsupersedes: null\nstatus: active\ncreatedAt: 2026-07-14\n---\n\n# x\n\nbody\n";
+    const clean = "---\nid: x\nsupersedes: null\nstatus: active\nconfidence: 0.8\ncreatedAt: 2026-07-14\n---\n\n# x\n\nbody\n";
     expect(healUndefinedFrontmatter(clean, "2026-07-14")).toBeNull();
   });
 });
