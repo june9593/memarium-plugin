@@ -1,7 +1,7 @@
 import type { EntityPage } from "./types.js";
 
-function arr(xs: string[]): string {
-  return JSON.stringify(xs);
+function arr(xs: string[] | undefined): string {
+  return JSON.stringify(xs ?? []);
 }
 /** Nullable scalar → YAML `null` for unset (null OR undefined), never the string
  *  "undefined" (#54). */

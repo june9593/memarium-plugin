@@ -36,6 +36,11 @@ export async function entityWriteCmd(opts: EntityWriteOptions): Promise<EntityWr
     const today = new Date().toISOString().slice(0, 10);
     if (!isDate(entry.createdAt)) entry.createdAt = today;
     if (!isDate(entry.updatedAt)) entry.updatedAt = today;
+    // Arrays: default to [] so the persisted md and the live index agree with a
+    // rebuild (an omitted array would otherwise serialize/upsert inconsistently). #55.
+    for (const k of ["aliases", "sourceMemoryIds", "sourceSessions", "sourceFiles", "relatedEntities"] as const) {
+      if (!Array.isArray(entry[k])) entry[k] = [];
+    }
 
     if (!entry.path) entry.path = entityPath(entry);
 

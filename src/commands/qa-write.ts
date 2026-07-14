@@ -57,6 +57,10 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
       const today = new Date().toISOString().slice(0, 10);
       if (!isDate(entry.createdAt)) entry.createdAt = today;
       if (!isDate(entry.updatedAt)) entry.updatedAt = today;
+      // Arrays default to [] so md + live index agree with a rebuild. #55.
+      for (const k of ["tags", "sources", "sourceMemoryIds", "sourceSessions", "relatedEntities"] as const) {
+        if (!Array.isArray(entry[k])) entry[k] = [];
+      }
     }
     // scope is authoritative for project membership. Derive a trimmed, validated
     // project slug, then canonicalize entry.scope so the stored scope matches

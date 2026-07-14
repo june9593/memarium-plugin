@@ -1,6 +1,6 @@
 import type { QaEntry } from "./types.js";
 
-function arr(xs: string[]): string { return JSON.stringify(xs); }
+function arr(xs: string[] | undefined): string { return JSON.stringify(xs ?? []); }
 /** Required scalar with a fallback so an omitted field never serializes the
  *  literal "undefined" (#54 — `JSON.stringify(undefined)` returns undefined,
  *  which template-interpolates to "undefined"). */

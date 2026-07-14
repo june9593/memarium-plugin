@@ -14687,7 +14687,7 @@ function healUndefinedFrontmatter(md, fallbackDate) {
   const m = md.match(/^(---\n)([\s\S]*?)(\n---)/);
   if (!m) return null;
   const before = m[2];
-  const after = before.replace(/^(project|validFrom|validTo|supersedes|originDevice|relatedTo): undefined[ \t]*$/gm, "$1: null").replace(/^status: undefined[ \t]*$/gm, "status: active").replace(/^confidence:[ \t]*(?:undefined|null)[ \t]*$/gm, "confidence: 0.5").replace(/^importance:[ \t]*(?:undefined|null)[ \t]*$/gm, "importance: 0").replace(/^(createdAt|updatedAt):[ \t]*(?:undefined|null)[ \t]*$/gm, `$1: ${fallbackDate}`);
+  const after = before.replace(/^(project|validFrom|validTo|supersedes|originDevice|relatedTo): undefined[ \t]*$/gm, "$1: null").replace(/^status: undefined[ \t]*$/gm, "status: active").replace(/^confidence:[ \t]*(?:undefined|null)[ \t]*$/gm, "confidence: 0.5").replace(/^importance:[ \t]*(?:undefined|null)[ \t]*$/gm, "importance: 0").replace(/^(sourceSessions|sourceCommits|sourceFiles|entities|aliases|sourceMemoryIds|relatedEntities|tags|sources):[ \t]*undefined[ \t]*$/gm, "$1: []").replace(/^(createdAt|updatedAt):[ \t]*(?:undefined|null)[ \t]*$/gm, `$1: ${fallbackDate}`);
   if (after === before) return null;
   return m[1] + after + m[3] + md.slice(m[0].length);
 }
@@ -15207,7 +15207,7 @@ var init_retro_gate = __esm({
 
 // src/entity/render.ts
 function arr2(xs) {
-  return JSON.stringify(xs);
+  return JSON.stringify(xs ?? []);
 }
 function nullable2(v) {
   return v == null ? "null" : v;
@@ -15273,6 +15273,9 @@ async function entityWriteCmd(opts) {
     const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     if (!isDate(entry.createdAt)) entry.createdAt = today;
     if (!isDate(entry.updatedAt)) entry.updatedAt = today;
+    for (const k2 of ["aliases", "sourceMemoryIds", "sourceSessions", "sourceFiles", "relatedEntities"]) {
+      if (!Array.isArray(entry[k2])) entry[k2] = [];
+    }
     if (!entry.path) entry.path = entityPath(entry);
     const entRoot = resolve4(join16(cfg.repoPath, "memory", "entities"));
     mkdirSync10(entRoot, { recursive: true });
@@ -15570,7 +15573,7 @@ var init_entity_query = __esm({
 
 // src/qa/render.ts
 function arr3(xs) {
-  return JSON.stringify(xs);
+  return JSON.stringify(xs ?? []);
 }
 function req3(v, fallback) {
   return v == null || v === "" ? fallback : String(v);
@@ -15673,6 +15676,9 @@ async function qaWriteCmd(opts) {
       const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
       if (!isDate(entry.createdAt)) entry.createdAt = today;
       if (!isDate(entry.updatedAt)) entry.updatedAt = today;
+      for (const k2 of ["tags", "sources", "sourceMemoryIds", "sourceSessions", "relatedEntities"]) {
+        if (!Array.isArray(entry[k2])) entry[k2] = [];
+      }
     }
     if (entry.scope.startsWith("project:")) {
       const slug = entry.scope.slice("project:".length).trim();

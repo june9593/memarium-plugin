@@ -28,6 +28,10 @@ export function healUndefinedFrontmatter(md: string, fallbackDate: string): stri
     // importance → 0.
     .replace(/^confidence:[ \t]*(?:undefined|null)[ \t]*$/gm, "confidence: 0.5")
     .replace(/^importance:[ \t]*(?:undefined|null)[ \t]*$/gm, "importance: 0")
+    // array fields (memory/entity/qa): a pre-#54 renderer could emit `key:
+    // undefined` for an omitted array, which parseArr turns into ["undefined"].
+    // → empty array.
+    .replace(/^(sourceSessions|sourceCommits|sourceFiles|entities|aliases|sourceMemoryIds|relatedEntities|tags|sources):[ \t]*undefined[ \t]*$/gm, "$1: []")
     // dates: ONLY the literal undefined/null → the fallback date. A real date
     // never matches; a legitimately-empty date from a fresh 0.19.x write is NOT
     // treated as legacy corruption (that would rewrite fresh files, #55).

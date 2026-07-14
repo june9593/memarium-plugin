@@ -52,24 +52,26 @@ describe("#54 — render never serializes the literal \"undefined\"", () => {
     expect(md).toContain("importance: 0");
   });
 
-  it("entity + qa: unset project/dates never serialize \"undefined\"", () => {
+  it("entity + qa: unset project/dates/arrays never serialize \"undefined\"", () => {
     const ent = renderEntityMarkdown({
       id: "edge-memvc/Tab", kind: "class", scope: "project:edge-memvc",
-      project: undefined, title: "Tab", aliases: [], sourceMemoryIds: [],
-      sourceSessions: [], sourceFiles: [], relatedEntities: [],
+      project: undefined, title: "Tab", aliases: undefined, sourceMemoryIds: undefined,
+      sourceSessions: undefined, sourceFiles: undefined, relatedEntities: undefined,
       path: "", createdAt: undefined, updatedAt: undefined,
     } as unknown as Parameters<typeof renderEntityMarkdown>[0], "body");
     expect(ent).not.toContain("undefined");
     expect(ent).toContain("project: null");
+    expect(ent).toContain("relatedEntities: []");
 
     const qa = renderQaMarkdown({
       id: "qa/edge-memvc/how", scope: "project:edge-memvc", project: undefined,
-      question: "How?", answerSummary: "Like so", kind: "howto", tags: [],
-      sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
+      question: "How?", answerSummary: "Like so", kind: "howto", tags: undefined,
+      sources: undefined, sourceMemoryIds: undefined, sourceSessions: undefined, relatedEntities: undefined,
       path: "", createdAt: undefined, updatedAt: undefined,
     } as unknown as Parameters<typeof renderQaMarkdown>[0], "body");
     expect(qa).not.toContain("undefined");
     expect(qa).toContain("project: null");
+    expect(qa).toContain("relatedEntities: []");
   });
 });
 
@@ -243,5 +245,14 @@ describe("#54 — healUndefinedFrontmatter helper", () => {
     // the heal must not rewrite that to a bogus mtime (only the literal counts).
     const freshBlank = "---\nid: x\ncreatedAt: \nupdatedAt: \n---\n\n# x\n\nbody\n";
     expect(healUndefinedFrontmatter(freshBlank, "2026-07-14")).toBeNull();
+  });
+
+  it("repairs array fields serialized as \"undefined\" → [] (entity/qa, #55)", () => {
+    const dirty = "---\nid: e\nrelatedEntities: undefined\nsourceSessions: undefined\ntags: undefined\n---\n\n# e\n\nbody\n";
+    const healed = healUndefinedFrontmatter(dirty, "2026-07-14")!;
+    expect(healed).toContain("relatedEntities: []");
+    expect(healed).toContain("sourceSessions: []");
+    expect(healed).toContain("tags: []");
+    expect(healed).not.toContain("undefined");
   });
 });
