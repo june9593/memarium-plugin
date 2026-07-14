@@ -1,8 +1,10 @@
 import type { EntityPage, EntityKind } from "./types.js";
 
-function parseArr(v: string): string[] {
-  const t = v.trim();
-  if (t === "" || t === "[]") return [];
+function parseArr(v: string | undefined): string[] {
+  const t = (v ?? "").trim();
+  // "undefined"/"null" (pre-#54 renderer bug) → [] so a direct parse doesn't
+  // rebuild a bogus ["undefined"] element (not just the index-command heal).
+  if (t === "" || t === "[]" || t === "undefined" || t === "null") return [];
   if (t.startsWith("[")) {
     try {
       const parsed = JSON.parse(t);

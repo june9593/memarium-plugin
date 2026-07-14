@@ -1,14 +1,15 @@
 import type { MemoryEntry, MemoryType, MemoryTrust } from "./types.js";
 
-function parseArr(v: string): string[] {
-  const t = v.trim();
-  if (t === "[]" || t === "") return [];
+function parseArr(v: string | undefined): string[] {
+  const t = (v ?? "").trim();
+  if (t === "[]" || t === "" || t === "undefined" || t === "null") return [];
   return t.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
 }
-function parseScalar(v: string): string | null {
-  const t = v.trim();
+function parseScalar(v: string | undefined): string | null {
+  const t = (v ?? "").trim();
   // "undefined" (from the pre-#54 renderer bug) and "" are treated as absent —
   // so a reindex of legacy md self-heals the value to null instead of a literal.
+  // Accept `undefined` (an absent frontmatter line) instead of throwing on .trim().
   return (t === "null" || t === "undefined" || t === "") ? null : t;
 }
 /** A date field: strip the pre-#54 literal "undefined"/"null" back to "" (absent),

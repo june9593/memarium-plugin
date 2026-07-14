@@ -32,7 +32,7 @@ so the problem compounded on a reindex instead of clearing.
   (`confidence` → `0.5`, `importance` → `0`).
 
 A brand-new digest now lints clean, and `<index>` + `memory-lint` reach
-`issues: 0` on upgraded 0.13.x data without manual intervention. +17 tests (480 total).
+`issues: 0` on upgraded 0.13.x data without manual intervention. +18 tests (481 total).
 
 ## 0.19.0 — 2026-07-13
 

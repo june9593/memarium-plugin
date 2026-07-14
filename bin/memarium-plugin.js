@@ -14605,12 +14605,12 @@ var init_memory_write = __esm({
 
 // src/memory/parse.ts
 function parseArr(v) {
-  const t2 = v.trim();
-  if (t2 === "[]" || t2 === "") return [];
+  const t2 = (v ?? "").trim();
+  if (t2 === "[]" || t2 === "" || t2 === "undefined" || t2 === "null") return [];
   return t2.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 function parseScalar(v) {
-  const t2 = v.trim();
+  const t2 = (v ?? "").trim();
   return t2 === "null" || t2 === "undefined" || t2 === "" ? null : t2;
 }
 function parseDate(v) {
@@ -15311,8 +15311,8 @@ var init_entity_write = __esm({
 
 // src/entity/parse.ts
 function parseArr2(v) {
-  const t2 = v.trim();
-  if (t2 === "" || t2 === "[]") return [];
+  const t2 = (v ?? "").trim();
+  if (t2 === "" || t2 === "[]" || t2 === "undefined" || t2 === "null") return [];
   if (t2.startsWith("[")) {
     try {
       const parsed = JSON.parse(t2);
@@ -15748,8 +15748,8 @@ var init_qa_write = __esm({
 
 // src/qa/parse.ts
 function parseArr3(v) {
-  const t2 = v.trim();
-  if (t2 === "" || t2 === "[]") return [];
+  const t2 = (v ?? "").trim();
+  if (t2 === "" || t2 === "[]" || t2 === "undefined" || t2 === "null") return [];
   if (t2.startsWith("[")) {
     try {
       const parsed = JSON.parse(t2);

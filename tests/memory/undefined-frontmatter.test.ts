@@ -102,6 +102,23 @@ describe("#54 — parse coerces a legacy literal \"undefined\" back to absent", 
     expect(back.validTo).toBeNull();
   });
 
+  it("direct parse is absent-safe: no project line doesn't throw; array \"undefined\" → [] not [\"undefined\"] (#55)", () => {
+    // memory: an ABSENT project line must not throw (parseScalar(.trim()) on undefined)
+    const noProject = ["---", "id: semantic/p/x", "type: semantic", "scope: project:p",
+      "title: X", "sourceSessions: undefined", "---", "", "# X", "b"].join("\n");
+    let e!: ReturnType<typeof parseMemoryMarkdown>;
+    expect(() => { e = parseMemoryMarkdown(noProject); }).not.toThrow();
+    expect(e!.project).toBeNull();
+    expect(e!.sourceSessions).toEqual([]);   // "undefined" → [], not ["undefined"]
+    // entity + qa: array "undefined" → [] on a DIRECT parse (not only via the heal)
+    const ent = parseEntityMarkdown(["---", "id: e/x", "kind: class", "scope: project:p",
+      "title: X", "relatedEntities: undefined", "---", "", "# X", "b"].join("\n"))!;
+    expect(ent.relatedEntities).toEqual([]);
+    const qa = parseQaMarkdown(["---", "id: qa/p/x", "scope: project:p", "kind: howto",
+      "question: Q", "answerSummary: A", "tags: undefined", "---", "", "# Q", "b"].join("\n"))!;
+    expect(qa.tags).toEqual([]);
+  });
+
   it("numeric fields are absent-safe on parse: empty/null/undefined confidence → 0.5 default", () => {
     const mk = (confLine: string) => [
       "---", "id: episodic/p/n", "type: episodic", "scope: project:p", "project: p",
