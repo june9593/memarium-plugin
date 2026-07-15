@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { loadIndex } from "../_shared/index-store.js";
+import type { Tool } from "../_shared/types.js";
 import { MEMORY_INDEX_REL } from "../memory/index-store.js";
 import { ENTITY_INDEX_REL } from "../entity/index-store.js";
 import { QA_INDEX_REL } from "../qa/index-store.js";
@@ -14,6 +15,13 @@ import { writeProposal, flatTargetKey, type MemoryProposal } from "../memory/pro
 import { targetKey, deriveAction, canonicalMemoryPath } from "../memory/gate.js";
 
 export interface MemoryLintOptions { cwd?: string; json?: boolean; fix?: boolean; }
+
+// Runtime allowlist mirroring the `Tool` union in _shared/types.ts. Typed as
+// Set<Tool> so tsc rejects a typo'd literal here, but read as ReadonlySet<string>
+// so it can test the untyped tool field off a raw index entry. Keep in sync with
+// `Tool`: an index entry whose tool isn't one of these is not something memarium
+// writes, so a nonempty index containing one is untrusted (→ skip stale-provenance).
+const KNOWN_TOOLS: ReadonlySet<string> = new Set<Tool>(["claude", "copilot"]);
 
 /** Recover a memory's body (the prose after the `# title` heading) from its md,
  *  so a --fix proposal preserves content and only flips status. */
@@ -120,7 +128,8 @@ export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
     const wellFormed = pairs.length > 0 && pairs.every(([key, ent]) => {
       const e2 = ent as { tool?: unknown; sessionId?: unknown };
       return typeof e2.sessionId === "string" && e2.sessionId.length > 0
-        && typeof e2.tool === "string" && key === `${e2.tool}:${e2.sessionId}`;
+        && typeof e2.tool === "string" && KNOWN_TOOLS.has(e2.tool)
+        && key === `${e2.tool}:${e2.sessionId}`;
     });
     knownSessions = wellFormed
       ? new Set(pairs.map(([, ent]) => (ent as { sessionId: string }).sessionId))

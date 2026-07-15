@@ -237,6 +237,24 @@ describe("memoryLintCmd", () => {
     expect(payload.issues.some((i: { check: string }) => i.check === "stale-provenance")).toBe(false);
   });
 
+  it("does NOT report stale-provenance when a spool entry has an UNSUPPORTED tool (well-formed key but tool ∉ {claude,copilot} → SKIP)", async () => {
+    // Key matches `${tool}:${sessionId}`, so the key-shape check alone passes — but
+    // `other` is not a Tool memarium writes, so the index is untrusted and the check
+    // must skip rather than trust "s1" as a known session.
+    writeFileSync(join(repo, ".memarium", "index.json"), JSON.stringify({ version: 1, entries: {
+      "other:s1": { tool: "other", sessionId: "s1" } } }));
+    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/orphan": { id: "semantic/p/orphan", type: "semantic", scope: "project:p", project: "p",
+        title: "t", summary: "s", status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+        sourceSessions: ["sess-gone"], sourceCommits: [], sourceFiles: [],
+        path: "memory/semantic/p/orphan.md", trust: "trusted" } } }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.issues.some((i: { check: string }) => i.check === "stale-provenance")).toBe(false);
+  });
+
   function writeExpiredEntry() {
     writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
       "semantic/p/exp": { id: "semantic/p/exp", type: "semantic", scope: "project:p", project: "p",

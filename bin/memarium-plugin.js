@@ -16484,7 +16484,7 @@ async function memoryLintCmd(opts) {
     const pairs = Object.entries(spool.entries);
     const wellFormed = pairs.length > 0 && pairs.every(([key, ent]) => {
       const e2 = ent;
-      return typeof e2.sessionId === "string" && e2.sessionId.length > 0 && typeof e2.tool === "string" && key === `${e2.tool}:${e2.sessionId}`;
+      return typeof e2.sessionId === "string" && e2.sessionId.length > 0 && typeof e2.tool === "string" && KNOWN_TOOLS.has(e2.tool) && key === `${e2.tool}:${e2.sessionId}`;
     });
     knownSessions = wellFormed ? new Set(pairs.map(([, ent]) => ent.sessionId)) : void 0;
   } catch {
@@ -16512,6 +16512,7 @@ ${fixed.length} staleness fix(es) queued as proposals \u2014 review with \`memor
     process.stdout.write(out);
   }
 }
+var KNOWN_TOOLS;
 var init_memory_lint = __esm({
   "src/commands/memory-lint.ts"() {
     "use strict";
@@ -16527,6 +16528,7 @@ var init_memory_lint = __esm({
     init_lint();
     init_proposal_store();
     init_gate();
+    KNOWN_TOOLS = /* @__PURE__ */ new Set(["claude", "copilot"]);
   }
 });
 
