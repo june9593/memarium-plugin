@@ -103,21 +103,29 @@ export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
   }
   const now = new Date().toISOString().slice(0, 10);
   // Full sessionIds known to the spool index. Feeds lintMemory's stale-provenance
-  // check (a memory whose sourceSessions are all gone from the spool). A failed,
-  // absent, or empty spool-index load leaves knownSessions undefined, which SKIPS
-  // the stale-provenance check — so lint never false-flags every provenanced memory
-  // on a repo whose index isn't cleanly loadable. loadIndex returns an empty index
-  // on an absent file and throws only on a corrupt one; both — plus a genuinely
-  // empty index — collapse to undefined here, keeping lint a no-throw read-only
-  // diagnostic.
+  // check (a memory whose sourceSessions are all gone from the spool). We build the
+  // known-set ONLY when the index is positively trustworthy: present, non-empty, and
+  // every entry well-formed (a non-empty string sessionId whose map key matches
+  // keyFor(tool, sessionId)). Absent, empty, corrupt (unparseable/bad version), OR
+  // malformed (a parseable index with any bogus entry) all collapse to undefined,
+  // which SKIPS the check — so lint never false-flags every provenanced memory on a
+  // repo whose index isn't cleanly loadable. loadIndex returns an empty index on an
+  // absent file and throws only on a corrupt one; the well-formedness gate below
+  // catches the parseable-but-garbage case loadIndex can't (it validates only the
+  // version). Keeps lint a no-throw read-only diagnostic.
   let knownSessions: Set<string> | undefined;
   try {
     const spool = loadIndex(cfg.repoPath);
-    const ids = Object.values(spool.entries)
-      .map((e) => (e as { sessionId?: unknown }).sessionId)
-      .filter((s): s is string => typeof s === "string");
-    knownSessions = ids.length > 0 ? new Set(ids) : undefined; // absent/empty → skip
-  } catch { knownSessions = undefined; }                        // corrupt → skip
+    const pairs = Object.entries(spool.entries);
+    const wellFormed = pairs.length > 0 && pairs.every(([key, ent]) => {
+      const e2 = ent as { tool?: unknown; sessionId?: unknown };
+      return typeof e2.sessionId === "string" && e2.sessionId.length > 0
+        && typeof e2.tool === "string" && key === `${e2.tool}:${e2.sessionId}`;
+    });
+    knownSessions = wellFormed
+      ? new Set(pairs.map(([, ent]) => (ent as { sessionId: string }).sessionId))
+      : undefined; // absent / empty / malformed → skip
+  } catch { knownSessions = undefined; } // corrupt → skip
   const m = readIndexOnce<MemoryIndex>(cfg.repoPath, MEMORY_INDEX_REL, "memory", emptyMemoryIndex());
   const e = readIndexOnce<EntityIndex>(cfg.repoPath, ENTITY_INDEX_REL, "entity", emptyEntityIndex());
   const q = readIndexOnce<QaIndex>(cfg.repoPath, QA_INDEX_REL, "qa", emptyQaIndex());

@@ -16481,8 +16481,12 @@ async function memoryLintCmd(opts) {
   let knownSessions;
   try {
     const spool = loadIndex(cfg.repoPath);
-    const ids = Object.values(spool.entries).map((e2) => e2.sessionId).filter((s) => typeof s === "string");
-    knownSessions = ids.length > 0 ? new Set(ids) : void 0;
+    const pairs = Object.entries(spool.entries);
+    const wellFormed = pairs.length > 0 && pairs.every(([key, ent]) => {
+      const e2 = ent;
+      return typeof e2.sessionId === "string" && e2.sessionId.length > 0 && typeof e2.tool === "string" && key === `${e2.tool}:${e2.sessionId}`;
+    });
+    knownSessions = wellFormed ? new Set(pairs.map(([, ent]) => ent.sessionId)) : void 0;
   } catch {
     knownSessions = void 0;
   }

@@ -218,6 +218,25 @@ describe("memoryLintCmd", () => {
     expect(payload.issues.some((i: { check: string }) => i.check === "stale-provenance")).toBe(false);
   });
 
+  it("does NOT report stale-provenance when the spool index is MALFORMED (parseable but bogus entries → SKIP, not storm)", async () => {
+    // A parseable v1 index whose entry key does NOT match keyFor(tool, sessionId) is
+    // untrustworthy — loadIndex only validates the version, so this garbage slips past
+    // it. The well-formedness gate must treat it like a corrupt load and skip the
+    // check, rather than build a bogus known-set that false-flags every real memory.
+    writeFileSync(join(repo, ".memarium", "index.json"), JSON.stringify({ version: 1, entries: {
+      "bad-key": { tool: "claude", sessionId: "bogus" } } }));
+    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/orphan": { id: "semantic/p/orphan", type: "semantic", scope: "project:p", project: "p",
+        title: "t", summary: "s", status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+        sourceSessions: ["sess-gone"], sourceCommits: [], sourceFiles: [],
+        path: "memory/semantic/p/orphan.md", trust: "trusted" } } }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.issues.some((i: { check: string }) => i.check === "stale-provenance")).toBe(false);
+  });
+
   function writeExpiredEntry() {
     writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
       "semantic/p/exp": { id: "semantic/p/exp", type: "semantic", scope: "project:p", project: "p",
