@@ -103,18 +103,21 @@ export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
   }
   const now = new Date().toISOString().slice(0, 10);
   // Full sessionIds known to the spool index. Feeds lintMemory's stale-provenance
-  // check (a memory whose sourceSessions are all gone from the spool). loadIndex
-  // throws on a corrupt/unsupported index.json — swallow it here so lint stays a
-  // no-throw read-only diagnostic (a broken spool index just yields no known set).
-  let knownSessions: Set<string>;
+  // check (a memory whose sourceSessions are all gone from the spool). A failed,
+  // absent, or empty spool-index load leaves knownSessions undefined, which SKIPS
+  // the stale-provenance check — so lint never false-flags every provenanced memory
+  // on a repo whose index isn't cleanly loadable. loadIndex returns an empty index
+  // on an absent file and throws only on a corrupt one; both — plus a genuinely
+  // empty index — collapse to undefined here, keeping lint a no-throw read-only
+  // diagnostic.
+  let knownSessions: Set<string> | undefined;
   try {
     const spool = loadIndex(cfg.repoPath);
-    knownSessions = new Set(
-      Object.values(spool.entries)
-        .map((e) => (e as { sessionId?: unknown }).sessionId)
-        .filter((s): s is string => typeof s === "string"),
-    );
-  } catch { knownSessions = new Set(); }
+    const ids = Object.values(spool.entries)
+      .map((e) => (e as { sessionId?: unknown }).sessionId)
+      .filter((s): s is string => typeof s === "string");
+    knownSessions = ids.length > 0 ? new Set(ids) : undefined; // absent/empty → skip
+  } catch { knownSessions = undefined; }                        // corrupt → skip
   const m = readIndexOnce<MemoryIndex>(cfg.repoPath, MEMORY_INDEX_REL, "memory", emptyMemoryIndex());
   const e = readIndexOnce<EntityIndex>(cfg.repoPath, ENTITY_INDEX_REL, "entity", emptyEntityIndex());
   const q = readIndexOnce<QaIndex>(cfg.repoPath, QA_INDEX_REL, "qa", emptyQaIndex());

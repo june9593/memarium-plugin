@@ -181,6 +181,41 @@ describe("memoryLintCmd", () => {
     const payload = JSON.parse(out.join(""));
     expect(payload.issues.some((i: { check: string; id: string }) =>
       i.check === "stale-provenance" && i.id === "semantic/p/orphan")).toBe(true);
+    const finding = payload.issues.find((i: { check: string; id: string }) =>
+      i.check === "stale-provenance" && i.id === "semantic/p/orphan");
+    expect(finding.refs).toEqual(["sess-gone"]);
+  });
+
+  it("does NOT report stale-provenance when the spool index is ABSENT (empty knownSessions must SKIP, not storm)", async () => {
+    // No .memarium/index.json at all → loadIndex returns an empty index → zero known
+    // sessionIds → knownSessions undefined → stale-provenance check skipped. Guards the
+    // regression where an empty Set false-flagged every provenanced memory (#s1a).
+    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/orphan": { id: "semantic/p/orphan", type: "semantic", scope: "project:p", project: "p",
+        title: "t", summary: "s", status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+        sourceSessions: ["sess-gone"], sourceCommits: [], sourceFiles: [],
+        path: "memory/semantic/p/orphan.md", trust: "trusted" } } }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.issues.some((i: { check: string }) => i.check === "stale-provenance")).toBe(false);
+  });
+
+  it("does NOT report stale-provenance when the spool index is CORRUPT (loadIndex throws → SKIP, not storm)", async () => {
+    // Corrupt spool index → loadIndex throws → catch leaves knownSessions undefined →
+    // stale-provenance check skipped (never storms a repo whose index can't be loaded).
+    writeFileSync(join(repo, ".memarium", "index.json"), "{ not json");
+    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/orphan": { id: "semantic/p/orphan", type: "semantic", scope: "project:p", project: "p",
+        title: "t", summary: "s", status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+        sourceSessions: ["sess-gone"], sourceCommits: [], sourceFiles: [],
+        path: "memory/semantic/p/orphan.md", trust: "trusted" } } }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.issues.some((i: { check: string }) => i.check === "stale-provenance")).toBe(false);
   });
 
   function writeExpiredEntry() {
