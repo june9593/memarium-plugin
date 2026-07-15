@@ -162,6 +162,27 @@ describe("memoryLintCmd", () => {
     expect(ids).not.toContain("semantic/q/mp");
   });
 
+  it("reports stale-provenance when a memory's sourceSessions are absent from the spool index", async () => {
+    // spool index.json knows only sess-live; memory points only at sess-gone.
+    writeFileSync(join(repo, ".memarium", "index.json"), JSON.stringify({
+      version: 1, entries: { "claude:sess-live": { tool: "claude", sessionId: "sess-live",
+        shortId: "sess-liv", project: "p", projectRaw: "/p", startedAt: "2026-01-01T00:00:00Z",
+        endedAt: "2026-01-01T00:00:00Z", nameSlug: "x", displayName: "x",
+        relativePath: "raw_sessions/claude/p/2026-01-01/x__sess-liv.md",
+        sourcePath: "/x.jsonl", sourceMtimeMs: 1, sourceSha256: "x" } } }));
+    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/orphan": { id: "semantic/p/orphan", type: "semantic", scope: "project:p", project: "p",
+        title: "t", summary: "s", status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+        sourceSessions: ["sess-gone"], sourceCommits: [], sourceFiles: [],
+        path: "memory/semantic/p/orphan.md", trust: "trusted" } } }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.issues.some((i: { check: string; id: string }) =>
+      i.check === "stale-provenance" && i.id === "semantic/p/orphan")).toBe(true);
+  });
+
   function writeExpiredEntry() {
     writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
       "semantic/p/exp": { id: "semantic/p/exp", type: "semantic", scope: "project:p", project: "p",

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
+import { loadIndex } from "../_shared/index-store.js";
 import { MEMORY_INDEX_REL } from "../memory/index-store.js";
 import { ENTITY_INDEX_REL } from "../entity/index-store.js";
 import { QA_INDEX_REL } from "../qa/index-store.js";
@@ -101,10 +102,23 @@ export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
     try { project = resolveProjectFromCwd(opts.cwd, cfg.repoPath); } catch { project = null; }
   }
   const now = new Date().toISOString().slice(0, 10);
+  // Full sessionIds known to the spool index. Feeds lintMemory's stale-provenance
+  // check (a memory whose sourceSessions are all gone from the spool). loadIndex
+  // throws on a corrupt/unsupported index.json — swallow it here so lint stays a
+  // no-throw read-only diagnostic (a broken spool index just yields no known set).
+  let knownSessions: Set<string>;
+  try {
+    const spool = loadIndex(cfg.repoPath);
+    knownSessions = new Set(
+      Object.values(spool.entries)
+        .map((e) => (e as { sessionId?: unknown }).sessionId)
+        .filter((s): s is string => typeof s === "string"),
+    );
+  } catch { knownSessions = new Set(); }
   const m = readIndexOnce<MemoryIndex>(cfg.repoPath, MEMORY_INDEX_REL, "memory", emptyMemoryIndex());
   const e = readIndexOnce<EntityIndex>(cfg.repoPath, ENTITY_INDEX_REL, "entity", emptyEntityIndex());
   const q = readIndexOnce<QaIndex>(cfg.repoPath, QA_INDEX_REL, "qa", emptyQaIndex());
-  const report = lintMemory(m.index, e.index, q.index, { now, project, generatedAt: now });
+  const report = lintMemory(m.index, e.index, q.index, { now, project, generatedAt: now, knownSessions });
   const corrupt = [m.finding, e.finding, q.finding].filter((f): f is LintFinding => f !== null);
   if (corrupt.length) {
     report.issues = [...corrupt, ...report.issues];
