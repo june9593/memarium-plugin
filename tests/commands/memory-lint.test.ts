@@ -162,6 +162,99 @@ describe("memoryLintCmd", () => {
     expect(ids).not.toContain("semantic/q/mp");
   });
 
+  it("reports stale-provenance when a memory's sourceSessions are absent from the spool index", async () => {
+    // spool index.json knows only sess-live; memory points only at sess-gone.
+    writeFileSync(join(repo, ".memarium", "index.json"), JSON.stringify({
+      version: 1, entries: { "claude:sess-live": { tool: "claude", sessionId: "sess-live",
+        shortId: "sess-liv", project: "p", projectRaw: "/p", startedAt: "2026-01-01T00:00:00Z",
+        endedAt: "2026-01-01T00:00:00Z", nameSlug: "x", displayName: "x",
+        relativePath: "raw_sessions/claude/p/2026-01-01/x__sess-liv.md",
+        sourcePath: "/x.jsonl", sourceMtimeMs: 1, sourceSha256: "x" } } }));
+    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/orphan": { id: "semantic/p/orphan", type: "semantic", scope: "project:p", project: "p",
+        title: "t", summary: "s", status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+        sourceSessions: ["sess-gone"], sourceCommits: [], sourceFiles: [],
+        path: "memory/semantic/p/orphan.md", trust: "trusted" } } }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.issues.some((i: { check: string; id: string }) =>
+      i.check === "stale-provenance" && i.id === "semantic/p/orphan")).toBe(true);
+    const finding = payload.issues.find((i: { check: string; id: string }) =>
+      i.check === "stale-provenance" && i.id === "semantic/p/orphan");
+    expect(finding.refs).toEqual(["sess-gone"]);
+  });
+
+  it("does NOT report stale-provenance when the spool index is ABSENT (empty knownSessions must SKIP, not storm)", async () => {
+    // No .memarium/index.json at all → loadIndex returns an empty index → zero known
+    // sessionIds → knownSessions undefined → stale-provenance check skipped. Guards the
+    // regression where an empty Set false-flagged every provenanced memory (#s1a).
+    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/orphan": { id: "semantic/p/orphan", type: "semantic", scope: "project:p", project: "p",
+        title: "t", summary: "s", status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+        sourceSessions: ["sess-gone"], sourceCommits: [], sourceFiles: [],
+        path: "memory/semantic/p/orphan.md", trust: "trusted" } } }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.issues.some((i: { check: string }) => i.check === "stale-provenance")).toBe(false);
+  });
+
+  it("does NOT report stale-provenance when the spool index is CORRUPT (loadIndex throws → SKIP, not storm)", async () => {
+    // Corrupt spool index → loadIndex throws → catch leaves knownSessions undefined →
+    // stale-provenance check skipped (never storms a repo whose index can't be loaded).
+    writeFileSync(join(repo, ".memarium", "index.json"), "{ not json");
+    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/orphan": { id: "semantic/p/orphan", type: "semantic", scope: "project:p", project: "p",
+        title: "t", summary: "s", status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+        sourceSessions: ["sess-gone"], sourceCommits: [], sourceFiles: [],
+        path: "memory/semantic/p/orphan.md", trust: "trusted" } } }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.issues.some((i: { check: string }) => i.check === "stale-provenance")).toBe(false);
+  });
+
+  it("does NOT report stale-provenance when the spool index is MALFORMED (parseable but bogus entries → SKIP, not storm)", async () => {
+    // A parseable v1 index whose entry key does NOT match keyFor(tool, sessionId) is
+    // untrustworthy — loadIndex only validates the version, so this garbage slips past
+    // it. The well-formedness gate must treat it like a corrupt load and skip the
+    // check, rather than build a bogus known-set that false-flags every real memory.
+    writeFileSync(join(repo, ".memarium", "index.json"), JSON.stringify({ version: 1, entries: {
+      "bad-key": { tool: "claude", sessionId: "bogus" } } }));
+    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/orphan": { id: "semantic/p/orphan", type: "semantic", scope: "project:p", project: "p",
+        title: "t", summary: "s", status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+        sourceSessions: ["sess-gone"], sourceCommits: [], sourceFiles: [],
+        path: "memory/semantic/p/orphan.md", trust: "trusted" } } }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.issues.some((i: { check: string }) => i.check === "stale-provenance")).toBe(false);
+  });
+
+  it("does NOT report stale-provenance when a spool entry has an UNSUPPORTED tool (well-formed key but tool ∉ {claude,copilot} → SKIP)", async () => {
+    // Key matches `${tool}:${sessionId}`, so the key-shape check alone passes — but
+    // `other` is not a Tool memarium writes, so the index is untrusted and the check
+    // must skip rather than trust "s1" as a known session.
+    writeFileSync(join(repo, ".memarium", "index.json"), JSON.stringify({ version: 1, entries: {
+      "other:s1": { tool: "other", sessionId: "s1" } } }));
+    writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/orphan": { id: "semantic/p/orphan", type: "semantic", scope: "project:p", project: "p",
+        title: "t", summary: "s", status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+        supersedes: null, entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+        sourceSessions: ["sess-gone"], sourceCommits: [], sourceFiles: [],
+        path: "memory/semantic/p/orphan.md", trust: "trusted" } } }));
+    await memoryLintCmd({ json: true });
+    const payload = JSON.parse(out.join(""));
+    expect(payload.issues.some((i: { check: string }) => i.check === "stale-provenance")).toBe(false);
+  });
+
   function writeExpiredEntry() {
     writeFileSync(join(repo, ".memarium", "index.memory.json"), JSON.stringify({ version: 1, entries: {
       "semantic/p/exp": { id: "semantic/p/exp", type: "semantic", scope: "project:p", project: "p",

@@ -50,6 +50,10 @@ export interface LintOptions {
   generatedAt?: string;
   dupThreshold?: number;
   clusterMin?: number;
+  /** Full sessionIds known to the spool index (.memarium/index.json). When
+   *  provided, a non-core/non-pinned memory whose sourceSessions are ALL absent
+   *  from this set is flagged `stale-provenance` — its evidence is gone. */
+  knownSessions?: Set<string>;
 }
 
 /** scope is `unknown` because it comes from an untrusted (possibly corrupt) index at runtime. */
@@ -116,6 +120,17 @@ export function lintMemory(
           e.sourceSessions.length === 0 && e.sourceCommits.length === 0 && e.sourceFiles.length === 0) {
         issues.push({ check: "missing-provenance", severity: "warning", layer: "memory", id: e.id,
           detail: `no sourceSessions/sourceCommits/sourceFiles — origin not traceable` });
+      }
+      // stale-provenance: evidence gone. A non-core, non-pinned memory whose
+      // sourceSessions are NON-empty but ALL absent from the spool index means
+      // its supporting raw sessions were pruned/deleted (poisoning-persistence
+      // probe, #54-era). Only runs when the caller supplies the known-session set.
+      if (opts.knownSessions && e.type !== "core" && e.status !== "pinned") {
+        const ss = Array.isArray(e.sourceSessions) ? e.sourceSessions : [];
+        if (ss.length > 0 && !ss.some((s) => opts.knownSessions!.has(s))) {
+          issues.push({ check: "stale-provenance", severity: "warning", layer: "memory", id: e.id,
+            detail: `all ${ss.length} sourceSessions absent from the spool index — evidence gone`, refs: ss });
+        }
       }
       // Episodic is now the PRIMARY durable per-thread record (the digest
       // receipt that replaced chronicles), so it is NOT flagged stale by age —

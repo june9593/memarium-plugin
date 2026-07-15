@@ -537,3 +537,44 @@ describe("lintMemory — Fix: non-string supersedes / sourceMemoryIds / relatedE
     }
   });
 });
+
+describe("stale-provenance (#54-era poisoning-persistence probe)", () => {
+  const base = (over: Partial<MemoryEntry>): MemoryEntry => mem({
+    id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p",
+    title: "t", summary: "s", sourceSessions: ["sess-gone-uuid"], ...over,
+  });
+  const knownSessions = new Set(["sess-live-uuid"]);
+
+  it("flags a non-core/non-pinned memory whose sourceSessions are ALL absent from the spool index", () => {
+    const r = lintMemory(idxOf(base({})), emptyEntityIndex(), emptyQaIndex(),
+      { now: NOW, project: null, knownSessions });
+    const f = r.issues.find((i) => i.check === "stale-provenance");
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe("warning");
+    expect(f!.refs).toEqual(["sess-gone-uuid"]);
+  });
+
+  it("does NOT flag when at least one sourceSession is still known", () => {
+    const e = base({ sourceSessions: ["sess-gone-uuid", "sess-live-uuid"] });
+    const r = lintMemory(idxOf(e), emptyEntityIndex(), emptyQaIndex(), { now: NOW, project: null, knownSessions });
+    expect(r.issues.some((i) => i.check === "stale-provenance")).toBe(false);
+  });
+
+  it("exempts core and pinned; skips when knownSessions is absent (back-compat)", () => {
+    const core = base({ id: "core/_global/rule", type: "core", scope: "global", project: null });
+    const pinned = base({ id: "semantic/p/pin", status: "pinned" });
+    const withKnown = lintMemory(idxOf(core, pinned), emptyEntityIndex(), emptyQaIndex(),
+      { now: NOW, project: null, knownSessions });
+    expect(withKnown.issues.some((i) => i.check === "stale-provenance")).toBe(false);
+    // no knownSessions passed → check skipped entirely
+    const noKnown = lintMemory(idxOf(base({})), emptyEntityIndex(), emptyQaIndex(), { now: NOW, project: null });
+    expect(noKnown.issues.some((i) => i.check === "stale-provenance")).toBe(false);
+  });
+
+  it("does NOT double-flag an entry that already has NO provenance (that's missing-provenance)", () => {
+    const e = base({ sourceSessions: [], sourceCommits: [], sourceFiles: [] });
+    const r = lintMemory(idxOf(e), emptyEntityIndex(), emptyQaIndex(), { now: NOW, project: null, knownSessions });
+    expect(r.issues.some((i) => i.check === "stale-provenance")).toBe(false);
+    expect(r.issues.some((i) => i.check === "missing-provenance")).toBe(true);
+  });
+});

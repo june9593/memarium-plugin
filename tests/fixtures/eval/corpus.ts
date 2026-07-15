@@ -52,6 +52,13 @@ export const CORPUS: EvalCorpus = {
       title: "Alpha deploy step one", summary: "deploy first step", entities: ["deploy"], sourceSessions: ["s1"], importance: 4 }),
     mem({ id: "semantic/alpha/deploy-2", type: "semantic", scope: "project:alpha", project: "alpha",
       title: "Alpha deploy rollback", summary: "deploy rollback step", entities: ["deploy", "rollback"], sourceSessions: ["s2"], importance: 4 }),
+    // scope-gate hardening: a global memory that legitimately surfaces for a project
+    // query (guards against over-aggressive scope filtering), + another project's
+    // project-scoped memory that must be excluded even though it shares the query term.
+    mem({ id: "semantic/_global/editor", type: "semantic", scope: "global", project: null,
+      title: "Yue prefers vim keybindings", summary: "global editor preference vim", entities: ["vim"] }),
+    mem({ id: "semantic/beta/deploy", type: "semantic", scope: "project:beta", project: "beta",
+      title: "Beta deploy runbook", summary: "beta deploy vim runbook", entities: ["deploy", "vim"] }),
   ],
   qa: [
     qa({ id: "qa/alpha/auth-deploy", scope: "project:alpha", project: "alpha", kind: "compound",
