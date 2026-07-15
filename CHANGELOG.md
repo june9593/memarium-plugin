@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.19.2 — 2026-07-16
+
+### S1-A: deterministic memory eval regression gates
+
+RAG/agent-memory 调研指出 memarium 只测 recall@k/MRR。S1-A 补确定性回归门：
+
+- **`memory-lint` stale-provenance**：一条非 core/非 pinned 记忆的 `sourceSessions`
+  全部不在 spool `index.json` 里时标 warning（源证据已没 —— poisoning-persistence 防御）。
+  `memory-lint` 命令现在加载 spool index 并把已知 session 集合传给 lint；索引缺失/损坏/为空时
+  跳过该检查（绝不因索引读不出而给每条有出处的记忆误报）。
+- **注入路由门（测试）**：锁住"任何 core/procedural item 送进 `memory-write` 必被拒、
+  走 memory-propose" —— 注入的行为规则绝不 auto-write。
+- **scope 门硬化（测试）**：global 记忆合法出现、他项目 project-scoped 条目被排除（非空泛排除）。
+- 串项目泄漏 / superseded 排除已由现有 eval fixtures 覆盖。
+
+纯确定性、无 LLM、进 CI。（B 写入质量 / C 三臂消融是 S1 的后续期。）
+
 ## 0.19.1 — 2026-07-14
 
 ### Fix: `memory-write` serialized unset optional fields as the literal `"undefined"` (#54)

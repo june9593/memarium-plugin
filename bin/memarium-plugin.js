@@ -16081,6 +16081,19 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
           detail: `no sourceSessions/sourceCommits/sourceFiles \u2014 origin not traceable`
         });
       }
+      if (opts.knownSessions && e.type !== "core" && e.status !== "pinned") {
+        const ss = Array.isArray(e.sourceSessions) ? e.sourceSessions : [];
+        if (ss.length > 0 && !ss.some((s) => opts.knownSessions.has(s))) {
+          issues.push({
+            check: "stale-provenance",
+            severity: "warning",
+            layer: "memory",
+            id: e.id,
+            detail: `all ${ss.length} sourceSessions absent from the spool index \u2014 evidence gone`,
+            refs: ss
+          });
+        }
+      }
       if (e.status === "active" && e.type === "episodic") {
         const age = daysBetween(opts.now, e.updatedAt);
         if (!isFinite(age)) {
@@ -16465,10 +16478,18 @@ async function memoryLintCmd(opts) {
     }
   }
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  let knownSessions;
+  try {
+    const spool = loadIndex(cfg.repoPath);
+    const ids = Object.values(spool.entries).map((e2) => e2.sessionId).filter((s) => typeof s === "string");
+    knownSessions = ids.length > 0 ? new Set(ids) : void 0;
+  } catch {
+    knownSessions = void 0;
+  }
   const m = readIndexOnce(cfg.repoPath, MEMORY_INDEX_REL, "memory", emptyMemoryIndex());
   const e = readIndexOnce(cfg.repoPath, ENTITY_INDEX_REL, "entity", emptyEntityIndex());
   const q2 = readIndexOnce(cfg.repoPath, QA_INDEX_REL, "qa", emptyQaIndex());
-  const report = lintMemory(m.index, e.index, q2.index, { now, project, generatedAt: now });
+  const report = lintMemory(m.index, e.index, q2.index, { now, project, generatedAt: now, knownSessions });
   const corrupt = [m.finding, e.finding, q2.finding].filter((f) => f !== null);
   if (corrupt.length) {
     report.issues = [...corrupt, ...report.issues];
@@ -16492,6 +16513,7 @@ var init_memory_lint = __esm({
     "use strict";
     init_plugin_config();
     init_project_resolve();
+    init_index_store();
     init_index_store2();
     init_index_store4();
     init_index_store3();
