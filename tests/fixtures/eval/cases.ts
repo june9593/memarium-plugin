@@ -19,6 +19,8 @@ export const CASES: EvalCase[] = [
     query: q("xyzzy nonexistent topic"), goldIds: [], expectAbstain: true },
   { name: "qa/compound: auth+deploy question", category: "qa",
     query: q("how to set up auth and deploy"), goldIds: ["qa/alpha/auth-deploy"] },
+  { name: "memory/scope: global surfaces in alpha, other-project excluded", category: "memory",
+    query: q("vim"), goldIds: ["semantic/_global/editor"], excludedIds: ["semantic/beta/deploy"] },
   { name: "entity/no-leak: esbuild alpha page, beta excluded", category: "entity",
     query: q("esbuild"), goldIds: ["entity/alpha/esbuild"], excludedIds: ["entity/beta/esbuild"] },
   { name: "primer/include-exclude: core+semantic+procedural in, episodic/superseded/expired out", category: "primer",
