@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { memariumHome } from "../memarium-home.js";
 import { loadMemoryIndex, MEMORY_INDEX_REL } from "./index-store.js";
 import type { MemoryEntry } from "./types.js";
 
@@ -37,7 +38,7 @@ export interface MemoryView {
 /** Where the npm CLI mounts the read-only origin/main overlay. The plugin only
  *  READS it; `memarium sync` maintains it (`reset --hard origin/main`). */
 export function aggregatedOverlayPath(): string {
-  return join(homedir(), ".memarium", "aggregated");
+  return join(memariumHome(), "aggregated");
 }
 
 /**

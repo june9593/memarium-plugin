@@ -18,9 +18,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readConfig, migrateLegacyConfigDir, type Config } from "../_shared/config.js";
+import { memariumHome } from "../memarium-home.js";
 
 function configPath(): string {
-  return join(homedir(), ".memarium", "config.json");
+  return join(memariumHome(), "config.json");
 }
 
 /** Default config used when ~/.memarium/config.json doesn't exist. Only the
@@ -28,7 +29,7 @@ function configPath(): string {
  *  schema-required placeholders. */
 function defaultPluginConfig(): Config {
   return {
-    repoPath: join(homedir(), ".memarium", "session-repo"),
+    repoPath: join(memariumHome(), "session-repo"),
     repoUrl: "",
     deviceBranch: "",
     runner: "claude-cli",
@@ -43,7 +44,9 @@ function defaultPluginConfig(): Config {
 export function readPluginConfig(): Config {
   // Borrowed-tenant users may still have data under the pre-rename ~/.vibebook/.
   // Migrate it to ~/.memarium/ before we look for config.json (best-effort).
-  migrateLegacyConfigDir();
+  // Sandbox runs (MEMARIUM_DIR set) must never trigger the real ~/.vibebook →
+  // ~/.memarium migration — skip it there.
+  if (!process.env.MEMARIUM_DIR) migrateLegacyConfigDir();
   if (!existsSync(configPath())) return defaultPluginConfig();
   // configPath() exists. _shared/config.ts caches its CONFIG_PATH at module
   // load though — in tests that's the wrong path. Read + parse the real file

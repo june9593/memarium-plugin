@@ -3,16 +3,13 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
+import { memariumHome } from "../memarium-home.js";
 import type { MemoryEntry } from "./types.js";
 
 /** One memory's local usage signal. Lives ONLY in the device-local sidecar,
  *  never in the synced index. */
 export interface UsageRecord { count: number; lastAccess: string }
 export type UsageMap = Record<string, UsageRecord>;
-
-function memariumHome(): string {
-  return join(homedir(), ".memarium");
-}
 
 /** Device-local usage dir, OUTSIDE the git repo so accessCount never syncs,
  *  aggregates, or churns the synced `index.memory.json`. Namespaced per

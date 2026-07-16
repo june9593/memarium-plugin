@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
+import { memariumHome } from "../memarium-home.js";
 import type { MemoryEntry } from "./types.js";
 import type { MemoryAction } from "./gate.js";
 
@@ -15,10 +16,6 @@ export interface MemoryProposal {
   sourceSession: string | null;
   createdAt: string;        // ISO
   proposal: { entry: MemoryEntry; body: string };
-}
-
-function memariumHome(): string {
-  return join(homedir(), ".memarium");
 }
 
 /** Device-local queue dir, OUTSIDE the git repo so it never syncs/aggregates.

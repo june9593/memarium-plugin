@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.19.4 — 2026-07-16
+
+### `MEMARIUM_DIR` env override (eval-harness sandbox support)
+
+New `memariumHome()` (`src/memarium-home.ts`), overridable via `MEMARIUM_DIR`: set
+it and the plugin reads/writes **all** of its state — config, session-repo,
+aggregated overlay, `local-proposals/` queue, usage sidecar, plugin state — under
+`<MEMARIUM_DIR>/…` instead of `~/.memarium/…`. Unset → behaviour unchanged.
+Centralized the six previously-scattered `~/.memarium` computations
+(`plugin-config`, `proposal-store`, `usage-store`, `plugin-state`,
+`source-resolver`, `ensure-dir`) through the single helper so a sandbox run
+leaks nothing to the real home. Legacy `~/.vibebook` migration is skipped when
+`MEMARIUM_DIR` is set. Empty `MEMARIUM_DIR=""` is treated as unset.
+
+This lets the S1-B write-quality eval run digest fully sandboxed.
+
 ## 0.19.3 — 2026-07-16
 
 ### S1-A: deterministic memory eval regression gates

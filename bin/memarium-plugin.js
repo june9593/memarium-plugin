@@ -7204,16 +7204,27 @@ var init_config = __esm({
   }
 });
 
-// src/spool/plugin-config.ts
-import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
+// src/memarium-home.ts
 import { homedir as homedir2 } from "node:os";
 import { join as join2 } from "node:path";
+function memariumHome() {
+  return process.env.MEMARIUM_DIR || join2(homedir2(), ".memarium");
+}
+var init_memarium_home = __esm({
+  "src/memarium-home.ts"() {
+    "use strict";
+  }
+});
+
+// src/spool/plugin-config.ts
+import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
+import { join as join3 } from "node:path";
 function configPath2() {
-  return join2(homedir2(), ".memarium", "config.json");
+  return join3(memariumHome(), "config.json");
 }
 function defaultPluginConfig() {
   return {
-    repoPath: join2(homedir2(), ".memarium", "session-repo"),
+    repoPath: join3(memariumHome(), "session-repo"),
     repoUrl: "",
     deviceBranch: "",
     runner: "claude-cli",
@@ -7225,7 +7236,7 @@ function defaultPluginConfig() {
   };
 }
 function readPluginConfig() {
-  migrateLegacyConfigDir();
+  if (!process.env.MEMARIUM_DIR) migrateLegacyConfigDir();
   if (!existsSync2(configPath2())) return defaultPluginConfig();
   try {
     const raw = readFileSync2(configPath2(), "utf8");
@@ -7238,13 +7249,14 @@ var init_plugin_config = __esm({
   "src/spool/plugin-config.ts"() {
     "use strict";
     init_config();
+    init_memarium_home();
   }
 });
 
 // src/_shared/repo-data-dir.ts
-import { join as join3 } from "node:path";
+import { join as join4 } from "node:path";
 function dataDirAbs(repoPath) {
-  return join3(repoPath, REPO_DATA_DIR);
+  return join4(repoPath, REPO_DATA_DIR);
 }
 var REPO_DATA_DIR, INDEX_REL;
 var init_repo_data_dir = __esm({
@@ -7257,16 +7269,16 @@ var init_repo_data_dir = __esm({
 
 // src/_shared/index-store.ts
 import { mkdirSync as mkdirSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync2, existsSync as existsSync3 } from "node:fs";
-import { join as join4 } from "node:path";
+import { join as join5 } from "node:path";
 function loadIndex(repoRoot) {
-  const p2 = join4(repoRoot, INDEX_REL);
+  const p2 = join5(repoRoot, INDEX_REL);
   if (!existsSync3(p2)) return { version: 1, entries: {} };
   const parsed = JSON.parse(readFileSync3(p2, "utf8"));
   if (parsed.version !== 1) throw new Error(`unsupported index version: ${parsed.version}`);
   return parsed;
 }
 function saveIndex(repoRoot, idx) {
-  const p2 = join4(repoRoot, INDEX_REL);
+  const p2 = join5(repoRoot, INDEX_REL);
   mkdirSync2(dataDirAbs(repoRoot), { recursive: true });
   writeFileSync2(p2, JSON.stringify(idx, null, 2) + "\n");
 }
@@ -7302,9 +7314,9 @@ var init_types2 = __esm({
 
 // src/memory/index-store.ts
 import { existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "node:fs";
-import { dirname, join as join5 } from "node:path";
+import { dirname, join as join6 } from "node:path";
 function loadMemoryIndex(repoRoot) {
-  const p2 = join5(repoRoot, MEMORY_INDEX_REL);
+  const p2 = join6(repoRoot, MEMORY_INDEX_REL);
   if (!existsSync4(p2)) return emptyMemoryIndex();
   try {
     const parsed = JSON.parse(readFileSync4(p2, "utf8"));
@@ -7315,7 +7327,7 @@ function loadMemoryIndex(repoRoot) {
   }
 }
 function saveMemoryIndex(repoRoot, idx) {
-  const p2 = join5(repoRoot, MEMORY_INDEX_REL);
+  const p2 = join6(repoRoot, MEMORY_INDEX_REL);
   mkdirSync3(dirname(p2), { recursive: true });
   writeFileSync3(p2, JSON.stringify(idx, null, 2) + "\n");
 }
@@ -7334,9 +7346,9 @@ var init_index_store2 = __esm({
 
 // src/spool/skip-store.ts
 import { mkdirSync as mkdirSync4, readFileSync as readFileSync5, writeFileSync as writeFileSync4, existsSync as existsSync5 } from "node:fs";
-import { join as join6 } from "node:path";
+import { join as join7 } from "node:path";
 function loadSkips(repoRoot) {
-  const p2 = join6(repoRoot, SKIP_INDEX_REL);
+  const p2 = join7(repoRoot, SKIP_INDEX_REL);
   if (!existsSync5(p2)) return { version: 1, sessions: {} };
   try {
     const parsed = JSON.parse(readFileSync5(p2, "utf8"));
@@ -7350,7 +7362,7 @@ function loadSkips(repoRoot) {
 }
 function saveSkips(repoRoot, idx) {
   mkdirSync4(dataDirAbs(repoRoot), { recursive: true });
-  writeFileSync4(join6(repoRoot, SKIP_INDEX_REL), JSON.stringify(idx, null, 2) + "\n");
+  writeFileSync4(join7(repoRoot, SKIP_INDEX_REL), JSON.stringify(idx, null, 2) + "\n");
 }
 function upsertSkips(idx, sessions, at) {
   let added = 0;
@@ -7510,9 +7522,9 @@ var init_types3 = __esm({
 
 // src/qa/index-store.ts
 import { existsSync as existsSync6, mkdirSync as mkdirSync5, readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "node:fs";
-import { dirname as dirname2, join as join7 } from "node:path";
+import { dirname as dirname2, join as join8 } from "node:path";
 function loadQaIndex(repoRoot) {
-  const p2 = join7(repoRoot, QA_INDEX_REL);
+  const p2 = join8(repoRoot, QA_INDEX_REL);
   if (!existsSync6(p2)) return emptyQaIndex();
   try {
     const parsed = JSON.parse(readFileSync6(p2, "utf8"));
@@ -7523,7 +7535,7 @@ function loadQaIndex(repoRoot) {
   }
 }
 function saveQaIndex(repoRoot, idx) {
-  const p2 = join7(repoRoot, QA_INDEX_REL);
+  const p2 = join8(repoRoot, QA_INDEX_REL);
   mkdirSync5(dirname2(p2), { recursive: true });
   writeFileSync5(p2, JSON.stringify(idx, null, 2) + "\n");
 }
@@ -7555,9 +7567,9 @@ var init_types4 = __esm({
 
 // src/entity/index-store.ts
 import { existsSync as existsSync7, mkdirSync as mkdirSync6, readFileSync as readFileSync7, writeFileSync as writeFileSync6 } from "node:fs";
-import { dirname as dirname3, join as join8 } from "node:path";
+import { dirname as dirname3, join as join9 } from "node:path";
 function loadEntityIndex(repoRoot) {
-  const p2 = join8(repoRoot, ENTITY_INDEX_REL);
+  const p2 = join9(repoRoot, ENTITY_INDEX_REL);
   if (!existsSync7(p2)) return emptyEntityIndex();
   try {
     const parsed = JSON.parse(readFileSync7(p2, "utf8"));
@@ -7568,7 +7580,7 @@ function loadEntityIndex(repoRoot) {
   }
 }
 function saveEntityIndex(repoRoot, idx) {
-  const p2 = join8(repoRoot, ENTITY_INDEX_REL);
+  const p2 = join9(repoRoot, ENTITY_INDEX_REL);
   mkdirSync6(dirname3(p2), { recursive: true });
   writeFileSync6(p2, JSON.stringify(idx, null, 2) + "\n");
 }
@@ -7587,10 +7599,9 @@ var init_index_store4 = __esm({
 
 // src/memory/source-resolver.ts
 import { existsSync as existsSync8 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { join as join9 } from "node:path";
+import { join as join10 } from "node:path";
 function aggregatedOverlayPath() {
-  return join9(homedir3(), ".memarium", "aggregated");
+  return join10(memariumHome(), "aggregated");
 }
 function mergeIndexById(local, overlay) {
   const entries = {};
@@ -7612,7 +7623,7 @@ function resolveMemoryView(repoPath, overlayRoot = aggregatedOverlayPath()) {
   const local = loadMemoryIndex(repoPath).entries;
   let overlayEntries = {};
   let overlayPresent = false;
-  if (overlayRoot && overlayRoot !== repoPath && existsSync8(join9(overlayRoot, MEMORY_INDEX_REL))) {
+  if (overlayRoot && overlayRoot !== repoPath && existsSync8(join10(overlayRoot, MEMORY_INDEX_REL))) {
     overlayPresent = true;
     overlayEntries = loadMemoryIndex(overlayRoot).entries;
   }
@@ -7628,11 +7639,12 @@ function resolveEntryAbsPath(view, id) {
   const e = view.entries[id];
   if (!e) return null;
   const root = view.sources[id] === "overlay" && view.roots.overlay ? view.roots.overlay : view.roots.local;
-  return join9(root, e.path);
+  return join10(root, e.path);
 }
 var init_source_resolver = __esm({
   "src/memory/source-resolver.ts"() {
     "use strict";
+    init_memarium_home();
     init_index_store2();
   }
 });
@@ -13525,7 +13537,7 @@ __export(prepare_exports, {
   prepareCmd: () => prepareCmd
 });
 import { readFileSync as readFileSync8, existsSync as existsSync9 } from "node:fs";
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 function buildPreparePayload(opts = {}) {
   const cfg = readPluginConfig();
   const indexFile = loadIndex(cfg.repoPath);
@@ -13564,7 +13576,7 @@ function buildPreparePayload(opts = {}) {
       continue;
     }
     const mdRel = mdPathFor(entry);
-    const mdAbs = join10(cfg.repoPath, mdRel);
+    const mdAbs = join11(cfg.repoPath, mdRel);
     if (!existsSync9(mdAbs)) {
       continue;
     }
@@ -14147,12 +14159,12 @@ var init_source = __esm({
 
 // src/_shared/git-ops.ts
 import { existsSync as existsSync10, mkdirSync as mkdirSync7, readdirSync } from "node:fs";
-import { homedir as homedir4 } from "node:os";
-import { join as join11, resolve } from "node:path";
+import { homedir as homedir3 } from "node:os";
+import { join as join12, resolve } from "node:path";
 import { spawn as spawn2 } from "node:child_process";
 function expandHome(p2) {
-  if (p2 === "~") return homedir4();
-  if (p2.startsWith("~/")) return join11(homedir4(), p2.slice(2));
+  if (p2 === "~") return homedir3();
+  if (p2.startsWith("~/")) return join12(homedir3(), p2.slice(2));
   return p2;
 }
 function pushWithProgress(cwd, branch) {
@@ -14228,7 +14240,7 @@ ${msg}`
 async function ensureLocalRepo(localPath) {
   const path = resolve(expandHome(localPath));
   let initialized = false;
-  if (!existsSync10(join11(path, ".git"))) {
+  if (!existsSync10(join12(path, ".git"))) {
     mkdirSync7(path, { recursive: true });
     const g = simpleGit(path);
     await g.init();
@@ -14242,7 +14254,7 @@ async function ensureLocalRepo(localPath) {
   return { git: simpleGit(path), initialized, path };
 }
 async function commitWhitelist(git, repoPath, message, candidatePaths, opts, onProgress) {
-  const existing = candidatePaths.filter((p2) => existsSync10(join11(repoPath, p2)));
+  const existing = candidatePaths.filter((p2) => existsSync10(join12(repoPath, p2)));
   if (existing.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
   onProgress?.(`git add (${existing.length} whitelist paths)...`);
   await git.add(existing);
@@ -14447,14 +14459,14 @@ var init_gate = __esm({
 
 // src/qa/path-guard.ts
 import { lstatSync } from "node:fs";
-import { join as join12, relative, sep } from "node:path";
+import { join as join13, relative, sep } from "node:path";
 function assertNoSymlinkedComponent(repoPath, targetAbs, label) {
   const rel = relative(repoPath, targetAbs);
   if (rel === "" || rel === ".." || rel.startsWith(".." + sep)) return;
   let cur = repoPath;
   for (const seg of rel.split(sep)) {
     if (!seg) continue;
-    cur = join12(cur, seg);
+    cur = join13(cur, seg);
     let st;
     try {
       st = lstatSync(cur);
@@ -14475,13 +14487,13 @@ var init_path_guard = __esm({
 
 // src/memory/apply.ts
 import { existsSync as existsSync11, mkdirSync as mkdirSync8, readFileSync as readFileSync9, writeFileSync as writeFileSync7 } from "node:fs";
-import { dirname as dirname4, join as join13, resolve as resolve2, sep as sep2 } from "node:path";
+import { dirname as dirname4, join as join14, resolve as resolve2, sep as sep2 } from "node:path";
 function normalizeRel(p2) {
   return p2.split("\\").join("/");
 }
 function applyMemoryItems(repoPath, items) {
   const idx = loadMemoryIndex(repoPath);
-  const memRoot = resolve2(join13(repoPath, "memory"));
+  const memRoot = resolve2(join14(repoPath, "memory"));
   const willExist = { ...idx.entries };
   const planned = [];
   for (const { entry, body } of items) {
@@ -14491,7 +14503,7 @@ function applyMemoryItems(repoPath, items) {
         `memory apply: entry.path "${entry.path}" does not match canonical path for ${entry.id} ("${canonical}")`
       );
     }
-    const abs = resolve2(join13(repoPath, canonical));
+    const abs = resolve2(join14(repoPath, canonical));
     if (abs !== memRoot && !abs.startsWith(memRoot + sep2)) {
       throw new Error(`memory apply: refusing to write outside memory/: ${canonical}`);
     }
@@ -14500,7 +14512,7 @@ function applyMemoryItems(repoPath, items) {
     const sup = supersedesId(entry);
     if (sup && willExist[sup]) {
       const target = willExist[sup];
-      const tabs = resolve2(join13(repoPath, canonicalMemoryPath(target)));
+      const tabs = resolve2(join14(repoPath, canonicalMemoryPath(target)));
       let mdPath = null;
       if (tabs === memRoot || tabs.startsWith(memRoot + sep2)) {
         assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
@@ -14704,7 +14716,7 @@ __export(memory_index_exports, {
   memoryIndexCmd: () => memoryIndexCmd
 });
 import { existsSync as existsSync13, readFileSync as readFileSync11, readdirSync as readdirSync2, writeFileSync as writeFileSync8, statSync } from "node:fs";
-import { join as join14, relative as relative2 } from "node:path";
+import { join as join15, relative as relative2 } from "node:path";
 function walkMd(dir) {
   const out = [];
   const stack = [dir];
@@ -14717,7 +14729,7 @@ function walkMd(dir) {
       continue;
     }
     for (const e of entries) {
-      const p2 = join14(cur, e.name);
+      const p2 = join15(cur, e.name);
       if (e.isDirectory()) stack.push(p2);
       else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
     }
@@ -14726,14 +14738,14 @@ function walkMd(dir) {
 }
 async function memoryIndexCmd() {
   const cfg = readPluginConfig();
-  const memRoot = join14(cfg.repoPath, "memory");
+  const memRoot = join15(cfg.repoPath, "memory");
   const idx = emptyMemoryIndex();
   let indexed = 0;
   let healed = 0;
   assertNoSymlinkedComponent(cfg.repoPath, memRoot, "memory-index");
   if (existsSync13(memRoot)) {
     for (const abs of walkMd(memRoot)) {
-      if (abs.includes(`${join14("memory", "_primer")}/`)) continue;
+      if (abs.includes(`${join15("memory", "_primer")}/`)) continue;
       let md = readFileSync11(abs, "utf8");
       const mtimeDate = new Date(statSync(abs).mtimeMs).toISOString().slice(0, 10);
       const fixed = healUndefinedFrontmatter(md, mtimeDate);
@@ -14880,17 +14892,13 @@ var init_score = __esm({
 // src/memory/usage-store.ts
 import { createHash } from "node:crypto";
 import { existsSync as existsSync14, mkdirSync as mkdirSync9, readFileSync as readFileSync13, renameSync as renameSync2, writeFileSync as writeFileSync9 } from "node:fs";
-import { homedir as homedir5 } from "node:os";
-import { join as join15, resolve as resolve3 } from "node:path";
-function memariumHome() {
-  return join15(homedir5(), ".memarium");
-}
+import { join as join16, resolve as resolve3 } from "node:path";
 function usageDir(repoPath) {
   const repoHash = createHash("sha256").update(resolve3(repoPath)).digest("hex").slice(0, 12);
-  return join15(memariumHome(), "usage", repoHash);
+  return join16(memariumHome(), "usage", repoHash);
 }
 function usageFile(repoPath) {
-  return join15(usageDir(repoPath), "access.json");
+  return join16(usageDir(repoPath), "access.json");
 }
 function guardUsagePath(targetAbs) {
   assertNoSymlinkedComponent(memariumHome(), targetAbs, "usage-store");
@@ -14934,7 +14942,7 @@ function saveUsage(repoPath, usage) {
   guardUsagePath(dir);
   mkdirSync9(dir, { recursive: true });
   const file = usageFile(repoPath);
-  const tmp = join15(dir, `access.json.tmp-${process.pid}`);
+  const tmp = join16(dir, `access.json.tmp-${process.pid}`);
   writeFileSync9(tmp, JSON.stringify(usage, null, 2) + "\n");
   renameSync2(tmp, file);
 }
@@ -14962,6 +14970,7 @@ var init_usage_store = __esm({
   "src/memory/usage-store.ts"() {
     "use strict";
     init_path_guard();
+    init_memarium_home();
   }
 });
 
@@ -15253,7 +15262,7 @@ __export(entity_write_exports, {
   entityWriteCmd: () => entityWriteCmd
 });
 import { existsSync as existsSync16, mkdirSync as mkdirSync10, readFileSync as readFileSync15, realpathSync, writeFileSync as writeFileSync10 } from "node:fs";
-import { dirname as dirname5, join as join16, resolve as resolve4, sep as sep3 } from "node:path";
+import { dirname as dirname5, join as join17, resolve as resolve4, sep as sep3 } from "node:path";
 function entityPath(e) {
   const scopeDir = e.project ?? "_global";
   const slug = e.id.split("/").pop() ?? e.id;
@@ -15278,10 +15287,10 @@ async function entityWriteCmd(opts) {
       if (!Array.isArray(entry[k2])) entry[k2] = [];
     }
     if (!entry.path) entry.path = entityPath(entry);
-    const entRoot = resolve4(join16(cfg.repoPath, "memory", "entities"));
+    const entRoot = resolve4(join17(cfg.repoPath, "memory", "entities"));
     mkdirSync10(entRoot, { recursive: true });
     const memRoot = entRoot;
-    const abs = resolve4(join16(cfg.repoPath, entry.path));
+    const abs = resolve4(join17(cfg.repoPath, entry.path));
     if (abs !== memRoot && !abs.startsWith(memRoot + sep3)) {
       throw new Error(`entity-write: refusing to write outside memory/entities/: ${entry.path}`);
     }
@@ -15370,7 +15379,7 @@ __export(entity_index_exports, {
   entityIndexCmd: () => entityIndexCmd
 });
 import { existsSync as existsSync17, readFileSync as readFileSync16, readdirSync as readdirSync3, writeFileSync as writeFileSync11, statSync as statSync2 } from "node:fs";
-import { join as join17, relative as relative3 } from "node:path";
+import { join as join18, relative as relative3 } from "node:path";
 function walkMd2(dir) {
   const out = [];
   const stack = [dir];
@@ -15383,7 +15392,7 @@ function walkMd2(dir) {
       continue;
     }
     for (const e of entries) {
-      const p2 = join17(cur, e.name);
+      const p2 = join18(cur, e.name);
       if (e.isDirectory()) stack.push(p2);
       else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
     }
@@ -15392,7 +15401,7 @@ function walkMd2(dir) {
 }
 async function entityIndexCmd() {
   const cfg = readPluginConfig();
-  const entitiesRoot = join17(cfg.repoPath, "memory", "entities");
+  const entitiesRoot = join18(cfg.repoPath, "memory", "entities");
   const idx = emptyEntityIndex();
   let indexed = 0;
   let healed = 0;
@@ -15489,7 +15498,7 @@ __export(entity_query_exports, {
   entityQueryCmd: () => entityQueryCmd
 });
 import { existsSync as existsSync18, readFileSync as readFileSync17, realpathSync as realpathSync2 } from "node:fs";
-import { join as join18, resolve as resolve5, sep as sep4 } from "node:path";
+import { join as join19, resolve as resolve5, sep as sep4 } from "node:path";
 function isKind(s) {
   const ok = ["file", "symbol", "api", "concept", "person"];
   return s && ok.includes(s) ? s : null;
@@ -15539,14 +15548,14 @@ async function entityQueryCmd(opts) {
     }));
     payload.referencingMemories = referencingMemories;
     const nameSlug = entityName.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    const entRoot = resolve5(join18(cfg.repoPath, "memory", "entities"));
+    const entRoot = resolve5(join19(cfg.repoPath, "memory", "entities"));
     const matchedEntities = entries.filter((e) => isEligibleEntity(e, project)).filter((e) => {
       const titleMatch = e.title.toLowerCase() === entityName;
       const aliasMatch = (Array.isArray(e.aliases) ? e.aliases : []).some((a) => typeof a === "string" && a.toLowerCase() === entityName);
       const slugMatch = nameSlug.length > 0 && e.id.toLowerCase().endsWith("/" + nameSlug);
       return titleMatch || aliasMatch || slugMatch;
     }).map((e) => {
-      const abs = resolve5(join18(cfg.repoPath, e.path));
+      const abs = resolve5(join19(cfg.repoPath, e.path));
       const inRoot = abs === entRoot || abs.startsWith(entRoot + sep4);
       let body = "";
       if (inRoot && existsSync18(abs)) {
@@ -15645,7 +15654,7 @@ __export(qa_write_exports, {
   qaWriteCmd: () => qaWriteCmd
 });
 import { existsSync as existsSync19, lstatSync as lstatSync2, mkdirSync as mkdirSync11, readFileSync as readFileSync18, realpathSync as realpathSync3, writeFileSync as writeFileSync12 } from "node:fs";
-import { dirname as dirname6, join as join19, resolve as resolve6, sep as sep5 } from "node:path";
+import { dirname as dirname6, join as join20, resolve as resolve6, sep as sep5 } from "node:path";
 function isUnder(child, parent) {
   return child === parent || child.startsWith(parent + sep5);
 }
@@ -15699,8 +15708,8 @@ async function qaWriteCmd(opts) {
     }
     entry.id = qaId(entry.scope, entry.project, entry.question);
     entry.path = qaPath(entry);
-    const qaRoot = resolve6(join19(cfg.repoPath, "memory", "qa"));
-    const abs = resolve6(join19(cfg.repoPath, entry.path));
+    const qaRoot = resolve6(join20(cfg.repoPath, "memory", "qa"));
+    const abs = resolve6(join20(cfg.repoPath, entry.path));
     assertNoSymlinkedComponent(cfg.repoPath, dirname6(abs), "qa-write");
     if (abs !== qaRoot && !abs.startsWith(qaRoot + sep5)) {
       throw new Error(`qa-write: refusing to write outside memory/qa/: ${entry.path}`);
@@ -15826,7 +15835,7 @@ __export(qa_index_exports, {
   qaIndexCmd: () => qaIndexCmd
 });
 import { existsSync as existsSync20, readFileSync as readFileSync19, readdirSync as readdirSync4, writeFileSync as writeFileSync13, statSync as statSync3 } from "node:fs";
-import { join as join20, relative as relative4 } from "node:path";
+import { join as join21, relative as relative4 } from "node:path";
 function walkMd3(dir) {
   const out = [];
   const stack = [dir];
@@ -15839,7 +15848,7 @@ function walkMd3(dir) {
       continue;
     }
     for (const e of entries) {
-      const p2 = join20(cur, e.name);
+      const p2 = join21(cur, e.name);
       if (e.isDirectory()) stack.push(p2);
       else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
     }
@@ -15848,7 +15857,7 @@ function walkMd3(dir) {
 }
 async function qaIndexCmd() {
   const cfg = readPluginConfig();
-  const qaRoot = join20(cfg.repoPath, "memory", "qa");
+  const qaRoot = join21(cfg.repoPath, "memory", "qa");
   const idx = emptyQaIndex();
   let indexed = 0;
   let healed = 0;
@@ -16299,17 +16308,13 @@ var init_lint = __esm({
 // src/memory/proposal-store.ts
 import { createHash as createHash3 } from "node:crypto";
 import { existsSync as existsSync21, mkdirSync as mkdirSync12, readFileSync as readFileSync20, readdirSync as readdirSync5, rmSync, writeFileSync as writeFileSync14 } from "node:fs";
-import { homedir as homedir6 } from "node:os";
-import { join as join21, resolve as resolve7 } from "node:path";
-function memariumHome2() {
-  return join21(homedir6(), ".memarium");
-}
+import { join as join22, resolve as resolve7 } from "node:path";
 function proposalsDir(repoPath) {
   const repoHash = createHash3("sha256").update(resolve7(repoPath)).digest("hex").slice(0, 12);
-  return join21(memariumHome2(), "local-proposals", repoHash);
+  return join22(memariumHome(), "local-proposals", repoHash);
 }
 function guardQueuePath(targetAbs) {
-  assertNoSymlinkedComponent(memariumHome2(), targetAbs, "proposal-store");
+  assertNoSymlinkedComponent(memariumHome(), targetAbs, "proposal-store");
 }
 function flatTargetKey(targetKey2) {
   if (targetKey2.includes("__")) {
@@ -16323,11 +16328,11 @@ function flatTargetKey(targetKey2) {
 }
 function fileFor(repoPath, idOrKey) {
   const flat = idOrKey.includes("/") ? flatTargetKey(idOrKey) : flatTargetKey(idOrKey.split("__").join("/"));
-  return join21(proposalsDir(repoPath), `${flat}.json`);
+  return join22(proposalsDir(repoPath), `${flat}.json`);
 }
 function writeProposal(repoPath, p2) {
   const dir = proposalsDir(repoPath);
-  const file = join21(dir, `${flatTargetKey(p2.targetKey)}.json`);
+  const file = join22(dir, `${flatTargetKey(p2.targetKey)}.json`);
   guardQueuePath(file);
   mkdirSync12(dir, { recursive: true });
   writeFileSync14(file, JSON.stringify(p2, null, 2) + "\n");
@@ -16355,7 +16360,7 @@ function listProposals(repoPath) {
   const out = [];
   for (const name of readdirSync5(dir).sort()) {
     if (!name.endsWith(".json")) continue;
-    const file = join21(dir, name);
+    const file = join22(dir, name);
     guardQueuePath(file);
     try {
       out.push(JSON.parse(readFileSync20(file, "utf8")));
@@ -16380,6 +16385,7 @@ var init_proposal_store = __esm({
   "src/memory/proposal-store.ts"() {
     "use strict";
     init_path_guard();
+    init_memarium_home();
   }
 });
 
@@ -16389,10 +16395,10 @@ __export(memory_lint_exports, {
   memoryLintCmd: () => memoryLintCmd
 });
 import { existsSync as existsSync22, readFileSync as readFileSync21 } from "node:fs";
-import { join as join22 } from "node:path";
+import { join as join23 } from "node:path";
 function readBody(repoPath, entry) {
   try {
-    const md = readFileSync21(join22(repoPath, entry.path), "utf8");
+    const md = readFileSync21(join23(repoPath, entry.path), "utf8");
     const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
     return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();
   } catch {
@@ -16425,7 +16431,7 @@ function proposeStalenessFixes(repoPath, idx, report, now) {
   return queued;
 }
 function readIndexOnce(repoPath, rel, layer, empty) {
-  const p2 = join22(repoPath, rel);
+  const p2 = join23(repoPath, rel);
   if (!existsSync22(p2)) return { index: empty, finding: null };
   let parsed;
   try {
@@ -16733,9 +16739,9 @@ __export(memory_approve_exports, {
   memoryApproveCmd: () => memoryApproveCmd
 });
 import { existsSync as existsSync24, readdirSync as readdirSync6, rmSync as rmSync2 } from "node:fs";
-import { join as join23 } from "node:path";
+import { join as join24 } from "node:path";
 function refreshPrimers(repoPath, entry) {
-  const dir = join23(repoPath, "memory", "_primer");
+  const dir = join24(repoPath, "memory", "_primer");
   if (!existsSync24(dir)) return [];
   assertNoSymlinkedComponent(repoPath, dir, "memory-approve");
   const deleted = [];
@@ -16746,12 +16752,12 @@ function refreshPrimers(repoPath, entry) {
     deleted.push(file);
   };
   const deleteAll = () => {
-    for (const name of readdirSync6(dir)) if (name.endsWith(".md")) del(join23(dir, name));
+    for (const name of readdirSync6(dir)) if (name.endsWith(".md")) del(join24(dir, name));
   };
   const scope = typeof entry.scope === "string" ? entry.scope : "";
   const project = scope.startsWith("project:") ? scope.slice("project:".length) : null;
   if (project && isSafePathSegment(project)) {
-    del(join23(dir, `${project}.md`));
+    del(join24(dir, `${project}.md`));
   } else {
     deleteAll();
   }
@@ -16897,10 +16903,9 @@ var init_recall = __esm({
 
 // src/spool/plugin-state.ts
 import { existsSync as existsSync25, mkdirSync as mkdirSync13, readFileSync as readFileSync23, writeFileSync as writeFileSync15 } from "node:fs";
-import { homedir as homedir7 } from "node:os";
-import { dirname as dirname7, join as join24 } from "node:path";
+import { dirname as dirname7, join as join25 } from "node:path";
 function statePath() {
-  return join24(homedir7(), ".memarium", ".plugin-state.json");
+  return join25(memariumHome(), ".plugin-state.json");
 }
 function loadState() {
   const p2 = statePath();
@@ -16919,6 +16924,7 @@ function saveState(state) {
 var init_plugin_state = __esm({
   "src/spool/plugin-state.ts"() {
     "use strict";
+    init_memarium_home();
   }
 });
 
@@ -16959,32 +16965,30 @@ var init_first_run = __esm({
 
 // src/spool/ensure-dir.ts
 import { mkdirSync as mkdirSync14, existsSync as existsSync26 } from "node:fs";
-import { homedir as homedir8 } from "node:os";
-import { join as join25 } from "node:path";
+import { join as join26 } from "node:path";
 function ensureSpoolDir() {
-  const spoolRoot = join25(homedir8(), SPOOL_REL_PATH);
+  const spoolRoot = join26(memariumHome(), "session-repo");
   const created = !existsSync26(spoolRoot);
-  const rawSessionsDir = join25(spoolRoot, "raw_sessions");
+  const rawSessionsDir = join26(spoolRoot, "raw_sessions");
   mkdirSync14(rawSessionsDir, { recursive: true });
   return { spoolRoot, rawSessionsDir, created };
 }
-var SPOOL_REL_PATH;
 var init_ensure_dir = __esm({
   "src/spool/ensure-dir.ts"() {
     "use strict";
-    SPOOL_REL_PATH = ".memarium/session-repo";
+    init_memarium_home();
   }
 });
 
 // src/_shared/content-project-inference.ts
 import { readdirSync as readdirSync7 } from "node:fs";
-import { homedir as homedir9 } from "node:os";
-import { join as join26 } from "node:path";
+import { homedir as homedir4 } from "node:os";
+import { join as join27 } from "node:path";
 function decodeProjectDirName(name) {
   if (!name.startsWith("-")) return name;
   return "/" + name.slice(1).replace(/-/g, "/");
 }
-function listKnownProjectRoots(projectsDir = join26(homedir9(), ".claude", "projects")) {
+function listKnownProjectRoots(projectsDir = join27(homedir4(), ".claude", "projects")) {
   let entries;
   try {
     entries = readdirSync7(projectsDir);
@@ -17085,8 +17089,8 @@ var init_content_project_inference = __esm({
 // src/_shared/sources/claude-code.ts
 import { createHash as createHash4 } from "node:crypto";
 import { readdirSync as readdirSync8, readFileSync as readFileSync24, statSync as statSync4, existsSync as existsSync27 } from "node:fs";
-import { homedir as homedir10 } from "node:os";
-import { join as join27, basename } from "node:path";
+import { homedir as homedir5 } from "node:os";
+import { join as join28, basename } from "node:path";
 function getRoots() {
   if (cachedRoots === null) cachedRoots = listKnownProjectRoots();
   return cachedRoots;
@@ -17233,7 +17237,7 @@ var init_claude_code = __esm({
     init_content_project_inference();
     cachedRoots = null;
     ClaudeCodeAdapter = class {
-      constructor(root = join27(homedir10(), ".claude", "projects")) {
+      constructor(root = join28(homedir5(), ".claude", "projects")) {
         this.root = root;
       }
       name = "claude";
@@ -17249,7 +17253,7 @@ var init_claude_code = __esm({
             continue;
           }
           for (const e of entries) {
-            const p2 = join27(dir, e.name);
+            const p2 = join28(dir, e.name);
             if (e.isDirectory()) {
               if (dir === this.root && isMemariumOrTmpProjectDir(e.name)) continue;
               if (e.name === "subagents") continue;
@@ -17275,14 +17279,14 @@ var init_claude_code = __esm({
 // src/_shared/sources/vscode-copilot.ts
 import { createHash as createHash5 } from "node:crypto";
 import { readdirSync as readdirSync9, readFileSync as readFileSync25, statSync as statSync5, existsSync as existsSync28 } from "node:fs";
-import { homedir as homedir11 } from "node:os";
-import { join as join28, basename as basename2 } from "node:path";
+import { homedir as homedir6 } from "node:os";
+import { join as join29, basename as basename2 } from "node:path";
 function defaultStorageRoot() {
   if (process.platform === "darwin")
-    return join28(homedir11(), "Library", "Application Support", "Code", "User", "workspaceStorage");
+    return join29(homedir6(), "Library", "Application Support", "Code", "User", "workspaceStorage");
   if (process.platform === "win32")
-    return join28(homedir11(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
-  return join28(homedir11(), ".config", "Code", "User", "workspaceStorage");
+    return join29(homedir6(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
+  return join29(homedir6(), ".config", "Code", "User", "workspaceStorage");
 }
 function readWorkspacePath(workspaceJsonPath) {
   if (!existsSync28(workspaceJsonPath)) return "";
@@ -17517,9 +17521,9 @@ var init_vscode_copilot = __esm({
         }
         for (const w of workspaces) {
           if (!w.isDirectory()) continue;
-          const wsDir = join28(this.root, w.name);
-          const wsPath = readWorkspacePath(join28(wsDir, "workspace.json"));
-          const chatDir = join28(wsDir, "chatSessions");
+          const wsDir = join29(this.root, w.name);
+          const wsPath = readWorkspacePath(join29(wsDir, "workspace.json"));
+          const chatDir = join29(wsDir, "chatSessions");
           const chatSessionIds = /* @__PURE__ */ new Set();
           if (existsSync28(chatDir)) {
             let files = [];
@@ -17533,7 +17537,7 @@ var init_vscode_copilot = __esm({
               const isJson = f.name.endsWith(".json");
               const isJsonl = f.name.endsWith(".jsonl");
               if (!isJson && !isJsonl) continue;
-              const p2 = join28(chatDir, f.name);
+              const p2 = join29(chatDir, f.name);
               const st = statSync5(p2);
               if (st.size === 0) continue;
               chatSessionIds.add(basename2(f.name, isJsonl ? ".jsonl" : ".json"));
@@ -17547,7 +17551,7 @@ var init_vscode_copilot = __esm({
               };
             }
           }
-          const transcriptsDir = join28(wsDir, "GitHub.copilot-chat", "transcripts");
+          const transcriptsDir = join29(wsDir, "GitHub.copilot-chat", "transcripts");
           if (existsSync28(transcriptsDir)) {
             let tfiles = [];
             try {
@@ -17559,7 +17563,7 @@ var init_vscode_copilot = __esm({
               if (!f.isFile() || !f.name.endsWith(".jsonl")) continue;
               const id = basename2(f.name, ".jsonl");
               if (chatSessionIds.has(id)) continue;
-              const p2 = join28(transcriptsDir, f.name);
+              const p2 = join29(transcriptsDir, f.name);
               const st = statSync5(p2);
               if (st.size === 0) continue;
               const buf = readFileSync25(p2);
@@ -17776,18 +17780,18 @@ var init_toc = __esm({
 
 // src/spool/writer.ts
 import { mkdirSync as mkdirSync15, writeFileSync as writeFileSync16 } from "node:fs";
-import { join as join29 } from "node:path";
+import { join as join30 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
-  const dirRel = join29("raw_sessions", s.tool, s.project, date);
-  const absDir = join29(repoRoot, dirRel);
+  const dirRel = join30("raw_sessions", s.tool, s.project, date);
+  const absDir = join30(repoRoot, dirRel);
   mkdirSync15(absDir, { recursive: true });
   const base = `${s.nameSlug}__${s.shortId}`;
-  const mdRel = join29(dirRel, `${base}.md`);
+  const mdRel = join30(dirRel, `${base}.md`);
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults = opts.fullToolResults ?? process.env.MEMARIUM_FULL_TOOL_RESULTS === "1";
   writeFileSync16(
-    join29(repoRoot, mdRel),
+    join30(repoRoot, mdRel),
     renderMarkdown(s, { includeReasoning, fullToolResults })
   );
   return { md: mdRel };
