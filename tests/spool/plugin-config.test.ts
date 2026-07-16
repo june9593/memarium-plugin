@@ -77,4 +77,18 @@ describe("readPluginConfig — MEMARIUM_DIR override", () => {
   it("MEMARIUM_DIR unset → falls back to homedir()/.memarium (back-compat)", () => {
     expect(readPluginConfig().repoPath).toBe(join(home, ".memarium", "session-repo"));
   });
+
+  it("MEMARIUM_DIR set → legacy ~/.vibebook migration is SKIPPED (sandbox must not touch the real home)", () => {
+    vi.stubEnv("MEMARIUM_DIR", dir);
+    // Seed a legacy pre-rename dir under the real HOME. If the migration guard
+    // regressed, readPluginConfig would rename it into HOME/.memarium.
+    const legacy = join(home, ".vibebook");
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "config.json"), JSON.stringify({
+      repoPath: join(legacy, "session-repo"), repoUrl: "", deviceBranch: "legacy", runner: "claude-cli" }));
+    readPluginConfig();
+    // Migration must NOT have fired: legacy stays put, real HOME/.memarium is not created.
+    expect(existsSync(legacy)).toBe(true);
+    expect(existsSync(join(home, ".memarium"))).toBe(false);
+  });
 });
