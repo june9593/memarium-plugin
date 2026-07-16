@@ -7,6 +7,7 @@
 import { mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { memariumHome } from "../memarium-home.js";
 
 export const SPOOL_REL_PATH = ".memarium/session-repo";
 
@@ -18,7 +19,7 @@ export interface EnsureResult {
 }
 
 export function ensureSpoolDir(): EnsureResult {
-  const spoolRoot = join(homedir(), SPOOL_REL_PATH);
+  const spoolRoot = join(memariumHome(), "session-repo");
   const created = !existsSync(spoolRoot);
 
   const rawSessionsDir = join(spoolRoot, "raw_sessions");

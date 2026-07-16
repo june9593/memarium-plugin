@@ -51,3 +51,30 @@ describe("readPluginConfig", () => {
     expect(cfg.deviceBranch).toBe("macA");
   });
 });
+
+describe("readPluginConfig — MEMARIUM_DIR override", () => {
+  let home: string, dir: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "vbp-cfg-home-"));
+    dir = mkdtempSync(join(tmpdir(), "vbp-cfg-mdir-"));
+    vi.stubEnv("HOME", home);
+  });
+  afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); rmSync(dir, { recursive: true, force: true }); });
+
+  it("MEMARIUM_DIR set + config present → reads <MEMARIUM_DIR>/config.json (not ~/.memarium)", () => {
+    vi.stubEnv("MEMARIUM_DIR", dir);
+    writeFileSync(join(dir, "config.json"), JSON.stringify({
+      repoPath: join(dir, "session-repo"), repoUrl: "", deviceBranch: "eval", runner: "claude-cli" }));
+    expect(readPluginConfig().repoPath).toBe(join(dir, "session-repo"));
+    expect(readPluginConfig().deviceBranch).toBe("eval");
+  });
+
+  it("MEMARIUM_DIR set + NO config → default repoPath = <MEMARIUM_DIR>/session-repo", () => {
+    vi.stubEnv("MEMARIUM_DIR", dir);
+    expect(readPluginConfig().repoPath).toBe(join(dir, "session-repo"));
+  });
+
+  it("MEMARIUM_DIR unset → falls back to homedir()/.memarium (back-compat)", () => {
+    expect(readPluginConfig().repoPath).toBe(join(home, ".memarium", "session-repo"));
+  });
+});

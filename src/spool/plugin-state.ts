@@ -10,11 +10,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { memariumHome } from "../memarium-home.js";
 
 // NOTE: lazy function (not top-level const) so vi.stubEnv("HOME", ...) in
 // tests is honored — homedir() must be re-evaluated per call.
 function statePath(): string {
-  return join(homedir(), ".memarium", ".plugin-state.json");
+  return join(memariumHome(), ".plugin-state.json");
 }
 
 export interface PluginState {
