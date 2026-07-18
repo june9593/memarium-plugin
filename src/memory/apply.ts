@@ -3,6 +3,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "./index-store.js";
 import { renderMemoryMarkdown } from "./render.js";
 import { canonicalMemoryPath, supersedesId } from "./gate.js";
+import { assertNoBlockingLeak } from "./leak-scan.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 import type { MemoryEntry } from "./types.js";
 
@@ -30,6 +31,13 @@ interface PlannedItem {
  *  entry created earlier in the same batch. Paths are derived, never trusted.
  *  Knows NOTHING about the gate. */
 export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): MemoryApplyReport {
+  // Fail-closed leak guard at the shared apply sink: this is the ONE chokepoint
+  // both memory-write and memory-approve funnel through, so enforcing here also
+  // blocks a leak that entered via a hand-edited or pre-filter proposal being
+  // approved — not just fresh writes. memory-propose keeps its own queue-time
+  // check so leaks are rejected early, before they ever reach the queue.
+  assertNoBlockingLeak(items, "memory-apply");
+
   const idx = loadMemoryIndex(repoPath);
   const memRoot = resolve(join(repoPath, "memory"));
 

@@ -14457,6 +14457,55 @@ var init_gate = __esm({
   }
 });
 
+// src/memory/leak-scan.ts
+function scanLeaks(text) {
+  const hits = [];
+  for (const p2 of PATTERNS) {
+    const m = p2.re.exec(text);
+    if (m) {
+      const sample = p2.kind === "secret" ? "[redacted]" : m[0].slice(0, 60);
+      hits.push({ kind: p2.kind, severity: p2.severity, sample });
+    }
+  }
+  return hits;
+}
+function assertNoBlockingLeak(items, cmd) {
+  for (const { entry, body } of items) {
+    const hit = scanLeaks(`${entry.title}
+${entry.summary}
+${body}`).find((h2) => h2.severity === "high");
+    if (hit) {
+      throw new Error(
+        `${cmd}: refusing to write "${entry.id}" \u2014 it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). Use a repo-relative path instead of an absolute home path, and never memorize a secret/token.`
+      );
+    }
+  }
+}
+var PATTERNS;
+var init_leak_scan = __esm({
+  "src/memory/leak-scan.ts"() {
+    "use strict";
+    PATTERNS = [
+      // A machine-specific absolute home path (a memory should use a repo-relative
+      // path). The leading `(?<![\w/])` anchors it to an absolute path: a repo-relative
+      // `src/home/user/…` or a URL path `…/home/user/…` — where the slash is preceded
+      // by a word char or another slash — is deliberately NOT matched. The username
+      // segment ends at a slash/whitespace/quote OR end-of-string, so a terminal path
+      // like `/Users/alice` (no trailing slash) is still caught.
+      { kind: "home-path", severity: "high", re: /(?<![\w/])(?:\/(?:Users|home)\/[^/\s'")]+|[A-Za-z]:\\Users\\)/ },
+      // Secret-shaped tokens: OpenAI sk-/sk-proj-, GitHub PAT, Slack xox*, AWS AKIA, a
+      // JWT, a PEM key. The `\b` before the group anchors the prefix (so hyphenated
+      // prose like "ask-me-…" can't trip the sk- branch); bodies allow -/_ to cover
+      // the newer sk-proj-… and structured Slack tokens without losing the min length.
+      { kind: "secret", severity: "high", re: /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[a-z]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b|eyJ[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+      // Bare 40-hex git commit SHA (one-off identifier; ages out).
+      { kind: "commit-sha", severity: "warn", re: /\b[0-9a-f]{40}\b/ },
+      { kind: "email", severity: "warn", re: /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i },
+      { kind: "guid", severity: "warn", re: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i }
+    ];
+  }
+});
+
 // src/qa/path-guard.ts
 import { lstatSync } from "node:fs";
 import { join as join13, relative, sep } from "node:path";
@@ -14492,6 +14541,7 @@ function normalizeRel(p2) {
   return p2.split("\\").join("/");
 }
 function applyMemoryItems(repoPath, items) {
+  assertNoBlockingLeak(items, "memory-apply");
   const idx = loadMemoryIndex(repoPath);
   const memRoot = resolve2(join14(repoPath, "memory"));
   const willExist = { ...idx.entries };
@@ -14579,54 +14629,8 @@ var init_apply = __esm({
     init_index_store2();
     init_render();
     init_gate();
+    init_leak_scan();
     init_path_guard();
-  }
-});
-
-// src/memory/leak-scan.ts
-function scanLeaks(text) {
-  const hits = [];
-  for (const p2 of PATTERNS) {
-    const m = p2.re.exec(text);
-    if (m) {
-      const sample = p2.kind === "secret" ? "[redacted]" : m[0].slice(0, 60);
-      hits.push({ kind: p2.kind, severity: p2.severity, sample });
-    }
-  }
-  return hits;
-}
-function assertNoBlockingLeak(items, cmd) {
-  for (const { entry, body } of items) {
-    const hit = scanLeaks(`${entry.title}
-${entry.summary}
-${body}`).find((h2) => h2.severity === "high");
-    if (hit) {
-      throw new Error(
-        `${cmd}: refusing to write "${entry.id}" \u2014 it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). Use a repo-relative path instead of an absolute home path, and never memorize a secret/token.`
-      );
-    }
-  }
-}
-var PATTERNS;
-var init_leak_scan = __esm({
-  "src/memory/leak-scan.ts"() {
-    "use strict";
-    PATTERNS = [
-      // A machine-specific absolute home path (a memory should use a repo-relative
-      // path). The leading `(?<![\w/])` anchors it to an absolute path: a repo-relative
-      // `src/home/user/…` or a URL path `…/home/user/…` — where the slash is preceded
-      // by a word char or another slash — is deliberately NOT matched.
-      { kind: "home-path", severity: "high", re: /(?<![\w/])(?:\/(?:Users|home)\/[^/\s'")]+\/|[A-Za-z]:\\Users\\)/ },
-      // Secret-shaped tokens: OpenAI sk-/sk-proj-, GitHub PAT, Slack xox*, AWS AKIA, a
-      // JWT, a PEM key. The `\b` before the group anchors the prefix (so hyphenated
-      // prose like "ask-me-…" can't trip the sk- branch); bodies allow -/_ to cover
-      // the newer sk-proj-… and structured Slack tokens without losing the min length.
-      { kind: "secret", severity: "high", re: /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[a-z]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b|eyJ[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
-      // Bare 40-hex git commit SHA (one-off identifier; ages out).
-      { kind: "commit-sha", severity: "warn", re: /\b[0-9a-f]{40}\b/ },
-      { kind: "email", severity: "warn", re: /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i },
-      { kind: "guid", severity: "warn", re: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i }
-    ];
   }
 });
 
@@ -14643,7 +14647,6 @@ async function memoryWriteCmd(opts) {
   const items = JSON.parse(readFileSync10(opts.inputPath, "utf8"));
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
-  assertNoBlockingLeak(items, "memory-write");
   for (const { entry } of items) {
     if (isGatedChange(entry, idx.entries)) {
       throw new Error(
@@ -14660,7 +14663,6 @@ var init_memory_write = __esm({
     init_index_store2();
     init_apply();
     init_gate();
-    init_leak_scan();
   }
 });
 

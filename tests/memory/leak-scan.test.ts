@@ -20,6 +20,11 @@ describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emai
     expect(hasBlockingLeak("path=/home/bob/proj/y.ts")).toBe(true);
   });
 
+  it("catches a terminal home path with no trailing slash (/Users/alice, /home/bob)", () => {
+    expect(hasBlockingLeak("cd /Users/alice")).toBe(true);
+    expect(hasBlockingLeak("the home dir is /home/bob")).toBe(true);
+  });
+
   it("flags secret-shaped tokens as blocking", () => {
     expect(hasBlockingLeak("export TOKEN=ghp_ABCDEFGHIJKLMNOPQRST1234567890")).toBe(true); // ghp_ prefix
     expect(hasBlockingLeak("key sk-ABCdef0123456789ABCdef01")).toBe(true);
@@ -39,7 +44,7 @@ describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emai
     expect(secret?.sample).toBe("[redacted]");
     expect(secret?.sample).not.toContain("ABCdef");
     const path = scanLeaks("see /home/bob/proj/y.ts").find((h) => h.kind === "home-path");
-    expect(path?.sample).toContain("/home/bob/"); // non-secret kinds keep the real sample
+    expect(path?.sample).toContain("/home/bob"); // non-secret kinds keep the real sample
   });
 
   it("does NOT block normal prose / short hex / api names", () => {

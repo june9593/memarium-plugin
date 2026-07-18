@@ -76,4 +76,30 @@ describe("memory write leak filter", () => {
     expect(err).toBeInstanceOf(Error);
     expect(err!.message).toMatch(/memory-propose: refusing to write "procedural\/p\/fix" .* home-path leak/);
   });
+
+  it("memory-approve refuses a queued proposal that carries a leak (hand-edited / pre-filter) — the apply sink is fail-closed", async () => {
+    // Inject a leaky proposal straight into the queue, bypassing memory-propose's
+    // queue-time check — simulating a proposal edited on disk, or queued before
+    // this filter shipped. The apply sink must still refuse it at approval time.
+    const { writeProposal } = await import("../../src/memory/proposal-store.js");
+    const entry = {
+      id: "procedural/p/leaky-approved", type: "procedural", scope: "project:p", project: "p",
+      title: "t", summary: "s", status: "active", confidence: 0.9, importance: 3,
+      createdAt: "2026-07-19", updatedAt: "2026-07-19", validFrom: null, validTo: null,
+      sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
+      entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+    };
+    writeProposal(repo, {
+      proposalId: "procedural__p__leaky-approved", targetKey: "procedural/p/leaky-approved",
+      proposedEntryId: entry.id, action: "create", rationale: null, sourceSession: null,
+      createdAt: "2026-07-19T00:00:00Z",
+      proposal: { entry: entry as never, body: "first run /Users/yueliu/secret/build.sh, then commit" },
+    });
+    const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
+    const err = await memoryApproveCmd({ id: "procedural/p/leaky-approved" }).then(() => null, (e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err!.message).toMatch(/home-path leak/);
+    // nothing persisted — the sink threw before writing
+    expect(existsSync(join(repo, "memory/procedural/p/leaky-approved.md"))).toBe(false);
+  });
 });

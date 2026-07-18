@@ -14,8 +14,10 @@ const PATTERNS: { kind: LeakKind; severity: LeakSeverity; re: RegExp }[] = [
   // A machine-specific absolute home path (a memory should use a repo-relative
   // path). The leading `(?<![\w/])` anchors it to an absolute path: a repo-relative
   // `src/home/user/…` or a URL path `…/home/user/…` — where the slash is preceded
-  // by a word char or another slash — is deliberately NOT matched.
-  { kind: "home-path", severity: "high", re: /(?<![\w/])(?:\/(?:Users|home)\/[^/\s'")]+\/|[A-Za-z]:\\Users\\)/ },
+  // by a word char or another slash — is deliberately NOT matched. The username
+  // segment ends at a slash/whitespace/quote OR end-of-string, so a terminal path
+  // like `/Users/alice` (no trailing slash) is still caught.
+  { kind: "home-path", severity: "high", re: /(?<![\w/])(?:\/(?:Users|home)\/[^/\s'")]+|[A-Za-z]:\\Users\\)/ },
   // Secret-shaped tokens: OpenAI sk-/sk-proj-, GitHub PAT, Slack xox*, AWS AKIA, a
   // JWT, a PEM key. The `\b` before the group anchors the prefix (so hyphenated
   // prose like "ask-me-…" can't trip the sk- branch); bodies allow -/_ to cover
