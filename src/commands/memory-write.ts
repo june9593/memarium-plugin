@@ -3,6 +3,7 @@ import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadMemoryIndex } from "../memory/index-store.js";
 import { applyMemoryItems, type MemoryApplyItem } from "../memory/apply.js";
 import { isGatedChange, targetKey } from "../memory/gate.js";
+import { assertNoBlockingLeak } from "../memory/leak-scan.js";
 import type { MemoryEntry } from "../memory/types.js";
 
 export interface MemoryWriteOptions { inputPath?: string; }
@@ -17,6 +18,10 @@ export async function memoryWriteCmd(opts: MemoryWriteOptions): Promise<MemoryWr
   const items = JSON.parse(readFileSync(opts.inputPath, "utf8")) as InputItem[];
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
+
+  // Fail-closed leak guard (runs first): never persist a memory carrying a
+  // machine-specific absolute home path or a secret-shaped token.
+  assertNoBlockingLeak(items, "memory-write");
 
   // Hard gate (fail closed): if ANY item is a gated change, reject the whole
   // batch before writing anything. Gated changes must go through memory-propose.

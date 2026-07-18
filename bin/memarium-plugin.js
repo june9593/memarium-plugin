@@ -14583,6 +14583,44 @@ var init_apply = __esm({
   }
 });
 
+// src/memory/leak-scan.ts
+function scanLeaks(text) {
+  const hits = [];
+  for (const p2 of PATTERNS) {
+    const m = p2.re.exec(text);
+    if (m) hits.push({ kind: p2.kind, severity: p2.severity, sample: m[0].slice(0, 60) });
+  }
+  return hits;
+}
+function assertNoBlockingLeak(items, cmd) {
+  for (const { entry, body } of items) {
+    const hit = scanLeaks(`${entry.title}
+${entry.summary}
+${body}`).find((h2) => h2.severity === "high");
+    if (hit) {
+      throw new Error(
+        `${cmd}: refusing to write "${entry.id}" \u2014 it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). Use a repo-relative path instead of an absolute home path, and never memorize a secret/token.`
+      );
+    }
+  }
+}
+var PATTERNS;
+var init_leak_scan = __esm({
+  "src/memory/leak-scan.ts"() {
+    "use strict";
+    PATTERNS = [
+      // A machine-specific absolute home path (a memory should use a repo-relative path).
+      { kind: "home-path", severity: "high", re: /(?:\/(?:Users|home)\/[^/\s'")]+\/)|(?:[A-Za-z]:\\Users\\)/ },
+      // Secret-shaped tokens: OpenAI sk-, GitHub PAT, Slack xox, AWS AKIA, a JWT, a PEM key.
+      { kind: "secret", severity: "high", re: /\b(?:sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b|eyJ[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+      // Bare 40-hex git commit SHA (one-off identifier; ages out).
+      { kind: "commit-sha", severity: "warn", re: /\b[0-9a-f]{40}\b/ },
+      { kind: "email", severity: "warn", re: /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i },
+      { kind: "guid", severity: "warn", re: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i }
+    ];
+  }
+});
+
 // src/commands/memory-write.ts
 var memory_write_exports = {};
 __export(memory_write_exports, {
@@ -14596,6 +14634,7 @@ async function memoryWriteCmd(opts) {
   const items = JSON.parse(readFileSync10(opts.inputPath, "utf8"));
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
+  assertNoBlockingLeak(items, "memory-write");
   for (const { entry } of items) {
     if (isGatedChange(entry, idx.entries)) {
       throw new Error(
@@ -14612,6 +14651,7 @@ var init_memory_write = __esm({
     init_index_store2();
     init_apply();
     init_gate();
+    init_leak_scan();
   }
 });
 
@@ -16103,6 +16143,16 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
           });
         }
       }
+      for (const hit of scanLeaks(`${e.title}
+${e.summary}`)) {
+        issues.push({
+          check: "leaky-content",
+          severity: "warning",
+          layer: "memory",
+          id: e.id,
+          detail: `${hit.kind} in title/summary: ${JSON.stringify(hit.sample)}`
+        });
+      }
       if (e.status === "active" && e.type === "episodic") {
         const age = daysBetween(opts.now, e.updatedAt);
         if (!isFinite(age)) {
@@ -16294,6 +16344,7 @@ var tokenize4, jaccard, daysBetween;
 var init_lint = __esm({
   "src/memory/lint.ts"() {
     "use strict";
+    init_leak_scan();
     tokenize4 = (s) => new Set(s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1));
     jaccard = (a, b2) => {
       if (a.size === 0 && b2.size === 0) return 0;
@@ -16551,6 +16602,7 @@ async function memoryProposeCmd(opts) {
   const items = JSON.parse(readFileSync22(opts.inputPath, "utf8"));
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
+  assertNoBlockingLeak(items, "memory-propose");
   for (const { entry } of items) {
     if (!isGatedChange(entry, idx.entries)) {
       throw new Error(
@@ -16587,6 +16639,7 @@ var init_memory_propose = __esm({
     init_index_store2();
     init_gate();
     init_proposal_store();
+    init_leak_scan();
   }
 });
 

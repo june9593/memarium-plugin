@@ -3,6 +3,7 @@ import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadMemoryIndex } from "../memory/index-store.js";
 import { isGatedChange, targetKey, deriveAction, canonicalMemoryPath } from "../memory/gate.js";
 import { writeProposal, flatTargetKey, type MemoryProposal } from "../memory/proposal-store.js";
+import { assertNoBlockingLeak } from "../memory/leak-scan.js";
 import type { MemoryEntry } from "../memory/types.js";
 
 export interface MemoryProposeOptions { inputPath?: string; }
@@ -17,6 +18,10 @@ export async function memoryProposeCmd(opts: MemoryProposeOptions): Promise<Memo
   const items = JSON.parse(readFileSync(opts.inputPath, "utf8")) as InputItem[];
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
+
+  // Fail-closed leak guard (runs first): a gated proposal must not carry a
+  // machine-specific absolute home path or a secret-shaped token either.
+  assertNoBlockingLeak(items, "memory-propose");
 
   // Validate every item is a gated change before writing any proposal.
   for (const { entry } of items) {

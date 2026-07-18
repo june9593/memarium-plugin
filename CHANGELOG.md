@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.19.5 — 2026-07-19
+
+### Deterministic leak filter on the memory-write path
+
+The write-quality eval (S1-B) found the digest occasionally memorizing
+machine-specific junk — absolute home paths (`/Users/…`), secret-shaped tokens —
+that a prompt tweak alone did not reliably stop. This adds a code-level backstop.
+
+- New `src/memory/leak-scan.ts`: `scanLeaks(text)` / `hasBlockingLeak(text)` /
+  `assertNoBlockingLeak(items, cmd)`. High-severity kinds (absolute home path,
+  secret-shaped token — `sk-`/`ghp_`/`xox`/`AKIA`/JWT/PEM) are **blocking**;
+  bare 40-hex commit SHAs, emails, and GUIDs are **warn-only** (they have
+  legitimate uses).
+- `memory-write` and `memory-propose` now run `assertNoBlockingLeak` first and
+  **refuse the whole batch** (fail-closed, like the v4 gate) if any item's
+  title/summary/body carries a blocking leak — nothing is persisted.
+- `memory-lint` gains a `leaky-content` warning that surfaces any leak kind
+  (including the warn-only SHAs/emails/GUIDs, and any blocking leak that predates
+  this filter) sitting in a memory's title/summary.
+- Repo-relative paths and API identifiers (`apps/x/y.py`, `VNRecognizeTextRequest`)
+  are deliberately **not** flagged. Prose one-offs that carry no literal
+  secret (a dev toggle, a "paste the token here" step) are out of scope here —
+  those remain a prompt/human-review concern.
+
 ## 0.19.4 — 2026-07-16
 
 ### `MEMARIUM_DIR` env override (eval-harness sandbox support)
