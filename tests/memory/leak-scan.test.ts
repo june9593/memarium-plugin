@@ -13,11 +13,33 @@ describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emai
     expect(hasBlockingLeak("backend/services/supabase.py has class DBConnection")).toBe(false);
   });
 
+  it("does NOT flag a `/home/`-or-`/Users/` substring inside a repo-relative or URL path (boundary-anchored)", () => {
+    expect(hasBlockingLeak("the file is src/home/user/file.ts")).toBe(false);
+    expect(hasBlockingLeak("fetch https://cdn.example.com/Users/avatars/x.png")).toBe(false);
+    // but a genuine absolute path (start of token) is still caught
+    expect(hasBlockingLeak("path=/home/bob/proj/y.ts")).toBe(true);
+  });
+
   it("flags secret-shaped tokens as blocking", () => {
     expect(hasBlockingLeak("export TOKEN=ghp_ABCDEFGHIJKLMNOPQRST1234567890")).toBe(true); // ghp_ prefix
     expect(hasBlockingLeak("key sk-ABCdef0123456789ABCdef01")).toBe(true);
     expect(hasBlockingLeak("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF")).toBe(true);
     expect(hasBlockingLeak("-----BEGIN RSA PRIVATE KEY-----")).toBe(true);
+  });
+
+  it("covers structured secret bodies (sk-proj-…, xoxc-…) without tripping hyphenated prose", () => {
+    expect(hasBlockingLeak("OPENAI_API_KEY=sk-proj-abcDEF012_ghiJKL345mnoPQR")).toBe(true);
+    expect(hasBlockingLeak("slack xoxc-1234567890-abcdefghij")).toBe(true);
+    // "ask-me-…" contains the substring "sk-" but the \b anchor must not classify it
+    expect(hasBlockingLeak("please ask-me-when-you-are-ready-okay-friend")).toBe(false);
+  });
+
+  it("redacts secret samples (never echoes the token) but keeps diagnostic samples for other kinds", () => {
+    const secret = scanLeaks("key sk-ABCdef0123456789ABCdef01").find((h) => h.kind === "secret");
+    expect(secret?.sample).toBe("[redacted]");
+    expect(secret?.sample).not.toContain("ABCdef");
+    const path = scanLeaks("see /home/bob/proj/y.ts").find((h) => h.kind === "home-path");
+    expect(path?.sample).toContain("/home/bob/"); // non-secret kinds keep the real sample
   });
 
   it("does NOT block normal prose / short hex / api names", () => {

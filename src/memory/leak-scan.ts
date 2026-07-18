@@ -11,10 +11,16 @@ export type LeakSeverity = "high" | "warn";
 export interface LeakHit { kind: LeakKind; severity: LeakSeverity; sample: string }
 
 const PATTERNS: { kind: LeakKind; severity: LeakSeverity; re: RegExp }[] = [
-  // A machine-specific absolute home path (a memory should use a repo-relative path).
-  { kind: "home-path", severity: "high", re: /(?:\/(?:Users|home)\/[^/\s'")]+\/)|(?:[A-Za-z]:\\Users\\)/ },
-  // Secret-shaped tokens: OpenAI sk-, GitHub PAT, Slack xox, AWS AKIA, a JWT, a PEM key.
-  { kind: "secret", severity: "high", re: /\b(?:sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b|eyJ[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  // A machine-specific absolute home path (a memory should use a repo-relative
+  // path). The leading `(?<![\w/])` anchors it to an absolute path: a repo-relative
+  // `src/home/user/…` or a URL path `…/home/user/…` — where the slash is preceded
+  // by a word char or another slash — is deliberately NOT matched.
+  { kind: "home-path", severity: "high", re: /(?<![\w/])(?:\/(?:Users|home)\/[^/\s'")]+\/|[A-Za-z]:\\Users\\)/ },
+  // Secret-shaped tokens: OpenAI sk-/sk-proj-, GitHub PAT, Slack xox*, AWS AKIA, a
+  // JWT, a PEM key. The `\b` before the group anchors the prefix (so hyphenated
+  // prose like "ask-me-…" can't trip the sk- branch); bodies allow -/_ to cover
+  // the newer sk-proj-… and structured Slack tokens without losing the min length.
+  { kind: "secret", severity: "high", re: /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[a-z]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b|eyJ[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
   // Bare 40-hex git commit SHA (one-off identifier; ages out).
   { kind: "commit-sha", severity: "warn", re: /\b[0-9a-f]{40}\b/ },
   { kind: "email", severity: "warn", re: /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i },
@@ -26,7 +32,13 @@ export function scanLeaks(text: string): LeakHit[] {
   const hits: LeakHit[] = [];
   for (const p of PATTERNS) {
     const m = p.re.exec(text);
-    if (m) hits.push({ kind: p.kind, severity: p.severity, sample: m[0].slice(0, 60) });
+    if (m) {
+      // Never echo secret material: both the write-guard error and memory-lint
+      // serialize `sample`, so a real token would land in command output/logs.
+      // Redact secret hits; keep a real, diagnostic sample for the other kinds.
+      const sample = p.kind === "secret" ? "[redacted]" : m[0].slice(0, 60);
+      hits.push({ kind: p.kind, severity: p.severity, sample });
+    }
   }
   return hits;
 }
