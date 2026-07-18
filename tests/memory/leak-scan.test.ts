@@ -56,6 +56,8 @@ describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emai
     const sha = scanLeaks("fixed in f1e0435a7552b17a6d89e8ec01c1146704a5e0a0");
     expect(sha.some((h) => h.kind === "commit-sha" && h.severity === "warn")).toBe(true);
     expect(hasBlockingLeak("fixed in f1e0435a7552b17a6d89e8ec01c1146704a5e0a0")).toBe(false);
+    // an UPPERCASE / mixed-case 40-hex SHA is still caught (case-insensitive)
+    expect(scanLeaks("regressed in F1E0435A7552B17A6D89E8EC01C1146704A5E0A0").some((h) => h.kind === "commit-sha")).toBe(true);
     expect(scanLeaks("ping bob@contoso.com").some((h) => h.kind === "email")).toBe(true);
     expect(scanLeaks("tenant 72f988bf-86f1-41af-91ab-2d7cd011db47").some((h) => h.kind === "guid")).toBe(true);
   });

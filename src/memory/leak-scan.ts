@@ -23,8 +23,9 @@ const PATTERNS: { kind: LeakKind; severity: LeakSeverity; re: RegExp }[] = [
   // prose like "ask-me-…" can't trip the sk- branch); bodies allow -/_ to cover
   // the newer sk-proj-… and structured Slack tokens without losing the min length.
   { kind: "secret", severity: "high", re: /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[a-z]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b|eyJ[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]{5,}\.[A-Za-z0-9_=-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
-  // Bare 40-hex git commit SHA (one-off identifier; ages out).
-  { kind: "commit-sha", severity: "warn", re: /\b[0-9a-f]{40}\b/ },
+  // Bare 40-hex git commit SHA (one-off identifier; ages out). Case-insensitive:
+  // conventionally lowercase, but an uppercase/mixed paste is still a bare SHA.
+  { kind: "commit-sha", severity: "warn", re: /\b[0-9a-f]{40}\b/i },
   { kind: "email", severity: "warn", re: /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i },
   { kind: "guid", severity: "warn", re: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i },
 ];
