@@ -11,6 +11,9 @@ describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emai
     // case-insensitive: Windows/macOS FS are case-insensitive, so lowercase/mixed must still hit
     expect(hasBlockingLeak("open C:\\users\\alice\\proj\\x.ts")).toBe(true);
     expect(hasBlockingLeak("cd /users/alice")).toBe(true);
+    // forward-slash Windows form (Node/tools normalize to this) is caught by the
+    // Unix branch — the `:` before `/Users/` clears the (?<![\w/]) anchor
+    expect(hasBlockingLeak("C:/Users/alice/project")).toBe(true);
     // a non-Users Windows drive path is NOT a home path
     expect(hasBlockingLeak("build output at D:\\Projects\\repo\\dist")).toBe(false);
   });
