@@ -86,6 +86,40 @@ describe("memory write leak filter", () => {
     expect(report.written).toBe(1);
   });
 
+  it("refuses a clean update whose PRIOR same-id entry has a leaky sourceFiles (merge-aware)", async () => {
+    // Seed a pre-filter prior entry with an absolute sourceFiles path straight into
+    // the index (can't get there through the guard today, but old data can). The
+    // continuation-upsert unions prior.sourceFiles back into a clean update, so the
+    // sink must scan the EFFECTIVE merged value, not just the input.
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/p/leaky": {
+        id: "semantic/p/leaky", type: "semantic", scope: "project:p", project: "p",
+        title: "t", summary: "s", path: "memory/semantic/p/leaky.md", status: "active",
+        confidence: 0.8, importance: 2, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+        validFrom: null, validTo: null, sourceSessions: ["s0"], sourceCommits: [],
+        sourceFiles: ["/Users/yueliu/edge/old/leak.ts"], supersedes: null, entities: [],
+        originDevice: null, accessCount: 0, lastAccess: null } } }));
+    const input = join(home, "upd.json");
+    const item = semanticItem("clean body")[0];       // same id, own sourceFiles clean
+    (item.entry as { sourceFiles: string[] }).sourceFiles = ["src/new.ts"];
+    writeFileSync(input, JSON.stringify([item]));
+    const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
+    const err = await memoryWriteCmd({ inputPath: input }).then(() => null, (e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err!.message).toMatch(/home-path leak/);
+  });
+
+  it("refuses an item whose entities carries a secret-shaped token", async () => {
+    const input = join(home, "ent.json");
+    const item = semanticItem("clean body")[0];
+    (item.entry as { entities: string[] }).entities = ["NormalSymbol", "ghp_ABCDEFGHIJKLMNOPQRST1234567890"];
+    writeFileSync(input, JSON.stringify([item]));
+    const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
+    const err = await memoryWriteCmd({ inputPath: input }).then(() => null, (e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err!.message).toMatch(/secret leak/);
+  });
+
   it("memory-propose also refuses a gated procedural item carrying a home path", async () => {
     const input = join(home, "proc.json");
     writeFileSync(input, JSON.stringify([{ entry: {

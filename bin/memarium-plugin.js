@@ -14472,13 +14472,15 @@ function scanLeaks(text) {
 function assertNoBlockingLeak(items, cmd) {
   for (const { entry, body } of items) {
     const files = Array.isArray(entry.sourceFiles) ? entry.sourceFiles.join("\n") : "";
+    const ents = Array.isArray(entry.entities) ? entry.entities.join("\n") : "";
     const hit = scanLeaks(`${entry.title}
 ${entry.summary}
 ${body}
-${files}`).find((h2) => h2.severity === "high");
+${files}
+${ents}`).find((h2) => h2.severity === "high");
     if (hit) {
       throw new Error(
-        `${cmd}: refusing to write "${entry.id}" \u2014 it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). Use a repo-relative path instead of an absolute home path (in the body AND in sourceFiles), and never memorize a secret/token.`
+        `${cmd}: refusing to write "${entry.id}" \u2014 it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). Use a repo-relative path instead of an absolute home path (in the body, sourceFiles, AND entities), and never memorize a secret/token.`
       );
     }
   }
@@ -14547,8 +14549,19 @@ function normalizeRel(p2) {
   return p2.split("\\").join("/");
 }
 function applyMemoryItems(repoPath, items) {
-  assertNoBlockingLeak(items, "memory-apply");
   const idx = loadMemoryIndex(repoPath);
+  assertNoBlockingLeak(
+    items.map(({ entry, body }) => {
+      const prior = idx.entries[entry.id];
+      const priorFiles = prior && Array.isArray(prior.sourceFiles) ? prior.sourceFiles : [];
+      const ownFiles = Array.isArray(entry.sourceFiles) ? entry.sourceFiles : [];
+      return {
+        entry: { id: entry.id, title: entry.title, summary: entry.summary, entities: entry.entities, sourceFiles: [...ownFiles, ...priorFiles] },
+        body
+      };
+    }),
+    "memory-apply"
+  );
   const memRoot = resolve2(join14(repoPath, "memory"));
   const willExist = { ...idx.entries };
   const planned = [];

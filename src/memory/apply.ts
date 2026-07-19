@@ -31,14 +31,32 @@ interface PlannedItem {
  *  entry created earlier in the same batch. Paths are derived, never trusted.
  *  Knows NOTHING about the gate. */
 export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): MemoryApplyReport {
+  const idx = loadMemoryIndex(repoPath);
+
   // Fail-closed leak guard at the shared apply sink: this is the ONE chokepoint
   // both memory-write and memory-approve funnel through, so enforcing here also
   // blocks a leak that entered via a hand-edited or pre-filter proposal being
   // approved — not just fresh writes. memory-propose keeps its own queue-time
   // check so leaks are rejected early, before they ever reach the queue.
-  assertNoBlockingLeak(items, "memory-apply");
+  //
+  // Merge-aware: scan the EFFECTIVE sourceFiles that will actually be persisted —
+  // the item's own values UNION the prior same-id entry's sourceFiles, which the
+  // continuation-upsert below (`uni(entry.sourceFiles, prior.sourceFiles)`) folds
+  // back in. Otherwise a clean update could re-absorb a pre-filter leaky path
+  // from the prior entry and persist it.
+  assertNoBlockingLeak(
+    items.map(({ entry, body }) => {
+      const prior = idx.entries[entry.id];
+      const priorFiles = prior && Array.isArray(prior.sourceFiles) ? prior.sourceFiles : [];
+      const ownFiles = Array.isArray(entry.sourceFiles) ? entry.sourceFiles : [];
+      return {
+        entry: { id: entry.id, title: entry.title, summary: entry.summary, entities: entry.entities, sourceFiles: [...ownFiles, ...priorFiles] },
+        body,
+      };
+    }),
+    "memory-apply",
+  );
 
-  const idx = loadMemoryIndex(repoPath);
   const memRoot = resolve(join(repoPath, "memory"));
 
   // Entries that will exist as we go: live index + earlier same-batch items.

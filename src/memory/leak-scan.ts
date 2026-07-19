@@ -55,23 +55,25 @@ export function hasBlockingLeak(text: string): boolean {
 }
 
 /** Minimal shape both memory-write and memory-propose feed the scanner. */
-export interface LeakScannable { entry: { id: string; title: string; summary: string; sourceFiles?: string[] }; body: string }
+export interface LeakScannable { entry: { id: string; title: string; summary: string; sourceFiles?: string[]; entities?: string[] }; body: string }
 
 /** Fail-closed guard for the write path: throw on the FIRST item whose title,
- *  summary, body, OR sourceFiles carries a high-severity leak (machine-specific
- *  home path or secret-shaped token), before anything is persisted. `sourceFiles`
- *  is included because the digest maps raw `files_touched` (absolute tool
- *  file_path values) into it and render.ts persists it in frontmatter — so an
- *  un-normalized `/Users/alice/…` path would otherwise leak straight past. `cmd`
- *  names the caller so the error tells the digest which route rejected it. */
+ *  summary, body, sourceFiles, OR entities carries a high-severity leak
+ *  (machine-specific home path or secret-shaped token), before anything is
+ *  persisted. `sourceFiles` and `entities` are included because both are
+ *  agent-authored arrays that render.ts serializes verbatim into frontmatter —
+ *  an un-normalized `/Users/alice/…` path or a `ghp_…` token in either would
+ *  otherwise leak straight past. `cmd` names the caller so the error tells the
+ *  digest which route rejected it. */
 export function assertNoBlockingLeak(items: LeakScannable[], cmd: string): void {
   for (const { entry, body } of items) {
     const files = Array.isArray(entry.sourceFiles) ? entry.sourceFiles.join("\n") : "";
-    const hit = scanLeaks(`${entry.title}\n${entry.summary}\n${body}\n${files}`).find((h) => h.severity === "high");
+    const ents = Array.isArray(entry.entities) ? entry.entities.join("\n") : "";
+    const hit = scanLeaks(`${entry.title}\n${entry.summary}\n${body}\n${files}\n${ents}`).find((h) => h.severity === "high");
     if (hit) {
       throw new Error(
         `${cmd}: refusing to write "${entry.id}" — it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). ` +
-        `Use a repo-relative path instead of an absolute home path (in the body AND in sourceFiles), and never memorize a secret/token.`,
+        `Use a repo-relative path instead of an absolute home path (in the body, sourceFiles, AND entities), and never memorize a secret/token.`,
       );
     }
   }
