@@ -55,19 +55,23 @@ export function hasBlockingLeak(text: string): boolean {
 }
 
 /** Minimal shape both memory-write and memory-propose feed the scanner. */
-export interface LeakScannable { entry: { id: string; title: string; summary: string }; body: string }
+export interface LeakScannable { entry: { id: string; title: string; summary: string; sourceFiles?: string[] }; body: string }
 
 /** Fail-closed guard for the write path: throw on the FIRST item whose title,
- *  summary, or body carries a high-severity leak (machine-specific home path or
- *  secret-shaped token), before anything is persisted. `cmd` names the caller so
- *  the error tells the digest which route rejected it. */
+ *  summary, body, OR sourceFiles carries a high-severity leak (machine-specific
+ *  home path or secret-shaped token), before anything is persisted. `sourceFiles`
+ *  is included because the digest maps raw `files_touched` (absolute tool
+ *  file_path values) into it and render.ts persists it in frontmatter — so an
+ *  un-normalized `/Users/alice/…` path would otherwise leak straight past. `cmd`
+ *  names the caller so the error tells the digest which route rejected it. */
 export function assertNoBlockingLeak(items: LeakScannable[], cmd: string): void {
   for (const { entry, body } of items) {
-    const hit = scanLeaks(`${entry.title}\n${entry.summary}\n${body}`).find((h) => h.severity === "high");
+    const files = Array.isArray(entry.sourceFiles) ? entry.sourceFiles.join("\n") : "";
+    const hit = scanLeaks(`${entry.title}\n${entry.summary}\n${body}\n${files}`).find((h) => h.severity === "high");
     if (hit) {
       throw new Error(
         `${cmd}: refusing to write "${entry.id}" — it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). ` +
-        `Use a repo-relative path instead of an absolute home path, and never memorize a secret/token.`,
+        `Use a repo-relative path instead of an absolute home path (in the body AND in sourceFiles), and never memorize a secret/token.`,
       );
     }
   }

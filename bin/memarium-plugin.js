@@ -14471,12 +14471,14 @@ function scanLeaks(text) {
 }
 function assertNoBlockingLeak(items, cmd) {
   for (const { entry, body } of items) {
+    const files = Array.isArray(entry.sourceFiles) ? entry.sourceFiles.join("\n") : "";
     const hit = scanLeaks(`${entry.title}
 ${entry.summary}
-${body}`).find((h2) => h2.severity === "high");
+${body}
+${files}`).find((h2) => h2.severity === "high");
     if (hit) {
       throw new Error(
-        `${cmd}: refusing to write "${entry.id}" \u2014 it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). Use a repo-relative path instead of an absolute home path, and never memorize a secret/token.`
+        `${cmd}: refusing to write "${entry.id}" \u2014 it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). Use a repo-relative path instead of an absolute home path (in the body AND in sourceFiles), and never memorize a secret/token.`
       );
     }
   }

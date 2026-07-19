@@ -62,6 +62,30 @@ describe("memory write leak filter", () => {
     expect(existsSync(join(repo, "memory/semantic/p/leaky.md"))).toBe(true);
   });
 
+  it("refuses an item whose sourceFiles carries an absolute home path (the files_touched vector)", async () => {
+    // Clean prose, but sourceFiles has an un-normalized absolute path — exactly
+    // what the digest produces when it copies raw files_touched verbatim.
+    const input = join(home, "sf.json");
+    const item = semanticItem("clean prose, no path here")[0];
+    (item.entry as { sourceFiles: string[] }).sourceFiles = ["/Users/yueliu/edge/PraestoClaw/apps/x.py", "src/ok.ts"];
+    writeFileSync(input, JSON.stringify([item]));
+    const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
+    const err = await memoryWriteCmd({ inputPath: input }).then(() => null, (e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err!.message).toMatch(/home-path leak/);
+    expect(existsSync(join(repo, "memory/semantic/p/leaky.md"))).toBe(false);
+  });
+
+  it("allows an item whose sourceFiles are all repo-relative", async () => {
+    const input = join(home, "sf-ok.json");
+    const item = semanticItem("clean prose")[0];
+    (item.entry as { sourceFiles: string[] }).sourceFiles = ["src/a.ts", "apps/b/c.py", "package.json"];
+    writeFileSync(input, JSON.stringify([item]));
+    const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
+    const report = await memoryWriteCmd({ inputPath: input });
+    expect(report.written).toBe(1);
+  });
+
   it("memory-propose also refuses a gated procedural item carrying a home path", async () => {
     const input = join(home, "proc.json");
     writeFileSync(input, JSON.stringify([{ entry: {

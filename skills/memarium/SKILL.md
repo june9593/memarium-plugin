@@ -243,7 +243,10 @@ item:
   **`sourceSessions`** (the threads' full `sessionId` values from `newSessions` —
   the idempotency receipt; use the full `sessionId`, **NOT** `shortId`, or the
   session never counts as digested and re-proposes forever),
-  `sourceFiles` (files_touched), `sourceCommits`, `entities` (symbols/APIs/concepts).
+  `sourceFiles` (files_touched, **as repo-relative paths** — strip any absolute
+  `/Users/…` / `/home/…` / `C:\Users\…` home prefix; the write guard rejects a
+  memory whose sourceFiles carry an absolute home path), `sourceCommits`,
+  `entities` (symbols/APIs/concepts).
 - `body`: `## Context / ## What worked / ## Dead ends / ## Open questions /
   ## Decisions` + a `**Work status:** shipped|in-progress|blocked|abandoned` line.
 
