@@ -8,6 +8,9 @@ describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emai
     expect(hasBlockingLeak("see /home/bob/proj/y.ts")).toBe(true);
     // Windows home path (backslashes) — the security backstop must cover it too
     expect(hasBlockingLeak("open C:\\Users\\alice\\proj\\x.ts")).toBe(true);
+    // case-insensitive: Windows/macOS FS are case-insensitive, so lowercase/mixed must still hit
+    expect(hasBlockingLeak("open C:\\users\\alice\\proj\\x.ts")).toBe(true);
+    expect(hasBlockingLeak("cd /users/alice")).toBe(true);
     // a non-Users Windows drive path is NOT a home path
     expect(hasBlockingLeak("build output at D:\\Projects\\repo\\dist")).toBe(false);
   });
