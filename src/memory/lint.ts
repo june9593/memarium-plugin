@@ -3,6 +3,7 @@ import type { EntityIndex } from "../entity/types.js";
 import type { EntityPage } from "../entity/types.js";
 import type { QaIndex } from "../qa/types.js";
 import type { QaEntry } from "../qa/types.js";
+import { scanLeaks } from "./leak-scan.js";
 
 /** Returns a short, truncated, safe snapshot of an unknown entry for use in error details. */
 function entrySnapshot(e: unknown): string {
@@ -131,6 +132,16 @@ export function lintMemory(
           issues.push({ check: "stale-provenance", severity: "warning", layer: "memory", id: e.id,
             detail: `all ${ss.length} sourceSessions absent from the spool index — evidence gone`, refs: ss });
         }
+      }
+      // leaky-content: a machine-specific path, secret, bare commit SHA, email,
+      // or GUID sitting in a memory's title/summary. High-severity kinds
+      // (home-path/secret) are blocked at write time by leak-scan; this surfaces
+      // any that predate the filter, plus the warn-only kinds (SHA/email/GUID)
+      // that the writer lets through. Index carries no body, so we scan the two
+      // visible fields.
+      for (const hit of scanLeaks(`${e.title}\n${e.summary}`)) {
+        issues.push({ check: "leaky-content", severity: "warning", layer: "memory", id: e.id,
+          detail: `${hit.kind} in title/summary: ${JSON.stringify(hit.sample)}` });
       }
       // Episodic is now the PRIMARY durable per-thread record (the digest
       // receipt that replaced chronicles), so it is NOT flagged stale by age —

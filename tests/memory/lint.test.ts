@@ -109,6 +109,23 @@ describe("lintMemory — memory issues", () => {
   });
 });
 
+describe("lintMemory — leaky-content", () => {
+  it("flags an absolute home path in the summary as a warning (not blocking here)", () => {
+    const r = run(idxOf(mem({ id: "semantic/p/lk", summary: "the fix lives in /Users/yueliu/edge/x/y.py" })));
+    const f = r.issues.find((x) => x.check === "leaky-content");
+    expect(f?.severity).toBe("warning");
+    expect(f?.detail).toMatch(/home-path/);
+  });
+  it("flags a bare 40-hex commit SHA in the title (the warn-only kind the writer allows)", () => {
+    const r = run(idxOf(mem({ id: "semantic/p/sha", title: "regressed in f1e0435a7552b17a6d89e8ec01c1146704a5e0a0" })));
+    expect(checks(r)).toContain("leaky-content");
+  });
+  it("does NOT flag a clean memory (repo-relative path + API name)", () => {
+    const r = run(idxOf(mem({ id: "semantic/p/ok", title: "VNRecognizeTextRequest usage", summary: "read apps/agent/tools/fs.py" })));
+    expect(checks(r)).not.toContain("leaky-content");
+  });
+});
+
 describe("lintMemory — duplicate-like", () => {
   it("flags two active same-type/scope/project entries with high title+summary overlap", () => {
     const a = mem({ id: "semantic/p/a", title: "Spool format single md", summary: "one md per session with manifest" });
