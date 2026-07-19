@@ -2,10 +2,14 @@ import { describe, it, expect } from "vitest";
 import { scanLeaks, hasBlockingLeak } from "../../src/memory/leak-scan.js";
 
 describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emails/GUIDs warn", () => {
-  it("flags a local absolute home path as a blocking leak", () => {
+  it("flags a local absolute home path as a blocking leak (Unix + Windows)", () => {
     const hits = scanLeaks("the fix is in /Users/yueliu/edge/PraestoClaw/apps/x.py near line 40");
     expect(hits.some((h) => h.kind === "home-path" && h.severity === "high")).toBe(true);
     expect(hasBlockingLeak("see /home/bob/proj/y.ts")).toBe(true);
+    // Windows home path (backslashes) — the security backstop must cover it too
+    expect(hasBlockingLeak("open C:\\Users\\alice\\proj\\x.ts")).toBe(true);
+    // a non-Users Windows drive path is NOT a home path
+    expect(hasBlockingLeak("build output at D:\\Projects\\repo\\dist")).toBe(false);
   });
 
   it("does NOT flag repo-relative paths (those are the desired form)", () => {
