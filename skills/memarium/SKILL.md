@@ -245,8 +245,8 @@ item:
   session never counts as digested and re-proposes forever),
   `sourceFiles` (files_touched, **as repo-relative paths** — strip any absolute
   `/Users/…` / `/home/…` / `C:\Users\…` home prefix; the write guard rejects a
-  memory whose sourceFiles carry an absolute home path), `sourceCommits`,
-  `entities` (symbols/APIs/concepts).
+  memory with an absolute home path in any field, sourceFiles included),
+  `sourceCommits`, `entities` (symbols/APIs/concepts).
 - `body`: `## Context / ## What worked / ## Dead ends / ## Open questions /
   ## Decisions` + a `**Work status:** shipped|in-progress|blocked|abandoned` line.
 
@@ -256,7 +256,10 @@ item:
 - **Work status lives in the BODY.** `entry.status` is the lifecycle axis
   (`active`/`superseded`/`pinned`) — never set it to a work status.
 - Imperative agent-reuse voice; preserve commit hashes / file paths / DCHECK
-  strings verbatim; at most one small code block per section. Dead ends matter as
+  strings verbatim — **but write file paths repo-relative**: strip any absolute
+  `/Users/…` / `/home/…` / `C:\Users\…` home prefix (the write guard rejects an
+  absolute home path in ANY field — title, summary, body, sourceFiles, entities).
+  At most one small code block per section. Dead ends matter as
   much as What worked — write `(none)` if genuinely empty, don't omit.
 - Don't hallucinate outcomes; `**Work status:** blocked` beats overstating.
 - Reuse an existing episodic `id` from `existingEpisodes` for a continued thread
@@ -519,7 +522,7 @@ Print a per-project summary (episodics + facts added) and the finalize result.
 - ✅ Default to one-thread-per-session; merge only when continuous.
 - ✅ Be conservative with SKIP — write the episodic if in any doubt.
 - ✅ Set `sourceSessions` correctly; keep `threadId`/episodic `id` stable across re-digests.
-- ✅ Preserve exact code blocks, command lines, file paths, commit hashes.
+- ✅ Preserve exact code blocks, command lines, file paths, commit hashes — but write file paths repo-relative (never an absolute `/Users/…` home path; the write guard rejects it).
 - ✅ Route gated (core/procedural/pinned/supersede/trust-elevation) through `memory-propose`.
 - ✅ Record skipped sessions with `skip-write`, and `finalize` at the end.
 

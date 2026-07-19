@@ -73,7 +73,8 @@ export function assertNoBlockingLeak(items: LeakScannable[], cmd: string): void 
     if (hit) {
       throw new Error(
         `${cmd}: refusing to write "${entry.id}" — it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). ` +
-        `Use a repo-relative path instead of an absolute home path (in the body, sourceFiles, AND entities), and never memorize a secret/token.`,
+        `Scanned fields: title, summary, body, sourceFiles, entities. Use a repo-relative path instead of an ` +
+        `absolute home path in ALL of them, and never memorize a secret/token.`,
       );
     }
   }

@@ -14480,7 +14480,7 @@ ${files}
 ${ents}`).find((h2) => h2.severity === "high");
     if (hit) {
       throw new Error(
-        `${cmd}: refusing to write "${entry.id}" \u2014 it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). Use a repo-relative path instead of an absolute home path (in the body, sourceFiles, AND entities), and never memorize a secret/token.`
+        `${cmd}: refusing to write "${entry.id}" \u2014 it contains a ${hit.kind} leak (${JSON.stringify(hit.sample)}). Scanned fields: title, summary, body, sourceFiles, entities. Use a repo-relative path instead of an absolute home path in ALL of them, and never memorize a secret/token.`
       );
     }
   }
