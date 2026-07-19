@@ -14487,14 +14487,15 @@ var init_leak_scan = __esm({
     "use strict";
     PATTERNS = [
       // A machine-specific absolute home path (a memory should use a repo-relative
-      // path). The leading `(?<![\w/])` anchors it to an absolute path: a repo-relative
-      // `src/home/user/…` or a URL path `…/home/user/…` — where the slash is preceded
-      // by a word char or another slash — is deliberately NOT matched. The username
-      // segment ends at a slash/whitespace/quote OR end-of-string, so a terminal path
-      // like `/Users/alice` (no trailing slash) is still caught. The `i` flag makes it
-      // case-insensitive: Windows and macOS filesystems are case-insensitive, so
-      // `C:\users\…` / `/users/…` are the same home path and must not slip past.
-      { kind: "home-path", severity: "high", re: /(?<![\w/])(?:\/(?:Users|home)\/[^/\s'")]+|[A-Za-z]:\\Users\\)/i },
+      // path). The leading `(?<!\w)` anchors it to an absolute path: a repo-relative
+      // `src/home/user/…` or an HTTP URL path `…example.com/Users/…` — where the slash
+      // is preceded by a word char (the host/dir name) — is deliberately NOT matched.
+      // A `file:///Users/…` URI IS caught (the slash-before-slash still leaks a real
+      // home path). The username segment ends at a slash/whitespace/quote OR
+      // end-of-string, so a terminal path like `/Users/alice` (no trailing slash) is
+      // still caught. Case-insensitive: Windows and macOS filesystems are
+      // case-insensitive, so `C:\users\…` / `/users/…` must not slip past.
+      { kind: "home-path", severity: "high", re: /(?<!\w)(?:\/(?:Users|home)\/[^/\s'")]+|[A-Za-z]:\\Users\\)/i },
       // Secret-shaped tokens: OpenAI sk-/sk-proj-, GitHub PAT, Slack xox*, AWS AKIA, a
       // JWT, a PEM key. The `\b` before the group anchors the prefix (so hyphenated
       // prose like "ask-me-…" can't trip the sk- branch); bodies allow -/_ to cover

@@ -23,11 +23,17 @@ describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emai
     expect(hasBlockingLeak("backend/services/supabase.py has class DBConnection")).toBe(false);
   });
 
-  it("does NOT flag a `/home/`-or-`/Users/` substring inside a repo-relative or URL path (boundary-anchored)", () => {
+  it("does NOT flag a `/home/`-or-`/Users/` substring inside a repo-relative or HTTP URL path (boundary-anchored)", () => {
     expect(hasBlockingLeak("the file is src/home/user/file.ts")).toBe(false);
     expect(hasBlockingLeak("fetch https://cdn.example.com/Users/avatars/x.png")).toBe(false);
+    expect(hasBlockingLeak("config/Users/settings.json")).toBe(false);
     // but a genuine absolute path (start of token) is still caught
     expect(hasBlockingLeak("path=/home/bob/proj/y.ts")).toBe(true);
+  });
+
+  it("catches a local file:// URI that embeds a real home path (not an HTTP URL)", () => {
+    expect(hasBlockingLeak("open file:///Users/alice/secret.txt")).toBe(true);
+    expect(hasBlockingLeak("file:///home/bob/x.log")).toBe(true);
   });
 
   it("catches a terminal home path with no trailing slash (/Users/alice, /home/bob)", () => {
