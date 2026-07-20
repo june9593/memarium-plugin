@@ -479,7 +479,11 @@ P1–P8 (typed-memory only — NO book — and DO NOT persist anything):
   4. For each non-skip thread produce an episodic {entry,body} (episodic-format.md:
      Context/What worked/Dead ends/Open questions/Decisions; sourceSessions = the
      full sessionId values, NOT shortId; work-status in body, NOT entry.status) +
-     distilled semantic/procedural/core facts + entity {entry,body} + qa {entry,body}.
+     distilled semantic/procedural/core facts — for `procedural`, write the
+     ABSTRACTED trigger→action RULE, not the session-specific fix (see P4b's ❌/✅);
+     one session often yields several, and they are ADDITIVE — never a substitute
+     for the episodic + must-have facts, and a non-skip thread never returns empty —
+     + entity {entry,body} + qa {entry,body}.
   5. Write these as JSON FILES under /tmp/memarium/<slug>/ (use the Write tool):
      memory.json (episodics + non-gated semantic), gated.json (core/procedural/
      pinned/supersede/trust-elevation), entities.json, qa.json, and skips.json
