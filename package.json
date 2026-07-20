@@ -1,6 +1,6 @@
 {
   "name": "memarium-plugin",
-  "version": "0.19.5",
+  "version": "0.19.6",
   "description": "Memarium Claude Code plugin: digest your AI coding sessions into a per-project typed Memory OS (episodic / semantic / procedural / core memory, entity wiki, distilled Q&A), and recall it before new work. Standalone — works without the memarium npm CLI.",
   "type": "module",
   "license": "MIT",

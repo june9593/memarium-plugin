@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.19.6 — 2026-07-20
+
+### Digest prompt: abstract fix → reusable rule (defect #1)
+
+SKILL.md Step P4b now pushes the digest to write the ABSTRACTED procedural rule as
+its own entry (a standing `trigger → action` decoupled from the origin bug), not
+only the session-specific fix-description — with a concrete ❌/✅ few-shot. A
+write-quality eval (S1-B, K=5 arms, variance-aware paired comparison) validated
+this: type/scope accuracy rose significantly (the digest produces more correctly-
+typed reusable rules) with no real precision cost (the apparent precision dip was a
+gold-incompleteness artifact — the extra items were legit rules the blind gold
+lacked). Also added an "additive, never substitutive" guard: abstracted rules are
+EXTRA entries — always write the episodic + must-have facts first, and a non-skip
+thread must never finish with zero memories. Prompt-only change (SKILL.md); no code.
+
 ## 0.19.5 — 2026-07-19
 
 ### Deterministic leak filter on the memory-write path
