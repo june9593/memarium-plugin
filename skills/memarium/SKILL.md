@@ -282,6 +282,22 @@ their own. Add these to the memory JSON (or a second file):
   auto-injects into the SessionStart primer; default `untrusted` when in doubt).
   If a new fact replaces an old one, set `supersedes: <old-id>`.
 - **procedural** — a how-to playbook / gotcha ("to add X do Y; watch out for Z").
+  **⚠️ Abstract the RULE — don't just describe the fix.** The #1 digest-quality
+  miss is recording what happened in THIS session instead of the reusable rule a
+  DIFFERENT-but-similar situation could apply. When a fix embodies a general
+  principle, write the abstracted procedural rule as its OWN entry — a standing
+  `trigger → action` rule decoupled from the origin bug — not only the
+  session-specific description. One session often yields MORE than one rule; split them.
+  - ❌ fix-description (welded to this session): _"search_files ran off the event
+    loop and skipped OneDrive placeholders, so the async freeze got fixed."_
+  - ✅ two standalone procedural rules:
+    - _"Never run a synchronous filesystem walk on the asyncio event loop — offload to a bounded thread pool."_
+    - _"OneDrive placeholder files hang on stat() — check the RECALL flags before touching them."_
+  **Additive, never substitutive:** the abstracted rules are EXTRA entries. Always
+  write the episodic (the arc) AND the must-have semantic/procedural facts FIRST,
+  then add the rules on top. Splitting into rules must never drop, merge away, or
+  under-specify the session's core arc + key facts — and a non-skip thread must
+  NEVER finish with zero memories.
 - **core** — a never-forget rule (rare). scope `global`/`user`/`project:<slug>`.
 
 `id = <type>/<project|_global>/<kebab-slug>`. Fill `entities`, `importance` (0–5),
@@ -463,7 +479,11 @@ P1–P8 (typed-memory only — NO book — and DO NOT persist anything):
   4. For each non-skip thread produce an episodic {entry,body} (episodic-format.md:
      Context/What worked/Dead ends/Open questions/Decisions; sourceSessions = the
      full sessionId values, NOT shortId; work-status in body, NOT entry.status) +
-     distilled semantic/procedural/core facts + entity {entry,body} + qa {entry,body}.
+     distilled semantic/procedural/core facts — for `procedural`, write the
+     ABSTRACTED trigger→action RULE, not the session-specific fix (see P4b's ❌/✅);
+     one session often yields several, and they are ADDITIVE — never a substitute
+     for the episodic + must-have facts, and a non-skip thread never returns empty —
+     + entity {entry,body} + qa {entry,body}.
   5. Write these as JSON FILES under /tmp/memarium/<slug>/ (use the Write tool):
      memory.json (episodics + non-gated semantic), gated.json (core/procedural/
      pinned/supersede/trust-elevation), entities.json, qa.json, and skips.json
