@@ -305,6 +305,18 @@ their own. Add these to the memory JSON (or a second file):
 Be conservative — a few high-value facts beat many trivial ones; don't duplicate
 what the SessionStart primer already loaded.
 
+**Don't memorize one-off noise.** Some things a session touches are NOT durable
+knowledge — skip them entirely (no memory of any type):
+- a **dev-environment workaround** — a local flag/toggle flipped just to get
+  unblocked (e.g. disabling a rate limit / throttle for local testing).
+- a **credential-handling step** — where to put a token / secret / refresh-token
+  (an env var, a config file). Security-sensitive and account-specific.
+- anything welded to the developer's specific machine, account, or single run.
+
+These are session noise or secrets, not reusable knowledge. If a workaround
+embodies a standing RULE, memorize the abstracted rule — but never the one-off
+toggle or the credential step itself. When in doubt, leave it out.
+
 ### Step P5 — Persist typed memory (v4 gate: write vs propose)
 
 Split the P4 + P4b items into two arrays by the **v4 gate**. A change is *gated*
@@ -483,7 +495,10 @@ P1–P8 (typed-memory only — NO book — and DO NOT persist anything):
      ABSTRACTED trigger→action RULE, not the session-specific fix (see P4b's ❌/✅);
      one session often yields several, and they are ADDITIVE — never a substitute
      for the episodic + must-have facts, and a non-skip thread never returns empty —
-     + entity {entry,body} + qa {entry,body}.
+     + entity {entry,body} + qa {entry,body}. SKIP one-off noise: a dev toggle
+     flipped just to get unblocked (throttle/rate-limit off), a credential step
+     (where to put a token/secret), anything machine/account-specific — NOT durable
+     knowledge (P4b "Don't memorize one-off noise").
   5. Write these as JSON FILES under /tmp/memarium/<slug>/ (use the Write tool):
      memory.json (episodics + non-gated semantic), gated.json (core/procedural/
      pinned/supersede/trust-elevation), entities.json, qa.json, and skips.json

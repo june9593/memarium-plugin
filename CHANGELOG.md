@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.19.7 — 2026-07-22
+
+### Digest prompt: don't memorize one-off dev noise (defect #2b, partial)
+
+SKILL.md now tells the digest to SKIP one-off noise that isn't durable knowledge —
+a dev-environment workaround (a local flag/toggle flipped just to get unblocked,
+e.g. disabling a throttle for local testing) and credential-handling steps (where
+to put a token/secret/refresh-token). The mechanical leak filter (0.19.5) can't
+catch these — they carry no literal secret pattern — so the fix is prompt-side.
+Mirrored into both project-mode (P4b) and global-mode (G2 reader). A deterministic
+eval (target session that reliably wrote a `THROTTLE`/credential item) shows the
+rate drop from 5/5 → 3/5 runs — a real but PARTIAL reduction (prose one-offs
+resist prompt-only suppression), with no over-suppression of legit content.
+Prompt-only (SKILL.md); no code.
+
 ## 0.19.6 — 2026-07-20
 
 ### Digest prompt: abstract fix → reusable rule (defect #1)
