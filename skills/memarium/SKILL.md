@@ -167,6 +167,16 @@ real work. Never skip: "continue from where you left off" (merge with the prior
 session), or any session whose body has a commit hash, code block, file path,
 error message, or decision marker.
 
+**One narrow exception to "never skip".** A thread whose ENTIRE substance is a
+one-off **dev-environment workaround** (a local flag/toggle flipped just to get
+unblocked — e.g. turning a throttle/rate-limit off for local testing) or a
+**credential-handling step** (where to put a token/secret/refresh-token) IS a
+skip — even though it touched a flag/config — because nothing reusable came of it.
+Be strict: this applies ONLY when that one-off is the WHOLE thread. If the thread
+also fixed a real bug, reached a conclusion, or yields a reusable rule, it is NOT
+a skip — keep the episodic and just strip the one-off detail (P4b). When in doubt,
+it is not a skip.
+
 Skipped sessions are recorded in the **local skip ledger** (Step P6), NOT as a
 memory — so they don't pollute recall but also aren't re-proposed every digest.
 
@@ -305,17 +315,16 @@ their own. Add these to the memory JSON (or a second file):
 Be conservative — a few high-value facts beat many trivial ones; don't duplicate
 what the SessionStart primer already loaded.
 
-**Don't memorize one-off noise.** Some things a session touches are NOT durable
-knowledge — skip them entirely (no memory of any type):
-- a **dev-environment workaround** — a local flag/toggle flipped just to get
-  unblocked (e.g. disabling a rate limit / throttle for local testing).
-- a **credential-handling step** — where to put a token / secret / refresh-token
-  (an env var, a config file). Security-sensitive and account-specific.
-- anything welded to the developer's specific machine, account, or single run.
-
-These are session noise or secrets, not reusable knowledge. If a workaround
-embodies a standing RULE, memorize the abstracted rule — but never the one-off
-toggle or the credential step itself. When in doubt, leave it out.
+**Strip one-off noise from a durable thread.** When a thread IS worth an episodic
+(real work) but ALSO touches a one-off **dev-environment workaround** (a local
+flag/toggle flipped just to get unblocked, e.g. a throttle/rate-limit off for
+local testing) or a **credential-handling step** (where to put a token / secret /
+refresh-token), do NOT write that detail as its own semantic/procedural, and keep
+it out of the episodic body — it's session noise / security-sensitive, not
+reusable knowledge. If the workaround embodies a standing RULE, memorize the
+abstracted rule (see above) — but never the one-off toggle or the credential step
+itself. (A thread whose ONLY substance is such a one-off is a **P2 SKIP**, not a
+P4b strip — see the SKIP rules.)
 
 ### Step P5 — Persist typed memory (v4 gate: write vs propose)
 
@@ -495,10 +504,10 @@ P1–P8 (typed-memory only — NO book — and DO NOT persist anything):
      ABSTRACTED trigger→action RULE, not the session-specific fix (see P4b's ❌/✅);
      one session often yields several, and they are ADDITIVE — never a substitute
      for the episodic + must-have facts, and a non-skip thread never returns empty —
-     + entity {entry,body} + qa {entry,body}. SKIP one-off noise: a dev toggle
-     flipped just to get unblocked (throttle/rate-limit off), a credential step
-     (where to put a token/secret), anything machine/account-specific — NOT durable
-     knowledge (P4b "Don't memorize one-off noise").
+     + entity {entry,body} + qa {entry,body}. In a DURABLE thread, STRIP one-off
+     noise (a dev toggle flipped to get unblocked / a credential step) — don't write
+     it as its own memory or in the episodic body; a thread that is ONLY such a
+     one-off is a SKIP (step 2 → skips.json), not an episodic. See P4b.
   5. Write these as JSON FILES under /tmp/memarium/<slug>/ (use the Write tool):
      memory.json (episodics + non-gated semantic), gated.json (core/procedural/
      pinned/supersede/trust-elevation), entities.json, qa.json, and skips.json
