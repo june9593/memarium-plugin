@@ -6,7 +6,7 @@ import type { MemoryEntry } from "../../src/memory/types.js";
 
 function mk(over: Partial<MemoryEntry> = {}): MemoryEntry {
   return {
-    id: "core/yue-workflow", type: "core", scope: "global", project: null,
+    id: "core/user-workflow", type: "core", scope: "global", project: null,
     title: "t", summary: "s", path: "", status: "active", confidence: 0.9, importance: 5,
     createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
     sourceSessions: [], sourceCommits: [], sourceFiles: [],
@@ -30,9 +30,9 @@ describe("applyMemoryItems", () => {
     const { applyMemoryItems } = await import("../../src/memory/apply.js");
     const r = applyMemoryItems(repo, [{ entry: mk({ path: "" }), body: "b" }]);
     expect(r.written).toBe(1);
-    expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(true);
+    expect(existsSync(join(repo, "memory/core/_global/user-workflow.md"))).toBe(true);
     const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
-    expect(idx.entries["core/yue-workflow"].path).toBe("memory/core/_global/yue-workflow.md");
+    expect(idx.entries["core/user-workflow"].path).toBe("memory/core/_global/user-workflow.md");
   });
 
   it("normalizes a thin entry (undefined arrays/summary) instead of crashing (#37)", async () => {
@@ -107,10 +107,10 @@ describe("applyMemoryItems", () => {
   it("rejects a supplied path that does not match the canonical path", async () => {
     const { applyMemoryItems } = await import("../../src/memory/apply.js");
     expect(() => applyMemoryItems(repo, [{
-      entry: mk({ id: "semantic/p/z", type: "semantic", project: "p", path: "memory/core/_global/yue-workflow.md" }),
+      entry: mk({ id: "semantic/p/z", type: "semantic", project: "p", path: "memory/core/_global/user-workflow.md" }),
       body: "evil",
     }])).toThrow(/does not match canonical/);
-    expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(false);
+    expect(existsSync(join(repo, "memory/core/_global/user-workflow.md"))).toBe(false);
   });
 
   it("flips the supersede target to superseded (v3 behavior preserved)", async () => {
@@ -141,9 +141,9 @@ describe("applyMemoryItems", () => {
 
   it("rejects a non-gated entry whose type traverses into the core/ tree (no bypass)", async () => {
     const { applyMemoryItems } = await import("../../src/memory/apply.js");
-    const evil = mk({ id: "x/yue-workflow", type: "semantic/../core" as unknown as MemoryEntry["type"], project: null, path: "" });
+    const evil = mk({ id: "x/user-workflow", type: "semantic/../core" as unknown as MemoryEntry["type"], project: null, path: "" });
     expect(() => applyMemoryItems(repo, [{ entry: evil, body: "evil" }])).toThrow(/invalid type/i);
-    expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(false);
+    expect(existsSync(join(repo, "memory/core/_global/user-workflow.md"))).toBe(false);
   });
 
   it("preflight: a malformed supersede target aborts the batch before ANY write", async () => {

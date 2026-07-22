@@ -43,7 +43,7 @@ export const CORPUS: EvalCorpus = {
     mem({ id: "semantic/alpha/config", type: "semantic", scope: "project:alpha", project: "alpha",
       title: "Alpha current config format", summary: "current config", entities: ["config"], importance: 4 }),
     mem({ id: "core/_global/yue", type: "core", scope: "global", project: null,
-      title: "Yue ships fast and never npm publishes", summary: "global workflow rule", importance: 5 }),
+      title: "the maintainer ships fast and never npm publishes", summary: "global workflow rule", importance: 5 }),
     mem({ id: "episodic/alpha/dbg", type: "episodic", scope: "project:alpha", project: "alpha",
       title: "Debugged a flaky alpha test", summary: "episode pointer" }),
     mem({ id: "semantic/beta/secret", type: "semantic", scope: "project:beta", project: "beta",
@@ -56,7 +56,7 @@ export const CORPUS: EvalCorpus = {
     // query (guards against over-aggressive scope filtering), + another project's
     // project-scoped memory that must be excluded even though it shares the query term.
     mem({ id: "semantic/_global/editor", type: "semantic", scope: "global", project: null,
-      title: "Yue prefers vim keybindings", summary: "global editor preference vim", entities: ["vim"] }),
+      title: "the maintainer prefers vim keybindings", summary: "global editor preference vim", entities: ["vim"] }),
     mem({ id: "semantic/beta/deploy", type: "semantic", scope: "project:beta", project: "beta",
       title: "Beta deploy runbook", summary: "beta deploy vim runbook", entities: ["deploy", "vim"] }),
   ],

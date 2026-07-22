@@ -33,7 +33,7 @@ describe("memory write leak filter", () => {
 
   it("memory-write refuses a (non-gated) semantic item with an absolute home path — writes nothing", async () => {
     const input = join(home, "path.json");
-    writeFileSync(input, JSON.stringify(semanticItem("the crash is in /Users/yueliu/edge/PraestoClaw/apps/x.py line 40")));
+    writeFileSync(input, JSON.stringify(semanticItem("the crash is in /Users/alice/repo/apps/x.py line 40")));
     const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
     const err = await memoryWriteCmd({ inputPath: input }).then(() => null, (e: Error) => e);
     expect(err).toBeInstanceOf(Error);
@@ -67,7 +67,7 @@ describe("memory write leak filter", () => {
     // what the digest produces when it copies raw files_touched verbatim.
     const input = join(home, "sf.json");
     const item = semanticItem("clean prose, no path here")[0];
-    (item.entry as { sourceFiles: string[] }).sourceFiles = ["/Users/yueliu/edge/PraestoClaw/apps/x.py", "src/ok.ts"];
+    (item.entry as { sourceFiles: string[] }).sourceFiles = ["/Users/alice/repo/apps/x.py", "src/ok.ts"];
     writeFileSync(input, JSON.stringify([item]));
     const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
     const err = await memoryWriteCmd({ inputPath: input }).then(() => null, (e: Error) => e);
@@ -97,7 +97,7 @@ describe("memory write leak filter", () => {
         title: "t", summary: "s", path: "memory/semantic/p/leaky.md", status: "active",
         confidence: 0.8, importance: 2, createdAt: "2026-01-01", updatedAt: "2026-01-01",
         validFrom: null, validTo: null, sourceSessions: ["s0"], sourceCommits: [],
-        sourceFiles: ["/Users/yueliu/edge/old/leak.ts"], supersedes: null, entities: [],
+        sourceFiles: ["/Users/alice/repo/old/leak.ts"], supersedes: null, entities: [],
         originDevice: null, accessCount: 0, lastAccess: null } } }));
     const input = join(home, "upd.json");
     const item = semanticItem("clean body")[0];       // same id, own sourceFiles clean
@@ -128,7 +128,7 @@ describe("memory write leak filter", () => {
       createdAt: "2026-07-19", updatedAt: "2026-07-19", validFrom: null, validTo: null,
       sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
       entities: [], originDevice: null, accessCount: 0, lastAccess: null,
-    }, body: "run the script under /Users/yueliu/edge/PraestoClaw/scripts/build.sh", rationale: "x" }]));
+    }, body: "run the script under /Users/alice/repo/scripts/build.sh", rationale: "x" }]));
     const { memoryProposeCmd } = await import("../../src/commands/memory-propose.js");
     const err = await memoryProposeCmd({ inputPath: input }).then(() => null, (e: Error) => e);
     expect(err).toBeInstanceOf(Error);
@@ -151,7 +151,7 @@ describe("memory write leak filter", () => {
       proposalId: "procedural__p__leaky-approved", targetKey: "procedural/p/leaky-approved",
       proposedEntryId: entry.id, action: "create", rationale: null, sourceSession: null,
       createdAt: "2026-07-19T00:00:00Z",
-      proposal: { entry: entry as never, body: "first run /Users/yueliu/secret/build.sh, then commit" },
+      proposal: { entry: entry as never, body: "first run /Users/alice/secret/build.sh, then commit" },
     });
     const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
     const err = await memoryApproveCmd({ id: "procedural/p/leaky-approved" }).then(() => null, (e: Error) => e);

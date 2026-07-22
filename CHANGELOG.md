@@ -337,7 +337,7 @@ Writes stay local-only; the "unreviewed memory doesn't propagate" invariant is u
 
 ## 0.11.0 — 2026-06-30
 
-**Project identity from the git remote (P0a) — lockstep with npm vibebook 0.11.0.** The project a session/memory belongs to was keyed on the cwd's last two path segments (`~/edge/memvc` → `edge-memvc`), so the same repo at a different path per device split into different projects and never aggregated. Identity is now the normalized git `origin` remote (`github.com-june9593-vibebook`), path-independent, with the path slug as fallback for non-git projects.
+**Project identity from the git remote (P0a) — lockstep with npm vibebook 0.11.0.** The project a session/memory belongs to was keyed on the cwd's last two path segments (`~/code/demo` → `code-demo`), so the same repo at a different path per device split into different projects and never aggregated. Identity is now the normalized git `origin` remote (`github.com-june9593-vibebook`), path-independent, with the path slug as fallback for non-git projects.
 
 - new `src/_shared/project-identity.ts` (mirror of npm canonical).
 - `_shared/project-resolve.ts` read chokepoint prefers the remote slug, path fallback.
@@ -561,7 +561,7 @@ brings the plugin to parity.
 - **Copilot `chatSessions/` vs `transcripts/` dedupe** (npm 0.7.1).
   When the same sessionId exists in both source formats within one
   workspace, only `chatSessions/` is yielded. Stops the duplicate-.md
-  problem (~83 orphan files on Yue's machine before fix).
+  problem (~83 orphan files on the maintainer's machine before fix).
 - **Empty-shell session skip** (npm 0.7.1). VS Code creates a chat
   session file for every tab opened (even ones immediately closed);
   these have no `requests` and fell through to `1970-01-01/untitled__*.md`

@@ -6,16 +6,16 @@ import type { EntityPage } from "../../src/entity/types.js";
 
 function makeEntry(overrides: Partial<EntityPage> = {}): EntityPage {
   return {
-    id: "entity/edge-memvc/spool-writer",
+    id: "entity/code-demo/spool-writer",
     kind: "symbol",
-    scope: "project:edge-memvc",
-    project: "edge-memvc",
+    scope: "project:code-demo",
+    project: "code-demo",
     title: "SpoolWriter",
     aliases: ["writer", "render"],
-    sourceMemoryIds: ["semantic/edge-memvc/spool"],
+    sourceMemoryIds: ["semantic/code-demo/spool"],
     sourceSessions: ["session-abc"],
     sourceFiles: ["src/writer.ts"],
-    relatedEntities: ["entity/edge-memvc/manifest"],
+    relatedEntities: ["entity/code-demo/manifest"],
     path: "",
     createdAt: "2026-06-09",
     updatedAt: "2026-06-09",
@@ -55,7 +55,7 @@ describe("entityWriteCmd", () => {
     expect(report.written).toBe(1);
     expect(report.paths).toHaveLength(1);
 
-    const mdPath = join(repo, "memory/entities/edge-memvc/spool-writer.md");
+    const mdPath = join(repo, "memory/entities/code-demo/spool-writer.md");
     expect(existsSync(mdPath)).toBe(true);
     const md = readFileSync(mdPath, "utf8");
     expect(md).toContain("title: SpoolWriter");
@@ -65,9 +65,9 @@ describe("entityWriteCmd", () => {
     const idxPath = join(repo, ".memarium/index.entity.json");
     expect(existsSync(idxPath)).toBe(true);
     const idx = JSON.parse(readFileSync(idxPath, "utf8"));
-    expect(idx.entries["entity/edge-memvc/spool-writer"]).toBeDefined();
-    expect(idx.entries["entity/edge-memvc/spool-writer"].path)
-      .toBe("memory/entities/edge-memvc/spool-writer.md");
+    expect(idx.entries["entity/code-demo/spool-writer"]).toBeDefined();
+    expect(idx.entries["entity/code-demo/spool-writer"].path)
+      .toBe("memory/entities/code-demo/spool-writer.md");
   });
 
   it("fills in path automatically when not provided", async () => {
@@ -78,7 +78,7 @@ describe("entityWriteCmd", () => {
     const { entityWriteCmd } = await import("../../src/commands/entity-write.js");
     const report = await entityWriteCmd({ inputPath: input });
 
-    expect(report.paths[0]).toBe("memory/entities/edge-memvc/spool-writer.md");
+    expect(report.paths[0]).toBe("memory/entities/code-demo/spool-writer.md");
   });
 
   it("global scope uses _global scopeDir", async () => {
@@ -138,7 +138,7 @@ describe("entityWriteCmd", () => {
     }
 
     // Entry path points through the symlinked subdir
-    const entry = makeEntry({ path: "memory/entities/evil-link/injected.md", project: "edge-memvc" });
+    const entry = makeEntry({ path: "memory/entities/evil-link/injected.md", project: "code-demo" });
     const input = join(fakeHome, "symlink-attack.json");
     writeFileSync(input, JSON.stringify([{ entry, body: "injected content" }]));
 

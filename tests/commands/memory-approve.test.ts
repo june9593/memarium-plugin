@@ -53,24 +53,24 @@ describe("memoryApproveCmd", () => {
   });
 
   it("global/user-scope approve deletes ALL cached primers", async () => {
-    await seed({}, "edge-memvc");
+    await seed({}, "code-demo");
     mkdirSync(join(repo, "memory/_primer"), { recursive: true });
     writeFileSync(join(repo, "memory/_primer/other.md"), "# other\n");
     const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
     const r = await memoryApproveCmd({ id: "core/y" });
-    expect(existsSync(join(repo, "memory/_primer/edge-memvc.md"))).toBe(false);
+    expect(existsSync(join(repo, "memory/_primer/code-demo.md"))).toBe(false);
     expect(existsSync(join(repo, "memory/_primer/other.md"))).toBe(false);
     expect(r.primersRefreshed.length).toBeGreaterThanOrEqual(2);
   });
 
   it("project-scope approve deletes only that project's primer", async () => {
-    await seed({ scope: "project:edge-memvc", project: "edge-memvc", id: "procedural/edge-memvc/x", type: "procedural" });
+    await seed({ scope: "project:code-demo", project: "code-demo", id: "procedural/code-demo/x", type: "procedural" });
     mkdirSync(join(repo, "memory/_primer"), { recursive: true });
-    writeFileSync(join(repo, "memory/_primer/edge-memvc.md"), "# p\n");
+    writeFileSync(join(repo, "memory/_primer/code-demo.md"), "# p\n");
     writeFileSync(join(repo, "memory/_primer/keep.md"), "# keep\n");
     const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
-    await memoryApproveCmd({ id: "procedural/edge-memvc/x" });
-    expect(existsSync(join(repo, "memory/_primer/edge-memvc.md"))).toBe(false);
+    await memoryApproveCmd({ id: "procedural/code-demo/x" });
+    expect(existsSync(join(repo, "memory/_primer/code-demo.md"))).toBe(false);
     expect(existsSync(join(repo, "memory/_primer/keep.md"))).toBe(true);
   });
 
@@ -81,13 +81,13 @@ describe("memoryApproveCmd", () => {
 
   it("derives the affected primer from scope (project-scoped entry with null project deletes only its primer)", async () => {
     // inconsistent-but-valid input: scope says project, project field is null
-    await seed({ scope: "project:edge-memvc", project: null, id: "core/y", type: "core" }, "edge-memvc");
+    await seed({ scope: "project:code-demo", project: null, id: "core/y", type: "core" }, "code-demo");
     mkdirSync(join(repo, "memory/_primer"), { recursive: true });
-    writeFileSync(join(repo, "memory/_primer/edge-memvc.md"), "p\n");
+    writeFileSync(join(repo, "memory/_primer/code-demo.md"), "p\n");
     writeFileSync(join(repo, "memory/_primer/keep.md"), "keep\n");
     const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
     await memoryApproveCmd({ id: "core/y" });
-    expect(existsSync(join(repo, "memory/_primer/edge-memvc.md"))).toBe(false);
+    expect(existsSync(join(repo, "memory/_primer/code-demo.md"))).toBe(false);
     expect(existsSync(join(repo, "memory/_primer/keep.md"))).toBe(true);
   });
 

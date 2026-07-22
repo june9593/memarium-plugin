@@ -21,8 +21,8 @@ describe("qaSlug / qaId", () => {
     expect(s).toMatch(/^[a-z0-9-]+-[0-9a-f]{8}$/);
   });
   it("qaId composes scope dir + slug; _global when project null", () => {
-    expect(qaId("project:edge-memvc", "edge-memvc", "How do I build?"))
-      .toBe(`qa/edge-memvc/${qaSlug("How do I build?")}`);
+    expect(qaId("project:code-demo", "code-demo", "How do I build?"))
+      .toBe(`qa/code-demo/${qaSlug("How do I build?")}`);
     expect(qaId("global", null, "How do I build?"))
       .toBe(`qa/_global/${qaSlug("How do I build?")}`);
   });

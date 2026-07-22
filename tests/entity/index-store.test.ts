@@ -9,9 +9,9 @@ import type { EntityPage } from "../../src/entity/types.js";
 
 function page(id: string, over: Partial<EntityPage> = {}): EntityPage {
   return {
-    id, kind: "symbol", scope: "project:edge-memvc", project: "edge-memvc",
+    id, kind: "symbol", scope: "project:code-demo", project: "code-demo",
     title: "T", aliases: [], sourceMemoryIds: [], sourceSessions: [], sourceFiles: [],
-    relatedEntities: [], path: `memory/entities/edge-memvc/${id.split("/").pop()}.md`,
+    relatedEntities: [], path: `memory/entities/code-demo/${id.split("/").pop()}.md`,
     createdAt: "2026-06-09", updatedAt: "2026-06-09", ...over,
   };
 }
@@ -27,12 +27,12 @@ describe("entity index store", () => {
 
   it("upsert + save + load round-trips, keyed by id", () => {
     const idx = loadEntityIndex(repo);
-    upsertEntity(idx, page("entity/edge-memvc/source-adapter"));
+    upsertEntity(idx, page("entity/code-demo/source-adapter"));
     saveEntityIndex(repo, idx);
     expect(existsSync(join(repo, ENTITY_INDEX_REL))).toBe(true);
     const reloaded = loadEntityIndex(repo);
-    expect(Object.keys(reloaded.entries)).toEqual(["entity/edge-memvc/source-adapter"]);
-    expect(reloaded.entries["entity/edge-memvc/source-adapter"].title).toBe("T");
+    expect(Object.keys(reloaded.entries)).toEqual(["entity/code-demo/source-adapter"]);
+    expect(reloaded.entries["entity/code-demo/source-adapter"].title).toBe("T");
   });
 
   it("upsert overwrites by id", () => {

@@ -53,17 +53,17 @@ describe("plugin autonomy (no npm CLI, no ~/.memarium/ at start)", () => {
 
   it("orchestrate → list-projects → prepare all succeed end-to-end on a fresh machine", async () => {
     // Plant 2 sessions in the same project.
-    writeFakeJsonl(join(claudeProjectsDir, "-Users-test-edge-src"), "ses-1", "/Users/test/edge/src");
-    writeFakeJsonl(join(claudeProjectsDir, "-Users-test-edge-src"), "ses-2", "/Users/test/edge/src");
+    writeFakeJsonl(join(claudeProjectsDir, "-Users-test-code-src"), "ses-1", "/Users/test/code/src");
+    writeFakeJsonl(join(claudeProjectsDir, "-Users-test-code-src"), "ses-2", "/Users/test/code/src");
 
     // Pre-conditions: no ~/.memarium/ exists at all.
     expect(existsSync(join(fakeHome, ".memarium"))).toBe(false);
 
     // Step 1: orchestrate project mode.
-    await orchestrateCmd({ mode: "project", cwd: "/Users/test/edge/src" });
+    await orchestrateCmd({ mode: "project", cwd: "/Users/test/code/src" });
     const orchestrateOut = JSON.parse(stdoutChunks.join(""));
     expect(orchestrateOut.mode).toBe("project");
-    expect(orchestrateOut.project).toBe("edge-src");
+    expect(orchestrateOut.project).toBe("code-src");
     expect(orchestrateOut.scan.imported).toBe(2);
 
     // Spool was created on demand.
@@ -76,11 +76,11 @@ describe("plugin autonomy (no npm CLI, no ~/.memarium/ at start)", () => {
     // Reset stdout for next call.
     stdoutChunks = [];
 
-    // Step 2: list-projects must show edge-src with 2 sessions.
+    // Step 2: list-projects must show code-src with 2 sessions.
     await listProjectsCmd();
     const listOut = JSON.parse(stdoutChunks.join(""));
     expect(listOut.projects).toBeInstanceOf(Array);
-    const edgeSrc = listOut.projects.find((p: { project: string }) => p.project === "edge-src");
+    const edgeSrc = listOut.projects.find((p: { project: string }) => p.project === "code-src");
     expect(edgeSrc).toBeDefined();
     expect(edgeSrc.totalSessions).toBeGreaterThanOrEqual(2);
 
@@ -88,9 +88,9 @@ describe("plugin autonomy (no npm CLI, no ~/.memarium/ at start)", () => {
     stdoutChunks = [];
 
     // Step 3: prepare must return both new sessions.
-    await prepareCmd({ cwd: "/Users/test/edge/src" });
+    await prepareCmd({ cwd: "/Users/test/code/src" });
     const prepareOut = JSON.parse(stdoutChunks.join(""));
-    expect(prepareOut.project).toBe("edge-src");
+    expect(prepareOut.project).toBe("code-src");
     expect(prepareOut.newSessions).toBeInstanceOf(Array);
     expect(prepareOut.newSessions.length).toBe(2);
     const sessionIds = prepareOut.newSessions.map((s: { sessionId: string }) => s.sessionId).sort();
@@ -102,7 +102,7 @@ describe("plugin autonomy (no npm CLI, no ~/.memarium/ at start)", () => {
     // Copilot's defaultStorageRoot() on macOS is:
     //   <HOME>/Library/Application Support/Code/User/workspaceStorage/
     // Use the legacy `chatSessions/<id>.json` format — minimal valid input.
-    writeFakeJsonl(join(claudeProjectsDir, "-Users-test-edge-src"), "claude-ses", "/Users/test/edge/src");
+    writeFakeJsonl(join(claudeProjectsDir, "-Users-test-code-src"), "claude-ses", "/Users/test/code/src");
 
     const wsHash = "abc123def456"; // workspace hash; arbitrary
     const wsDir = join(
@@ -115,7 +115,7 @@ describe("plugin autonomy (no npm CLI, no ~/.memarium/ at start)", () => {
     // adapter's project slugification matches the Claude session's project.
     writeFileSync(
       join(wsDir, "workspace.json"),
-      JSON.stringify({ folder: "file:///Users/test/edge/src" }),
+      JSON.stringify({ folder: "file:///Users/test/code/src" }),
     );
     // Minimal Copilot legacy session file. parseCopilotJson reads
     // obj.requests[]; each request has message.text + response[].
@@ -135,7 +135,7 @@ describe("plugin autonomy (no npm CLI, no ~/.memarium/ at start)", () => {
     );
 
     // Run the FULL autonomy pipeline.
-    await orchestrateCmd({ mode: "project", cwd: "/Users/test/edge/src" });
+    await orchestrateCmd({ mode: "project", cwd: "/Users/test/code/src" });
     const orchestrateOut = JSON.parse(stdoutChunks.join(""));
     // Both adapters fired. Imports = Claude (1) + Copilot (1).
     expect(orchestrateOut.scan.imported).toBe(2);

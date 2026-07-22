@@ -11,7 +11,7 @@ describe("orchestrateCmd", () => {
   beforeEach(() => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-orc-"));
     vi.stubEnv("HOME", fakeHome);
-    mkdirSync(join(fakeHome, ".claude/projects/-Users-test-edge-src"), { recursive: true });
+    mkdirSync(join(fakeHome, ".claude/projects/-Users-test-code-src"), { recursive: true });
     stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   });
   afterEach(() => {
@@ -30,23 +30,23 @@ describe("orchestrateCmd", () => {
   }
 
   it("project mode: imports only matching project, prints JSON with mode=project", async () => {
-    writeFakeJsonl(join(fakeHome, ".claude/projects/-Users-test-edge-src"), "abc", "/Users/test/edge/src");
+    writeFakeJsonl(join(fakeHome, ".claude/projects/-Users-test-code-src"), "abc", "/Users/test/code/src");
     writeFakeJsonl(join(fakeHome, ".claude/projects/-Users-test-other"), "xyz", "/Users/test/other");
 
-    await orchestrateCmd({ mode: "project", cwd: "/Users/test/edge/src" });
+    await orchestrateCmd({ mode: "project", cwd: "/Users/test/code/src" });
 
     const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
     const parsed = JSON.parse(out);
     expect(parsed.mode).toBe("project");
-    expect(parsed.project).toBe("edge-src");
+    expect(parsed.project).toBe("code-src");
     expect(parsed.scan.imported).toBe(1);
-    // Only edge-src made it into spool. New layout: raw_sessions/<tool>/<project>/<date>/
+    // Only code-src made it into spool. New layout: raw_sessions/<tool>/<project>/<date>/
     const spoolProjects = readdirSync(join(fakeHome, ".memarium/session-repo/raw_sessions/claude"));
-    expect(spoolProjects).toEqual(["edge-src"]);
+    expect(spoolProjects).toEqual(["code-src"]);
   });
 
   it("global mode: imports all projects, prints JSON with mode=global", async () => {
-    writeFakeJsonl(join(fakeHome, ".claude/projects/-Users-test-edge-src"), "abc", "/Users/test/edge/src");
+    writeFakeJsonl(join(fakeHome, ".claude/projects/-Users-test-code-src"), "abc", "/Users/test/code/src");
     writeFakeJsonl(join(fakeHome, ".claude/projects/-Users-test-foo"), "xyz", "/Users/test/foo");
 
     await orchestrateCmd({ mode: "global" });
@@ -57,7 +57,7 @@ describe("orchestrateCmd", () => {
     expect(parsed.scan.imported).toBe(2);
     const spoolProjects = readdirSync(join(fakeHome, ".memarium/session-repo/raw_sessions/claude"));
     // projectSlugFromPath("/Users/test/foo") → "test-foo" (parent-basename rule)
-    expect(new Set(spoolProjects)).toEqual(new Set(["edge-src", "test-foo"]));
+    expect(new Set(spoolProjects)).toEqual(new Set(["code-src", "test-foo"]));
   });
 
   it("project mode without --cwd uses process.cwd()", async () => {

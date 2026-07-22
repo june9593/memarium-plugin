@@ -46,7 +46,7 @@ export function flatTargetKey(targetKey: string): string {
   return flat;
 }
 
-/** Accept either a targetKey ("core/yue-workflow") or a flat id ("core__yue-workflow"). */
+/** Accept either a targetKey ("core/user-workflow") or a flat id ("core__user-workflow"). */
 function fileFor(repoPath: string, idOrKey: string): string {
   const flat = idOrKey.includes("/") ? flatTargetKey(idOrKey) : flatTargetKey(idOrKey.split("__").join("/"));
   return join(proposalsDir(repoPath), `${flat}.json`);

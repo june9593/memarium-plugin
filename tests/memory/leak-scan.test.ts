@@ -3,7 +3,7 @@ import { scanLeaks, hasBlockingLeak } from "../../src/memory/leak-scan.js";
 
 describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emails/GUIDs warn", () => {
   it("flags a local absolute home path as a blocking leak (Unix + Windows)", () => {
-    const hits = scanLeaks("the fix is in /Users/yueliu/edge/PraestoClaw/apps/x.py near line 40");
+    const hits = scanLeaks("the fix is in /Users/alice/repo/apps/x.py near line 40");
     expect(hits.some((h) => h.kind === "home-path" && h.severity === "high")).toBe(true);
     expect(hasBlockingLeak("see /home/bob/proj/y.ts")).toBe(true);
     // Windows home path (backslashes) — the security backstop must cover it too
@@ -19,7 +19,7 @@ describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emai
   });
 
   it("does NOT flag repo-relative paths (those are the desired form)", () => {
-    expect(scanLeaks("edit apps/client_agent/praestoclaw/agent/tools/filesystem.py")).toEqual([]);
+    expect(scanLeaks("edit apps/client_agent/svc/agent/tools/filesystem.py")).toEqual([]);
     expect(hasBlockingLeak("backend/services/supabase.py has class DBConnection")).toBe(false);
   });
 
@@ -75,6 +75,6 @@ describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emai
     // an UPPERCASE / mixed-case 40-hex SHA is still caught (case-insensitive)
     expect(scanLeaks("regressed in F1E0435A7552B17A6D89E8EC01C1146704A5E0A0").some((h) => h.kind === "commit-sha")).toBe(true);
     expect(scanLeaks("ping bob@contoso.com").some((h) => h.kind === "email")).toBe(true);
-    expect(scanLeaks("tenant 72f988bf-86f1-41af-91ab-2d7cd011db47").some((h) => h.kind === "guid")).toBe(true);
+    expect(scanLeaks("tenant deadbeef-1234-5678-9abc-def012345678").some((h) => h.kind === "guid")).toBe(true);
   });
 });

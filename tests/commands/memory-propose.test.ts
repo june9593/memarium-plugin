@@ -22,7 +22,7 @@ describe("memoryProposeCmd", () => {
     const input = join(home, "in.json");
     writeFileSync(input, JSON.stringify([{
       entry: {
-        id: "core/yue-workflow", type: "core", scope: "global", project: null,
+        id: "core/user-workflow", type: "core", scope: "global", project: null,
         title: "wf", summary: "s", status: "active", confidence: 0.9, importance: 5,
         createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
         sourceSessions: [], sourceCommits: [], sourceFiles: [],
@@ -39,11 +39,11 @@ describe("memoryProposeCmd", () => {
     const { memoryProposeCmd } = await import("../../src/commands/memory-propose.js");
     const r = await memoryProposeCmd({ inputPath: gatedInput() });
     expect(r.proposed).toBe(1);
-    expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(false);
+    expect(existsSync(join(repo, "memory/core/_global/user-workflow.md"))).toBe(false);
     const { listProposals } = await import("../../src/memory/proposal-store.js");
     const all = listProposals(repo);
     expect(all.length).toBe(1);
-    expect(all[0].targetKey).toBe("core/yue-workflow");
+    expect(all[0].targetKey).toBe("core/user-workflow");
     expect(all[0].action).toBe("create");
     expect(all[0].rationale).toBe("captured from session");
   });
@@ -69,15 +69,15 @@ describe("memoryProposeCmd", () => {
     const r = await memoryProposeCmd({ inputPath: gatedInput() });
     expect(r.proposed).toBe(1);
     expect(r.paths.length).toBe(1);
-    expect(r.targetKeys).toEqual(["core/yue-workflow"]);
-    expect(r.proposedEntryIds).toEqual(["core/yue-workflow"]);
+    expect(r.targetKeys).toEqual(["core/user-workflow"]);
+    expect(r.proposedEntryIds).toEqual(["core/user-workflow"]);
   });
 
   it("canonicalizes a wrong entry.path so the queued proposal is approvable", async () => {
     const input = join(home, "wrongpath.json");
     writeFileSync(input, JSON.stringify([{
       entry: {
-        id: "core/yue-workflow", type: "core", scope: "global", project: null,
+        id: "core/user-workflow", type: "core", scope: "global", project: null,
         title: "wf", summary: "s", path: "memory/STALE/wrong.md",
         status: "active", confidence: 0.9, importance: 5,
         createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
@@ -89,11 +89,11 @@ describe("memoryProposeCmd", () => {
     const { memoryProposeCmd } = await import("../../src/commands/memory-propose.js");
     await memoryProposeCmd({ inputPath: input });
     const { readProposal } = await import("../../src/memory/proposal-store.js");
-    const p = readProposal(repo, "core/yue-workflow");
-    expect(p?.proposal.entry.path).toBe("memory/core/_global/yue-workflow.md");
+    const p = readProposal(repo, "core/user-workflow");
+    expect(p?.proposal.entry.path).toBe("memory/core/_global/user-workflow.md");
     // and approve succeeds (no canonical-path mismatch)
     const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
-    const r = await memoryApproveCmd({ id: "core/yue-workflow" });
+    const r = await memoryApproveCmd({ id: "core/user-workflow" });
     expect(r.applied).toBe(1);
   });
 });

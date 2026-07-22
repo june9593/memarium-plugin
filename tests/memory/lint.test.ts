@@ -111,7 +111,7 @@ describe("lintMemory — memory issues", () => {
 
 describe("lintMemory — leaky-content", () => {
   it("flags an absolute home path in the summary as a warning (not blocking here)", () => {
-    const r = run(idxOf(mem({ id: "semantic/p/lk", summary: "the fix lives in /Users/yueliu/edge/x/y.py" })));
+    const r = run(idxOf(mem({ id: "semantic/p/lk", summary: "the fix lives in /Users/alice/repo/x/y.py" })));
     const f = r.issues.find((x) => x.check === "leaky-content");
     expect(f?.severity).toBe("warning");
     expect(f?.detail).toMatch(/home-path/);

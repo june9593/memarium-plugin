@@ -23,8 +23,8 @@ describe("memoryWriteCmd", () => {
     const input = join(fakeHome, "mem.json");
     writeFileSync(input, JSON.stringify([{
       entry: {
-        id: "semantic/edge-memvc/spool-format", type: "semantic",
-        scope: "project:edge-memvc", project: "edge-memvc",
+        id: "semantic/code-demo/spool-format", type: "semantic",
+        scope: "project:code-demo", project: "code-demo",
         title: "Spool is single .md per session", summary: "since 0.6.0",
         status: "active", confidence: 0.9, importance: 4,
         createdAt: "2026-06-09", updatedAt: "2026-06-09", validFrom: null, validTo: null,
@@ -38,13 +38,13 @@ describe("memoryWriteCmd", () => {
     const report = await memoryWriteCmd({ inputPath: input });
 
     expect(report.written).toBe(1);
-    const mdPath = join(repo, "memory/semantic/edge-memvc/spool-format.md");
+    const mdPath = join(repo, "memory/semantic/code-demo/spool-format.md");
     expect(existsSync(mdPath)).toBe(true);
     expect(readFileSync(mdPath, "utf8")).toContain("title: Spool is single .md per session");
 
     const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
-    expect(idx.entries["semantic/edge-memvc/spool-format"].path)
-      .toBe("memory/semantic/edge-memvc/spool-format.md");
+    expect(idx.entries["semantic/code-demo/spool-format"].path)
+      .toBe("memory/semantic/code-demo/spool-format.md");
   });
 
   it("marks supersedes target as superseded", async () => {
@@ -132,7 +132,7 @@ describe("memoryWriteCmd", () => {
     const input = join(fakeHome, "g.json");
     writeFileSync(input, JSON.stringify([{
       entry: {
-        id: "core/yue-workflow", type: "core", scope: "global", project: null,
+        id: "core/user-workflow", type: "core", scope: "global", project: null,
         title: "wf", summary: "s", status: "active", confidence: 0.9, importance: 5,
         createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
         sourceSessions: [], sourceCommits: [], sourceFiles: [],
@@ -142,7 +142,7 @@ describe("memoryWriteCmd", () => {
     }]));
     const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
     await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow(/memory-propose/);
-    expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(false);
+    expect(existsSync(join(repo, "memory/core/_global/user-workflow.md"))).toBe(false);
   });
 
   it("rejects a non-gated entry that supersedes a gated id (bypass closed)", async () => {
@@ -173,7 +173,7 @@ describe("memoryWriteCmd", () => {
     writeFileSync(input, JSON.stringify([{
       entry: {
         id: "semantic/p/z", type: "semantic", scope: "project:p", project: "p",
-        title: "z", summary: "s", path: "memory/core/_global/yue-workflow.md",
+        title: "z", summary: "s", path: "memory/core/_global/user-workflow.md",
         status: "active", confidence: 0.5, importance: 1,
         createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
         sourceSessions: [], sourceCommits: [], sourceFiles: [],
@@ -188,7 +188,7 @@ describe("memoryWriteCmd", () => {
   it("rejects a non-gated entry whose type traverses into core/ (no bypass via memory-write)", async () => {
     const input = join(fakeHome, "trav.json");
     writeFileSync(input, JSON.stringify([{ entry: {
-      id: "x/yue-workflow", type: "semantic/../core", scope: "global", project: null,
+      id: "x/user-workflow", type: "semantic/../core", scope: "global", project: null,
       title: "t", summary: "s", status: "active", confidence: 0.5, importance: 1,
       createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
       sourceSessions: [], sourceCommits: [], sourceFiles: [],
@@ -196,7 +196,7 @@ describe("memoryWriteCmd", () => {
     }, body: "evil" }]));
     const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
     await expect(memoryWriteCmd({ inputPath: input })).rejects.toThrow(/invalid type/i);
-    expect(existsSync(join(repo, "memory/core/_global/yue-workflow.md"))).toBe(false);
+    expect(existsSync(join(repo, "memory/core/_global/user-workflow.md"))).toBe(false);
   });
 
   it("gated-change error names the canonical target key for supersede cases", async () => {

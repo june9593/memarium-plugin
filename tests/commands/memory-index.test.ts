@@ -6,9 +6,9 @@ import { renderMemoryMarkdown } from "../../src/memory/render.js";
 import type { MemoryEntry } from "../../src/memory/types.js";
 
 function entry(): MemoryEntry {
-  return { id: "semantic/edge-memvc/spool", type: "semantic", scope: "project:edge-memvc",
-    project: "edge-memvc", title: "Spool single md", summary: "since 0.6.0",
-    path: "memory/semantic/edge-memvc/spool.md", status: "active", confidence: 0.9, importance: 4,
+  return { id: "semantic/code-demo/spool", type: "semantic", scope: "project:code-demo",
+    project: "code-demo", title: "Spool single md", summary: "since 0.6.0",
+    path: "memory/semantic/code-demo/spool.md", status: "active", confidence: 0.9, importance: 4,
     createdAt: "2026-06-09", updatedAt: "2026-06-09", validFrom: null, validTo: null,
     sourceSessions: ["abc"], sourceCommits: [], sourceFiles: ["src/writer.ts"], supersedes: null,
     entities: ["spool", "writer"], originDevice: null, accessCount: 0, lastAccess: null };
@@ -35,7 +35,7 @@ describe("memoryIndexCmd (rebuild from md)", () => {
     const report = await memoryIndexCmd();
     expect(report.indexed).toBe(1);
     const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
-    const e = idx.entries["semantic/edge-memvc/spool"];
+    const e = idx.entries["semantic/code-demo/spool"];
     expect(e.title).toBe("Spool single md");
     expect(e.importance).toBe(4);
     expect(e.entities).toEqual(["spool", "writer"]);

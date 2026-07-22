@@ -7,17 +7,17 @@ import type { EntityPage } from "../../src/entity/types.js";
 
 function entry(): EntityPage {
   return {
-    id: "entity/edge-memvc/spool-writer",
+    id: "entity/code-demo/spool-writer",
     kind: "symbol",
-    scope: "project:edge-memvc",
-    project: "edge-memvc",
+    scope: "project:code-demo",
+    project: "code-demo",
     title: "SpoolWriter",
     aliases: ["writer", "render"],
-    sourceMemoryIds: ["semantic/edge-memvc/spool"],
+    sourceMemoryIds: ["semantic/code-demo/spool"],
     sourceSessions: ["session-abc"],
     sourceFiles: ["src/writer.ts"],
-    relatedEntities: ["entity/edge-memvc/manifest"],
-    path: "memory/entities/edge-memvc/spool-writer.md",
+    relatedEntities: ["entity/code-demo/manifest"],
+    path: "memory/entities/code-demo/spool-writer.md",
     createdAt: "2026-06-09",
     updatedAt: "2026-06-09",
   };
@@ -54,20 +54,20 @@ describe("entityIndexCmd (rebuild from md)", () => {
     expect(report.indexed).toBe(1);
 
     const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.entity.json"), "utf8"));
-    const e = idx.entries["entity/edge-memvc/spool-writer"];
+    const e = idx.entries["entity/code-demo/spool-writer"];
     expect(e).toBeDefined();
     expect(e.title).toBe("SpoolWriter");
     expect(e.kind).toBe("symbol");
-    expect(e.scope).toBe("project:edge-memvc");
-    expect(e.project).toBe("edge-memvc");
+    expect(e.scope).toBe("project:code-demo");
+    expect(e.project).toBe("code-demo");
     expect(e.aliases).toEqual(["writer", "render"]);
-    expect(e.sourceMemoryIds).toEqual(["semantic/edge-memvc/spool"]);
+    expect(e.sourceMemoryIds).toEqual(["semantic/code-demo/spool"]);
     expect(e.sourceSessions).toEqual(["session-abc"]);
     expect(e.sourceFiles).toEqual(["src/writer.ts"]);
-    expect(e.relatedEntities).toEqual(["entity/edge-memvc/manifest"]);
+    expect(e.relatedEntities).toEqual(["entity/code-demo/manifest"]);
     expect(e.createdAt).toBe("2026-06-09");
     expect(e.updatedAt).toBe("2026-06-09");
-    expect(e.path).toBe("memory/entities/edge-memvc/spool-writer.md");
+    expect(e.path).toBe("memory/entities/code-demo/spool-writer.md");
   });
 
   it("indexed = 0 when memory/entities/ does not exist", async () => {
@@ -116,7 +116,7 @@ describe("entityIndexCmd (rebuild from md)", () => {
     expect(report.indexed).toBe(2);
 
     const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.entity.json"), "utf8"));
-    expect(idx.entries["entity/edge-memvc/spool-writer"]).toBeDefined();
+    expect(idx.entries["entity/code-demo/spool-writer"]).toBeDefined();
     expect(idx.entries["entity/_global/typescript"]).toBeDefined();
     expect(idx.entries["entity/_global/typescript"].project).toBeNull();
   });

@@ -11,7 +11,7 @@ export type MemoryTrust = "trusted" | "untrusted" | "unknown";
 export type MemoryScope = string;
 
 export interface MemoryEntry {
-  id: string;                 // stable globally-unique slug, e.g. "core/yue-workflow" or "semantic/edge-memvc/spool-format"
+  id: string;                 // stable globally-unique slug, e.g. "core/user-workflow" or "semantic/code-demo/spool-format"
   type: MemoryType;
   scope: MemoryScope;         // "global" | "user" | "project:<slug>"
   project: string | null;    // slug, or null for global/user

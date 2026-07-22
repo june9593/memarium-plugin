@@ -6,8 +6,8 @@ import { join } from "node:path";
 // Minimal MemoryEntry factory (only the fields the scorer/recall touch).
 function mk(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    id: "semantic/edge-memvc/x", type: "semantic", scope: "project:edge-memvc", project: "edge-memvc",
-    title: "t", summary: "s", path: "memory/semantic/edge-memvc/x.md", status: "active",
+    id: "semantic/code-demo/x", type: "semantic", scope: "project:code-demo", project: "code-demo",
+    title: "t", summary: "s", path: "memory/semantic/code-demo/x.md", status: "active",
     confidence: 0.9, importance: 3, createdAt: "2026-06-01", updatedAt: "2026-06-01",
     validFrom: null, validTo: null, sourceSessions: [], sourceCommits: [], sourceFiles: [],
     supersedes: null, entities: [], trust: "trusted", originDevice: null, accessCount: 0, lastAccess: null,
@@ -37,12 +37,12 @@ describe("recall (2-stage over typed memory)", () => {
     writeFileSync(join(fakeHome, ".memarium/config.json"), JSON.stringify({
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli",
     }));
-    // spool index so cwd "/work/edge-memvc" resolves to project "edge-memvc"
+    // spool index so cwd "/work/code-demo" resolves to project "code-demo"
     writeFileSync(join(repo, ".memarium/index.json"), JSON.stringify({
       version: 1, entries: { "claude:s1": {
-        sessionId: "s1", shortId: "s1", tool: "claude", project: "edge-memvc",
-        projectRaw: "/work/edge-memvc", startedAt: "2026-01-01T00:00:00Z", endedAt: "2026-01-01T00:00:00Z",
-        nameSlug: "x", displayName: "x", relativePath: "raw_sessions/claude/edge-memvc/2026-01-01/x__s1.md",
+        sessionId: "s1", shortId: "s1", tool: "claude", project: "code-demo",
+        projectRaw: "/work/code-demo", startedAt: "2026-01-01T00:00:00Z", endedAt: "2026-01-01T00:00:00Z",
+        nameSlug: "x", displayName: "x", relativePath: "raw_sessions/claude/code-demo/2026-01-01/x__s1.md",
         sourcePath: "/x.jsonl", sourceMtimeMs: 1, sourceSha256: "x" } },
     }));
     stdout = [];
@@ -60,59 +60,59 @@ describe("recall (2-stage over typed memory)", () => {
 
   it("ranks a keyword hit above baseline entries and echoes whyRecalled", async () => {
     writeLocalIndex({
-      "semantic/edge-memvc/widget": mk({ id: "semantic/edge-memvc/widget", title: "widget subsystem",
-        summary: "the widget", entities: ["widget"], path: "memory/semantic/edge-memvc/widget.md" }),
+      "semantic/code-demo/widget": mk({ id: "semantic/code-demo/widget", title: "widget subsystem",
+        summary: "the widget", entities: ["widget"], path: "memory/semantic/code-demo/widget.md" }),
       "core/g": mk({ id: "core/g", type: "core", scope: "global", project: null, title: "a rule",
         importance: 5, path: "memory/core/_global/g.md" }),
     });
-    const p = await run({ cwd: "/work/edge-memvc", q: "widget" });
+    const p = await run({ cwd: "/work/code-demo", q: "widget" });
     expect(p.stage).toBe("stage-1-ranked");
-    expect(p.entries[0].id).toBe("semantic/edge-memvc/widget");
+    expect(p.entries[0].id).toBe("semantic/code-demo/widget");
     expect(p.entries[0].whyRecalled).toContain("keyword");
     expect(p.meta.returned).toBe(2);
   });
 
   it("resolves local paths under the repo and overlay paths under the overlay worktree (P0b)", async () => {
     writeLocalIndex({
-      "semantic/edge-memvc/local": mk({ id: "semantic/edge-memvc/local", title: "local widget",
-        entities: ["widget"], path: "memory/semantic/edge-memvc/local.md" }),
+      "semantic/code-demo/local": mk({ id: "semantic/code-demo/local", title: "local widget",
+        entities: ["widget"], path: "memory/semantic/code-demo/local.md" }),
     });
     writeOverlayIndex({
-      "episodic/edge-memvc/remote": mk({ id: "episodic/edge-memvc/remote", type: "episodic",
+      "episodic/code-demo/remote": mk({ id: "episodic/code-demo/remote", type: "episodic",
         title: "remote widget arc", entities: ["widget"], updatedAt: "2026-06-05",
-        path: "memory/episodic/edge-memvc/remote.md" }),
+        path: "memory/episodic/code-demo/remote.md" }),
     });
-    const p = await run({ cwd: "/work/edge-memvc", q: "widget" });
-    const local = p.entries.find((h: any) => h.id === "semantic/edge-memvc/local");
-    const remote = p.entries.find((h: any) => h.id === "episodic/edge-memvc/remote");
+    const p = await run({ cwd: "/work/code-demo", q: "widget" });
+    const local = p.entries.find((h: any) => h.id === "semantic/code-demo/local");
+    const remote = p.entries.find((h: any) => h.id === "episodic/code-demo/remote");
     expect(local.source).toBe("local");
-    expect(local.path).toBe(join(repo, "memory/semantic/edge-memvc/local.md"));
+    expect(local.path).toBe(join(repo, "memory/semantic/code-demo/local.md"));
     expect(remote.source).toBe("overlay");
-    expect(remote.path).toBe(join(overlay, "memory/episodic/edge-memvc/remote.md")); // NOT under repo
+    expect(remote.path).toBe(join(overlay, "memory/episodic/code-demo/remote.md")); // NOT under repo
   });
 
   it("excludes superseded entries from the ranked list", async () => {
     writeLocalIndex({
-      "semantic/edge-memvc/old": mk({ id: "semantic/edge-memvc/old", status: "superseded",
-        title: "old widget", entities: ["widget"], path: "memory/semantic/edge-memvc/old.md" }),
-      "semantic/edge-memvc/new": mk({ id: "semantic/edge-memvc/new", title: "new widget",
-        entities: ["widget"], path: "memory/semantic/edge-memvc/new.md" }),
+      "semantic/code-demo/old": mk({ id: "semantic/code-demo/old", status: "superseded",
+        title: "old widget", entities: ["widget"], path: "memory/semantic/code-demo/old.md" }),
+      "semantic/code-demo/new": mk({ id: "semantic/code-demo/new", title: "new widget",
+        entities: ["widget"], path: "memory/semantic/code-demo/new.md" }),
     });
-    const p = await run({ cwd: "/work/edge-memvc", q: "widget" });
+    const p = await run({ cwd: "/work/code-demo", q: "widget" });
     const ids = p.entries.map((h: any) => h.id);
-    expect(ids).toContain("semantic/edge-memvc/new");
-    expect(ids).not.toContain("semantic/edge-memvc/old");
+    expect(ids).toContain("semantic/code-demo/new");
+    expect(ids).not.toContain("semantic/code-demo/old");
   });
 
   it("empty query returns a scope-eligible list plus a primer header", async () => {
     writeLocalIndex({
-      "semantic/edge-memvc/fact": mk({ id: "semantic/edge-memvc/fact", title: "a project fact",
-        path: "memory/semantic/edge-memvc/fact.md" }),
+      "semantic/code-demo/fact": mk({ id: "semantic/code-demo/fact", title: "a project fact",
+        path: "memory/semantic/code-demo/fact.md" }),
     });
-    const p = await run({ cwd: "/work/edge-memvc" });
+    const p = await run({ cwd: "/work/code-demo" });
     expect(p.query).toBe("");
     expect(p.entries.length).toBeGreaterThan(0);
-    expect(p.primer).toContain("# Project memory: edge-memvc");
+    expect(p.primer).toContain("# Project memory: code-demo");
   });
 
   it("flags cwdUnresolved when the cwd maps to no synced project", async () => {
@@ -124,14 +124,14 @@ describe("recall (2-stage over typed memory)", () => {
 
   it("bumps the local usage sidecar on a content-hit query but never the synced index", async () => {
     writeLocalIndex({
-      "semantic/edge-memvc/widget": mk({ id: "semantic/edge-memvc/widget", title: "widget",
-        entities: ["widget"], path: "memory/semantic/edge-memvc/widget.md" }),
+      "semantic/code-demo/widget": mk({ id: "semantic/code-demo/widget", title: "widget",
+        entities: ["widget"], path: "memory/semantic/code-demo/widget.md" }),
     });
     const idxPath = join(repo, ".memarium/index.memory.json");
     const before = readFileSync(idxPath, "utf8");
     const { loadUsage } = await import("../../src/memory/usage-store.js");
-    await run({ cwd: "/work/edge-memvc", q: "widget" });
-    expect(loadUsage(repo)["semantic/edge-memvc/widget"]?.count).toBe(1);
+    await run({ cwd: "/work/code-demo", q: "widget" });
+    expect(loadUsage(repo)["semantic/code-demo/widget"]?.count).toBe(1);
     expect(readFileSync(idxPath, "utf8")).toBe(before); // synced index untouched
   });
 });

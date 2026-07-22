@@ -6,10 +6,10 @@ import type { MemoryProposal } from "../../src/memory/proposal-store.js";
 
 function prop(over: Partial<MemoryProposal> = {}): MemoryProposal {
   return {
-    proposalId: "core__yue-workflow", targetKey: "core/yue-workflow",
-    proposedEntryId: "core/yue-workflow", action: "create",
+    proposalId: "core__user-workflow", targetKey: "core/user-workflow",
+    proposedEntryId: "core/user-workflow", action: "create",
     rationale: "why", sourceSession: "sess-1", createdAt: "2026-06-12T00:00:00.000Z",
-    proposal: { entry: { id: "core/yue-workflow" } as never, body: "b" },
+    proposal: { entry: { id: "core/user-workflow" } as never, body: "b" },
     ...over,
   };
 }
@@ -33,7 +33,7 @@ describe("proposal-store", () => {
 
   it("flatTargetKey flattens slashes and rejects traversal", async () => {
     const { flatTargetKey } = await import("../../src/memory/proposal-store.js");
-    expect(flatTargetKey("core/yue-workflow")).toBe("core__yue-workflow");
+    expect(flatTargetKey("core/user-workflow")).toBe("core__user-workflow");
     expect(() => flatTargetKey("../escape")).toThrow();
     expect(() => flatTargetKey("a/../b")).toThrow();
     expect(() => flatTargetKey("core/a__b")).toThrow(/__/);
@@ -46,12 +46,12 @@ describe("proposal-store", () => {
     expect(existsSync(p)).toBe(true);
     expect(p.startsWith(proposalsDir(repo))).toBe(true);
 
-    expect(readProposal(repo, "core/yue-workflow")?.targetKey).toBe("core/yue-workflow");
-    expect(readProposal(repo, "core__yue-workflow")?.targetKey).toBe("core/yue-workflow");
+    expect(readProposal(repo, "core/user-workflow")?.targetKey).toBe("core/user-workflow");
+    expect(readProposal(repo, "core__user-workflow")?.targetKey).toBe("core/user-workflow");
 
     expect(listProposals(repo).length).toBe(1);
 
-    const del = deleteProposal(repo, "core/yue-workflow");
+    const del = deleteProposal(repo, "core/user-workflow");
     expect(del).toBe(p);
     expect(existsSync(p)).toBe(false);
     expect(listProposals(repo).length).toBe(0);
@@ -95,7 +95,7 @@ describe("proposal-store", () => {
     mkdirSync(dir, { recursive: true });
     const outside = join(home, "evil.json");
     writeFileSync(outside, "x\n");
-    symlinkSync(outside, join(dir, "core__yue-workflow.json"));
+    symlinkSync(outside, join(dir, "core__user-workflow.json"));
     expect(() => writeProposal(repo, prop())).toThrow(/symlink guard/i);
   });
 

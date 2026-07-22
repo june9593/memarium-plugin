@@ -4,12 +4,12 @@ import { parseQaMarkdown } from "../../src/qa/parse.js";
 import type { QaEntry } from "../../src/qa/types.js";
 
 function entry(over: Partial<QaEntry> = {}): QaEntry {
-  return { id: "qa/edge-memvc/how-to-build-abc12345", scope: "project:edge-memvc",
-    project: "edge-memvc", question: "How do I build the project?",
+  return { id: "qa/code-demo/how-to-build-abc12345", scope: "project:code-demo",
+    project: "code-demo", question: "How do I build the project?",
     answerSummary: "Run npm run build.", kind: "operational", tags: ["build"],
-    sources: ["chronicle:xyz"], sourceMemoryIds: ["procedural/edge-memvc/build"],
-    sourceSessions: ["abc12345"], relatedEntities: ["entity/edge-memvc/build-script"],
-    path: "memory/qa/edge-memvc/how-to-build-abc12345.md",
+    sources: ["chronicle:xyz"], sourceMemoryIds: ["procedural/code-demo/build"],
+    sourceSessions: ["abc12345"], relatedEntities: ["entity/code-demo/build-script"],
+    path: "memory/qa/code-demo/how-to-build-abc12345.md",
     createdAt: "2026-06-11", updatedAt: "2026-06-11", ...over };
 }
 
@@ -17,7 +17,7 @@ describe("renderQaMarkdown", () => {
   it("renders frontmatter + # question heading + verbatim body", () => {
     const md = renderQaMarkdown(entry(), "Full multi-line\nanswer body.");
     expect(md.startsWith("---\n")).toBe(true);
-    expect(md).toContain("id: qa/edge-memvc/how-to-build-abc12345");
+    expect(md).toContain("id: qa/code-demo/how-to-build-abc12345");
     expect(md).toContain(`question: "How do I build the project?"`);
     expect(md).toContain(`answerSummary: "Run npm run build."`);
     expect(md).toContain("kind: operational");
