@@ -95,15 +95,15 @@ describe("qaWriteCmd", () => {
     await expect(qaWriteCmd({ inputPath })).rejects.toThrow(/invalid project slug/);
   });
 
-  it("accepts a normal project slug and writes under memory/qa/<project>/ (scope: 'project:edge-memvc')", async () => {
+  it("accepts a normal project slug and writes under memory/qa/<project>/ (scope: 'project:code-demo')", async () => {
     const inputPath = writeInput([{ entry: {
-      scope: "project:edge-memvc", project: "edge-memvc",
-      question: "How do I build edge-memvc?", answerSummary: "npm run build", kind: "operational",
+      scope: "project:code-demo", project: "code-demo",
+      question: "How do I build code-demo?", answerSummary: "npm run build", kind: "operational",
       tags: [], sources: [], sourceMemoryIds: [], sourceSessions: [], relatedEntities: [],
       createdAt: "2026-06-11", updatedAt: "2026-06-11" }, body: "b" }]);
     const r = await qaWriteCmd({ inputPath });
     expect(r.written).toBe(1);
-    expect(r.paths[0].startsWith("memory/qa/edge-memvc/")).toBe(true);
+    expect(r.paths[0].startsWith("memory/qa/code-demo/")).toBe(true);
   });
 
   it("overrides any agent-provided id/path with the value derived from the question", async () => {

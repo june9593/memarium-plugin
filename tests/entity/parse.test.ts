@@ -5,17 +5,17 @@ import type { EntityPage } from "../../src/entity/types.js";
 
 function page(over: Partial<EntityPage> = {}): EntityPage {
   return {
-    id: "entity/edge-memvc/source-adapter",
+    id: "entity/code-demo/source-adapter",
     kind: "symbol",
-    scope: "project:edge-memvc",
-    project: "edge-memvc",
+    scope: "project:code-demo",
+    project: "code-demo",
     title: "SourceAdapter",
     aliases: ["source adapter", "adapter"],
-    sourceMemoryIds: ["procedural/edge-memvc/add-source-adapter"],
+    sourceMemoryIds: ["procedural/code-demo/add-source-adapter"],
     sourceSessions: ["abc12345"],
     sourceFiles: ["src/sources/base.ts"],
-    relatedEntities: ["entity/edge-memvc/tool"],
-    path: "memory/entities/edge-memvc/source-adapter.md",
+    relatedEntities: ["entity/code-demo/tool"],
+    path: "memory/entities/code-demo/source-adapter.md",
     createdAt: "2026-06-09",
     updatedAt: "2026-06-10",
     ...over,

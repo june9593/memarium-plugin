@@ -32,8 +32,8 @@ describe("scanAndImport", () => {
   }
 
   it("imports new sessions: writes .md under raw_sessions/<tool>/<project>/<date>/", async () => {
-    const projDir = join(claudeProjectsDir, "-Users-test-edge-src");
-    writeFakeJsonl(projDir, "abc-123", "/Users/test/edge/src");
+    const projDir = join(claudeProjectsDir, "-Users-test-code-src");
+    writeFakeJsonl(projDir, "abc-123", "/Users/test/code/src");
 
     const result = await scanAndImport({ projectFilter: null });
     expect(result.imported).toBe(1);
@@ -56,8 +56,8 @@ describe("scanAndImport", () => {
   });
 
   it("writes ~/.memarium/session-repo/.memarium/index.json with the imported session entry", async () => {
-    const projDir = join(claudeProjectsDir, "-Users-test-edge-src");
-    writeFakeJsonl(projDir, "abc-123", "/Users/test/edge/src");
+    const projDir = join(claudeProjectsDir, "-Users-test-code-src");
+    writeFakeJsonl(projDir, "abc-123", "/Users/test/code/src");
 
     await scanAndImport({ projectFilter: null });
 
@@ -69,13 +69,13 @@ describe("scanAndImport", () => {
     const entry = Object.values(idx.entries)[0] as { sessionId: string; tool: string; project: string };
     expect(entry.sessionId).toBe("abc-123");
     expect(entry.tool).toBe("claude");
-    // edge-src is the parent-basename slug for /Users/test/edge/src
-    expect(entry.project).toBe("edge-src");
+    // code-src is the parent-basename slug for /Users/test/code/src
+    expect(entry.project).toBe("code-src");
   });
 
   it("is idempotent — running twice imports 1 then 0 (mtime unchanged)", async () => {
-    const projDir = join(claudeProjectsDir, "-Users-test-edge-src");
-    writeFakeJsonl(projDir, "abc-123", "/Users/test/edge/src");
+    const projDir = join(claudeProjectsDir, "-Users-test-code-src");
+    writeFakeJsonl(projDir, "abc-123", "/Users/test/code/src");
 
     const r1 = await scanAndImport({ projectFilter: null });
     expect(r1.imported).toBe(1);
@@ -86,15 +86,15 @@ describe("scanAndImport", () => {
   });
 
   it("with projectFilter, imports only sessions matching that project slug", async () => {
-    writeFakeJsonl(join(claudeProjectsDir, "-Users-test-edge-src"), "s1", "/Users/test/edge/src");
+    writeFakeJsonl(join(claudeProjectsDir, "-Users-test-code-src"), "s1", "/Users/test/code/src");
     writeFakeJsonl(join(claudeProjectsDir, "-Users-test-foo"), "s2", "/Users/test/foo");
 
-    const result = await scanAndImport({ projectFilter: "edge-src" });
+    const result = await scanAndImport({ projectFilter: "code-src" });
     expect(result.imported).toBe(1);
 
     const spoolRoot = join(fakeHome, ".memarium/session-repo");
     const projectSlugs = readdirSync(join(spoolRoot, "raw_sessions/claude"));
-    expect(projectSlugs).toEqual(["edge-src"]);
+    expect(projectSlugs).toEqual(["code-src"]);
   });
 
   it("skips meta-project paths (.worktrees-, *-workspacestorage)", async () => {

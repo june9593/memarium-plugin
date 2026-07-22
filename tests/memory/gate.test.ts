@@ -95,10 +95,10 @@ describe("deriveAction", () => {
 
 describe("canonicalMemoryPath", () => {
   it("derives from type/project/id leaf", () => {
-    expect(canonicalMemoryPath(mk({ id: "core/yue-workflow", type: "core", project: null })))
-      .toBe("memory/core/_global/yue-workflow.md");
-    expect(canonicalMemoryPath(mk({ id: "semantic/edge-memvc/spool", type: "semantic", project: "edge-memvc" })))
-      .toBe("memory/semantic/edge-memvc/spool.md");
+    expect(canonicalMemoryPath(mk({ id: "core/user-workflow", type: "core", project: null })))
+      .toBe("memory/core/_global/user-workflow.md");
+    expect(canonicalMemoryPath(mk({ id: "semantic/code-demo/spool", type: "semantic", project: "code-demo" })))
+      .toBe("memory/semantic/code-demo/spool.md");
   });
   it("rejects an invalid type (closes the type-traversal bypass)", () => {
     expect(() => canonicalMemoryPath(mk({ type: "semantic/../core" as unknown as MemoryEntry["type"] })))
@@ -115,7 +115,7 @@ describe("canonicalMemoryPath", () => {
 
 describe("isSafePathSegment", () => {
   it("accepts a normal slug, rejects traversal/separators/dot", () => {
-    expect(isSafePathSegment("edge-memvc")).toBe(true);
+    expect(isSafePathSegment("code-demo")).toBe(true);
     expect(isSafePathSegment("..")).toBe(false);
     expect(isSafePathSegment(".")).toBe(false);
     expect(isSafePathSegment("a/b")).toBe(false);

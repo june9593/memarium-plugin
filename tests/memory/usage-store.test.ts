@@ -17,7 +17,7 @@ function mk(over: Partial<MemoryEntry> = {}): MemoryEntry {
 
 describe("usage-store", () => {
   let home: string;
-  const repo = "/work/edge-memvc";
+  const repo = "/work/code-demo";
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "vbp-usage-"));
     vi.stubEnv("HOME", home);

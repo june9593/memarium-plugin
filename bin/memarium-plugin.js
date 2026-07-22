@@ -18295,16 +18295,16 @@ async function run(argv) {
     const r2 = await memoryProposeCmd2({ inputPath: o2.input });
     console.log(JSON.stringify(r2));
   });
-  program2.command("memory-diff").description("Read-only: show pending local memory proposals as a diff vs current live memory. Never writes.").option("--id <targetKey>", "show only the proposal for this target (e.g. core/yue-workflow)").option("--json", "emit a structured JSON array instead of a human report").action(async (o2) => {
+  program2.command("memory-diff").description("Read-only: show pending local memory proposals as a diff vs current live memory. Never writes.").option("--id <targetKey>", "show only the proposal for this target (e.g. core/user-workflow)").option("--json", "emit a structured JSON array instead of a human report").action(async (o2) => {
     const { memoryDiffCmd: memoryDiffCmd2 } = await Promise.resolve().then(() => (init_memory_diff(), memory_diff_exports));
     await memoryDiffCmd2({ id: o2.id, json: o2.json });
   });
-  program2.command("memory-approve").description("Apply a pending local memory proposal to live memory, delete the proposal, and refresh affected primers.").requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/yue-workflow)").action(async (o2) => {
+  program2.command("memory-approve").description("Apply a pending local memory proposal to live memory, delete the proposal, and refresh affected primers.").requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/user-workflow)").action(async (o2) => {
     const { memoryApproveCmd: memoryApproveCmd2 } = await Promise.resolve().then(() => (init_memory_approve(), memory_approve_exports));
     const r2 = await memoryApproveCmd2({ id: o2.id });
     console.log(JSON.stringify(r2));
   });
-  program2.command("memory-reject").description("Discard a pending local memory proposal without applying it.").requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/yue-workflow)").action(async (o2) => {
+  program2.command("memory-reject").description("Discard a pending local memory proposal without applying it.").requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/user-workflow)").action(async (o2) => {
     const { memoryRejectCmd: memoryRejectCmd2 } = await Promise.resolve().then(() => (init_memory_reject(), memory_reject_exports));
     const r2 = await memoryRejectCmd2({ id: o2.id });
     console.log(JSON.stringify(r2));

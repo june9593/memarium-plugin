@@ -22,8 +22,8 @@ describe("memory v4 propose → diff → approve round-trip + queue isolation", 
     const input = join(home, "in.json");
     writeFileSync(input, JSON.stringify([{
       entry: {
-        id: "procedural/edge-memvc/build-rule", type: "procedural",
-        scope: "project:edge-memvc", project: "edge-memvc",
+        id: "procedural/code-demo/build-rule", type: "procedural",
+        scope: "project:code-demo", project: "code-demo",
         title: "rm -rf dist before build", summary: "clean script", status: "active",
         confidence: 0.9, importance: 4,
         createdAt: "2026-06-12", updatedAt: "2026-06-12", validFrom: null, validTo: null,
@@ -35,7 +35,7 @@ describe("memory v4 propose → diff → approve round-trip + queue isolation", 
 
     const { memoryProposeCmd } = await import("../../src/commands/memory-propose.js");
     await memoryProposeCmd({ inputPath: input });
-    expect(existsSync(join(repo, "memory/procedural/edge-memvc/build-rule.md"))).toBe(false);
+    expect(existsSync(join(repo, "memory/procedural/code-demo/build-rule.md"))).toBe(false);
 
     const queueRoot = join(home, ".memarium", "local-proposals");
     expect(existsSync(queueRoot)).toBe(true);
@@ -46,9 +46,9 @@ describe("memory v4 propose → diff → approve round-trip + queue isolation", 
     expect(repoFiles.some((f) => f.includes("local-proposals"))).toBe(false);
 
     const { memoryApproveCmd } = await import("../../src/commands/memory-approve.js");
-    const r = await memoryApproveCmd({ id: "procedural/edge-memvc/build-rule" });
+    const r = await memoryApproveCmd({ id: "procedural/code-demo/build-rule" });
     expect(r.applied).toBe(1);
-    expect(existsSync(join(repo, "memory/procedural/edge-memvc/build-rule.md"))).toBe(true);
+    expect(existsSync(join(repo, "memory/procedural/code-demo/build-rule.md"))).toBe(true);
 
     const { listProposals } = await import("../../src/memory/proposal-store.js");
     expect(listProposals(repo).length).toBe(0);

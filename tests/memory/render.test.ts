@@ -5,10 +5,10 @@ import type { MemoryEntry } from "../../src/memory/types.js";
 
 function entry(over: Partial<MemoryEntry> = {}): MemoryEntry {
   return {
-    id: "procedural/edge-memvc/add-source-adapter", type: "procedural",
-    scope: "project:edge-memvc", project: "edge-memvc",
+    id: "procedural/code-demo/add-source-adapter", type: "procedural",
+    scope: "project:code-demo", project: "code-demo",
     title: "Add a source adapter", summary: "extend Tool union, register, write parser",
-    path: "memory/procedural/edge-memvc/add-source-adapter.md",
+    path: "memory/procedural/code-demo/add-source-adapter.md",
     status: "active", confidence: 0.9, importance: 4,
     createdAt: "2026-06-09", updatedAt: "2026-06-09", validFrom: null, validTo: null,
     sourceSessions: ["abc12345"], sourceCommits: [], sourceFiles: ["src/sources/base.ts"],
@@ -21,9 +21,9 @@ describe("renderMemoryMarkdown", () => {
   it("renders YAML frontmatter + body", () => {
     const md = renderMemoryMarkdown(entry(), "Writer needs zero changes.");
     expect(md.startsWith("---\n")).toBe(true);
-    expect(md).toContain("id: procedural/edge-memvc/add-source-adapter");
+    expect(md).toContain("id: procedural/code-demo/add-source-adapter");
     expect(md).toContain("type: procedural");
-    expect(md).toContain("scope: project:edge-memvc");
+    expect(md).toContain("scope: project:code-demo");
     expect(md).toContain("status: active");
     expect(md).toContain("entities: [Tool, SourceAdapter]");
     expect(md).toContain("sourceSessions: [abc12345]");

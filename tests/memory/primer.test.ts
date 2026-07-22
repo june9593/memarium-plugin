@@ -14,7 +14,7 @@ function e(over: Partial<MemoryEntry>): MemoryEntry {
 describe("renderPrimer", () => {
   it("groups core/semantic/procedural under headings, importance-sorted, skips superseded", () => {
     const md = renderPrimer("p", [
-      e({ id: "core/g", type: "core", scope: "global", project: null, title: "never npm publish", summary: "Yue does OTP" }),
+      e({ id: "core/g", type: "core", scope: "global", project: null, title: "never npm publish", summary: "the maintainer does OTP" }),
       e({ id: "semantic/p/a", type: "semantic", title: "Spool format", summary: "single .md", importance: 4 }),
       e({ id: "semantic/p/b", type: "semantic", title: "Minor fact", summary: "x", importance: 1 }),
       e({ id: "proc/p/c", type: "procedural", title: "Add adapter", summary: "extend Tool union" }),

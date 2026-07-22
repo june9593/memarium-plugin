@@ -18,8 +18,8 @@ import type { MemoryEntry } from "../../src/memory/types.js";
 // Cast through unknown so TypeScript lets us omit them (mirrors runtime JSON).
 function authored(over: Record<string, unknown> = {}): MemoryEntry {
   return {
-    id: "episodic/edge-memvc/thread-x", type: "episodic",
-    scope: "project:edge-memvc", project: "edge-memvc",
+    id: "episodic/code-demo/thread-x", type: "episodic",
+    scope: "project:code-demo", project: "code-demo",
     title: "Thread X", summary: "did a thing",
     confidence: 0.8, importance: 3,
     sourceSessions: ["sess-1-uuid"], sourceCommits: [], sourceFiles: [], entities: [],
@@ -54,7 +54,7 @@ describe("#54 — render never serializes the literal \"undefined\"", () => {
 
   it("entity + qa: unset project/dates/arrays never serialize \"undefined\"", () => {
     const ent = renderEntityMarkdown({
-      id: "edge-memvc/Tab", kind: "class", scope: "project:edge-memvc",
+      id: "code-demo/Tab", kind: "class", scope: "project:code-demo",
       project: undefined, title: "Tab", aliases: undefined, sourceMemoryIds: undefined,
       sourceSessions: undefined, sourceFiles: undefined, relatedEntities: undefined,
       path: "", createdAt: undefined, updatedAt: undefined,
@@ -64,7 +64,7 @@ describe("#54 — render never serializes the literal \"undefined\"", () => {
     expect(ent).toContain("relatedEntities: []");
 
     const qa = renderQaMarkdown({
-      id: "qa/edge-memvc/how", scope: "project:edge-memvc", project: undefined,
+      id: "qa/code-demo/how", scope: "project:code-demo", project: undefined,
       question: "How?", answerSummary: "Like so", kind: "howto", tags: undefined,
       sources: undefined, sourceMemoryIds: undefined, sourceSessions: undefined, relatedEntities: undefined,
       path: "", createdAt: undefined, updatedAt: undefined,
@@ -158,7 +158,7 @@ describe("#54 — apply persists no \"undefined\" and lints clean (the issue rep
     const { loadMemoryIndex } = await import("../../src/memory/index-store.js");
     applyMemoryItems(repo, [{ entry: authored(), body: "the arc" }]);
 
-    const md = readFileSync(join(repo, "memory/episodic/edge-memvc/thread-x.md"), "utf8");
+    const md = readFileSync(join(repo, "memory/episodic/code-demo/thread-x.md"), "utf8");
     expect(md).not.toContain("undefined");
     expect(md).toContain("supersedes: null");
     expect(md).toContain("status: active");
@@ -176,11 +176,11 @@ describe("#54 — apply persists no \"undefined\" and lints clean (the issue rep
     const { loadMemoryIndex } = await import("../../src/memory/index-store.js");
     applyMemoryItems(repo, [{ entry: authored({ confidence: undefined, importance: undefined }), body: "b" }]);
     // LIVE index carries the render/parse defaults (not undefined → dropped-key).
-    const live = loadMemoryIndex(repo).entries["episodic/edge-memvc/thread-x"];
+    const live = loadMemoryIndex(repo).entries["episodic/code-demo/thread-x"];
     expect(live.confidence).toBe(0.5);   // the scorer's neutral default
     expect(live.importance).toBe(0);
     // A rebuild (parse of the persisted md) yields the SAME values → no drift.
-    const rebuilt = parseMemoryMarkdown(readFileSync(join(repo, "memory/episodic/edge-memvc/thread-x.md"), "utf8"))!;
+    const rebuilt = parseMemoryMarkdown(readFileSync(join(repo, "memory/episodic/code-demo/thread-x.md"), "utf8"))!;
     expect(rebuilt.confidence).toBe(live.confidence);
     expect(rebuilt.importance).toBe(live.importance);
   });
@@ -197,14 +197,14 @@ describe("#54 — reindex self-heals legacy \"undefined\" md text + index", () =
       repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli" }));
     // Legacy 0.13.x-shaped md with literal "undefined" in every optional field.
     const legacy = [
-      "---", "id: episodic/edge-memvc/legacy", "type: episodic", "scope: project:edge-memvc",
-      "project: edge-memvc", "title: Legacy", "summary: s", "status: undefined",
+      "---", "id: episodic/code-demo/legacy", "type: episodic", "scope: project:code-demo",
+      "project: code-demo", "title: Legacy", "summary: s", "status: undefined",
       "confidence: undefined", "importance: undefined", "createdAt: undefined", "updatedAt: undefined",
       "validFrom: undefined", "validTo: undefined", "supersedes: undefined", "originDevice: undefined",
       "sourceSessions: [s1]", "sourceCommits: []", "sourceFiles: []", "entities: []", "trust: untrusted",
       "---", "", "# Legacy", "", "the body — MUST survive byte-for-byte", "",
     ].join("\n");
-    const abs = join(repo, "memory/episodic/edge-memvc/legacy.md");
+    const abs = join(repo, "memory/episodic/code-demo/legacy.md");
     mkdirSync(join(abs, ".."), { recursive: true });
     writeFileSync(abs, legacy);
   });
@@ -217,7 +217,7 @@ describe("#54 — reindex self-heals legacy \"undefined\" md text + index", () =
     expect(report.indexed).toBe(1);
     expect(report.healed).toBe(1);
 
-    const abs = join(repo, "memory/episodic/edge-memvc/legacy.md");
+    const abs = join(repo, "memory/episodic/code-demo/legacy.md");
     const md = readFileSync(abs, "utf8");
     expect(md).not.toContain("undefined");
     expect(md).toContain("supersedes: null");

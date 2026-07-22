@@ -196,7 +196,7 @@ export async function run(argv: string[]) {
 
   program.command("memory-diff")
     .description("Read-only: show pending local memory proposals as a diff vs current live memory. Never writes.")
-    .option("--id <targetKey>", "show only the proposal for this target (e.g. core/yue-workflow)")
+    .option("--id <targetKey>", "show only the proposal for this target (e.g. core/user-workflow)")
     .option("--json", "emit a structured JSON array instead of a human report")
     .action(async (o: { id?: string; json?: boolean }) => {
       const { memoryDiffCmd } = await import("./commands/memory-diff.js");
@@ -205,7 +205,7 @@ export async function run(argv: string[]) {
 
   program.command("memory-approve")
     .description("Apply a pending local memory proposal to live memory, delete the proposal, and refresh affected primers.")
-    .requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/yue-workflow)")
+    .requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/user-workflow)")
     .action(async (o: { id: string }) => {
       const { memoryApproveCmd } = await import("./commands/memory-approve.js");
       const r = await memoryApproveCmd({ id: o.id });
@@ -214,7 +214,7 @@ export async function run(argv: string[]) {
 
   program.command("memory-reject")
     .description("Discard a pending local memory proposal without applying it.")
-    .requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/yue-workflow)")
+    .requiredOption("--id <targetKey>", "the proposal's target key (e.g. core/user-workflow)")
     .action(async (o: { id: string }) => {
       const { memoryRejectCmd } = await import("./commands/memory-reject.js");
       const r = await memoryRejectCmd({ id: o.id });

@@ -3,18 +3,18 @@ import { emptyQaIndex, qaKey, type QaEntry } from "../../src/qa/types.js";
 
 function entry(over: Partial<QaEntry> = {}): QaEntry {
   return {
-    id: "qa/edge-memvc/how-to-build-abc12345",
-    scope: "project:edge-memvc",
-    project: "edge-memvc",
+    id: "qa/code-demo/how-to-build-abc12345",
+    scope: "project:code-demo",
+    project: "code-demo",
     question: "How do I build the project?",
     answerSummary: "Run npm run build (clean rm -rf dist first).",
     kind: "operational",
     tags: ["build"],
     sources: ["chronicle:xyz"],
-    sourceMemoryIds: ["procedural/edge-memvc/build"],
+    sourceMemoryIds: ["procedural/code-demo/build"],
     sourceSessions: ["abc12345"],
-    relatedEntities: ["entity/edge-memvc/build-script"],
-    path: "memory/qa/edge-memvc/how-to-build-abc12345.md",
+    relatedEntities: ["entity/code-demo/build-script"],
+    path: "memory/qa/code-demo/how-to-build-abc12345.md",
     createdAt: "2026-06-11",
     updatedAt: "2026-06-11",
     ...over,
@@ -23,7 +23,7 @@ function entry(over: Partial<QaEntry> = {}): QaEntry {
 
 describe("qa types", () => {
   it("qaKey returns the id", () => {
-    expect(qaKey(entry())).toBe("qa/edge-memvc/how-to-build-abc12345");
+    expect(qaKey(entry())).toBe("qa/code-demo/how-to-build-abc12345");
   });
   it("emptyQaIndex is version 1 with no entries", () => {
     expect(emptyQaIndex()).toEqual({ version: 1, entries: {} });
