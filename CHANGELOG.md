@@ -49,7 +49,7 @@ that a prompt tweak alone did not reliably stop. This adds a code-level backstop
 - `memory-lint` gains a `leaky-content` warning that surfaces any leak kind
   (including the warn-only SHAs/emails/GUIDs, and any blocking leak that predates
   this filter) sitting in a memory's title/summary.
-- Repo-relative paths and API identifiers (`apps/x/y.py`, `VNRecognizeTextRequest`)
+- Repo-relative paths and API identifiers (`apps/x/y.py`, `parseDocument`)
   are deliberately **not** flagged. Prose one-offs that carry no literal
   secret (a dev toggle, a "paste the token here" step) are out of scope here —
   those remain a prompt/human-review concern.
@@ -347,10 +347,10 @@ Migration of existing path-slug data not shipped (local wipe + re-digest). tsc c
 
 ## 0.10.2 — 2026-06-30
 
-**Fix: a new project's first-digest chronicles could silently vanish from the catalog (#38).** A fan-out reader subagent that violated the "return JSON only" contract could write chronicle md straight under `book/<project>/chronicle/`, bypassing `publish` — so the md never entered `index.book.json`. Because the catalog is deliberately index-driven (not FS-globbing), the **entire project disappeared** from `book/index.md` and never got a `book/<project>/index.md` (observed: `chromium-src`, 28 chronicles on disk, 0 in the index, header still said "4 projects").
+**Fix: a new project's first-digest chronicles could silently vanish from the catalog (#38).** A fan-out reader subagent that violated the "return JSON only" contract could write chronicle md straight under `book/<project>/chronicle/`, bypassing `publish` — so the md never entered `index.book.json`. Because the catalog is deliberately index-driven (not FS-globbing), the **entire project disappeared** from `book/index.md` and never got a `book/<project>/index.md` (observed: `acme-web`, 28 chronicles on disk, 0 in the index, header still said "4 projects").
 
 Two-part fix:
-- **Self-heal (`src/digest/reconcile-orphans.ts`):** `publish` (catalog pass) and `catalog-regen` now scan `book/<project>/chronicle/*.md` for well-formed chronicles absent from the index, parse their frontmatter, and re-register them before rendering — so a whole project can't be silently dropped. Malformed / duplicate-threadId orphans are reported and skipped, never fatal. The index stays the source of truth; reconcile only re-registers what's already on disk. (Verified against a real repo: recovered all 28 `chromium-src` orphans, 0 skipped.)
+- **Self-heal (`src/digest/reconcile-orphans.ts`):** `publish` (catalog pass) and `catalog-regen` now scan `book/<project>/chronicle/*.md` for well-formed chronicles absent from the index, parse their frontmatter, and re-register them before rendering — so a whole project can't be silently dropped. Malformed / duplicate-threadId orphans are reported and skipped, never fatal. The index stays the source of truth; reconcile only re-registers what's already on disk. (Verified against a real repo: recovered all 28 `acme-web` orphans, 0 skipped.)
 - **Prevent (SKILL.md):** the fan-out reader contract is now an explicit hard guardrail — a reader's only output is its `/tmp/vb-<project>/agent<N>.json`; it must not write chronicle/topic md, memory, skills, configs, or anything else. This also closes #38's second symptom (a reader that went off-task and authored an unrelated `~/.claude/skills/.../SKILL.md`).
 
 +6 regression tests. 398 tests; tsc clean.
@@ -618,8 +618,8 @@ Pre-opensource documentation cleanup. No behavior changes.
 `vibebook-recall` skill description rewritten to defeat the
 "I'll just `git log --grep`" reflex AI falls into for retrospective
 questions like "之前是怎么解的". Real dogfood case (2026-05-13):
-user asked "fullscreen bookmark crash 之前是怎么解的", AI ran
-`git log --grep="fullscreen" --grep="bookmark"` and never invoked
+user asked "auth timeout bug 之前是怎么解的", AI ran
+`git log --grep="auth" --grep="timeout"` and never invoked
 recall — finding commit messages but missing the chronicle's "what
 didn't work / why we picked X over Y" context.
 

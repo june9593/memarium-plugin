@@ -24,9 +24,9 @@ the fields can't.
     "importance": 3,
     "confidence": 0.9,
     "sourceSessions": ["abc12345-6789-4abc-8def-0123456789ab"],
-    "sourceFiles": ["chrome/browser/ui/.../foo.mm"],
+    "sourceFiles": ["src/app/ui/window.ts"],
     "sourceCommits": ["7bc9ef48b654"],
-    "entities": ["FooController", "NSStatusBar", "fullscreen"]
+    "entities": ["AuthController", "SessionStore", "timeout"]
   },
   "body": "## Context …\n## What worked …\n## Dead ends …\n## Open questions …\n## Decisions …\n\n**Work status:** shipped"
 }

@@ -106,14 +106,14 @@ The payload shape:
 
 ```json
 {
-  "project": "github.com-acme-edge",
+  "project": "github.com-acme-web",
   "newSessions": [
     { "sessionId": "abc12345-6789-4abc-8def-0123456789ab", "shortId": "abc12345", "tool": "claude" | "copilot",
       "endedAt": "2026-04-22T15:30:00Z",
-      "mdPath": "raw_sessions/claude/github.com-acme-edge/2026-04-22/...md",
+      "mdPath": "raw_sessions/claude/github.com-acme-web/2026-04-22/...md",
       "preview": "first 300 chars of user's first real message", "insightScore": 0.62 }
   ],
-  "existingEpisodes": { "github.com-acme-edge": ["episodic/github.com-acme-edge/fix-fullscreen", ...] },
+  "existingEpisodes": { "github.com-acme-web": ["episodic/github.com-acme-web/fix-toolbar", ...] },
   "meta": { "totalSessionsInIndex": 75, "sessionsAlreadyDigested": 68, "newSessionsCount": 4 }
 }
 ```
@@ -186,7 +186,7 @@ Write the segmentation to `/tmp/memarium-groups.json` (use each session's **full
 
 ```json
 [
-  { "threadId": "fix-fullscreen-bookmark-bar", "title": "Fix Edge fullscreen bookmark-bar bug",
+  { "threadId": "fix-toolbar-overflow", "title": "Fix a toolbar overflow on window resize",
     "sessionIds": ["abc12345-6789-4abc-8def-0123456789ab", "def67890-1234-4cde-9012-3456789abcde"], "skip": false },
   { "threadId": "ping-test", "sessionIds": ["xyz99999-aaaa-4bbb-8ccc-ddddeeeeffff"], "skip": true,
     "skipReason": "pure ping test, no real work content" }
@@ -298,11 +298,11 @@ their own. Add these to the memory JSON (or a second file):
   principle, write the abstracted procedural rule as its OWN entry — a standing
   `trigger → action` rule decoupled from the origin bug — not only the
   session-specific description. One session often yields MORE than one rule; split them.
-  - ❌ fix-description (welded to this session): _"search_files ran off the event
-    loop and skipped OneDrive placeholders, so the async freeze got fixed."_
+  - ❌ fix-description (welded to this session): _"the config loader blocked the
+    startup thread reading a large network-mounted file, so the hang went away."_
   - ✅ two standalone procedural rules:
-    - _"Never run a synchronous filesystem walk on the asyncio event loop — offload to a bounded thread pool."_
-    - _"OneDrive placeholder files hang on stat() — check the RECALL flags before touching them."_
+    - _"Never do blocking file I/O on the startup/main thread — offload it to a worker or make it async."_
+    - _"A network- or cloud-mounted file can block indefinitely on first access — set a timeout or check availability before a synchronous read."_
   **Additive, never substitutive:** the abstracted rules are EXTRA entries. Always
   write the episodic (the arc) AND the must-have semantic/procedural facts FIRST,
   then add the rules on top. Splitting into rules must never drop, merge away, or
