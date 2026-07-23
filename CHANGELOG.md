@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.19.8 — 2026-07-24
+
+### Digest prompt: scope abstracted rules by reuse reach (fixes over-narrow scoping)
+
+The digest abstracted reusable procedural/semantic rules well but scoped them too
+narrowly — defaulting to the session's `project:<slug>`. A write-quality eval found
+~71–83% of abstracted procedural rules were scoped `project` (or mislabeled `user`)
+when they were general engineering/debugging/API lessons that any codebase could
+reuse. Because scope is retrieval reach (`global` surfaces across all projects,
+`project:<slug>` only within that repo), a general rule learned on one project never
+surfaced on another — cross-project reuse was largely lost.
+
+SKILL.md now instructs the reader to scope each semantic/procedural rule by REUSE
+REACH: a general rule any codebase could apply → `global` (`project:null`);
+`project:<slug>` only when it names THIS repo's specific classes/files/architecture;
+`user` for personal workflow preferences only. Episodics stay `project:<slug>`.
+
+Validated on the eval harness (semantic judge over banked digests): mis-scope rate
+71% → 23% (same-judge comparison), abstraction quality did not regress (unchanged on
+the fully-abstracted control sessions), and genuinely repo-specific rules correctly
+stayed `project`.
+
 ## 0.19.7 — 2026-07-22
 
 ### Digest prompt: don't memorize one-off dev noise (defect #2b, partial)
