@@ -49,7 +49,7 @@ that a prompt tweak alone did not reliably stop. This adds a code-level backstop
 - `memory-lint` gains a `leaky-content` warning that surfaces any leak kind
   (including the warn-only SHAs/emails/GUIDs, and any blocking leak that predates
   this filter) sitting in a memory's title/summary.
-- Repo-relative paths and API identifiers (`apps/x/y.py`, `VNRecognizeTextRequest`)
+- Repo-relative paths and API identifiers (`apps/x/y.py`, `parseDocument`)
   are deliberately **not** flagged. Prose one-offs that carry no literal
   secret (a dev toggle, a "paste the token here" step) are out of scope here —
   those remain a prompt/human-review concern.

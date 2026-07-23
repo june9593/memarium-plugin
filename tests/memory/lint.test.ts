@@ -121,7 +121,7 @@ describe("lintMemory — leaky-content", () => {
     expect(checks(r)).toContain("leaky-content");
   });
   it("does NOT flag a clean memory (repo-relative path + API name)", () => {
-    const r = run(idxOf(mem({ id: "semantic/p/ok", title: "VNRecognizeTextRequest usage", summary: "read apps/agent/tools/fs.py" })));
+    const r = run(idxOf(mem({ id: "semantic/p/ok", title: "parseDocument usage", summary: "read apps/agent/tools/fs.py" })));
     expect(checks(r)).not.toContain("leaky-content");
   });
 });

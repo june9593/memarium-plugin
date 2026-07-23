@@ -55,7 +55,7 @@ describe("memory write leak filter", () => {
   it("does NOT over-block a clean item that mentions repo-relative paths + API names", async () => {
     const input = join(home, "clean.json");
     writeFileSync(input, JSON.stringify(semanticItem(
-      "VNRecognizeTextRequest reads apps/client_agent/agent/tools/filesystem.py; flag msMacLiquidGlassBubbles")));
+      "parseConfig reads apps/service/config/loader.py; flag enableFancyWidgets")));
     const { memoryWriteCmd } = await import("../../src/commands/memory-write.js");
     const report = await memoryWriteCmd({ inputPath: input });
     expect(report.written).toBe(1);

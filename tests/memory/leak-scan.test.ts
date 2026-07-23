@@ -19,8 +19,8 @@ describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emai
   });
 
   it("does NOT flag repo-relative paths (those are the desired form)", () => {
-    expect(scanLeaks("edit apps/client_agent/svc/agent/tools/filesystem.py")).toEqual([]);
-    expect(hasBlockingLeak("backend/services/supabase.py has class DBConnection")).toBe(false);
+    expect(scanLeaks("edit apps/service/svc/agent/tools/filesystem.py")).toEqual([]);
+    expect(hasBlockingLeak("backend/services/db.py has class DBConnection")).toBe(false);
   });
 
   it("does NOT flag a `/home/`-or-`/Users/` substring inside a repo-relative or HTTP URL path (boundary-anchored)", () => {
@@ -64,8 +64,8 @@ describe("scanLeaks — machine-specific paths + secrets are blocking; SHAs/emai
   });
 
   it("does NOT block normal prose / short hex / api names", () => {
-    expect(hasBlockingLeak("VNRecognizeTextRequest infers vertical text from bbox aspect ratio")).toBe(false);
-    expect(hasBlockingLeak("the flag is msMacLiquidGlassBubbles; color 0xFF00AA")).toBe(false);
+    expect(hasBlockingLeak("parseDocument builds a syntax tree from tokens")).toBe(false);
+    expect(hasBlockingLeak("the flag is enableFancyWidgets; color 0xFF00AA")).toBe(false);
   });
 
   it("flags a bare 40-hex commit SHA + email + GUID as WARN (not blocking)", () => {

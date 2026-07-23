@@ -298,11 +298,11 @@ their own. Add these to the memory JSON (or a second file):
   principle, write the abstracted procedural rule as its OWN entry — a standing
   `trigger → action` rule decoupled from the origin bug — not only the
   session-specific description. One session often yields MORE than one rule; split them.
-  - ❌ fix-description (welded to this session): _"search_files ran off the event
-    loop and skipped OneDrive placeholders, so the async freeze got fixed."_
+  - ❌ fix-description (welded to this session): _"the config loader blocked the
+    startup thread reading a large network-mounted file, so the hang went away."_
   - ✅ two standalone procedural rules:
-    - _"Never run a synchronous filesystem walk on the asyncio event loop — offload to a bounded thread pool."_
-    - _"OneDrive placeholder files hang on stat() — check the RECALL flags before touching them."_
+    - _"Never do blocking file I/O on the startup/main thread — offload it to a worker or make it async."_
+    - _"A network- or cloud-mounted file can block indefinitely on first access — set a timeout or check availability before a synchronous read."_
   **Additive, never substitutive:** the abstracted rules are EXTRA entries. Always
   write the episodic (the arc) AND the must-have semantic/procedural facts FIRST,
   then add the rules on top. Splitting into rules must never drop, merge away, or

@@ -24,7 +24,7 @@ the fields can't.
     "importance": 3,
     "confidence": 0.9,
     "sourceSessions": ["abc12345-6789-4abc-8def-0123456789ab"],
-    "sourceFiles": ["chrome/browser/ui/.../foo.mm"],
+    "sourceFiles": ["src/app/ui/window.mm"],
     "sourceCommits": ["7bc9ef48b654"],
     "entities": ["FooController", "NSStatusBar", "fullscreen"]
   },
