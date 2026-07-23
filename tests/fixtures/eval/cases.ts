@@ -25,6 +25,6 @@ export const CASES: EvalCase[] = [
     query: q("esbuild"), goldIds: ["entity/alpha/esbuild"], excludedIds: ["entity/beta/esbuild"] },
   { name: "primer/include-exclude: core+semantic+procedural in, episodic/superseded/expired out", category: "primer",
     query: q("", "alpha"),
-    goldIds: ["core/_global/yue", "semantic/alpha/build", "procedural/alpha/run-tests"],
+    goldIds: ["core/_global/workflow", "semantic/alpha/build", "procedural/alpha/run-tests"],
     excludedIds: ["episodic/alpha/dbg", "semantic/alpha/old-auth", "semantic/alpha/old-config"] },
 ];
