@@ -75,9 +75,9 @@ describe("scoreEntities", () => {
 
   it("user scope always eligible", () => {
     const entries = [
-      e({ id: "entity/_global/yue-prefs", scope: "user", project: null, title: "the maintainer preferences" }),
+      e({ id: "entity/_global/owner-prefs", scope: "user", project: null, title: "the maintainer preferences" }),
     ];
-    const r = scoreEntities(entries, Q({ project: "my-project", text: "yue" }));
+    const r = scoreEntities(entries, Q({ project: "my-project", text: "owner" }));
     expect(r).toHaveLength(1);
     expect(r[0].whyMatched).toContain("scope:user");
   });

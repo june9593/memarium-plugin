@@ -42,7 +42,7 @@ export const CORPUS: EvalCorpus = {
       title: "Alpha deprecated config layout", summary: "old config", validTo: "2020-01-01", entities: ["config"] }),
     mem({ id: "semantic/alpha/config", type: "semantic", scope: "project:alpha", project: "alpha",
       title: "Alpha current config format", summary: "current config", entities: ["config"], importance: 4 }),
-    mem({ id: "core/_global/yue", type: "core", scope: "global", project: null,
+    mem({ id: "core/_global/workflow", type: "core", scope: "global", project: null,
       title: "the maintainer ships fast and never npm publishes", summary: "global workflow rule", importance: 5 }),
     mem({ id: "episodic/alpha/dbg", type: "episodic", scope: "project:alpha", project: "alpha",
       title: "Debugged a flaky alpha test", summary: "episode pointer" }),
