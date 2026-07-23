@@ -106,14 +106,14 @@ The payload shape:
 
 ```json
 {
-  "project": "github.com-acme-edge",
+  "project": "github.com-acme-web",
   "newSessions": [
     { "sessionId": "abc12345-6789-4abc-8def-0123456789ab", "shortId": "abc12345", "tool": "claude" | "copilot",
       "endedAt": "2026-04-22T15:30:00Z",
-      "mdPath": "raw_sessions/claude/github.com-acme-edge/2026-04-22/...md",
+      "mdPath": "raw_sessions/claude/github.com-acme-web/2026-04-22/...md",
       "preview": "first 300 chars of user's first real message", "insightScore": 0.62 }
   ],
-  "existingEpisodes": { "github.com-acme-edge": ["episodic/github.com-acme-edge/fix-fullscreen", ...] },
+  "existingEpisodes": { "github.com-acme-web": ["episodic/github.com-acme-web/fix-toolbar", ...] },
   "meta": { "totalSessionsInIndex": 75, "sessionsAlreadyDigested": 68, "newSessionsCount": 4 }
 }
 ```
@@ -186,7 +186,7 @@ Write the segmentation to `/tmp/memarium-groups.json` (use each session's **full
 
 ```json
 [
-  { "threadId": "fix-fullscreen-bookmark-bar", "title": "Fix Edge fullscreen bookmark-bar bug",
+  { "threadId": "fix-toolbar-overflow", "title": "Fix a toolbar overflow on window resize",
     "sessionIds": ["abc12345-6789-4abc-8def-0123456789ab", "def67890-1234-4cde-9012-3456789abcde"], "skip": false },
   { "threadId": "ping-test", "sessionIds": ["xyz99999-aaaa-4bbb-8ccc-ddddeeeeffff"], "skip": true,
     "skipReason": "pure ping test, no real work content" }

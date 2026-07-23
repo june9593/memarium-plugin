@@ -23,20 +23,20 @@ const Q = (over: Partial<MemoryQuery> = {}): MemoryQuery => ({
 describe("scoreMemories", () => {
   it("excludes superseded and expired entries", () => {
     const entries = [
-      e({ id: "ok", title: "fullscreen crash" }),
-      e({ id: "old", title: "fullscreen crash", status: "superseded" }),
-      e({ id: "expired", title: "fullscreen crash", validTo: "2026-01-01" }),
+      e({ id: "ok", title: "auth crash" }),
+      e({ id: "old", title: "auth crash", status: "superseded" }),
+      e({ id: "expired", title: "auth crash", validTo: "2026-01-01" }),
     ];
-    const r = scoreMemories(entries, Q({ text: "fullscreen" }));
+    const r = scoreMemories(entries, Q({ text: "auth" }));
     expect(r.map((x) => x.entry.id)).toEqual(["ok"]);
   });
 
   it("keyword match in title/summary/entities raises score", () => {
     const entries = [
-      e({ id: "match", title: "bookmark bar crash", entities: ["BookmarkBarView"] }),
+      e({ id: "match", title: "auth token crash", entities: ["AuthTokenView"] }),
       e({ id: "nomatch", title: "unrelated thing" }),
     ];
-    const r = scoreMemories(entries, Q({ text: "bookmark crash" }));
+    const r = scoreMemories(entries, Q({ text: "auth crash" }));
     expect(r[0].entry.id).toBe("match");
     expect(r[0].whyRecalled).toContain("keyword");
   });
@@ -77,10 +77,10 @@ describe("scoreMemories", () => {
   });
 
   it("scores finite when optional numerics (accessCount/importance) are missing", () => {
-    const bad = e({ id: "match", title: "bookmark bar crash", entities: ["BookmarkBarView"] });
+    const bad = e({ id: "match", title: "auth token crash", entities: ["AuthTokenView"] });
     delete (bad as unknown as Record<string, unknown>).accessCount;
     delete (bad as unknown as Record<string, unknown>).importance;
-    const r = scoreMemories([bad], Q({ text: "bookmark crash" }));
+    const r = scoreMemories([bad], Q({ text: "auth crash" }));
     expect(Number.isFinite(r[0].score)).toBe(true);
     expect(r[0].whyRecalled).toContain("keyword");
   });
@@ -88,10 +88,10 @@ describe("scoreMemories", () => {
   it("a missing-accessCount keyword match still outranks a non-match (NaN would scramble the sort)", () => {
     // Pre-fix, Math.min(undefined,5)=NaN poisoned `score`; NaN comparisons in the
     // sort dropped entries to insertion order, so a clear match could sink.
-    const match = e({ id: "match", title: "fullscreen crash", entities: ["X"] });
+    const match = e({ id: "match", title: "auth crash", entities: ["X"] });
     delete (match as unknown as Record<string, unknown>).accessCount;
     const nomatch = e({ id: "nomatch", title: "totally unrelated topic" });
-    const r = scoreMemories([nomatch, match], Q({ text: "fullscreen crash" }));
+    const r = scoreMemories([nomatch, match], Q({ text: "auth crash" }));
     expect(r[0].entry.id).toBe("match");
     for (const s of r) expect(Number.isFinite(s.score)).toBe(true);
   });
