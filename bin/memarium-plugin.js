@@ -14551,13 +14551,26 @@ function normalizeRel(p2) {
   return p2.split("\\").join("/");
 }
 function readMemoryBody(abs) {
+  let md;
   try {
-    const md = readFileSync9(abs, "utf8").replace(/\r\n/g, "\n");
-    const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
-    return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();
-  } catch {
-    return "";
+    md = readFileSync9(abs, "utf8").replace(/\r\n/g, "\n");
+  } catch (err) {
+    throw new Error(
+      `memory rewrite: cannot recover body from ${abs} \u2014 .md missing or unreadable (${err.message}); aborting so a metadata-only rewrite never destroys the entry body`
+    );
   }
+  if (!/^---\n[\s\S]*?\n---\n?/.test(md)) {
+    throw new Error(
+      `memory rewrite: cannot recover body from ${abs} \u2014 no valid frontmatter block; aborting so a metadata-only rewrite never clobbers the entry body`
+    );
+  }
+  const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
+  if (!/^\s*#[^\n]*/.test(afterFm)) {
+    throw new Error(
+      `memory rewrite: cannot recover body from ${abs} \u2014 no "# heading" after frontmatter; aborting so a metadata-only rewrite never clobbers the entry body`
+    );
+  }
+  return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();
 }
 function assertWritableMemoryTarget(repoPath, entry) {
   const memRoot = resolve2(join14(repoPath, "memory"));
@@ -14576,6 +14589,10 @@ function writeMemoryEntryFile(repoPath, entry) {
   entry.path = canonical;
   mkdirSync8(dirname4(abs), { recursive: true });
   writeFileSync7(abs, renderMemoryMarkdown(entry, body));
+}
+function assertMemoryBodyRecoverable(repoPath, entry) {
+  const canonical = assertWritableMemoryTarget(repoPath, entry);
+  readMemoryBody(resolve2(join14(repoPath, canonical)));
 }
 function applyMemoryItems(repoPath, items) {
   const idx = loadMemoryIndex(repoPath);
@@ -14923,7 +14940,7 @@ function isArchived(e) {
   return e.status === "archived";
 }
 function isEligible(e, q2) {
-  if (e.status === "superseded" || e.status === "archived") return false;
+  if (e.status === "superseded" || isArchived(e)) return false;
   if (e.validTo !== null && e.validTo <= q2.now) return false;
   if (q2.type && e.type !== q2.type) return false;
   if (e.scope === "global" || e.scope === "user") return true;
@@ -15090,7 +15107,7 @@ function num2(v, dflt) {
   return typeof v === "number" && isFinite(v) ? v : dflt;
 }
 function eligible(entries, type, project, now) {
-  return entries.filter((e) => e.status !== "superseded" && e.status !== "archived" && e.type === type).filter((e) => e.validTo === null || e.validTo > now).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted").sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
+  return entries.filter((e) => e.status !== "superseded" && !isArchived(e) && e.type === type).filter((e) => e.validTo === null || e.validTo > now).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted").sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
 }
 function section(title, all, max) {
   if (all.length === 0) return "";
@@ -15127,6 +15144,7 @@ var MAX_PER_SECTION, TENTATIVE_BELOW;
 var init_primer = __esm({
   "src/memory/primer.ts"() {
     "use strict";
+    init_score();
     MAX_PER_SECTION = 12;
     TENTATIVE_BELOW = 0.5;
   }
@@ -16805,7 +16823,7 @@ async function memoryArchiveCmd(opts) {
     if (e.type === "core" || e.status === "pinned" || e.status === "archived") continue;
     planned.push({ ...e, status: "archived", archivedAt: now, archivedReason: reason, updatedAt: now });
   }
-  for (const next of planned) assertWritableMemoryTarget(cfg.repoPath, next);
+  for (const next of planned) assertMemoryBodyRecoverable(cfg.repoPath, next);
   let archived = 0;
   for (const next of planned) {
     writeMemoryEntryFile(cfg.repoPath, next);
