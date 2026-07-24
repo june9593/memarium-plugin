@@ -135,4 +135,22 @@ describe("memoryUnarchiveCmd", () => {
     expect(readIndex().entries["semantic/p/c"].validTo).toBe(null);
     expect(out.join("\n")).not.toMatch(/cleared past validTo/);
   });
+
+  it("aborts (writes nothing) when the target's .md is MALFORMED — strict body recovery leaves index + .md unchanged", async () => {
+    seed();
+    // Corrupt the archived entry's .md: no frontmatter block, no `# heading`, so
+    // the body can't be recovered for the metadata-only rewrite. Unarchive MUST
+    // throw BEFORE writing rather than clobber the entry with a bodyless/nested
+    // document — leaving both the index and the (corrupt) .md byte-identical.
+    const badMd = "just some text, no frontmatter, no heading\n";
+    writeFileSync(join(repo, "memory/semantic/p/c.md"), badMd);
+    const idxBefore = readFileSync(idxPath(), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }))
+      .rejects.toThrow(/no valid frontmatter|no "# heading"|cannot recover body/i);
+
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);          // index unchanged
+    expect(readIndexStatus("semantic/p/c")).toBe("archived");         // still archived
+    expect(readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8")).toBe(badMd); // .md not rewritten
+  });
 });

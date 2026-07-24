@@ -41,7 +41,7 @@ export function isArchived(e: MemoryEntry): boolean {
 }
 
 function isEligible(e: MemoryEntry, q: MemoryQuery): boolean {
-  if (e.status === "superseded" || e.status === "archived") return false;
+  if (e.status === "superseded" || isArchived(e)) return false;
   if (e.validTo !== null && e.validTo <= q.now) return false;
   if (q.type && e.type !== q.type) return false;
   // scope: global/user always eligible; project-scoped only for the cwd project

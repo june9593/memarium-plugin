@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { memoryArchiveCmd } from "../../src/commands/memory-archive.js";
@@ -142,5 +142,35 @@ describe("memoryArchiveCmd", () => {
     expect(readFileSync(join(repo, "memory/semantic/p/good.md"), "utf8")).toBe(goodMd);
     expect(readMdField("semantic/p/good.md", "status")).toBe("active"); // never flipped to archived
     expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+  });
+
+  it("--apply aborts (writes nothing) when a planned entry's .md is MISSING — strict body recovery, all-or-nothing", async () => {
+    // A metadata-only archive rewrite re-renders frontmatter + the RECOVERED body.
+    // If the entry's .md is gone (store corruption), the body can't be recovered,
+    // so the strict reader must THROW during the whole-plan preflight — before any
+    // write — rather than clobber the entry with a bodyless document. The index
+    // stays untouched and no bodyless .md is created.
+    const base = {
+      confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+      validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+      supersedes: null, entities: [], trust: "trusted", originDevice: null,
+      accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+    };
+    const entries = {
+      "semantic/p/gone": { id: "semantic/p/gone", type: "semantic", scope: "project:p", project: "p",
+        title: "Missing md", summary: "s", path: "memory/semantic/p/gone.md", status: "active",
+        validTo: "2000-01-01", ...base },
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    // deliberately do NOT create memory/semantic/p/gone.md
+    const idxBefore = readFileSync(idxPath(), "utf8");
+
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).rejects.toThrow(/missing or unreadable|cannot recover body/i);
+
+    // all-or-nothing: index byte-identical, entry still active, no bodyless .md written
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+    expect(readIndexStatus("semantic/p/gone")).toBe("active");
+    expect(existsSync(join(repo, "memory/semantic/p/gone.md"))).toBe(false);
   });
 });

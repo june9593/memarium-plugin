@@ -15,18 +15,41 @@ function normalizeRel(p: string): string {
 }
 
 /** Recover a memory's body (the prose after the `# title` heading) from its
- *  persisted .md, so a metadata-only rewrite preserves content. Missing/garbled
- *  file → "" (the entry still gets a valid, if bodyless, .md). */
+ *  persisted .md, so a metadata-only rewrite (archive/unarchive) preserves
+ *  content. STRICT: this feeds `writeMemoryEntryFile`, which re-renders
+ *  frontmatter + this recovered body over the SAME file — so an inexact recovery
+ *  would destroy the entry. If the .md is missing/unreadable, or lacks BOTH a
+ *  valid frontmatter block (`---\n…\n---`) AND a `# heading`, THROW so the caller
+ *  aborts BEFORE any write — never clobbering the entry with a bodyless/nested
+ *  document, and never hiding store corruption. (The lint reader in
+ *  memory-lint.ts keeps its own lenient copy: it only scans, it never rewrites.) */
 function readMemoryBody(abs: string): string {
+  let md: string;
   try {
     // Normalize CRLF first (Windows checkouts), matching parseMemoryMarkdown's
-    // idiom. Without this the `^---\n...\n---` strip won't match a CRLF file, so
-    // the whole old frontmatter + "# Title" heading would leak into the new body
-    // on an archive/unarchive metadata rewrite.
-    const md = readFileSync(abs, "utf8").replace(/\r\n/g, "\n");
-    const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, ""); // drop frontmatter
-    return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();       // drop the leading "# Title" heading
-  } catch { return ""; }
+    // idiom — without it the `^---\n...\n---` strip won't match a CRLF file, so
+    // the whole old frontmatter + "# Title" heading would leak into the new body.
+    md = readFileSync(abs, "utf8").replace(/\r\n/g, "\n");
+  } catch (err) {
+    throw new Error(
+      `memory rewrite: cannot recover body from ${abs} — .md missing or unreadable ` +
+      `(${(err as Error).message}); aborting so a metadata-only rewrite never destroys the entry body`,
+    );
+  }
+  if (!/^---\n[\s\S]*?\n---\n?/.test(md)) {
+    throw new Error(
+      `memory rewrite: cannot recover body from ${abs} — no valid frontmatter block; ` +
+      `aborting so a metadata-only rewrite never clobbers the entry body`,
+    );
+  }
+  const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, ""); // drop frontmatter
+  if (!/^\s*#[^\n]*/.test(afterFm)) {
+    throw new Error(
+      `memory rewrite: cannot recover body from ${abs} — no "# heading" after frontmatter; ` +
+      `aborting so a metadata-only rewrite never clobbers the entry body`,
+    );
+  }
+  return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();       // drop the leading "# Title" heading
 }
 
 /** Preflight-only guard for a metadata-only rewrite: derive the CANONICAL path
@@ -63,10 +86,23 @@ export function assertWritableMemoryTarget(repoPath: string, entry: MemoryEntry)
 export function writeMemoryEntryFile(repoPath: string, entry: MemoryEntry): void {
   const canonical = assertWritableMemoryTarget(repoPath, entry);
   const abs = resolve(join(repoPath, canonical));
-  const body = readMemoryBody(abs);
+  const body = readMemoryBody(abs); // strict: throws (aborts) on a missing/corrupt .md
   entry.path = canonical;
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, renderMemoryMarkdown(entry, body));
+}
+
+/** Whole-plan preflight for a BATCH metadata-only rewrite (memory-archive
+ *  --apply): assert the entry's canonical path is safe (via
+ *  assertWritableMemoryTarget) AND that its existing body is recoverable —
+ *  WITHOUT writing anything. Reuses the SAME strict reader writeMemoryEntryFile
+ *  uses, so a mid-batch corrupt/missing .md aborts BEFORE the first write (index
+ *  never saved, no .md rewritten) — the same all-or-nothing discipline the path
+ *  preflight already enforces, extended to body recovery so a bodyless rewrite
+ *  can't land on any earlier entry. */
+export function assertMemoryBodyRecoverable(repoPath: string, entry: MemoryEntry): void {
+  const canonical = assertWritableMemoryTarget(repoPath, entry);
+  readMemoryBody(resolve(join(repoPath, canonical))); // throws on missing/corrupt md
 }
 
 interface PlannedItem {

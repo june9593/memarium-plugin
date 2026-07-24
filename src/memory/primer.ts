@@ -1,4 +1,5 @@
 import type { MemoryEntry, MemoryType } from "./types.js";
+import { isArchived } from "./score.js";
 
 /** Per-section entry cap so a huge project can't blow the session-start token
  *  budget. Sections render their top-N; the overflow is surfaced (not silent). */
@@ -18,7 +19,7 @@ function num(v: unknown, dflt: number): number {
  *  solid one near the truncation cap (issues #19/#21). */
 function eligible(entries: MemoryEntry[], type: MemoryType, project: string, now: string): MemoryEntry[] {
   return entries
-    .filter((e) => e.status !== "superseded" && e.status !== "archived" && e.type === type)
+    .filter((e) => e.status !== "superseded" && !isArchived(e) && e.type === type)
     .filter((e) => e.validTo === null || e.validTo > now)
     .filter((e) => e.scope === "global" || e.scope === "user" || e.project === project)
     // Trust gate (#23): only `trusted` semantic auto-injects into the primer.

@@ -3,7 +3,7 @@ import { loadMemoryIndex, saveMemoryIndex } from "../memory/index-store.js";
 import { loadUsage } from "../memory/usage-store.js";
 import { planArchival, ARCHIVE_DEFAULTS } from "../memory/archive.js";
 import { loadKnownSessions } from "../memory/known-sessions.js";
-import { writeMemoryEntryFile, assertWritableMemoryTarget } from "../memory/apply.js";
+import { writeMemoryEntryFile, assertMemoryBodyRecoverable } from "../memory/apply.js";
 import type { MemoryEntry } from "../memory/types.js";
 
 export interface MemoryArchiveOptions {
@@ -53,11 +53,12 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
 
   // Whole-plan PREFLIGHT before the first write (matches applyMemoryItems'
   // discipline): validate every planned target's canonical path + symlink guard
-  // up front, so a later row with an invalid canonical path / symlinked
-  // component can't leave earlier .md already rewritten while saveMemoryIndex is
-  // never reached — which would desync the files from the index. Throws here,
-  // before any write, on the first bad target.
-  for (const next of planned) assertWritableMemoryTarget(cfg.repoPath, next);
+  // AND that its existing body is recoverable, up front — so a later row with an
+  // invalid canonical path / symlinked component / missing-or-corrupt .md can't
+  // leave earlier .md already rewritten while saveMemoryIndex is never reached
+  // (which would desync the files from the index, or clobber an entry with a
+  // bodyless document). Throws here, before any write, on the first bad target.
+  for (const next of planned) assertMemoryBodyRecoverable(cfg.repoPath, next);
 
   // Write phase — every target validated above.
   let archived = 0;
