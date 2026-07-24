@@ -14550,7 +14550,7 @@ import { dirname as dirname4, join as join14, resolve as resolve2, sep as sep2 }
 function normalizeRel(p2) {
   return p2.split("\\").join("/");
 }
-function readMemoryBody(abs) {
+function readMemoryBody(abs, expect) {
   let md;
   try {
     md = readFileSync9(abs, "utf8").replace(/\r\n/g, "\n");
@@ -14559,9 +14559,23 @@ function readMemoryBody(abs) {
       `memory rewrite: cannot recover body from ${abs} \u2014 .md missing or unreadable (${err.message}); aborting so a metadata-only rewrite never destroys the entry body`
     );
   }
-  if (!/^---\n[\s\S]*?\n---\n?/.test(md)) {
+  const fmMatch = md.match(/^---\n([\s\S]*?)\n---\n?/);
+  if (!fmMatch) {
     throw new Error(
       `memory rewrite: cannot recover body from ${abs} \u2014 no valid frontmatter block; aborting so a metadata-only rewrite never clobbers the entry body`
+    );
+  }
+  const fm = fmMatch[1];
+  const persistedId = (fm.match(/^id:[ \t]*(.*)$/m)?.[1] ?? "").trim();
+  if (persistedId !== expect.id) {
+    throw new Error(
+      `memory rewrite: identity mismatch at ${abs} \u2014 persisted id ${JSON.stringify(persistedId)} != entry id ${JSON.stringify(expect.id)} (a different entry's .md sits at this canonical path); aborting so the rewrite never clobbers another entry's record`
+    );
+  }
+  const persistedType = fm.match(/^type:[ \t]*(.*)$/m)?.[1]?.trim();
+  if (persistedType !== void 0 && persistedType !== "" && persistedType !== expect.type) {
+    throw new Error(
+      `memory rewrite: identity mismatch at ${abs} \u2014 persisted type ${JSON.stringify(persistedType)} != entry type ${JSON.stringify(expect.type)}; aborting so the rewrite never clobbers another entry's record`
     );
   }
   const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
@@ -14585,14 +14599,14 @@ function assertWritableMemoryTarget(repoPath, entry) {
 function writeMemoryEntryFile(repoPath, entry) {
   const canonical = assertWritableMemoryTarget(repoPath, entry);
   const abs = resolve2(join14(repoPath, canonical));
-  const body = readMemoryBody(abs);
+  const body = readMemoryBody(abs, { id: entry.id, type: entry.type });
   entry.path = canonical;
   mkdirSync8(dirname4(abs), { recursive: true });
   writeFileSync7(abs, renderMemoryMarkdown(entry, body));
 }
 function assertMemoryBodyRecoverable(repoPath, entry) {
   const canonical = assertWritableMemoryTarget(repoPath, entry);
-  readMemoryBody(resolve2(join14(repoPath, canonical)));
+  readMemoryBody(resolve2(join14(repoPath, canonical)), { id: entry.id, type: entry.type });
 }
 function applyMemoryItems(repoPath, items) {
   const idx = loadMemoryIndex(repoPath);
@@ -16754,14 +16768,6 @@ function planArchival(entries, usage, opts) {
   const pick2 = (id, reason) => {
     if (!chosen.has(id)) chosen.set(id, reason);
   };
-  const byId = new Map(entries.map((e) => [e.id, e]));
-  for (const [a, b2] of nearDuplicatePairs(entries)) {
-    const ea = byId.get(a), eb = byId.get(b2);
-    if (!ea || !eb) continue;
-    const loser = ea.importance !== eb.importance ? ea.importance < eb.importance ? ea : eb : Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb;
-    const winner = loser === ea ? eb : ea;
-    if (archivable(loser)) pick2(loser.id, `near-duplicate-of:${winner.id}`);
-  }
   for (const e of entries) {
     if (!archivable(e)) continue;
     if (e.status === "superseded") {
@@ -16785,6 +16791,15 @@ function planArchival(entries, usage, opts) {
       pick2(e.id, "unused-low-value");
       continue;
     }
+  }
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  for (const [a, b2] of nearDuplicatePairs(entries)) {
+    const ea = byId.get(a), eb = byId.get(b2);
+    if (!ea || !eb) continue;
+    const loser = ea.importance !== eb.importance ? ea.importance < eb.importance ? ea : eb : Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb;
+    const winner = loser === ea ? eb : ea;
+    if (chosen.has(winner.id)) continue;
+    if (archivable(loser)) chosen.set(loser.id, `near-duplicate-of:${winner.id}`);
   }
   return { archive: [...chosen].map(([id, reason]) => ({ id, reason })) };
 }
@@ -16814,10 +16829,17 @@ async function memoryArchiveCmd(opts) {
     console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
   }
   const view = resolveMemoryView(cfg.repoPath);
-  const localWinners = entries.filter((e) => (view.sources[e.id] ?? "local") === "local");
+  const overlayEntries = view.roots.overlay ? loadMemoryIndex(view.roots.overlay).entries : {};
+  const inCrossDeviceConflict = (e) => {
+    const ov = overlayEntries[e.id];
+    if (!ov || typeof ov !== "object" || Array.isArray(ov)) return false;
+    const ovUpdated = ov.updatedAt ?? "";
+    return ovUpdated >= (e.updatedAt ?? "");
+  };
+  const localWinners = entries.filter((e) => !inCrossDeviceConflict(e));
   const skippedOverlay = entries.length - localWinners.length;
   if (skippedOverlay > 0) {
-    console.warn(`memory-archive: skipped ${skippedOverlay} id(s) with a newer active copy on another device`);
+    console.warn(`memory-archive: skipped ${skippedOverlay} id(s) in a cross-device conflict (a sibling holds a same-day-or-newer copy)`);
   }
   const plan = planArchival(localWinners, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });
   if (!opts.apply) {
