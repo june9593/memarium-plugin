@@ -1,12 +1,29 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
-import { scoreMemories, type ScoredMemory } from "../memory/score.js";
+import { scoreMemories, scoreArchived, type ScoredMemory } from "../memory/score.js";
 import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
 import { renderPrimer } from "../memory/primer.js";
-import type { MemoryType } from "../memory/types.js";
+import type { MemoryEntry, MemoryType } from "../memory/types.js";
 
 export interface MemoryQueryOptions { cwd?: string; type?: string; q?: string; }
+
+/** One read-only "cold storage" hit — a strongly-matching ARCHIVED entry
+ *  surfaced by the R2 resurrect valve. Restore with `memory-unarchive <id>`. */
+export interface ColdStorageHit { id: string; title: string; score: number; archivedReason: string | null; }
+
+export interface MemoryQueryResult {
+  project: string | null;
+  primer: string;
+  core: ScoredMemory[];
+  procedures: ScoredMemory[];
+  semantic: ScoredMemory[];
+  untrustedSemantic: ScoredMemory[];
+  episodes: ScoredMemory[];
+  conflicts: { entry: MemoryEntry; score: number; whyRecalled: string }[];
+  coldStorage: ColdStorageHit[];
+  meta: { total: number; project: string | null };
+}
 
 function isType(s: string | undefined): MemoryType | null {
   const ok = ["core", "semantic", "episodic", "procedural"];
@@ -18,9 +35,28 @@ function isType(s: string | undefined): MemoryType | null {
 // baseline entries would let an unrelated query (e.g. "kubernetes helm") slowly
 // inflate high-importance memories and poison local preference.
 const CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
+const isContentHit = (s: ScoredMemory): boolean =>
+  CONTENT_HIT_MARKERS.some((m) => s.whyRecalled.includes(m));
 const BUMP_TOP_N = 5;
 
-export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
+// R2 "resurrect valve" — when the ACTIVE recall has few content-matched hits,
+// surface strongly-matching ARCHIVED entries in a read-only cold-storage
+// section so aggressive auto-archival stays reversible. NO write on this path.
+const COLD_FLOOR = 3;        // fire only when fewer than this many active content hits clear the floor…
+const COLD_TOP_K = 3;        // …surface up to this many archived matches…
+const COLD_SCORE_FLOOR = 2;  // …each of which must be a content match clearing this score.
+
+// Project/scope eligibility — the SAME scope rule scoreMemories' isEligible
+// applies to the primary pass. scoreArchived filters ONLY on status==="archived"
+// (not scope), so cold-storage results must be scope-filtered here or they'd
+// leak OTHER projects' archived memory into this project's recall.
+function inScope(e: MemoryEntry, project: string | null): boolean {
+  if (e.scope === "global" || e.scope === "user") return true;
+  if (project && e.scope === `project:${project}`) return true;
+  return project === null;
+}
+
+export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQueryResult> {
   const cfg = readPluginConfig();
   const cwd = opts.cwd ?? process.cwd();
   const project = resolveProjectFromCwd(cwd, cfg.repoPath);
@@ -38,9 +74,10 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
   const usage = loadUsage(cfg.repoPath);
   overlayUsage(entries, usage);
 
-  const scored = scoreMemories(entries, {
+  const scoreQuery = {
     project, text: opts.q ?? "", type: isType(opts.type), now,
-  });
+  };
+  const scored = scoreMemories(entries, scoreQuery);
 
   const byType = (t: MemoryType): ScoredMemory[] => scored.filter((s) => s.entry.type === t);
 
@@ -71,7 +108,24 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
   const semanticAll = byType("semantic");
   const isTrusted = (s: ScoredMemory): boolean => (s.entry.trust ?? "unknown") === "trusted";
 
-  const payload = {
+  // R2 resurrect valve (READ ONLY): if the active recall produced few
+  // content-matched hits (baseline scope/importance hits don't count — the whole
+  // point is "the live memory doesn't answer this query"), surface the top
+  // strongly-matching ARCHIVED entries. scoreArchived filters ONLY on archived
+  // status, so we scope-filter to the query's project (same as the primary pass)
+  // to avoid leaking other projects' archived memory, then keep content matches
+  // clearing the floor. NEVER writes/mutates status here.
+  const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
+  let coldStorage: ColdStorageHit[] = [];
+  if (strongPrimary < COLD_FLOOR && (opts.q ?? "").trim() !== "") {
+    coldStorage = scoreArchived(entries, scoreQuery)
+      .filter((s) => inScope(s.entry, project))
+      .filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR)
+      .slice(0, COLD_TOP_K)
+      .map((s) => ({ id: s.entry.id, title: s.entry.title, score: s.score, archivedReason: s.entry.archivedReason }));
+  }
+
+  const payload: MemoryQueryResult = {
     project,
     primer,
     core: byType("core"),
@@ -80,9 +134,17 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
     untrustedSemantic: semanticAll.filter((s) => !isTrusted(s)),
     episodes: byType("episodic"),
     conflicts,
+    coldStorage,
     meta: { total: scored.length, project },
   };
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+
+  // Human hint for cold storage → stderr, so the JSON on stdout stays a clean
+  // machine payload for the skill (memory-query is consumed as JSON).
+  if (coldStorage.length) {
+    console.error(`\n❄️ ${coldStorage.length} archived also matched — memory-unarchive <id> to restore:`);
+    for (const c of coldStorage) console.error(`  ${c.id}  (${c.archivedReason})  — ${c.title}`);
+  }
 
   // BUMP (the ONLY write side effect) — only on a real recall: non-empty query
   // AND a content hit. Take the top BUMP_TOP_N content-hit, finite-scored
@@ -93,11 +155,13 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
   if ((opts.q ?? "").trim() !== "") {
     try {
       const bumpIds = scored
-        .filter((s) => Number.isFinite(s.score) && CONTENT_HIT_MARKERS.some((m) => s.whyRecalled.includes(m)))
+        .filter((s) => Number.isFinite(s.score) && isContentHit(s))
         .slice(0, BUMP_TOP_N)
         .map((s) => s.entry.id);
       bumpUsage(cfg.repoPath, bumpIds, now);
     } catch { /* usage is non-essential telemetry; never fail a recall over it */ }
   }
+
+  return payload;
 }
 
