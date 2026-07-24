@@ -14375,6 +14375,8 @@ function renderMemoryMarkdown(entry, body) {
     `validTo: ${nullable(entry.validTo)}`,
     `supersedes: ${nullable(entry.supersedes)}`,
     `originDevice: ${nullable(entry.originDevice)}`,
+    `archivedAt: ${nullable(entry.archivedAt)}`,
+    `archivedReason: ${nullable(entry.archivedReason)}`,
     `sourceSessions: ${arr(entry.sourceSessions)}`,
     `sourceCommits: ${arr(entry.sourceCommits)}`,
     `sourceFiles: ${arr(entry.sourceFiles)}`,
@@ -14548,6 +14550,28 @@ import { dirname as dirname4, join as join14, resolve as resolve2, sep as sep2 }
 function normalizeRel(p2) {
   return p2.split("\\").join("/");
 }
+function readMemoryBody(abs) {
+  try {
+    const md = readFileSync9(abs, "utf8");
+    const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
+    return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();
+  } catch {
+    return "";
+  }
+}
+function writeMemoryEntryFile(repoPath, entry) {
+  const memRoot = resolve2(join14(repoPath, "memory"));
+  const canonical = canonicalMemoryPath(entry);
+  const abs = resolve2(join14(repoPath, canonical));
+  if (abs !== memRoot && !abs.startsWith(memRoot + sep2)) {
+    throw new Error(`memory write: refusing to write outside memory/: ${canonical}`);
+  }
+  assertNoSymlinkedComponent(repoPath, abs, "memory write");
+  const body = readMemoryBody(abs);
+  entry.path = canonical;
+  mkdirSync8(dirname4(abs), { recursive: true });
+  writeFileSync7(abs, renderMemoryMarkdown(entry, body));
+}
 function applyMemoryItems(repoPath, items) {
   const idx = loadMemoryIndex(repoPath);
   assertNoBlockingLeak(
@@ -14611,6 +14635,8 @@ function applyMemoryItems(repoPath, items) {
     if (entry.validTo === void 0) entry.validTo = null;
     if (entry.originDevice === void 0) entry.originDevice = null;
     if (entry.project === void 0) entry.project = null;
+    if (entry.archivedAt === void 0) entry.archivedAt = null;
+    if (entry.archivedReason === void 0) entry.archivedReason = null;
     if (typeof entry.confidence !== "number" || !isFinite(entry.confidence)) entry.confidence = 0.5;
     if (typeof entry.importance !== "number" || !isFinite(entry.importance)) entry.importance = 0;
     if (typeof entry.summary !== "string") entry.summary = "";
@@ -14756,7 +14782,9 @@ function parseMemoryMarkdown(md) {
     trust,
     originDevice: parseScalar(fm.originDevice ?? "null"),
     accessCount: 0,
-    lastAccess: null
+    lastAccess: null,
+    archivedAt: parseScalar(fm.archivedAt ?? "null"),
+    archivedReason: parseScalar(fm.archivedReason ?? "null")
   };
 }
 var init_parse = __esm({
@@ -14886,8 +14914,11 @@ function tokenize(s) {
 function num(v, dflt = 0) {
   return typeof v === "number" && isFinite(v) ? v : dflt;
 }
+function isArchived(e) {
+  return e.status === "archived";
+}
 function isEligible(e, q2) {
-  if (e.status === "superseded") return false;
+  if (e.status === "superseded" || e.status === "archived") return false;
   if (e.validTo !== null && e.validTo <= q2.now) return false;
   if (q2.type && e.type !== q2.type) return false;
   if (e.scope === "global" || e.scope === "user") return true;
@@ -14895,10 +14926,15 @@ function isEligible(e, q2) {
   return q2.project === null;
 }
 function scoreMemories(entries, q2) {
+  return rankMemories(entries.filter((e) => isEligible(e, q2)), q2);
+}
+function scoreArchived(entries, q2) {
+  return rankMemories(entries.filter(isArchived), q2);
+}
+function rankMemories(list, q2) {
   const qTokens = new Set(tokenize(q2.text));
   const out = [];
-  for (const e of entries) {
-    if (!isEligible(e, q2)) continue;
+  for (const e of list) {
     let score = 0;
     const why = [];
     if (qTokens.size > 0) {
@@ -15049,7 +15085,7 @@ function num2(v, dflt) {
   return typeof v === "number" && isFinite(v) ? v : dflt;
 }
 function eligible(entries, type, project, now) {
-  return entries.filter((e) => e.status !== "superseded" && e.type === type).filter((e) => e.validTo === null || e.validTo > now).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted").sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
+  return entries.filter((e) => e.status !== "superseded" && e.status !== "archived" && e.type === type).filter((e) => e.validTo === null || e.validTo > now).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted").sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
 }
 function section(title, all, max) {
   if (all.length === 0) return "";
@@ -15100,6 +15136,11 @@ function isType(s) {
   const ok = ["core", "semantic", "episodic", "procedural"];
   return s && ok.includes(s) ? s : null;
 }
+function inScope(e, project) {
+  if (e.scope === "global" || e.scope === "user") return true;
+  if (project && e.scope === `project:${project}`) return true;
+  return project === null;
+}
 async function memoryQueryCmd(opts) {
   const cfg = readPluginConfig();
   const cwd = opts.cwd ?? process.cwd();
@@ -15109,24 +15150,30 @@ async function memoryQueryCmd(opts) {
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const usage = loadUsage(cfg.repoPath);
   overlayUsage(entries, usage);
-  const scored = scoreMemories(entries, {
+  const scoreQuery = {
     project,
     text: opts.q ?? "",
     type: isType(opts.type),
     now
-  });
+  };
+  const scored = scoreMemories(entries, scoreQuery);
   const byType = (t2) => scored.filter((s) => s.entry.type === t2);
   let primer = "";
   if (project) {
     primer = renderPrimer(project, entries);
   }
-  const conflicts2 = entries.filter((e) => e.status === "superseded" || e.supersedes !== null || e.validTo !== null).map((e) => ({
+  const conflicts2 = entries.filter((e) => !isArchived(e) && (e.status === "superseded" || e.supersedes !== null || e.validTo !== null)).map((e) => ({
     entry: e,
     score: 0,
     whyRecalled: e.status === "superseded" ? "superseded" : e.supersedes !== null ? "supersedes-other" : "time-bounded"
   }));
   const semanticAll = byType("semantic");
   const isTrusted = (s) => (s.entry.trust ?? "unknown") === "trusted";
+  const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
+  let coldStorage = [];
+  if (strongPrimary < COLD_FLOOR && (opts.q ?? "").trim() !== "") {
+    coldStorage = scoreArchived(entries, scoreQuery).filter((s) => inScope(s.entry, project)).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => ({ id: s.entry.id, title: s.entry.title, score: s.score, archivedReason: s.entry.archivedReason }));
+  }
   const payload = {
     project,
     primer,
@@ -15136,18 +15183,25 @@ async function memoryQueryCmd(opts) {
     untrustedSemantic: semanticAll.filter((s) => !isTrusted(s)),
     episodes: byType("episodic"),
     conflicts: conflicts2,
+    coldStorage,
     meta: { total: scored.length, project }
   };
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+  if (coldStorage.length) {
+    console.error(`
+\u2744\uFE0F ${coldStorage.length} archived also matched \u2014 memory-unarchive <id> to restore:`);
+    for (const c3 of coldStorage) console.error(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}`);
+  }
   if ((opts.q ?? "").trim() !== "") {
     try {
-      const bumpIds = scored.filter((s) => Number.isFinite(s.score) && CONTENT_HIT_MARKERS.some((m) => s.whyRecalled.includes(m))).slice(0, BUMP_TOP_N).map((s) => s.entry.id);
+      const bumpIds = scored.filter((s) => Number.isFinite(s.score) && isContentHit(s)).slice(0, BUMP_TOP_N).map((s) => s.entry.id);
       bumpUsage(cfg.repoPath, bumpIds, now);
     } catch {
     }
   }
+  return payload;
 }
-var CONTENT_HIT_MARKERS, BUMP_TOP_N;
+var CONTENT_HIT_MARKERS, isContentHit, BUMP_TOP_N, COLD_FLOOR, COLD_TOP_K, COLD_SCORE_FLOOR;
 var init_memory_query = __esm({
   "src/commands/memory-query.ts"() {
     "use strict";
@@ -15158,7 +15212,11 @@ var init_memory_query = __esm({
     init_usage_store();
     init_primer();
     CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
+    isContentHit = (s) => CONTENT_HIT_MARKERS.some((m) => s.whyRecalled.includes(m));
     BUMP_TOP_N = 5;
+    COLD_FLOOR = 3;
+    COLD_TOP_K = 3;
+    COLD_SCORE_FLOOR = 2;
   }
 });
 
@@ -15575,6 +15633,7 @@ function isKind(s) {
 }
 function isEligibleMemory(m, now, project) {
   if (m.status === "superseded") return false;
+  if (isArchived(m)) return false;
   if (m.validTo !== null && m.validTo <= now) return false;
   if (m.scope === "global" || m.scope === "user") return true;
   if (project && m.scope === `project:${project}`) return true;
@@ -15649,6 +15708,7 @@ var init_entity_query = __esm({
     init_index_store4();
     init_score2();
     init_index_store2();
+    init_score();
   }
 });
 
@@ -16086,17 +16146,42 @@ function validEntryExists(rec, id) {
   const v = rec[id];
   return v !== null && typeof v === "object" && !Array.isArray(v) && v.id === id;
 }
-function inScope(scope, cwdProject) {
+function inScope2(scope, cwdProject) {
   if (typeof scope !== "string") return cwdProject === null;
   if (cwdProject === null) return true;
   if (scope === "global" || scope === "user") return true;
   const scopeProject = scope.startsWith("project:") ? scope.slice("project:".length) : null;
   return scopeProject === cwdProject;
 }
+function nearDuplicatePairs(entries, threshold = 0.8) {
+  const active = entries.filter((e) => e.status === "active");
+  const buckets = /* @__PURE__ */ new Map();
+  for (const e of active) {
+    const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
+    const arr4 = buckets.get(key) ?? [];
+    arr4.push({ e, tokens: tokenize4(`${e.title} ${e.summary}`) });
+    buckets.set(key, arr4);
+  }
+  const pairs = [];
+  for (const group of buckets.values()) {
+    for (let i2 = 0; i2 < group.length; i2++) {
+      for (let j2 = i2 + 1; j2 < group.length; j2++) {
+        try {
+          if (jaccard(group[i2].tokens, group[j2].tokens) >= threshold) {
+            const pair = [group[i2].e.id, group[j2].e.id].slice().sort();
+            pairs.push(pair);
+          }
+        } catch {
+        }
+      }
+    }
+  }
+  return pairs;
+}
 function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   const issues = [];
   const suggestions = [];
-  const memEntries = safeValues(memoryIdx.entries).filter((e) => inScope(e.scope, opts.project));
+  const memEntries = safeValues(memoryIdx.entries).filter((e) => inScope2(e.scope, opts.project));
   for (const e of memEntries) {
     try {
       if (e.status === "active" && e.validTo !== null) {
@@ -16208,35 +16293,20 @@ ${e.summary}`)) {
   }
   const dupThreshold = opts.dupThreshold ?? 0.6;
   const active = memEntries.filter((e) => e.status === "active");
-  const buckets = /* @__PURE__ */ new Map();
-  for (const e of active) {
-    const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
-    const arr4 = buckets.get(key) ?? [];
-    arr4.push({ e, tokens: tokenize4(`${e.title} ${e.summary}`) });
-    buckets.set(key, arr4);
+  const tokensById = new Map(active.map((e) => [e.id, tokenize4(`${e.title} ${e.summary}`)]));
+  for (const [id0, id1] of nearDuplicatePairs(active, dupThreshold)) {
+    const ta = tokensById.get(id0), tb = tokensById.get(id1);
+    const sim = ta && tb ? jaccard(ta, tb) : NaN;
+    issues.push({
+      check: "duplicate-like",
+      severity: "info",
+      layer: "memory",
+      id: id0,
+      detail: `near-duplicate of ${id1} (overlap ${sim.toFixed(2)})`,
+      refs: [id0, id1]
+    });
   }
-  for (const group of buckets.values()) {
-    for (let i2 = 0; i2 < group.length; i2++) {
-      for (let j2 = i2 + 1; j2 < group.length; j2++) {
-        try {
-          const sim = jaccard(group[i2].tokens, group[j2].tokens);
-          if (sim >= dupThreshold) {
-            const pair = [group[i2].e.id, group[j2].e.id].slice().sort();
-            issues.push({
-              check: "duplicate-like",
-              severity: "info",
-              layer: "memory",
-              id: pair[0],
-              detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`,
-              refs: pair
-            });
-          }
-        } catch {
-        }
-      }
-    }
-  }
-  const entEntries = safeValues(entityIdx.entries).filter((e) => inScope(e.scope, opts.project));
+  const entEntries = safeValues(entityIdx.entries).filter((e) => inScope2(e.scope, opts.project));
   for (const e of entEntries) {
     try {
       if (Array.isArray(e.sourceMemoryIds)) {
@@ -16280,7 +16350,7 @@ ${e.summary}`)) {
       });
     }
   }
-  const qaEntries = safeValues(qaIdx.entries).filter((e) => inScope(e.scope, opts.project));
+  const qaEntries = safeValues(qaIdx.entries).filter((e) => inScope2(e.scope, opts.project));
   for (const e of qaEntries) {
     try {
       if (Array.isArray(e.sourceMemoryIds)) {
@@ -16383,6 +16453,29 @@ var init_lint = __esm({
       return inter / (a.size + b2.size - inter);
     };
     daysBetween = (a, b2) => (Date.parse(a) - Date.parse(b2)) / 864e5;
+  }
+});
+
+// src/memory/known-sessions.ts
+function loadKnownSessions(repoPath) {
+  try {
+    const spool = loadIndex(repoPath);
+    const pairs = Object.entries(spool.entries);
+    const wellFormed = pairs.length > 0 && pairs.every(([key, ent]) => {
+      const e2 = ent;
+      return typeof e2.sessionId === "string" && e2.sessionId.length > 0 && typeof e2.tool === "string" && KNOWN_TOOLS.has(e2.tool) && key === `${e2.tool}:${e2.sessionId}`;
+    });
+    return wellFormed ? new Set(pairs.map(([, ent]) => ent.sessionId)) : void 0;
+  } catch {
+    return void 0;
+  }
+}
+var KNOWN_TOOLS;
+var init_known_sessions = __esm({
+  "src/memory/known-sessions.ts"() {
+    "use strict";
+    init_index_store();
+    KNOWN_TOOLS = /* @__PURE__ */ new Set(["claude", "copilot"]);
   }
 });
 
@@ -16565,18 +16658,7 @@ async function memoryLintCmd(opts) {
     }
   }
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  let knownSessions;
-  try {
-    const spool = loadIndex(cfg.repoPath);
-    const pairs = Object.entries(spool.entries);
-    const wellFormed = pairs.length > 0 && pairs.every(([key, ent]) => {
-      const e2 = ent;
-      return typeof e2.sessionId === "string" && e2.sessionId.length > 0 && typeof e2.tool === "string" && KNOWN_TOOLS.has(e2.tool) && key === `${e2.tool}:${e2.sessionId}`;
-    });
-    knownSessions = wellFormed ? new Set(pairs.map(([, ent]) => ent.sessionId)) : void 0;
-  } catch {
-    knownSessions = void 0;
-  }
+  const knownSessions = loadKnownSessions(cfg.repoPath);
   const m = readIndexOnce(cfg.repoPath, MEMORY_INDEX_REL, "memory", emptyMemoryIndex());
   const e = readIndexOnce(cfg.repoPath, ENTITY_INDEX_REL, "entity", emptyEntityIndex());
   const q2 = readIndexOnce(cfg.repoPath, QA_INDEX_REL, "qa", emptyQaIndex());
@@ -16599,13 +16681,11 @@ ${fixed.length} staleness fix(es) queued as proposals \u2014 review with \`memor
     process.stdout.write(out);
   }
 }
-var KNOWN_TOOLS;
 var init_memory_lint = __esm({
   "src/commands/memory-lint.ts"() {
     "use strict";
     init_plugin_config();
     init_project_resolve();
-    init_index_store();
     init_index_store2();
     init_index_store4();
     init_index_store3();
@@ -16613,9 +16693,150 @@ var init_memory_lint = __esm({
     init_types4();
     init_types3();
     init_lint();
+    init_known_sessions();
     init_proposal_store();
     init_gate();
-    KNOWN_TOOLS = /* @__PURE__ */ new Set(["claude", "copilot"]);
+  }
+});
+
+// src/memory/archive.ts
+function daysBetween2(now, then) {
+  const a = Date.parse(now), b2 = Date.parse(then);
+  if (!isFinite(a) || !isFinite(b2)) return NaN;
+  return (a - b2) / 864e5;
+}
+function archivable(e) {
+  return e.type !== "core" && e.status !== "pinned" && e.status !== "archived";
+}
+function planArchival(entries, usage, opts) {
+  const chosen = /* @__PURE__ */ new Map();
+  const pick2 = (id, reason) => {
+    if (!chosen.has(id)) chosen.set(id, reason);
+  };
+  for (const [a, b2] of nearDuplicatePairs(entries)) {
+    const ea = entries.find((x2) => x2.id === a), eb = entries.find((x2) => x2.id === b2);
+    if (!ea || !eb) continue;
+    const loser = ea.importance !== eb.importance ? ea.importance < eb.importance ? ea : eb : Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb;
+    const winner = loser === ea ? eb : ea;
+    if (archivable(loser)) pick2(loser.id, `near-duplicate-of:${winner.id}`);
+  }
+  for (const e of entries) {
+    if (!archivable(e)) continue;
+    if (e.status === "superseded") {
+      pick2(e.id, "superseded-cleanup");
+      continue;
+    }
+    if (e.validTo !== null && e.validTo <= opts.now) {
+      pick2(e.id, "expired");
+      continue;
+    }
+    if (e.type === "episodic" && daysBetween2(opts.now, e.updatedAt) > opts.episodicMaxAgeDays) {
+      pick2(e.id, `stale-episodic:>${opts.episodicMaxAgeDays}d`);
+      continue;
+    }
+    if (opts.knownSessions !== void 0 && e.sourceSessions.length > 0 && e.sourceSessions.every((s) => !opts.knownSessions.has(s))) {
+      pick2(e.id, "stale-provenance");
+      continue;
+    }
+    const count = usage[e.id]?.count ?? e.accessCount ?? 0;
+    if ((e.type === "semantic" || e.type === "procedural") && count === 0 && e.importance <= opts.unusedMaxImportance && daysBetween2(opts.now, e.updatedAt) > opts.unusedMinAgeDays) {
+      pick2(e.id, "unused-low-value");
+      continue;
+    }
+  }
+  return { archive: [...chosen].map(([id, reason]) => ({ id, reason })) };
+}
+var ARCHIVE_DEFAULTS;
+var init_archive = __esm({
+  "src/memory/archive.ts"() {
+    "use strict";
+    init_lint();
+    ARCHIVE_DEFAULTS = { episodicMaxAgeDays: 90, unusedMinAgeDays: 60, unusedMaxImportance: 2 };
+  }
+});
+
+// src/commands/memory-archive.ts
+var memory_archive_exports = {};
+__export(memory_archive_exports, {
+  memoryArchiveCmd: () => memoryArchiveCmd
+});
+async function memoryArchiveCmd(opts) {
+  const cfg = readPluginConfig();
+  const idx = loadMemoryIndex(cfg.repoPath);
+  const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const usage = loadUsage(cfg.repoPath);
+  const knownSessions = loadKnownSessions(cfg.repoPath);
+  const entries = Object.values(idx.entries);
+  const plan = planArchival(entries, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });
+  if (!opts.apply) {
+    if (opts.json) console.log(JSON.stringify(plan, null, 2));
+    else if (plan.archive.length === 0) console.log("nothing to archive");
+    else plan.archive.forEach((a) => console.log(`archive ${a.id}  (${a.reason})`));
+    return;
+  }
+  let archived = 0;
+  for (const { id, reason } of plan.archive) {
+    const e = idx.entries[id];
+    if (!e) continue;
+    if (e.type === "core" || e.status === "pinned" || e.status === "archived") continue;
+    const next = {
+      ...e,
+      status: "archived",
+      archivedAt: now,
+      archivedReason: reason,
+      updatedAt: now
+    };
+    writeMemoryEntryFile(cfg.repoPath, next);
+    idx.entries[id] = next;
+    archived++;
+  }
+  if (archived > 0) saveMemoryIndex(cfg.repoPath, idx);
+  console.log(opts.json ? JSON.stringify({ archived }) : `archived ${archived}`);
+}
+var init_memory_archive = __esm({
+  "src/commands/memory-archive.ts"() {
+    "use strict";
+    init_plugin_config();
+    init_index_store2();
+    init_usage_store();
+    init_archive();
+    init_known_sessions();
+    init_apply();
+  }
+});
+
+// src/commands/memory-unarchive.ts
+var memory_unarchive_exports = {};
+__export(memory_unarchive_exports, {
+  memoryUnarchiveCmd: () => memoryUnarchiveCmd
+});
+async function memoryUnarchiveCmd(opts) {
+  const cfg = readPluginConfig();
+  const idx = loadMemoryIndex(cfg.repoPath);
+  const e = idx.entries[opts.id];
+  if (!e || e.status !== "archived") {
+    console.log(`not archived: ${opts.id}`);
+    return;
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const next = {
+    ...e,
+    status: "active",
+    archivedAt: null,
+    archivedReason: null,
+    updatedAt: now
+  };
+  writeMemoryEntryFile(cfg.repoPath, next);
+  idx.entries[opts.id] = next;
+  saveMemoryIndex(cfg.repoPath, idx);
+  console.log(`restored ${opts.id}`);
+}
+var init_memory_unarchive = __esm({
+  "src/commands/memory-unarchive.ts"() {
+    "use strict";
+    init_plugin_config();
+    init_index_store2();
+    init_apply();
   }
 });
 
@@ -18289,6 +18510,14 @@ async function run(argv) {
   program2.command("memory-lint").description("Read-only integrity diagnostic across memory/entity/qa indexes (never writes the repo). --json for structured output; --fix queues review proposals for expired entries.").option("--cwd <path>", "scope findings to the project at this path (+ global/user); default: lint the whole store").option("--json", "emit the structured LintReport JSON instead of a human report").option("--fix", "queue a review proposal (status\u2192superseded) for each expired entry \u2014 goes through memory-diff/approve, never a direct write").action(async (o2) => {
     const { memoryLintCmd: memoryLintCmd2 } = await Promise.resolve().then(() => (init_memory_lint(), memory_lint_exports));
     await memoryLintCmd2({ cwd: o2.cwd, json: o2.json, fix: o2.fix });
+  });
+  program2.command("memory-archive").description("Archive stale/unused memories out of recall (reversible \u2014 keeps the .md + index row). Dry-run unless --apply.").option("--cwd <path>", "project dir (accepted for symmetry; archive plans store-wide)").option("--json", "emit the structured plan / result JSON instead of a human report").option("--apply", "apply the plan (default: dry-run \u2014 prints the plan, writes nothing)").action(async (o2) => {
+    const { memoryArchiveCmd: memoryArchiveCmd2 } = await Promise.resolve().then(() => (init_memory_archive(), memory_archive_exports));
+    await memoryArchiveCmd2({ cwd: o2.cwd, json: o2.json, apply: o2.apply });
+  });
+  program2.command("memory-unarchive").description("Restore an archived memory back to active (clears archivedAt/archivedReason). No-op if the id is unknown or not archived.").argument("<id>", "memory id to restore (e.g. semantic/<project>/<slug>)").option("--cwd <path>", "project dir (accepted for symmetry; the store is resolved from memariumHome())").action(async (id, o2) => {
+    const { memoryUnarchiveCmd: memoryUnarchiveCmd2 } = await Promise.resolve().then(() => (init_memory_unarchive(), memory_unarchive_exports));
+    await memoryUnarchiveCmd2({ id, cwd: o2.cwd });
   });
   program2.command("memory-propose").description("Queue a gated (core/procedural/pinned) memory change as a local proposal instead of writing it. Reads an --input JSON array of {entry, body, rationale?, sourceSession?}.").requiredOption("--input <path>", "JSON file: array of { entry, body, rationale?, sourceSession? }").action(async (o2) => {
     const { memoryProposeCmd: memoryProposeCmd2 } = await Promise.resolve().then(() => (init_memory_propose(), memory_propose_exports));

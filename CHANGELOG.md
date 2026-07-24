@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.20.0 — 2026-07-24
+
+### Memory dynamics: forgetting/archival (two-tier hot/cold memory)
+
+Memories now have a lifecycle. A new `status: "archived"` (+ `archivedAt` /
+`archivedReason` frontmatter) demotes stale/unused memories out of recall
+**without deleting them** — archival = cold storage, fully reversible.
+
+- **Auto-archive in digest consolidation** — `memory-archive --apply` (run from
+  the digest's Consolidate step) flips entries to `archived` by an aggressive
+  policy: superseded/expired/near-duplicate-loser, stale episodics (>90d),
+  stale-provenance (source sessions gone), and unused-low-value (accessCount 0 +
+  age >60d + importance ≤2, semantic/procedural only). `core` and `pinned` are
+  NEVER archived.
+- **Reversible + self-correcting** — archived `.md` stay git-tracked;
+  `memory-unarchive <id>` restores. A read-only **R2 cold-storage valve** in
+  `memory-query` resurfaces strongly-matching archived entries (project-scoped)
+  when active recall is weak, so a wrongly-archived memory comes back on demand.
+- Recall + primer + the memory-query conflicts section + entity-query all
+  exclude archived (single `isArchived` predicate). The R2 valve is the ONLY
+  read path that surfaces archived — and it never writes.
+- Archival is a deliberate, automatic, non-gated write (the one place the digest
+  bypasses the v4 human-review gate) — safe because of the core/pinned guard,
+  reversibility, and R2.
+
+Schema-compatible: old entries parse the new fields as `null`; the npm CI
+aggregator (`merge-books.mjs`) carries `archived` through unchanged.
+
 ## 0.19.8 — 2026-07-24
 
 ### Digest prompt: scope abstracted rules by reuse reach (fixes over-narrow scoping)
