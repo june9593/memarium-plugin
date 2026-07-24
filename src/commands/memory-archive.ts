@@ -3,6 +3,7 @@ import { loadMemoryIndex, saveMemoryIndex } from "../memory/index-store.js";
 import { loadUsage } from "../memory/usage-store.js";
 import { planArchival, ARCHIVE_DEFAULTS } from "../memory/archive.js";
 import { loadKnownSessions } from "../memory/known-sessions.js";
+import { safeValues } from "../memory/lint.js";
 import { writeMemoryEntryFile, assertMemoryBodyRecoverable } from "../memory/apply.js";
 import type { MemoryEntry } from "../memory/types.js";
 
@@ -30,7 +31,14 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   const now = new Date().toISOString().slice(0, 10);
   const usage = loadUsage(cfg.repoPath);
   const knownSessions = loadKnownSessions(cfg.repoPath); // Set | undefined
-  const entries = Object.values(idx.entries) as MemoryEntry[];
+  // Digest runs this automatically, so a parseable-but-malformed index row (null,
+  // or wrong-typed fields) must NOT crash consolidation. safeValues drops non-object
+  // rows (same guard the lint path uses); report how many were skipped.
+  const rawCount = Object.keys(idx.entries ?? {}).length;
+  const entries = safeValues<MemoryEntry>(idx.entries);
+  if (entries.length < rawCount) {
+    console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
+  }
   const plan = planArchival(entries, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });
 
   if (!opts.apply) {

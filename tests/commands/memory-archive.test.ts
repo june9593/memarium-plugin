@@ -173,4 +173,15 @@ describe("memoryArchiveCmd", () => {
     expect(readIndexStatus("semantic/p/gone")).toBe("active");
     expect(existsSync(join(repo, "memory/semantic/p/gone.md"))).toBe(false);
   });
+
+  it("tolerates parseable-but-malformed index rows (null / non-object) — auto digest consolidation can't be crashed", async () => {
+    seed();
+    const idx = readIndex();
+    idx.entries["semantic/p/nul"] = null;              // null row
+    idx.entries["semantic/p/str"] = "not-an-object";   // wrong-typed row
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    // must NOT throw; malformed rows are skipped; the good expired entry still archives
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
+    expect(readIndexStatus("semantic/p/exp")).toBe("archived");
+  });
 });

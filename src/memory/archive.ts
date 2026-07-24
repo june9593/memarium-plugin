@@ -70,7 +70,7 @@ export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: Arch
       pick(e.id, `stale-episodic:>${opts.episodicMaxAgeDays}d`); continue;
     }
     // Rule 4: every supporting session is gone from the spool index.
-    if (opts.knownSessions !== undefined && e.sourceSessions.length > 0 &&
+    if (opts.knownSessions !== undefined && Array.isArray(e.sourceSessions) && e.sourceSessions.length > 0 &&
         e.sourceSessions.every((s) => !opts.knownSessions!.has(s))) {
       pick(e.id, "stale-provenance"); continue;
     }

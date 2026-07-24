@@ -16776,7 +16776,7 @@ function planArchival(entries, usage, opts) {
       pick2(e.id, `stale-episodic:>${opts.episodicMaxAgeDays}d`);
       continue;
     }
-    if (opts.knownSessions !== void 0 && e.sourceSessions.length > 0 && e.sourceSessions.every((s) => !opts.knownSessions.has(s))) {
+    if (opts.knownSessions !== void 0 && Array.isArray(e.sourceSessions) && e.sourceSessions.length > 0 && e.sourceSessions.every((s) => !opts.knownSessions.has(s))) {
       pick2(e.id, "stale-provenance");
       continue;
     }
@@ -16808,7 +16808,11 @@ async function memoryArchiveCmd(opts) {
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const usage = loadUsage(cfg.repoPath);
   const knownSessions = loadKnownSessions(cfg.repoPath);
-  const entries = Object.values(idx.entries);
+  const rawCount = Object.keys(idx.entries ?? {}).length;
+  const entries = safeValues(idx.entries);
+  if (entries.length < rawCount) {
+    console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
+  }
   const plan = planArchival(entries, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });
   if (!opts.apply) {
     if (opts.json) console.log(JSON.stringify(plan, null, 2));
@@ -16841,6 +16845,7 @@ var init_memory_archive = __esm({
     init_usage_store();
     init_archive();
     init_known_sessions();
+    init_lint();
     init_apply();
   }
 });

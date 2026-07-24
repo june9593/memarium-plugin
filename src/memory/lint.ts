@@ -15,7 +15,7 @@ function entrySnapshot(e: unknown): string {
 
 /** Safely extract values from a Record-shaped unknown — returns [] for anything non-object/array/null.
  *  Array values are excluded: typeof [] === "object" but arrays are not valid entries. */
-function safeValues<T>(rec: unknown): T[] {
+export function safeValues<T>(rec: unknown): T[] {
   if (!rec || typeof rec !== "object" || Array.isArray(rec)) return [];
   return Object.values(rec as Record<string, T>).filter(
     (v): v is T => v !== null && typeof v === "object" && !Array.isArray(v),
