@@ -43,6 +43,8 @@ export function renderMemoryMarkdown(entry: MemoryEntry, body: string): string {
     `validTo: ${nullable(entry.validTo)}`,
     `supersedes: ${nullable(entry.supersedes)}`,
     `originDevice: ${nullable(entry.originDevice)}`,
+    `archivedAt: ${nullable(entry.archivedAt)}`,
+    `archivedReason: ${nullable(entry.archivedReason)}`,
     `sourceSessions: ${arr(entry.sourceSessions)}`,
     `sourceCommits: ${arr(entry.sourceCommits)}`,
     `sourceFiles: ${arr(entry.sourceFiles)}`,

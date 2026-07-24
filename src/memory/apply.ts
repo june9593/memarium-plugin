@@ -129,6 +129,11 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     if (entry.validTo === undefined) entry.validTo = null;
     if (entry.originDevice === undefined) entry.originDevice = null;
     if (entry.project === undefined) entry.project = null;
+    // Archival lifecycle fields: normalize undefined → null so a live active write
+    // matches a rebuild-from-md (renderer emits `null`; parse reads `null`). An
+    // entry is only archived by the archive command, which sets these explicitly.
+    if (entry.archivedAt === undefined) entry.archivedAt = null;
+    if (entry.archivedReason === undefined) entry.archivedReason = null;
     // Numeric fields: match the render/parse defaults so the LIVE index equals a
     // rebuild (an omitted key would otherwise be dropped from the live JSON, and
     // the scorer would read it as its own default — drift). confidence→0.5 (the

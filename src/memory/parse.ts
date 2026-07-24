@@ -85,5 +85,7 @@ export function parseMemoryMarkdown(md: string): MemoryEntry | null {
     trust,
     originDevice: parseScalar(fm.originDevice ?? "null"),
     accessCount: 0, lastAccess: null,
+    archivedAt: parseScalar(fm.archivedAt ?? "null"),
+    archivedReason: parseScalar(fm.archivedReason ?? "null"),
   };
 }

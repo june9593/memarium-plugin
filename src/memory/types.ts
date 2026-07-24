@@ -18,7 +18,7 @@ export interface MemoryEntry {
   title: string;
   summary: string;           // one-line, used in scoring + listing
   path: string;              // repo-relative: memory/<type>/<project|_global>/<slug>.md
-  status: "active" | "superseded" | "pinned";
+  status: "active" | "superseded" | "pinned" | "archived";
   confidence: number;        // 0..1
   importance: number;        // 0..N
   createdAt: string;         // ISO
@@ -34,6 +34,8 @@ export interface MemoryEntry {
   originDevice: string | null;
   accessCount: number;
   lastAccess: string | null;
+  archivedAt: string | null;    // ISO date the entry was archived; null unless archived
+  archivedReason: string | null; // e.g. "unused-low-value", "stale-episodic:>90d"
 }
 
 export interface MemoryIndex {
