@@ -14565,12 +14565,12 @@ function readMemoryBody(abs) {
     );
   }
   const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
-  if (!/^\s*#[^\n]*/.test(afterFm)) {
+  if (!/^\n*# [^\n]*/.test(afterFm)) {
     throw new Error(
       `memory rewrite: cannot recover body from ${abs} \u2014 no "# heading" after frontmatter; aborting so a metadata-only rewrite never clobbers the entry body`
     );
   }
-  return afterFm.replace(/^\s*#[^\n]*\n+/, "").replace(/^\n+/, "").replace(/\n+$/, "");
+  return afterFm.replace(/^\n*# [^\n]*\n*/, "").replace(/\n+$/, "");
 }
 function assertWritableMemoryTarget(repoPath, entry) {
   const memRoot = resolve2(join14(repoPath, "memory"));
@@ -18572,7 +18572,7 @@ async function run(argv) {
     const { memoryArchiveCmd: memoryArchiveCmd2 } = await Promise.resolve().then(() => (init_memory_archive(), memory_archive_exports));
     await memoryArchiveCmd2({ cwd: o2.cwd, json: o2.json, apply: o2.apply });
   });
-  program2.command("memory-unarchive").description("Restore an archived memory back to active (clears archivedAt/archivedReason). No-op if the id is unknown or not archived.").argument("<id>", "memory id to restore (e.g. semantic/<project>/<slug>)").option("--cwd <path>", "project dir (accepted for symmetry; the store is resolved from memariumHome())").action(async (id, o2) => {
+  program2.command("memory-unarchive").description("Restore an archived memory to its pre-archive status (active, or superseded for a superseded-cleanup archive; clears archivedAt/archivedReason). No-op if the id is unknown or not archived.").argument("<id>", "memory id to restore (e.g. semantic/<project>/<slug>)").option("--cwd <path>", "project dir (accepted for symmetry; the store is resolved from memariumHome())").action(async (id, o2) => {
     const { memoryUnarchiveCmd: memoryUnarchiveCmd2 } = await Promise.resolve().then(() => (init_memory_unarchive(), memory_unarchive_exports));
     await memoryUnarchiveCmd2({ id, cwd: o2.cwd });
   });
