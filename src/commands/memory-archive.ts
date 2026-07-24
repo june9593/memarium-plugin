@@ -3,7 +3,7 @@ import { loadMemoryIndex, saveMemoryIndex } from "../memory/index-store.js";
 import { loadUsage } from "../memory/usage-store.js";
 import { planArchival, ARCHIVE_DEFAULTS } from "../memory/archive.js";
 import { loadKnownSessions } from "../memory/known-sessions.js";
-import { writeMemoryEntryFile } from "../memory/apply.js";
+import { writeMemoryEntryFile, assertWritableMemoryTarget } from "../memory/apply.js";
 import type { MemoryEntry } from "../memory/types.js";
 
 export interface MemoryArchiveOptions {
@@ -40,19 +40,30 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
     return;
   }
 
-  let archived = 0;
+  // Build the archive set, re-asserting the hard guard at the write sink
+  // (mirrors planArchival's `archivable`): core is never archivable, pinned is
+  // protected, and an already-archived entry is skipped for idempotency.
+  const planned: MemoryEntry[] = [];
   for (const { id, reason } of plan.archive) {
     const e = idx.entries[id] as MemoryEntry | undefined;
     if (!e) continue;
-    // Re-assert the hard guard at the write sink (mirrors planArchival's
-    // `archivable`): core is never archivable, pinned is protected, and an
-    // already-archived entry is skipped for idempotency.
     if (e.type === "core" || e.status === "pinned" || e.status === "archived") continue;
-    const next: MemoryEntry = {
-      ...e, status: "archived", archivedAt: now, archivedReason: reason, updatedAt: now,
-    };
+    planned.push({ ...e, status: "archived", archivedAt: now, archivedReason: reason, updatedAt: now });
+  }
+
+  // Whole-plan PREFLIGHT before the first write (matches applyMemoryItems'
+  // discipline): validate every planned target's canonical path + symlink guard
+  // up front, so a later row with an invalid canonical path / symlinked
+  // component can't leave earlier .md already rewritten while saveMemoryIndex is
+  // never reached — which would desync the files from the index. Throws here,
+  // before any write, on the first bad target.
+  for (const next of planned) assertWritableMemoryTarget(cfg.repoPath, next);
+
+  // Write phase — every target validated above.
+  let archived = 0;
+  for (const next of planned) {
     writeMemoryEntryFile(cfg.repoPath, next); // guarded canonical-path write (bypasses the active-coercion allowlist)
-    idx.entries[id] = next;
+    idx.entries[next.id] = next;
     archived++;
   }
   if (archived > 0) saveMemoryIndex(cfg.repoPath, idx);

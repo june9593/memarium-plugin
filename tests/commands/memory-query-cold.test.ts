@@ -150,4 +150,82 @@ describe("memoryQueryCmd — R2 cold-storage resurrect valve", () => {
     const result = await memoryQueryCmd({ cwd: "/work/code-demo" }); // no q
     expect(result.coldStorage).toEqual([]);
   });
+
+  it("a typed query does NOT surface a wrong-type archived cold hit (applies --type to the cold pass)", async () => {
+    writeIndex({
+      // active PROCEDURAL that doesn't match "vim" → 0 active content hits, valve fires
+      "procedural/code-demo/run": mk({ type: "procedural", id: "procedural/code-demo/run",
+        scope: "project:code-demo", project: "code-demo", title: "Run the tests", summary: "how to run",
+        path: "memory/procedural/code-demo/run.md", status: "active", entities: [] }),
+      // archived SEMANTIC matching "vim" → MUST be excluded under --type procedural
+      "semantic/code-demo/svim": mk({ id: "semantic/code-demo/svim", scope: "project:code-demo",
+        project: "code-demo", title: "Vim keybindings", summary: "vim editor setup",
+        path: "memory/semantic/code-demo/svim.md", status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value", entities: ["vim"] }),
+      // archived PROCEDURAL matching "vim" → SHOULD be included (control, right type)
+      "procedural/code-demo/pvim": mk({ type: "procedural", id: "procedural/code-demo/pvim",
+        scope: "project:code-demo", project: "code-demo", title: "Vim workflow", summary: "vim editing procedure",
+        path: "memory/procedural/code-demo/pvim.md", status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "stale-provenance", entities: ["vim"] }),
+    });
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const result = await memoryQueryCmd({ cwd: "/work/code-demo", type: "procedural", q: "vim" });
+    const coldIds = result.coldStorage.map((c) => c.id);
+    expect(coldIds).toContain("procedural/code-demo/pvim");   // typed match kept
+    expect(coldIds).not.toContain("semantic/code-demo/svim"); // wrong-type archived excluded
+  });
+
+  it("a cold hit that lives only on an overlay device → source 'overlay' + restore-elsewhere hint (not a local memory-unarchive)", async () => {
+    // local: one active non-matching entry so the valve fires
+    writeIndex({
+      "semantic/code-demo/local": mk({ id: "semantic/code-demo/local", scope: "project:code-demo",
+        project: "code-demo", title: "Local unrelated note", summary: "nothing about the query",
+        path: "memory/semantic/code-demo/local.md", status: "active", entities: [] }),
+    });
+    // overlay-only: an ARCHIVED entry (owned by device 'laptop') matching "vim".
+    // memory-query merges the aggregated overlay index at ~/.memarium/aggregated.
+    const overlayRoot = join(fakeHome, ".memarium/aggregated");
+    mkdirSync(join(overlayRoot, ".memarium"), { recursive: true });
+    writeFileSync(join(overlayRoot, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/code-demo/ovim": mk({ id: "semantic/code-demo/ovim", scope: "project:code-demo",
+        project: "code-demo", title: "Vim keybindings", summary: "vim editor setup",
+        path: "memory/semantic/code-demo/ovim.md", status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value", originDevice: "laptop", entities: ["vim"] }),
+    } }, null, 2) + "\n");
+
+    // capture the human hint (stderr) — beforeEach silenced it; re-spy to record
+    const errs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => { errs.push(a.map(String).join(" ")); });
+
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const result = await memoryQueryCmd({ cwd: "/work/code-demo", q: "vim" });
+
+    const hit = result.coldStorage.find((c) => c.id === "semantic/code-demo/ovim");
+    expect(hit).toBeTruthy();
+    expect(hit!.source).toBe("overlay");
+    expect(hit!.originDevice).toBe("laptop");
+    const hint = errs.join("\n");
+    expect(hint).toMatch(/archived on device laptop; restore it there/);
+    expect(hint).not.toMatch(/memory-unarchive semantic\/code-demo\/ovim/); // never advertise a local restore that would fail
+  });
+
+  it("a LOCAL cold hit keeps the memory-unarchive restore hint (source 'local')", async () => {
+    writeIndex({
+      "semantic/code-demo/spool": mk({ id: "semantic/code-demo/spool", scope: "project:code-demo",
+        project: "code-demo", title: "Spool single md", summary: "unrelated to query",
+        path: "memory/semantic/code-demo/spool.md", status: "active", entities: [] }),
+      "semantic/code-demo/coldvim": mk({ id: "semantic/code-demo/coldvim", scope: "project:code-demo",
+        project: "code-demo", title: "Vim keybindings", summary: "vim editor setup",
+        path: "memory/semantic/code-demo/coldvim.md", status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value", entities: ["vim"] }),
+    });
+    const errs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => { errs.push(a.map(String).join(" ")); });
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const result = await memoryQueryCmd({ cwd: "/work/code-demo", q: "vim" });
+    const hit = result.coldStorage.find((c) => c.id === "semantic/code-demo/coldvim");
+    expect(hit!.source).toBe("local");
+    expect(hit!.originDevice).toBe(null);
+    expect(errs.join("\n")).toMatch(/memory-unarchive semantic\/code-demo\/coldvim to restore/);
+  });
 });

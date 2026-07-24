@@ -30,12 +30,23 @@ export async function memoryUnarchiveCmd(opts: MemoryUnarchiveOptions): Promise<
     return;
   }
   const now = new Date().toISOString().slice(0, 10);
+  // If this entry was archived by the "expired" rule it kept a past validTo.
+  // Restoring it to active with that validTo intact would make it INVISIBLE on
+  // both tiers: scoreMemories/primer/entity reject it as expired (validTo<=now)
+  // AND the R2 cold valve no longer sees it (it isn't archived). So clear a
+  // past validTo to null on restore; a null/future validTo is left untouched.
+  const pastValidTo = typeof e.validTo === "string" && e.validTo !== "" && e.validTo <= now;
   // Fresh spread — writeMemoryEntryFile mutates entry.path to the canonical path.
   const next: MemoryEntry = {
     ...e, status: "active", archivedAt: null, archivedReason: null, updatedAt: now,
+    ...(pastValidTo ? { validTo: null } : {}),
   };
   writeMemoryEntryFile(cfg.repoPath, next); // guarded canonical-path write (bypasses active-coercion allowlist)
   idx.entries[opts.id] = next;
   saveMemoryIndex(cfg.repoPath, idx);
-  console.log(`restored ${opts.id}`);
+  console.log(
+    pastValidTo
+      ? `restored ${opts.id} (cleared past validTo=${e.validTo} so it is recallable again)`
+      : `restored ${opts.id}`,
+  );
 }

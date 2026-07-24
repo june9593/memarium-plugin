@@ -52,6 +52,13 @@ function seed() {
       title: "Archived fact", summary: "s", path: "memory/semantic/p/c.md", status: "archived",
       archivedAt: "2026-05-01", archivedReason: "expired", ...base,
     },
+    // Archived via the "expired" rule with a PAST validTo still set — restoring
+    // this without clearing validTo would leave it invisible on BOTH tiers.
+    "semantic/p/exp": {
+      id: "semantic/p/exp", type: "semantic", scope: "project:p", project: "p",
+      title: "Archived expired fact", summary: "s", path: "memory/semantic/p/exp.md", status: "archived",
+      archivedAt: "2026-05-01", archivedReason: "expired", ...base, validTo: "2000-01-01",
+    },
     "semantic/p/act": {
       id: "semantic/p/act", type: "semantic", scope: "project:p", project: "p",
       title: "Active fact", summary: "s", path: "memory/semantic/p/act.md", status: "active",
@@ -63,6 +70,7 @@ function seed() {
   const md = (title: string, id: string, status: string, at: string, reason: string) =>
     `---\nid: ${id}\ntype: semantic\nstatus: ${status}\narchivedAt: ${at}\narchivedReason: ${reason}\n---\n\n# ${title}\n\nThe real body of ${id}.\n`;
   writeFileSync(join(repo, "memory/semantic/p/c.md"), md("Archived fact", "semantic/p/c", "archived", "2026-05-01", "expired"));
+  writeFileSync(join(repo, "memory/semantic/p/exp.md"), md("Archived expired fact", "semantic/p/exp", "archived", "2026-05-01", "expired"));
   writeFileSync(join(repo, "memory/semantic/p/act.md"), md("Active fact", "semantic/p/act", "active", "null", "null"));
 }
 
@@ -105,5 +113,26 @@ describe("memoryUnarchiveCmd", () => {
     expect(readIndexStatus("semantic/p/act")).toBe("active");
     expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore); // index untouched
     expect(readFileSync(join(repo, "memory/semantic/p/act.md"), "utf8")).toBe(actMdBefore); // .md never rewritten
+  });
+
+  it("clears a PAST validTo on restore so an expired-rule archive is recallable again", async () => {
+    seed();
+    await memoryUnarchiveCmd({ id: "semantic/p/exp", cwd: repo });
+    // active again AND the stale validTo is gone from BOTH the index and the .md,
+    // so scoreMemories/primer/entity no longer reject it as expired.
+    expect(readIndexStatus("semantic/p/exp")).toBe("active");
+    expect(readIndex().entries["semantic/p/exp"].validTo).toBe(null);
+    expect(readMdNullable("semantic/p/exp.md", "validTo")).toBe(null);
+    expect(out.join("\n")).toMatch(/cleared past validTo=2000-01-01/);
+    // body still preserved through the rewrite
+    expect(readFileSync(join(repo, "memory/semantic/p/exp.md"), "utf8")).toContain("The real body of semantic/p/exp.");
+  });
+
+  it("leaves a null validTo untouched on restore (no spurious clear note)", async () => {
+    seed();
+    await memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }); // validTo === null
+    expect(readIndexStatus("semantic/p/c")).toBe("active");
+    expect(readIndex().entries["semantic/p/c"].validTo).toBe(null);
+    expect(out.join("\n")).not.toMatch(/cleared past validTo/);
   });
 });

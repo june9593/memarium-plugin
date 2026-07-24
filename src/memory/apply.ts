@@ -19,26 +19,24 @@ function normalizeRel(p: string): string {
  *  file → "" (the entry still gets a valid, if bodyless, .md). */
 function readMemoryBody(abs: string): string {
   try {
-    const md = readFileSync(abs, "utf8");
+    // Normalize CRLF first (Windows checkouts), matching parseMemoryMarkdown's
+    // idiom. Without this the `^---\n...\n---` strip won't match a CRLF file, so
+    // the whole old frontmatter + "# Title" heading would leak into the new body
+    // on an archive/unarchive metadata rewrite.
+    const md = readFileSync(abs, "utf8").replace(/\r\n/g, "\n");
     const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, ""); // drop frontmatter
     return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();       // drop the leading "# Title" heading
   } catch { return ""; }
 }
 
-/** Guarded single-entry rewriter for a metadata-only flip (e.g. the archive
- *  command flipping status→archived + archivedAt/archivedReason). Reads the
- *  entry's existing body from its CANONICAL .md (derived, never trusted from
- *  entry.path), re-renders frontmatter+body, and writes it back THROUGH the same
- *  memory/-containment + symlink guard `applyMemoryItems` uses — so a crafted
- *  type/project/slug can't traverse out of memory/, and a symlinked component
- *  can't redirect the write.
- *
- *  Deliberately does NOT run applyMemoryItems' status/field normalization (the
- *  {active,superseded,pinned} allowlist that coerces every other status back to
- *  "active"). That coercion is correct for AUTHORED writes that routinely omit
- *  status, but it would silently un-archive a caller-set status:"archived". The
- *  caller owns the entry's fields here; we only persist them faithfully. */
-export function writeMemoryEntryFile(repoPath: string, entry: MemoryEntry): void {
+/** Preflight-only guard for a metadata-only rewrite: derive the CANONICAL path
+ *  from {type,project,id} (untrusted entry.path is ignored), assert it stays
+ *  under memory/, and reject a symlinked path component — WITHOUT reading or
+ *  writing anything. Returns the canonical repo-relative path. Callers that
+ *  rewrite a batch (e.g. memory-archive --apply) run this over EVERY planned
+ *  target first, so one bad row can't leave earlier .md rewritten with the index
+ *  unsaved. `writeMemoryEntryFile` funnels through the same guard. */
+export function assertWritableMemoryTarget(repoPath: string, entry: MemoryEntry): string {
   const memRoot = resolve(join(repoPath, "memory"));
   const canonical = canonicalMemoryPath(entry);
   const abs = resolve(join(repoPath, canonical));
@@ -46,6 +44,25 @@ export function writeMemoryEntryFile(repoPath: string, entry: MemoryEntry): void
     throw new Error(`memory write: refusing to write outside memory/: ${canonical}`);
   }
   assertNoSymlinkedComponent(repoPath, abs, "memory write");
+  return canonical;
+}
+
+/** Guarded single-entry rewriter for a metadata-only flip (e.g. the archive
+ *  command flipping status→archived + archivedAt/archivedReason). Reads the
+ *  entry's existing body from its CANONICAL .md (derived, never trusted from
+ *  entry.path), re-renders frontmatter+body, and writes it back THROUGH the same
+ *  memory/-containment + symlink guard `applyMemoryItems` uses (now factored into
+ *  assertWritableMemoryTarget) — so a crafted type/project/slug can't traverse
+ *  out of memory/, and a symlinked component can't redirect the write.
+ *
+ *  Deliberately does NOT run applyMemoryItems' status/field normalization (the
+ *  {active,superseded,pinned} allowlist that coerces every other status back to
+ *  "active"). That coercion is correct for AUTHORED writes that routinely omit
+ *  status, but it would silently un-archive a caller-set status:"archived". The
+ *  caller owns the entry's fields here; we only persist them faithfully. */
+export function writeMemoryEntryFile(repoPath: string, entry: MemoryEntry): void {
+  const canonical = assertWritableMemoryTarget(repoPath, entry);
+  const abs = resolve(join(repoPath, canonical));
   const body = readMemoryBody(abs);
   entry.path = canonical;
   mkdirSync(dirname(abs), { recursive: true });

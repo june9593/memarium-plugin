@@ -218,3 +218,45 @@ describe("applyMemoryItems", () => {
     expect(idx.entries["semantic/p/z"].trust).toBe("unknown");
   });
 });
+
+describe("writeMemoryEntryFile (metadata-only rewriter)", () => {
+  let home: string, repo: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "vbp-writefile-"));
+    vi.stubEnv("HOME", home);
+    vi.resetModules();
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+  });
+  afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
+
+  it("preserves the body cleanly on a CRLF (Windows) checkout — no old frontmatter/heading leaks in", async () => {
+    const { writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    // Seed the canonical .md with CRLF line endings + an OLD (archived) frontmatter
+    // and heading. A non-CRLF-safe body strip would fail to match `---\n...\n---`
+    // and embed the entire old frontmatter + "# Old heading" into the rewritten body.
+    const rel = "memory/semantic/p/crlf.md";
+    const abs = join(repo, rel);
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const crlf = [
+      "---", "id: semantic/p/crlf", "type: semantic", "status: archived",
+      "archivedReason: expired", "---", "", "# Old heading",
+      "", "The real body line one.", "Second body line.", "",
+    ].join("\r\n");
+    writeFileSync(abs, crlf);
+
+    // Rewrite it back to ACTIVE (the unarchive/archive metadata flip path).
+    const entry = mk({
+      id: "semantic/p/crlf", type: "semantic", scope: "project:p", project: "p",
+      title: "Restored title", status: "active", path: "",
+    });
+    writeMemoryEntryFile(repo, entry);
+
+    const written = readFileSync(abs, "utf8");
+    expect(written).toContain("The real body line one.");   // body preserved…
+    expect(written).toContain("Second body line.");
+    expect(written).not.toContain("# Old heading");          // …without the old heading…
+    expect(written).not.toContain("status: archived");       // …or the old archived frontmatter leaking in
+    expect(written).not.toContain("archivedReason: expired");
+  });
+});

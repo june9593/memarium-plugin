@@ -110,4 +110,37 @@ describe("memoryArchiveCmd", () => {
     expect(payload.archive.some((a: { id: string; reason: string }) => a.id === "semantic/p/exp" && a.reason === "expired")).toBe(true);
     expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore); // no write
   });
+
+  it("--apply preflights the WHOLE plan: one invalid target aborts before ANY .md is rewritten", async () => {
+    // Two expired entries land in the plan: one perfectly valid, one whose project
+    // is an unsafe path segment ("..") so its canonical-path derivation throws.
+    // With an order-aware whole-plan preflight, the throw must happen BEFORE the
+    // first write — so the valid entry's .md and the index stay untouched.
+    const base = {
+      confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+      validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+      supersedes: null, entities: [], trust: "trusted", originDevice: null,
+      accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+    };
+    const entries = {
+      "semantic/p/good": { id: "semantic/p/good", type: "semantic", scope: "project:p", project: "p",
+        title: "Good expired", summary: "s", path: "memory/semantic/p/good.md", status: "active",
+        validTo: "2000-01-01", ...base },
+      "semantic/bad": { id: "semantic/bad", type: "semantic", scope: "project:..", project: "..",
+        title: "Bad path", summary: "s", path: "", status: "active",
+        validTo: "2000-01-01", ...base },
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const goodMd = "---\nid: semantic/p/good\ntype: semantic\nstatus: active\n---\n\n# Good expired\n\nThe real body.\n";
+    writeFileSync(join(repo, "memory/semantic/p/good.md"), goodMd);
+    const idxBefore = readFileSync(idxPath(), "utf8");
+
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).rejects.toThrow(/unsafe|symlink|outside memory/i);
+
+    // all-or-nothing: the valid entry's .md was NOT rewritten and the index is intact
+    expect(readFileSync(join(repo, "memory/semantic/p/good.md"), "utf8")).toBe(goodMd);
+    expect(readMdField("semantic/p/good.md", "status")).toBe("active"); // never flipped to archived
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+  });
 });

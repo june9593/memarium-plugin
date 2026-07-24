@@ -46,8 +46,11 @@ export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: Arch
   // Rule 0: near-duplicate losers first (needs the whole set). Loser = lower
   // importance; tie-break to the one updated earlier (<=). Only archive the
   // loser when it is archivable — the winner (and any core/pinned) is kept.
+  // Index the entries by id ONCE so each pair is an O(1) lookup, not two O(n)
+  // scans (which made the whole pair loop O(n³) store-wide).
+  const byId = new Map(entries.map((e) => [e.id, e]));
   for (const [a, b] of nearDuplicatePairs(entries)) {
-    const ea = entries.find((x) => x.id === a), eb = entries.find((x) => x.id === b);
+    const ea = byId.get(a), eb = byId.get(b);
     if (!ea || !eb) continue;
     const loser = ea.importance !== eb.importance
       ? (ea.importance < eb.importance ? ea : eb)

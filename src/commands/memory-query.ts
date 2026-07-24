@@ -1,6 +1,6 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
-import { resolveMemoryView } from "../memory/source-resolver.js";
+import { resolveMemoryView, type MemorySource } from "../memory/source-resolver.js";
 import { scoreMemories, scoreArchived, isArchived, type ScoredMemory } from "../memory/score.js";
 import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
 import { renderPrimer } from "../memory/primer.js";
@@ -9,8 +9,18 @@ import type { MemoryEntry, MemoryType } from "../memory/types.js";
 export interface MemoryQueryOptions { cwd?: string; type?: string; q?: string; }
 
 /** One read-only "cold storage" hit — a strongly-matching ARCHIVED entry
- *  surfaced by the R2 resurrect valve. Restore with `memory-unarchive <id>`. */
-export interface ColdStorageHit { id: string; title: string; score: number; archivedReason: string | null; }
+ *  surfaced by the R2 resurrect valve. A `local` hit is restorable HERE with
+ *  `memory-unarchive <id>` (it lives in this device's index); an `overlay` hit
+ *  is a sibling device's archived memory, so it must be restored on
+ *  `originDevice` (memory-unarchive only touches the local index). */
+export interface ColdStorageHit {
+  id: string;
+  title: string;
+  score: number;
+  archivedReason: string | null;
+  source: MemorySource;
+  originDevice: string | null;
+}
 
 export interface MemoryQueryResult {
   project: string | null;
@@ -116,17 +126,26 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQu
   // content-matched hits (baseline scope/importance hits don't count — the whole
   // point is "the live memory doesn't answer this query"), surface the top
   // strongly-matching ARCHIVED entries. scoreArchived filters ONLY on archived
-  // status, so we scope-filter to the query's project (same as the primary pass)
-  // to avoid leaking other projects' archived memory, then keep content matches
-  // clearing the floor. NEVER writes/mutates status here.
+  // status, so we (a) scope-filter to the query's project and (b) apply the
+  // query's --type filter — SAME as the primary pass — so a `--type procedural`
+  // query can't surface an archived `semantic` hit. NEVER writes/mutates status.
   const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
   let coldStorage: ColdStorageHit[] = [];
   if (strongPrimary < COLD_FLOOR && (opts.q ?? "").trim() !== "") {
     coldStorage = scoreArchived(entries, scoreQuery)
       .filter((s) => inScope(s.entry, project))
+      .filter((s) => !scoreQuery.type || s.entry.type === scoreQuery.type)
       .filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR)
       .slice(0, COLD_TOP_K)
-      .map((s) => ({ id: s.entry.id, title: s.entry.title, score: s.score, archivedReason: s.entry.archivedReason }));
+      .map((s) => ({
+        id: s.entry.id, title: s.entry.title, score: s.score, archivedReason: s.entry.archivedReason,
+        // Origin decides which restore hint is honest: a `local` cold hit lives
+        // in THIS device's index (memory-unarchive works); an `overlay` hit is
+        // a sibling device's archived memory that memory-unarchive (local-only)
+        // can't touch, so we point the user at its origin device instead.
+        source: view.sources[s.entry.id] ?? "local",
+        originDevice: s.entry.originDevice ?? null,
+      }));
   }
 
   const payload: MemoryQueryResult = {
@@ -144,10 +163,21 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQu
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
 
   // Human hint for cold storage → stderr, so the JSON on stdout stays a clean
-  // machine payload for the skill (memory-query is consumed as JSON).
+  // machine payload for the skill (memory-query is consumed as JSON). The restore
+  // instruction is per-hit: local hits can be unarchived HERE; overlay-only hits
+  // live on another device and must be restored there (memory-unarchive is
+  // local-only, so advertising it for an overlay hit would always report "not
+  // archived").
   if (coldStorage.length) {
-    console.error(`\n❄️ ${coldStorage.length} archived also matched — memory-unarchive <id> to restore:`);
-    for (const c of coldStorage) console.error(`  ${c.id}  (${c.archivedReason})  — ${c.title}`);
+    console.error(`\n❄️ ${coldStorage.length} archived also matched:`);
+    for (const c of coldStorage) {
+      if (c.source === "overlay") {
+        const dev = c.originDevice ? `device ${c.originDevice}` : "another device";
+        console.error(`  ${c.id}  (${c.archivedReason})  — ${c.title}  — archived on ${dev}; restore it there`);
+      } else {
+        console.error(`  ${c.id}  (${c.archivedReason})  — ${c.title}  — memory-unarchive ${c.id} to restore`);
+      }
+    }
   }
 
   // BUMP (the ONLY write side effect) — only on a real recall: non-empty query
