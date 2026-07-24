@@ -1,7 +1,7 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
-import { scoreMemories, scoreArchived, type ScoredMemory } from "../memory/score.js";
+import { scoreMemories, scoreArchived, isArchived, type ScoredMemory } from "../memory/score.js";
 import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
 import { renderPrimer } from "../memory/primer.js";
 import type { MemoryEntry, MemoryType } from "../memory/types.js";
@@ -90,8 +90,12 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQu
     primer = renderPrimer(project, entries);
   }
 
+  // Archived is out of recall on ALL read surfaces — exclude it here too. An
+  // entry archived via the "expired" rule keeps validTo !== null, so without this
+  // guard it would still match the time-bounded rule and leak into every payload's
+  // conflicts section (the R2 cold-storage valve is the ONLY archived read path).
   const conflicts = entries
-    .filter((e) => e.status === "superseded" || e.supersedes !== null || e.validTo !== null)
+    .filter((e) => !isArchived(e) && (e.status === "superseded" || e.supersedes !== null || e.validTo !== null))
     .map((e) => ({
       entry: e,
       score: 0,

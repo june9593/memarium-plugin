@@ -115,6 +115,30 @@ describe("memoryQueryCmd — R2 cold-storage resurrect valve", () => {
     expect(payload.coldStorage).toEqual([]);
   });
 
+  it("archived-and-expired entry is excluded from conflicts (archived is out of recall)", async () => {
+    writeIndex({
+      // ARCHIVED via the "expired" rule → keeps validTo !== null, so it would
+      // otherwise match the conflicts time-bounded rule. The archival invariant
+      // ("archived is out of recall") must keep it out of the conflicts section too.
+      "semantic/code-demo/arch-expired": mk({ id: "semantic/code-demo/arch-expired", scope: "project:code-demo",
+        project: "code-demo", title: "Archived expired note", summary: "old",
+        path: "memory/semantic/code-demo/arch-expired.md", status: "archived",
+        validTo: "2000-01-01", archivedAt: "2026-05-01", archivedReason: "expired", entities: [] }),
+      // ACTIVE + time-bounded (validTo set) — the conflicts rule STILL applies here
+      // (control: proves we excluded only archived, not every validTo entry).
+      "semantic/code-demo/active-bounded": mk({ id: "semantic/code-demo/active-bounded", scope: "project:code-demo",
+        project: "code-demo", title: "Active time-bounded note", summary: "valid window",
+        path: "memory/semantic/code-demo/active-bounded.md", status: "active",
+        validTo: "2000-01-01", entities: [] }),
+    });
+
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const result = await memoryQueryCmd({ cwd: "/work/code-demo", q: "" });
+    const conflictIds = result.conflicts.map((c) => c.entry.id);
+    expect(conflictIds).not.toContain("semantic/code-demo/arch-expired"); // archived excluded
+    expect(conflictIds).toContain("semantic/code-demo/active-bounded");   // non-archived time-bounded still surfaces
+  });
+
   it("empty query → coldStorage empty (never fires the valve on a plain primer refresh)", async () => {
     writeIndex({
       "semantic/code-demo/coldvim": mk({ id: "semantic/code-demo/coldvim", scope: "project:code-demo",

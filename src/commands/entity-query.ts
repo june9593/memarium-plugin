@@ -4,6 +4,7 @@ import { loadEntityIndex } from "../entity/index-store.js";
 import { scoreEntities } from "../entity/score.js";
 import type { EntityKind, EntityPage } from "../entity/types.js";
 import { loadMemoryIndex } from "../memory/index-store.js";
+import { isArchived } from "../memory/score.js";
 import type { MemoryEntry } from "../memory/types.js";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
@@ -23,6 +24,7 @@ function isKind(s: string | undefined): EntityKind | null {
 /** Mirror of score.ts isEligible — filters by status, expiry, and scope. */
 function isEligibleMemory(m: MemoryEntry, now: string, project: string | null): boolean {
   if (m.status === "superseded") return false;
+  if (isArchived(m)) return false; // archived is out of recall on every read surface
   if (m.validTo !== null && m.validTo <= now) return false;
   if (m.scope === "global" || m.scope === "user") return true;
   if (project && m.scope === `project:${project}`) return true;

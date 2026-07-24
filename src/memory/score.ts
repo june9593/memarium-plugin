@@ -30,6 +30,16 @@ function num(v: unknown, dflt = 0): number {
  *  commit/pinned tier) that can't outrank a keyword content match (+5). */
 const IMPORTANCE_CAP = 3;
 
+/** Single source of truth for "is this entry archived?". The archival invariant
+ *  is "archived is out of recall", so every read surface that excludes archived
+ *  (recall's isEligible, primer, memory-query's conflicts, entity-query's
+ *  referencing lookup) checks the SAME predicate — a stray `status === "archived"`
+ *  literal that gets forgotten at one site is exactly how archived leaked back
+ *  into recall-adjacent reads. */
+export function isArchived(e: MemoryEntry): boolean {
+  return e.status === "archived";
+}
+
 function isEligible(e: MemoryEntry, q: MemoryQuery): boolean {
   if (e.status === "superseded" || e.status === "archived") return false;
   if (e.validTo !== null && e.validTo <= q.now) return false;
@@ -51,7 +61,7 @@ export function scoreMemories(entries: MemoryEntry[], q: MemoryQuery): ScoredMem
  *  scoreMemories, but the eligibility is inverted to status === "archived"
  *  (bypassing isEligible entirely). Pure — no mutation of `entries`. */
 export function scoreArchived(entries: MemoryEntry[], q: MemoryQuery): ScoredMemory[] {
-  return rankMemories(entries.filter((e) => e.status === "archived"), q);
+  return rankMemories(entries.filter(isArchived), q);
 }
 
 /** Shared ranking body: scores every entry in `list` and returns them sorted by
