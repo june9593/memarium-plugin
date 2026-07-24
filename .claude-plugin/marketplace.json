@@ -9,7 +9,7 @@
     {
       "name": "memarium",
       "description": "/memarium digests sessions into typed memory (episodic / semantic / procedural / core) + an entity wiki + distilled Q&A. A SessionStart hook auto-injects the project primer so a new session starts already knowing the project. /memarium-context for deeper recall + entities + past Q&A; /memarium-recall to rank + surface relevant memory for a task.",
-      "version": "0.19.7",
+      "version": "0.19.8",
       "source": "./",
       "category": "productivity"
     }

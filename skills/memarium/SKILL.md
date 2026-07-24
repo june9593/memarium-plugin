@@ -503,7 +503,14 @@ P1–P8 (typed-memory only — NO book — and DO NOT persist anything):
      distilled semantic/procedural/core facts — for `procedural`, write the
      ABSTRACTED trigger→action RULE, not the session-specific fix (see P4b's ❌/✅);
      one session often yields several, and they are ADDITIVE — never a substitute
-     for the episodic + must-have facts, and a non-skip thread never returns empty —
+     for the episodic + must-have facts, and a non-skip thread never returns empty.
+     **Scope each semantic/procedural rule by REUSE REACH, not by where you learned
+     it:** a general engineering / debugging / language / API rule any codebase could
+     apply → `scope:"global"` (`project:null`); use `project:<slug>` ONLY when the
+     rule names THIS repo's specific classes/files/architecture and is meaningless
+     elsewhere; `user` = personal workflow preferences, never engineering facts. Most
+     abstracted rules are `global` — do NOT default them to the session's project
+     (episodics stay `project:<slug>`).
      + entity {entry,body} + qa {entry,body}. In a DURABLE thread, STRIP one-off
      noise (a dev toggle flipped to get unblocked / a credential step) — don't write
      it as its own memory or in the episodic body; a thread that is ONLY such a
