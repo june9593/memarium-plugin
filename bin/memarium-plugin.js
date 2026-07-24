@@ -14552,14 +14552,14 @@ function normalizeRel(p2) {
 }
 function readMemoryBody(abs) {
   try {
-    const md = readFileSync9(abs, "utf8");
+    const md = readFileSync9(abs, "utf8").replace(/\r\n/g, "\n");
     const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
     return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();
   } catch {
     return "";
   }
 }
-function writeMemoryEntryFile(repoPath, entry) {
+function assertWritableMemoryTarget(repoPath, entry) {
   const memRoot = resolve2(join14(repoPath, "memory"));
   const canonical = canonicalMemoryPath(entry);
   const abs = resolve2(join14(repoPath, canonical));
@@ -14567,6 +14567,11 @@ function writeMemoryEntryFile(repoPath, entry) {
     throw new Error(`memory write: refusing to write outside memory/: ${canonical}`);
   }
   assertNoSymlinkedComponent(repoPath, abs, "memory write");
+  return canonical;
+}
+function writeMemoryEntryFile(repoPath, entry) {
+  const canonical = assertWritableMemoryTarget(repoPath, entry);
+  const abs = resolve2(join14(repoPath, canonical));
   const body = readMemoryBody(abs);
   entry.path = canonical;
   mkdirSync8(dirname4(abs), { recursive: true });
@@ -15172,7 +15177,18 @@ async function memoryQueryCmd(opts) {
   const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
   let coldStorage = [];
   if (strongPrimary < COLD_FLOOR && (opts.q ?? "").trim() !== "") {
-    coldStorage = scoreArchived(entries, scoreQuery).filter((s) => inScope(s.entry, project)).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => ({ id: s.entry.id, title: s.entry.title, score: s.score, archivedReason: s.entry.archivedReason }));
+    coldStorage = scoreArchived(entries, scoreQuery).filter((s) => inScope(s.entry, project)).filter((s) => !scoreQuery.type || s.entry.type === scoreQuery.type).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => ({
+      id: s.entry.id,
+      title: s.entry.title,
+      score: s.score,
+      archivedReason: s.entry.archivedReason,
+      // Origin decides which restore hint is honest: a `local` cold hit lives
+      // in THIS device's index (memory-unarchive works); an `overlay` hit is
+      // a sibling device's archived memory that memory-unarchive (local-only)
+      // can't touch, so we point the user at its origin device instead.
+      source: view.sources[s.entry.id] ?? "local",
+      originDevice: s.entry.originDevice ?? null
+    }));
   }
   const payload = {
     project,
@@ -15189,8 +15205,15 @@ async function memoryQueryCmd(opts) {
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
   if (coldStorage.length) {
     console.error(`
-\u2744\uFE0F ${coldStorage.length} archived also matched \u2014 memory-unarchive <id> to restore:`);
-    for (const c3 of coldStorage) console.error(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}`);
+\u2744\uFE0F ${coldStorage.length} archived also matched:`);
+    for (const c3 of coldStorage) {
+      if (c3.source === "overlay") {
+        const dev = c3.originDevice ? `device ${c3.originDevice}` : "another device";
+        console.error(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}  \u2014 archived on ${dev}; restore it there`);
+      } else {
+        console.error(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}  \u2014 memory-unarchive ${c3.id} to restore`);
+      }
+    }
   }
   if ((opts.q ?? "").trim() !== "") {
     try {
@@ -16713,8 +16736,9 @@ function planArchival(entries, usage, opts) {
   const pick2 = (id, reason) => {
     if (!chosen.has(id)) chosen.set(id, reason);
   };
+  const byId = new Map(entries.map((e) => [e.id, e]));
   for (const [a, b2] of nearDuplicatePairs(entries)) {
-    const ea = entries.find((x2) => x2.id === a), eb = entries.find((x2) => x2.id === b2);
+    const ea = byId.get(a), eb = byId.get(b2);
     if (!ea || !eb) continue;
     const loser = ea.importance !== eb.importance ? ea.importance < eb.importance ? ea : eb : Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb;
     const winner = loser === ea ? eb : ea;
@@ -16774,20 +16798,18 @@ async function memoryArchiveCmd(opts) {
     else plan.archive.forEach((a) => console.log(`archive ${a.id}  (${a.reason})`));
     return;
   }
-  let archived = 0;
+  const planned = [];
   for (const { id, reason } of plan.archive) {
     const e = idx.entries[id];
     if (!e) continue;
     if (e.type === "core" || e.status === "pinned" || e.status === "archived") continue;
-    const next = {
-      ...e,
-      status: "archived",
-      archivedAt: now,
-      archivedReason: reason,
-      updatedAt: now
-    };
+    planned.push({ ...e, status: "archived", archivedAt: now, archivedReason: reason, updatedAt: now });
+  }
+  for (const next of planned) assertWritableMemoryTarget(cfg.repoPath, next);
+  let archived = 0;
+  for (const next of planned) {
     writeMemoryEntryFile(cfg.repoPath, next);
-    idx.entries[id] = next;
+    idx.entries[next.id] = next;
     archived++;
   }
   if (archived > 0) saveMemoryIndex(cfg.repoPath, idx);
@@ -16819,17 +16841,21 @@ async function memoryUnarchiveCmd(opts) {
     return;
   }
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const pastValidTo = typeof e.validTo === "string" && e.validTo !== "" && e.validTo <= now;
   const next = {
     ...e,
     status: "active",
     archivedAt: null,
     archivedReason: null,
-    updatedAt: now
+    updatedAt: now,
+    ...pastValidTo ? { validTo: null } : {}
   };
   writeMemoryEntryFile(cfg.repoPath, next);
   idx.entries[opts.id] = next;
   saveMemoryIndex(cfg.repoPath, idx);
-  console.log(`restored ${opts.id}`);
+  console.log(
+    pastValidTo ? `restored ${opts.id} (cleared past validTo=${e.validTo} so it is recallable again)` : `restored ${opts.id}`
+  );
 }
 var init_memory_unarchive = __esm({
   "src/commands/memory-unarchive.ts"() {
