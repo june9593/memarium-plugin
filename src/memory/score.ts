@@ -31,7 +31,7 @@ function num(v: unknown, dflt = 0): number {
 const IMPORTANCE_CAP = 3;
 
 function isEligible(e: MemoryEntry, q: MemoryQuery): boolean {
-  if (e.status === "superseded") return false;
+  if (e.status === "superseded" || e.status === "archived") return false;
   if (e.validTo !== null && e.validTo <= q.now) return false;
   if (q.type && e.type !== q.type) return false;
   // scope: global/user always eligible; project-scoped only for the cwd project
@@ -44,11 +44,26 @@ function isEligible(e: MemoryEntry, q: MemoryQuery): boolean {
 }
 
 export function scoreMemories(entries: MemoryEntry[], q: MemoryQuery): ScoredMemory[] {
+  return rankMemories(entries.filter((e) => isEligible(e, q)), q);
+}
+
+/** Score ONLY archived entries (for the R2 cold-storage valve). Same ranking as
+ *  scoreMemories, but the eligibility is inverted to status === "archived"
+ *  (bypassing isEligible entirely). Pure — no mutation of `entries`. */
+export function scoreArchived(entries: MemoryEntry[], q: MemoryQuery): ScoredMemory[] {
+  return rankMemories(entries.filter((e) => e.status === "archived"), q);
+}
+
+/** Shared ranking body: scores every entry in `list` and returns them sorted by
+ *  score desc (id localeCompare tiebreak). The eligibility filter is the
+ *  caller's concern — scoreMemories passes eligible entries, scoreArchived
+ *  passes archived-only. Keeps keyword/scope/file/commit/recency/importance +
+ *  the pinned boost all in one place so both entry points rank identically. */
+function rankMemories(list: MemoryEntry[], q: MemoryQuery): ScoredMemory[] {
   const qTokens = new Set(tokenize(q.text));
   const out: ScoredMemory[] = [];
 
-  for (const e of entries) {
-    if (!isEligible(e, q)) continue;
+  for (const e of list) {
     let score = 0;
     const why: string[] = [];
 

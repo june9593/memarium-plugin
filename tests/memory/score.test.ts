@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scoreMemories, type MemoryQuery } from "../../src/memory/score.js";
+import { scoreMemories, scoreArchived, type MemoryQuery } from "../../src/memory/score.js";
 import type { MemoryEntry } from "../../src/memory/types.js";
 
 function e(over: Partial<MemoryEntry>): MemoryEntry {
@@ -112,5 +112,17 @@ describe("scoreMemories", () => {
     const sLo = r.find((x) => x.entry.id === "imp3")!.score;
     const sHi = r.find((x) => x.entry.id === "imp10")!.score;
     expect(sHi).toBe(sLo);
+  });
+
+  it("excludes archived from primary recall, but scoreArchived returns them", () => {
+    const entries = [
+      e({ id: "semantic/p/live", title: "vim keybindings", status: "active" }),
+      e({ id: "semantic/p/cold", title: "vim keybindings", status: "archived" }),
+    ];
+    const q = Q({ text: "vim" });
+    const primary = scoreMemories(entries, q);
+    expect(primary.map((x) => x.entry.id)).toEqual(["semantic/p/live"]);
+    const cold = scoreArchived(entries, q);
+    expect(cold.map((x) => x.entry.id)).toEqual(["semantic/p/cold"]);
   });
 });

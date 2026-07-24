@@ -136,5 +136,15 @@ describe("renderPrimer", () => {
     expect(md).toContain("core rule"); // injected regardless of trust
     expect(md).toContain("proc step");
   });
+
+  it("primer excludes archived entries", () => {
+    const entries = [
+      e({ id: "semantic/_global/a", type: "semantic", scope: "global", project: null, status: "active", trust: "trusted", title: "live global fact", summary: "keep me" }),
+      e({ id: "semantic/_global/b", type: "semantic", scope: "global", project: null, status: "archived", trust: "trusted", title: "cold global fact", summary: "hide me" }),
+    ];
+    const out = renderPrimer("p", entries, { now: "2026-07-24" });
+    expect(out).toContain("live global fact");
+    expect(out).not.toContain("cold global fact");
+  });
 });
 
