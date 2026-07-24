@@ -414,6 +414,20 @@ promoting a stable fact into `semantic`/`procedural` — the episodic is the
 evidence; only supersede it if it's a low-value duplicate pointer whose provenance
 you carry forward.
 
+Then run archival (automatic memory hygiene):
+
+```bash
+"$VBP" memory-archive --apply
+```
+
+This flips stale/unused memories to `status:archived` (out of recall) — aggressive
+and AUTOMATIC by design. It is safe because: (1) core/pinned are NEVER archived;
+(2) nothing is deleted — archived `.md` stay git-tracked and restorable via
+`memory-unarchive <id>`; (3) a wrongly-archived memory resurfaces on demand — recall
+surfaces strong archived matches in a read-only "cold storage" section (R2). This
+is the ONE place the digest bypasses the v4 human-review gate; that is DELIBERATE —
+do NOT reroute archival through `memory-propose`.
+
 ### Step P9 — Record skips (so they aren't re-proposed)
 
 Record in the local skip ledger — otherwise these resurface as "new" every digest
