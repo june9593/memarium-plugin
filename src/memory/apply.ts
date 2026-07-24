@@ -43,7 +43,7 @@ function readMemoryBody(abs: string): string {
     );
   }
   const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, ""); // drop frontmatter
-  if (!/^\s*#[^\n]*/.test(afterFm)) {
+  if (!/^\n*# [^\n]*/.test(afterFm)) {
     throw new Error(
       `memory rewrite: cannot recover body from ${abs} — no "# heading" after frontmatter; ` +
       `aborting so a metadata-only rewrite never clobbers the entry body`,
@@ -55,7 +55,10 @@ function readMemoryBody(abs: string): string {
   // block, corrupting content on a metadata-only archive/unarchive rewrite. This
   // mirrors exactly what renderMemoryMarkdown does to the body it re-emits
   // (`.replace(/^\n+/,"").replace(/\n+$/,"")`), so a round-trip is byte-stable.
-  return afterFm.replace(/^\s*#[^\n]*\n+/, "").replace(/^\n+/, "").replace(/\n+$/, "");
+  // The heading match requires an H1 `# ` (hash + space) as the FIRST content line
+  // (only newlines may precede it) — `\s*#` would span newlines and accept a later
+  // `##` body heading, passing a title-less file and then deleting that body heading.
+  return afterFm.replace(/^\n*# [^\n]*\n*/, "").replace(/\n+$/, "");
 }
 
 /** Preflight-only guard for a metadata-only rewrite: derive the CANONICAL path

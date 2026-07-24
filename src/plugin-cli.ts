@@ -196,7 +196,7 @@ export async function run(argv: string[]) {
     });
 
   program.command("memory-unarchive")
-    .description("Restore an archived memory back to active (clears archivedAt/archivedReason). No-op if the id is unknown or not archived.")
+    .description("Restore an archived memory to its pre-archive status (active, or superseded for a superseded-cleanup archive; clears archivedAt/archivedReason). No-op if the id is unknown or not archived.")
     .argument("<id>", "memory id to restore (e.g. semantic/<project>/<slug>)")
     .option("--cwd <path>", "project dir (accepted for symmetry; the store is resolved from memariumHome())")
     .action(async (id: string, o: { cwd?: string }) => {

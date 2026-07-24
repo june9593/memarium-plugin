@@ -289,4 +289,28 @@ describe("writeMemoryEntryFile (metadata-only rewriter)", () => {
     expect(written).toContain("    ```sh\n    npm run build\n    ```");
     expect(written).toContain("Trailing prose.");
   });
+
+  it("rejects a .md whose first heading is a body ## (no canonical # title) — must not pass preflight", async () => {
+    const { assertMemoryBodyRecoverable } = await import("../../src/memory/apply.js");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    // frontmatter is valid, but the body opens with an H2 section — no `# Title` H1.
+    writeFileSync(join(repo, "memory/semantic/p/noh1.md"),
+      "---\nid: semantic/p/noh1\ntype: semantic\nstatus: active\n---\n\n## Section\n\nbody text\n");
+    const entry = mk({ id: "semantic/p/noh1", type: "semantic", scope: "project:p", project: "p",
+      title: "NoH1", status: "active", path: "" });
+    expect(() => assertMemoryBodyRecoverable(repo, entry)).toThrow(/# heading/);
+  });
+
+  it("strips only the H1 title, preserving a later ## body heading across a rewrite", async () => {
+    const { writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    writeFileSync(join(repo, "memory/semantic/p/sub.md"),
+      "---\nid: semantic/p/sub\ntype: semantic\nstatus: active\n---\n\n# Title\n\nintro\n\n## Subsection\n\nmore\n");
+    const entry = mk({ id: "semantic/p/sub", type: "semantic", scope: "project:p", project: "p",
+      title: "Title", status: "active", path: "" });
+    writeMemoryEntryFile(repo, { ...entry, status: "archived", archivedAt: "2026-07-01", archivedReason: "expired" });
+    const written = readFileSync(join(repo, "memory/semantic/p/sub.md"), "utf8");
+    expect(written).toContain("## Subsection"); // body heading preserved (not deleted as the title)
+    expect(written).toContain("intro");
+  });
 });
