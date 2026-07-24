@@ -184,4 +184,53 @@ describe("memoryArchiveCmd", () => {
     await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
     expect(readIndexStatus("semantic/p/exp")).toBe("archived");
   });
+
+  it("does NOT archive an id whose newer ACTIVE copy is the overlay winner, but still archives a purely-local stale id", async () => {
+    // Seed a stale-locally entry `sib` that ALSO has a NEWER active copy on a
+    // sibling device (the aggregated overlay). resolveMemoryView resolves `sib`
+    // to the overlay (strictly newer updatedAt), so archiving the local stale
+    // copy — and stamping today's updatedAt — would let latest-wins clobber the
+    // sibling's newer edit on the next merge. It must be skipped. A purely-local
+    // stale id (`exp`, no overlay copy) must still archive.
+    const base = {
+      confidence: 1, importance: 1, createdAt: "2026-01-01",
+      validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+      supersedes: null, entities: [], trust: "trusted" as const, originDevice: null,
+      accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+    };
+    const localEntries = {
+      // purely-local, expired → should archive
+      "semantic/p/exp": { id: "semantic/p/exp", type: "semantic", scope: "project:p", project: "p",
+        title: "Expired fact", summary: "s", path: "memory/semantic/p/exp.md", status: "active",
+        validTo: "2000-01-01", updatedAt: "2026-01-01", ...base },
+      // stale locally (expired), but overlay holds a NEWER active copy → must NOT archive
+      "semantic/p/sib": { id: "semantic/p/sib", type: "semantic", scope: "project:p", project: "p",
+        title: "Sibling fact", summary: "s", path: "memory/semantic/p/sib.md", status: "active",
+        validTo: "2000-01-01", updatedAt: "2026-01-01", ...base },
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries: localEntries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const md = (title: string, id: string) =>
+      `---\nid: ${id}\ntype: semantic\nstatus: active\n---\n\n# ${title}\n\nThe real body of ${id}.\n`;
+    writeFileSync(join(repo, "memory/semantic/p/exp.md"), md("Expired fact", "semantic/p/exp"));
+    writeFileSync(join(repo, "memory/semantic/p/sib.md"), md("Sibling fact", "semantic/p/sib"));
+
+    // Aggregated overlay: a NEWER active copy of `sib` only (updatedAt strictly newer).
+    const overlayRoot = join(home, ".memarium", "aggregated");
+    mkdirSync(join(overlayRoot, ".memarium"), { recursive: true });
+    const overlayEntries = {
+      "semantic/p/sib": { id: "semantic/p/sib", type: "semantic", scope: "project:p", project: "p",
+        title: "Sibling fact (newer)", summary: "s", path: "memory/semantic/p/sib.md", status: "active",
+        validTo: null, updatedAt: "2026-07-01", ...base },
+    };
+    writeFileSync(join(overlayRoot, ".memarium", "index.memory.json"),
+      JSON.stringify({ version: 1, entries: overlayEntries }, null, 2) + "\n");
+
+    await memoryArchiveCmd({ cwd: repo, apply: true });
+
+    // purely-local stale id archived; overlay-winner id left ACTIVE (not clobbered)
+    expect(readIndexStatus("semantic/p/exp")).toBe("archived");
+    expect(readIndexStatus("semantic/p/sib")).toBe("active");
+    expect(readMdField("semantic/p/sib.md", "status")).toBe("active"); // .md never rewritten
+  });
 });

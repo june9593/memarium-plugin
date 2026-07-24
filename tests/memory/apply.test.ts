@@ -259,4 +259,34 @@ describe("writeMemoryEntryFile (metadata-only rewriter)", () => {
     expect(written).not.toContain("status: archived");       // …or the old archived frontmatter leaking in
     expect(written).not.toContain("archivedReason: expired");
   });
+
+  it("preserves an indented Markdown code block's leading spaces across an archive→unarchive round-trip (no .trim() de-indent)", async () => {
+    const { writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    // A body that OPENS with a 4-space-indented fenced code block. The first
+    // line's leading spaces are load-bearing Markdown (they make it a code block).
+    // A `.trim()` in body recovery would strip them on every metadata-only rewrite.
+    const rel = "memory/semantic/p/indent.md";
+    const abs = join(repo, rel);
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const indentedBody = "    ```sh\n    npm run build\n    ```\n\nTrailing prose.";
+    const seedMd =
+      "---\nid: semantic/p/indent\ntype: semantic\nstatus: active\narchivedAt: null\narchivedReason: null\n---\n\n# Indented\n\n" +
+      indentedBody + "\n";
+    writeFileSync(abs, seedMd);
+
+    const entry = mk({
+      id: "semantic/p/indent", type: "semantic", scope: "project:p", project: "p",
+      title: "Indented", status: "active", path: "",
+    });
+
+    // archive flip (metadata-only rewrite recovers + re-emits the body)…
+    writeMemoryEntryFile(repo, { ...entry, status: "archived", archivedAt: "2026-07-01", archivedReason: "unused-low-value" });
+    // …then unarchive flip (a second recovery + re-emit).
+    writeMemoryEntryFile(repo, { ...entry, status: "active" });
+
+    const written = readFileSync(abs, "utf8");
+    // The indentation of BOTH the opening fence and the code line survived intact.
+    expect(written).toContain("    ```sh\n    npm run build\n    ```");
+    expect(written).toContain("Trailing prose.");
+  });
 });

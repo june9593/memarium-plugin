@@ -4,6 +4,7 @@ import { loadUsage } from "../memory/usage-store.js";
 import { planArchival, ARCHIVE_DEFAULTS } from "../memory/archive.js";
 import { loadKnownSessions } from "../memory/known-sessions.js";
 import { safeValues } from "../memory/lint.js";
+import { resolveMemoryView } from "../memory/source-resolver.js";
 import { writeMemoryEntryFile, assertMemoryBodyRecoverable } from "../memory/apply.js";
 import type { MemoryEntry } from "../memory/types.js";
 
@@ -39,7 +40,24 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   if (entries.length < rawCount) {
     console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
   }
-  const plan = planArchival(entries, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });
+
+  // Cross-device clobber guard: the plan is built from the LOCAL index, but a
+  // sibling device may hold a NEWER, still-active copy of the same id. The
+  // merged view (local + aggregated overlay, latest-updatedAt wins) tells us
+  // whose copy is authoritative per id. If the OVERLAY copy is the current
+  // winner, archiving our stale LOCAL copy — and stamping it with today's
+  // updatedAt below — would make the local (archived) row the newest on the
+  // next merge, silently archiving the sibling's newer edit. So plan only over
+  // ids whose merged winner is the LOCAL copy; skip overlay-winner ids. (Ids
+  // absent from the overlay, or tied on updatedAt, resolve to "local" and stay.)
+  const view = resolveMemoryView(cfg.repoPath);
+  const localWinners = entries.filter((e) => (view.sources[e.id] ?? "local") === "local");
+  const skippedOverlay = entries.length - localWinners.length;
+  if (skippedOverlay > 0) {
+    console.warn(`memory-archive: skipped ${skippedOverlay} id(s) with a newer active copy on another device`);
+  }
+
+  const plan = planArchival(localWinners, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });
 
   if (!opts.apply) {
     if (opts.json) console.log(JSON.stringify(plan, null, 2));

@@ -49,7 +49,13 @@ function readMemoryBody(abs: string): string {
       `aborting so a metadata-only rewrite never clobbers the entry body`,
     );
   }
-  return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();       // drop the leading "# Title" heading
+  // Drop the leading "# Title" heading, then strip only structural leading/
+  // trailing NEWLINES — NOT `.trim()`, which also eats HORIZONTAL whitespace and
+  // would silently de-indent a body that opens with an indented Markdown code
+  // block, corrupting content on a metadata-only archive/unarchive rewrite. This
+  // mirrors exactly what renderMemoryMarkdown does to the body it re-emits
+  // (`.replace(/^\n+/,"").replace(/\n+$/,"")`), so a round-trip is byte-stable.
+  return afterFm.replace(/^\s*#[^\n]*\n+/, "").replace(/^\n+/, "").replace(/\n+$/, "");
 }
 
 /** Preflight-only guard for a metadata-only rewrite: derive the CANONICAL path

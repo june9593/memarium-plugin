@@ -64,6 +64,14 @@ function seed() {
       title: "Active fact", summary: "s", path: "memory/semantic/p/act.md", status: "active",
       archivedAt: null, archivedReason: null, ...base,
     },
+    // Archived by the "superseded-cleanup" rule — it was ALREADY superseded
+    // before archival, so restoring it must return it to `superseded`, NOT active
+    // (reactivating would resurrect an obsolete fact next to its live replacement).
+    "semantic/p/sup": {
+      id: "semantic/p/sup", type: "semantic", scope: "project:p", project: "p",
+      title: "Superseded then archived", summary: "s", path: "memory/semantic/p/sup.md", status: "archived",
+      archivedAt: "2026-05-01", archivedReason: "superseded-cleanup", ...base,
+    },
   };
   writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
   mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
@@ -72,6 +80,7 @@ function seed() {
   writeFileSync(join(repo, "memory/semantic/p/c.md"), md("Archived fact", "semantic/p/c", "archived", "2026-05-01", "expired"));
   writeFileSync(join(repo, "memory/semantic/p/exp.md"), md("Archived expired fact", "semantic/p/exp", "archived", "2026-05-01", "expired"));
   writeFileSync(join(repo, "memory/semantic/p/act.md"), md("Active fact", "semantic/p/act", "active", "null", "null"));
+  writeFileSync(join(repo, "memory/semantic/p/sup.md"), md("Superseded then archived", "semantic/p/sup", "archived", "2026-05-01", "superseded-cleanup"));
 }
 
 describe("memoryUnarchiveCmd", () => {
@@ -133,6 +142,43 @@ describe("memoryUnarchiveCmd", () => {
     await memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }); // validTo === null
     expect(readIndexStatus("semantic/p/c")).toBe("active");
     expect(readIndex().entries["semantic/p/c"].validTo).toBe(null);
+    expect(out.join("\n")).not.toMatch(/cleared past validTo/);
+  });
+
+  it("restores a superseded-cleanup archive to superseded (NOT active) while an expired archive restores to active", async () => {
+    seed();
+    // superseded-cleanup: was already superseded before archival → back to superseded
+    await memoryUnarchiveCmd({ id: "semantic/p/sup", cwd: repo });
+    expect(readIndexStatus("semantic/p/sup")).toBe("superseded"); // NOT "active"
+    expect(readIndexReason("semantic/p/sup")).toBe(null);
+    expect(readIndexArchivedAt("semantic/p/sup")).toBe(null);
+    expect(readIndexUpdatedAt("semantic/p/sup")).not.toBe("2026-01-01"); // bumped
+    // .md side: the guarded writer bypasses coercion, so status persists as superseded
+    expect(readMdField("semantic/p/sup.md", "status")).toBe("superseded");
+    expect(readMdNullable("semantic/p/sup.md", "archivedReason")).toBe(null);
+    expect(readMdNullable("semantic/p/sup.md", "archivedAt")).toBe(null);
+    expect(readFileSync(join(repo, "memory/semantic/p/sup.md"), "utf8")).toContain("The real body of semantic/p/sup."); // body kept
+    expect(out.join("\n")).toMatch(/to superseded/);
+
+    // control: an expired archive restores to active
+    out = [];
+    await memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo });
+    expect(readIndexStatus("semantic/p/c")).toBe("active");
+    expect(readMdField("semantic/p/c.md", "status")).toBe("active");
+  });
+
+  it("does not touch validTo when restoring a superseded-cleanup archive (superseded path skips the expired-clear)", async () => {
+    seed();
+    // Give the superseded-cleanup entry a PAST validTo. Because it restores to
+    // `superseded` (hidden by status regardless), the expired-clear must NOT fire.
+    const idx = readIndex();
+    idx.entries["semantic/p/sup"].validTo = "2000-01-01";
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    writeFileSync(join(repo, "memory/semantic/p/sup.md"),
+      "---\nid: semantic/p/sup\ntype: semantic\nstatus: archived\narchivedAt: 2026-05-01\narchivedReason: superseded-cleanup\nvalidTo: 2000-01-01\n---\n\n# Superseded then archived\n\nThe real body of semantic/p/sup.\n");
+    await memoryUnarchiveCmd({ id: "semantic/p/sup", cwd: repo });
+    expect(readIndexStatus("semantic/p/sup")).toBe("superseded");
+    expect(readIndex().entries["semantic/p/sup"].validTo).toBe("2000-01-01"); // untouched
     expect(out.join("\n")).not.toMatch(/cleared past validTo/);
   });
 
