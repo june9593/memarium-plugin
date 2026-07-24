@@ -14,6 +14,44 @@ function normalizeRel(p: string): string {
   return p.split("\\").join("/");
 }
 
+/** Recover a memory's body (the prose after the `# title` heading) from its
+ *  persisted .md, so a metadata-only rewrite preserves content. Missing/garbled
+ *  file → "" (the entry still gets a valid, if bodyless, .md). */
+function readMemoryBody(abs: string): string {
+  try {
+    const md = readFileSync(abs, "utf8");
+    const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, ""); // drop frontmatter
+    return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();       // drop the leading "# Title" heading
+  } catch { return ""; }
+}
+
+/** Guarded single-entry rewriter for a metadata-only flip (e.g. the archive
+ *  command flipping status→archived + archivedAt/archivedReason). Reads the
+ *  entry's existing body from its CANONICAL .md (derived, never trusted from
+ *  entry.path), re-renders frontmatter+body, and writes it back THROUGH the same
+ *  memory/-containment + symlink guard `applyMemoryItems` uses — so a crafted
+ *  type/project/slug can't traverse out of memory/, and a symlinked component
+ *  can't redirect the write.
+ *
+ *  Deliberately does NOT run applyMemoryItems' status/field normalization (the
+ *  {active,superseded,pinned} allowlist that coerces every other status back to
+ *  "active"). That coercion is correct for AUTHORED writes that routinely omit
+ *  status, but it would silently un-archive a caller-set status:"archived". The
+ *  caller owns the entry's fields here; we only persist them faithfully. */
+export function writeMemoryEntryFile(repoPath: string, entry: MemoryEntry): void {
+  const memRoot = resolve(join(repoPath, "memory"));
+  const canonical = canonicalMemoryPath(entry);
+  const abs = resolve(join(repoPath, canonical));
+  if (abs !== memRoot && !abs.startsWith(memRoot + sep)) {
+    throw new Error(`memory write: refusing to write outside memory/: ${canonical}`);
+  }
+  assertNoSymlinkedComponent(repoPath, abs, "memory write");
+  const body = readMemoryBody(abs);
+  entry.path = canonical;
+  mkdirSync(dirname(abs), { recursive: true });
+  writeFileSync(abs, renderMemoryMarkdown(entry, body));
+}
+
 interface PlannedItem {
   entry: MemoryEntry;
   body: string;
