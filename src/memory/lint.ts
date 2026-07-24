@@ -79,6 +79,38 @@ const jaccard = (a: Set<string>, b: Set<string>): number => {
 const daysBetween = (a: string, b: string): number =>
   (Date.parse(a) - Date.parse(b)) / 86400000;
 
+/** Near-duplicate pairs by Jaccard over title+summary content tokens ≥ threshold.
+ *  Pure + shared by lint (the `duplicate-like` check) and the archival engine.
+ *  Considers only ACTIVE entries and only compares within the same
+ *  type/scope/project bucket (so a semantic and a procedural memory are never
+ *  reported as duplicates). Each returned pair is lexicographically sorted
+ *  ([idA, idB] with idA < idB); order across pairs follows bucket/insertion
+ *  order. Malformed pairs are skipped defensively. */
+export function nearDuplicatePairs(entries: MemoryEntry[], threshold = 0.8): [string, string][] {
+  const active = entries.filter((e) => e.status === "active");
+  const buckets = new Map<string, { e: MemoryEntry; tokens: Set<string> }[]>();
+  for (const e of active) {
+    const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
+    const arr = buckets.get(key) ?? [];
+    arr.push({ e, tokens: tokenize(`${e.title} ${e.summary}`) });
+    buckets.set(key, arr);
+  }
+  const pairs: [string, string][] = [];
+  for (const group of buckets.values()) {
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        try {
+          if (jaccard(group[i].tokens, group[j].tokens) >= threshold) {
+            const pair = [group[i].e.id, group[j].e.id].slice().sort() as [string, string];
+            pairs.push(pair);
+          }
+        } catch { /* defensive: skip malformed pair */ }
+      }
+    }
+  }
+  return pairs;
+}
+
 export function lintMemory(
   memoryIdx: MemoryIndex,
   entityIdx: EntityIndex,
@@ -165,26 +197,12 @@ export function lintMemory(
 
   const dupThreshold = opts.dupThreshold ?? 0.6;
   const active = memEntries.filter((e) => e.status === "active");
-  const buckets = new Map<string, { e: MemoryEntry; tokens: Set<string> }[]>();
-  for (const e of active) {
-    const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
-    const arr = buckets.get(key) ?? [];
-    arr.push({ e, tokens: tokenize(`${e.title} ${e.summary}`) });
-    buckets.set(key, arr);
-  }
-  for (const group of buckets.values()) {
-    for (let i = 0; i < group.length; i++) {
-      for (let j = i + 1; j < group.length; j++) {
-        try {
-          const sim = jaccard(group[i].tokens, group[j].tokens);
-          if (sim >= dupThreshold) {
-            const pair = [group[i].e.id, group[j].e.id].slice().sort();
-            issues.push({ check: "duplicate-like", severity: "info", layer: "memory",
-              id: pair[0], detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`, refs: pair });
-          }
-        } catch { /* defensive: skip malformed pair */ }
-      }
-    }
+  const tokensById = new Map(active.map((e) => [e.id, tokenize(`${e.title} ${e.summary}`)] as const));
+  for (const [id0, id1] of nearDuplicatePairs(active, dupThreshold)) {
+    const ta = tokensById.get(id0), tb = tokensById.get(id1);
+    const sim = ta && tb ? jaccard(ta, tb) : NaN;
+    issues.push({ check: "duplicate-like", severity: "info", layer: "memory",
+      id: id0, detail: `near-duplicate of ${id1} (overlap ${sim.toFixed(2)})`, refs: [id0, id1] });
   }
 
   const entEntries = safeValues<EntityPage>(entityIdx.entries)
