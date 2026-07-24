@@ -42,19 +42,30 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   }
 
   // Cross-device clobber guard: the plan is built from the LOCAL index, but a
-  // sibling device may hold a NEWER, still-active copy of the same id. The
-  // merged view (local + aggregated overlay, latest-updatedAt wins) tells us
-  // whose copy is authoritative per id. If the OVERLAY copy is the current
-  // winner, archiving our stale LOCAL copy — and stamping it with today's
-  // updatedAt below — would make the local (archived) row the newest on the
-  // next merge, silently archiving the sibling's newer edit. So plan only over
-  // ids whose merged winner is the LOCAL copy; skip overlay-winner ids. (Ids
-  // absent from the overlay, or tied on updatedAt, resolve to "local" and stay.)
+  // sibling device may hold a copy of the same id that is NEWER — or, because
+  // updatedAt is day-granular, SAME-DAY and differing. resolveMemoryView merges
+  // local+overlay (latest-updatedAt wins, LOCAL wins ties), so `view.sources`
+  // alone resolves an equal-timestamp tie to "local" — and archiving that local
+  // row (stamping today's day-only updatedAt) could then win the next merge by
+  // traversal order and silently clobber the sibling's same-day edit. So we
+  // compare the overlay's OWN updatedAt directly and skip any id whose overlay
+  // copy is updatedAt >= the local copy's (covers strictly-newer AND same-day
+  // ties). Ids absent from the overlay, or with a strictly-OLDER overlay copy,
+  // are locally authoritative and still archive.
   const view = resolveMemoryView(cfg.repoPath);
-  const localWinners = entries.filter((e) => (view.sources[e.id] ?? "local") === "local");
+  const overlayEntries: Record<string, unknown> = view.roots.overlay
+    ? loadMemoryIndex(view.roots.overlay).entries
+    : {};
+  const inCrossDeviceConflict = (e: MemoryEntry): boolean => {
+    const ov = overlayEntries[e.id];
+    if (!ov || typeof ov !== "object" || Array.isArray(ov)) return false; // absent/malformed overlay row → no conflict
+    const ovUpdated = (ov as MemoryEntry).updatedAt ?? "";
+    return ovUpdated >= (e.updatedAt ?? "");
+  };
+  const localWinners = entries.filter((e) => !inCrossDeviceConflict(e));
   const skippedOverlay = entries.length - localWinners.length;
   if (skippedOverlay > 0) {
-    console.warn(`memory-archive: skipped ${skippedOverlay} id(s) with a newer active copy on another device`);
+    console.warn(`memory-archive: skipped ${skippedOverlay} id(s) in a cross-device conflict (a sibling holds a same-day-or-newer copy)`);
   }
 
   const plan = planArchival(localWinners, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });

@@ -76,6 +76,28 @@ it("near-duplicate: archives the lower-importance loser, keeps the winner", () =
   expect(p.archive[0].reason).toBe("near-duplicate-of:semantic/p/win");
 });
 
+it("near-dup: a valid low-importance loser SURVIVES when the winner is independently archived (expired)", () => {
+  // The higher-importance "winner" is itself expired → it will be archived by the
+  // per-entry rule. Archiving the lower-importance loser too (as a dup) would erase
+  // the shared knowledge from recall entirely. So the loser must survive: only the
+  // expired winner is archived, and for reason "expired" (not near-duplicate).
+  const win = e({ id: "semantic/p/win", title: "declare list params as array", summary: "type array not string", importance: 4, validTo: daysAgo(1) });
+  const lose = e({ id: "semantic/p/lose", title: "declare list params as array", summary: "type array not string", importance: 1, updatedAt: daysAgo(10) });
+  const p = planArchival([win, lose], {}, opts);
+  expect(ids(p)).toEqual(["semantic/p/win"]);
+  expect(p.archive.find((a) => a.id === "semantic/p/win")!.reason).toBe("expired");
+});
+
+it("near-dup: the normal case (winner stays active) still archives the loser as a dup", () => {
+  // Neither entry independently matches a per-entry rule (recent, mid importance),
+  // so the winner stays hot and the loser is archived as its dedup representative.
+  const win = e({ id: "semantic/p/win", title: "declare list params as array", summary: "type array not string", importance: 4, updatedAt: daysAgo(10) });
+  const lose = e({ id: "semantic/p/lose", title: "declare list params as array", summary: "type array not string", importance: 1, updatedAt: daysAgo(10) });
+  const p = planArchival([win, lose], {}, opts);
+  expect(ids(p)).toEqual(["semantic/p/lose"]);
+  expect(p.archive[0].reason).toBe("near-duplicate-of:semantic/p/win");
+});
+
 it("does not re-plan an already-archived entry", () => {
   const p = planArchival([e({ id: "semantic/p/a", status: "archived", validTo: daysAgo(1) })], {}, opts);
   expect(p.archive).toEqual([]);

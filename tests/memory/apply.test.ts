@@ -313,4 +313,37 @@ describe("writeMemoryEntryFile (metadata-only rewriter)", () => {
     expect(written).toContain("## Subsection"); // body heading preserved (not deleted as the title)
     expect(written).toContain("intro");
   });
+
+  it("aborts (throws, leaves the file untouched) when the persisted .md id differs from the entry — identity guard", async () => {
+    // A structurally-valid .md whose frontmatter id belongs to a DIFFERENT entry is
+    // sitting at the canonical path derived from `entry`. Without an identity check,
+    // a metadata-only rewrite would overwrite that other entry's record with THIS
+    // index row — turning store corruption into silent cross-entry data loss during
+    // automatic archival. The strict rewriter must throw before any write.
+    const { writeMemoryEntryFile, assertMemoryBodyRecoverable } = await import("../../src/memory/apply.js");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const abs = join(repo, "memory/semantic/p/mine.md");
+    // canonical path for id "semantic/p/mine" holds a .md that claims id "semantic/p/OTHER".
+    const foreign = "---\nid: semantic/p/OTHER\ntype: semantic\nstatus: active\n---\n\n# Other entry\n\nSomeone else's body.\n";
+    writeFileSync(abs, foreign);
+    const entry = mk({ id: "semantic/p/mine", type: "semantic", scope: "project:p", project: "p",
+      title: "Mine", status: "archived", archivedAt: "2026-07-01", archivedReason: "expired", path: "" });
+    // both the batch preflight and the single-entry writer must reject it
+    expect(() => assertMemoryBodyRecoverable(repo, entry)).toThrow(/identity mismatch|different id/i);
+    expect(() => writeMemoryEntryFile(repo, entry)).toThrow(/identity mismatch|different id/i);
+    expect(readFileSync(abs, "utf8")).toBe(foreign); // original file byte-identical, never clobbered
+  });
+
+  it("aborts when the persisted .md type differs from the entry — identity guard (type)", async () => {
+    const { writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const abs = join(repo, "memory/semantic/p/t.md");
+    // same id, but the persisted type is procedural while the entry says semantic.
+    const foreign = "---\nid: semantic/p/t\ntype: procedural\nstatus: active\n---\n\n# T\n\nbody\n";
+    writeFileSync(abs, foreign);
+    const entry = mk({ id: "semantic/p/t", type: "semantic", scope: "project:p", project: "p",
+      title: "T", status: "archived", archivedAt: "2026-07-01", archivedReason: "expired", path: "" });
+    expect(() => writeMemoryEntryFile(repo, entry)).toThrow(/identity mismatch|different type/i);
+    expect(readFileSync(abs, "utf8")).toBe(foreign);
+  });
 });

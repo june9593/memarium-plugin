@@ -36,29 +36,20 @@ function archivable(e: MemoryEntry): boolean {
 
 /** Pure archival planner: decides which memories to archive by 6 rules, with
  *  core / pinned / already-archived hard-guarded. No I/O, no clock — `now` is
- *  passed in. Near-duplicate losers are chosen first (needs the whole set);
- *  then per-entry the first matching of superseded → expired → stale-episodic →
- *  stale-provenance → unused-low-value wins (first rule wins per id). */
+ *  passed in. Per-entry rules are computed FIRST (superseded → expired →
+ *  stale-episodic → stale-provenance → unused-low-value, first rule wins per id),
+ *  building the `chosen` map. THEN the near-duplicate pass runs over the whole
+ *  set: it archives the lower-importance loser to keep the higher-value winner
+ *  hot — but ONLY when the winner will stay hot. If the winner is itself being
+ *  archived by a per-entry rule, dropping the loser too would erase the shared
+ *  knowledge from recall entirely, so the loser is left as the sole
+ *  representative. */
 export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: ArchiveOpts): ArchivePlan {
   const chosen = new Map<string, string>(); // id -> reason (first rule wins)
   const pick = (id: string, reason: string) => { if (!chosen.has(id)) chosen.set(id, reason); };
 
-  // Rule 0: near-duplicate losers first (needs the whole set). Loser = lower
-  // importance; tie-break to the one updated earlier (<=). Only archive the
-  // loser when it is archivable — the winner (and any core/pinned) is kept.
-  // Index the entries by id ONCE so each pair is an O(1) lookup, not two O(n)
-  // scans (which made the whole pair loop O(n³) store-wide).
-  const byId = new Map(entries.map((e) => [e.id, e]));
-  for (const [a, b] of nearDuplicatePairs(entries)) {
-    const ea = byId.get(a), eb = byId.get(b);
-    if (!ea || !eb) continue;
-    const loser = ea.importance !== eb.importance
-      ? (ea.importance < eb.importance ? ea : eb)
-      : (Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb);
-    const winner = loser === ea ? eb : ea;
-    if (archivable(loser)) pick(loser.id, `near-duplicate-of:${winner.id}`);
-  }
-
+  // Per-entry rules FIRST — so the near-duplicate pass below can see whether each
+  // pair's WINNER is independently archivable before deciding the loser's fate.
   for (const e of entries) {
     if (!archivable(e)) continue;
     // Rule 1: leftover superseded record — the replacement is already live.
@@ -83,6 +74,29 @@ export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: Arch
         daysBetween(opts.now, e.updatedAt) > opts.unusedMinAgeDays) {
       pick(e.id, "unused-low-value"); continue;
     }
+  }
+
+  // Near-duplicate pass LAST (needs the whole set + the per-entry decisions above).
+  // Loser = lower importance; tie-break to the one updated earlier (<=). Index the
+  // entries by id ONCE so each pair is an O(1) lookup, not two O(n) scans (which
+  // made the whole pair loop O(n³) store-wide).
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  for (const [a, b] of nearDuplicatePairs(entries)) {
+    const ea = byId.get(a), eb = byId.get(b);
+    if (!ea || !eb) continue;
+    const loser = ea.importance !== eb.importance
+      ? (ea.importance < eb.importance ? ea : eb)
+      : (Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb);
+    const winner = loser === ea ? eb : ea;
+    // If the winner is already being archived by a per-entry rule, do NOT add the
+    // loser for the dedup reason — archiving both would wipe the shared knowledge
+    // from recall. Let the loser survive as the one representative (its own
+    // per-entry rule, if any, already ran above and stands).
+    if (chosen.has(winner.id)) continue;
+    // Winner stays hot → archive the loser as its dedup representative. This SETS
+    // the dedup reason even over a per-entry reason the loser also matched, so the
+    // "near-duplicate-of:<winner>" label wins for a dup-loser that stays a loser.
+    if (archivable(loser)) chosen.set(loser.id, `near-duplicate-of:${winner.id}`);
   }
 
   return { archive: [...chosen].map(([id, reason]) => ({ id, reason })) };

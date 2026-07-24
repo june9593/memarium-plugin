@@ -21,9 +21,14 @@ function normalizeRel(p: string): string {
  *  would destroy the entry. If the .md is missing/unreadable, or lacks BOTH a
  *  valid frontmatter block (`---\n…\n---`) AND a `# heading`, THROW so the caller
  *  aborts BEFORE any write — never clobbering the entry with a bodyless/nested
- *  document, and never hiding store corruption. (The lint reader in
- *  memory-lint.ts keeps its own lenient copy: it only scans, it never rewrites.) */
-function readMemoryBody(abs: string): string {
+ *  document, and never hiding store corruption. Also asserts IDENTITY: the
+ *  persisted frontmatter `id` (and `type`, when present) must match `expect` —
+ *  a structurally-valid .md belonging to a DIFFERENT entry sitting at this
+ *  canonical path would otherwise be silently overwritten with the wrong index
+ *  row, turning store corruption into cross-entry data loss during automatic
+ *  archival. (The lint reader in memory-lint.ts keeps its own lenient copy: it
+ *  only scans, it never rewrites.) */
+function readMemoryBody(abs: string, expect: { id: string; type: string }): string {
   let md: string;
   try {
     // Normalize CRLF first (Windows checkouts), matching parseMemoryMarkdown's
@@ -36,10 +41,34 @@ function readMemoryBody(abs: string): string {
       `(${(err as Error).message}); aborting so a metadata-only rewrite never destroys the entry body`,
     );
   }
-  if (!/^---\n[\s\S]*?\n---\n?/.test(md)) {
+  const fmMatch = md.match(/^---\n([\s\S]*?)\n---\n?/);
+  if (!fmMatch) {
     throw new Error(
       `memory rewrite: cannot recover body from ${abs} — no valid frontmatter block; ` +
       `aborting so a metadata-only rewrite never clobbers the entry body`,
+    );
+  }
+  // Identity guard: the persisted .md at this canonical path must be the SAME
+  // entry we're about to overwrite. A different id/type here means store
+  // corruption (or a path collision) — abort BEFORE any write rather than stamp
+  // this index row over someone else's record. id is compared unconditionally
+  // (a missing id line can't verify identity → treat as a mismatch); type only
+  // when the persisted line is present, so an odd-but-valid file isn't rejected
+  // for a merely absent type.
+  const fm = fmMatch[1];
+  const persistedId = (fm.match(/^id:[ \t]*(.*)$/m)?.[1] ?? "").trim();
+  if (persistedId !== expect.id) {
+    throw new Error(
+      `memory rewrite: identity mismatch at ${abs} — persisted id ${JSON.stringify(persistedId)} ` +
+      `!= entry id ${JSON.stringify(expect.id)} (a different entry's .md sits at this canonical path); ` +
+      `aborting so the rewrite never clobbers another entry's record`,
+    );
+  }
+  const persistedType = fm.match(/^type:[ \t]*(.*)$/m)?.[1]?.trim();
+  if (persistedType !== undefined && persistedType !== "" && persistedType !== expect.type) {
+    throw new Error(
+      `memory rewrite: identity mismatch at ${abs} — persisted type ${JSON.stringify(persistedType)} ` +
+      `!= entry type ${JSON.stringify(expect.type)}; aborting so the rewrite never clobbers another entry's record`,
     );
   }
   const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, ""); // drop frontmatter
@@ -95,7 +124,7 @@ export function assertWritableMemoryTarget(repoPath: string, entry: MemoryEntry)
 export function writeMemoryEntryFile(repoPath: string, entry: MemoryEntry): void {
   const canonical = assertWritableMemoryTarget(repoPath, entry);
   const abs = resolve(join(repoPath, canonical));
-  const body = readMemoryBody(abs); // strict: throws (aborts) on a missing/corrupt .md
+  const body = readMemoryBody(abs, { id: entry.id, type: entry.type }); // strict: throws on a missing/corrupt/foreign .md
   entry.path = canonical;
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, renderMemoryMarkdown(entry, body));
@@ -111,7 +140,7 @@ export function writeMemoryEntryFile(repoPath: string, entry: MemoryEntry): void
  *  can't land on any earlier entry. */
 export function assertMemoryBodyRecoverable(repoPath: string, entry: MemoryEntry): void {
   const canonical = assertWritableMemoryTarget(repoPath, entry);
-  readMemoryBody(resolve(join(repoPath, canonical))); // throws on missing/corrupt md
+  readMemoryBody(resolve(join(repoPath, canonical)), { id: entry.id, type: entry.type }); // throws on missing/corrupt/foreign md
 }
 
 interface PlannedItem {

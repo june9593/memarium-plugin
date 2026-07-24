@@ -233,4 +233,60 @@ describe("memoryArchiveCmd", () => {
     expect(readIndexStatus("semantic/p/sib")).toBe("active");
     expect(readMdField("semantic/p/sib.md", "status")).toBe("active"); // .md never rewritten
   });
+
+  it("skips a SAME-DAY (updatedAt-equal) cross-device conflict, but still archives one with an OLDER overlay copy", async () => {
+    // updatedAt is day-granular and resolveMemoryView resolves equal-timestamp ties
+    // to "local" — so a local stale row + a sibling's SAME-DAY differing edit tie and
+    // would be archived, then our archive stamps another day-only timestamp that can
+    // win the next merge by traversal order, clobbering the sibling. So an overlay
+    // copy whose updatedAt is >= the local copy's (same-day OR newer) is a conflict
+    // and must be skipped. An overlay copy that is strictly OLDER still archives.
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    const base = {
+      confidence: 1, importance: 1, createdAt: "2026-01-01",
+      validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+      supersedes: null, entities: [], trust: "trusted" as const, originDevice: null,
+      accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+    };
+    const localEntries = {
+      // local stale (expired), overlay holds a SAME-DAY differing copy → conflict → skip
+      "semantic/p/tie": { id: "semantic/p/tie", type: "semantic", scope: "project:p", project: "p",
+        title: "Tie fact", summary: "s", path: "memory/semantic/p/tie.md", status: "active",
+        validTo: "2000-01-01", updatedAt: "2026-05-05", ...base },
+      // local stale (expired), overlay holds an OLDER copy → local is authoritative → archive
+      "semantic/p/old": { id: "semantic/p/old", type: "semantic", scope: "project:p", project: "p",
+        title: "Old-overlay fact", summary: "s", path: "memory/semantic/p/old.md", status: "active",
+        validTo: "2000-01-01", updatedAt: "2026-05-05", ...base },
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries: localEntries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const md = (title: string, id: string) =>
+      `---\nid: ${id}\ntype: semantic\nstatus: active\n---\n\n# ${title}\n\nThe real body of ${id}.\n`;
+    writeFileSync(join(repo, "memory/semantic/p/tie.md"), md("Tie fact", "semantic/p/tie"));
+    writeFileSync(join(repo, "memory/semantic/p/old.md"), md("Old-overlay fact", "semantic/p/old"));
+
+    const overlayRoot = join(home, ".memarium", "aggregated");
+    mkdirSync(join(overlayRoot, ".memarium"), { recursive: true });
+    const overlayEntries = {
+      // SAME-DAY as local (equal updatedAt), but a differing (active, non-expired) edit
+      "semantic/p/tie": { id: "semantic/p/tie", type: "semantic", scope: "project:p", project: "p",
+        title: "Tie fact (sibling edit)", summary: "s", path: "memory/semantic/p/tie.md", status: "active",
+        validTo: null, updatedAt: "2026-05-05", ...base },
+      // strictly OLDER than local → local wins, so archiving the local copy is safe
+      "semantic/p/old": { id: "semantic/p/old", type: "semantic", scope: "project:p", project: "p",
+        title: "Old-overlay fact", summary: "s", path: "memory/semantic/p/old.md", status: "active",
+        validTo: "2000-01-01", updatedAt: "2026-01-01", ...base },
+    };
+    writeFileSync(join(overlayRoot, ".memarium", "index.memory.json"),
+      JSON.stringify({ version: 1, entries: overlayEntries }, null, 2) + "\n");
+
+    await memoryArchiveCmd({ cwd: repo, apply: true });
+
+    // same-day conflict skipped (stays active); older-overlay id archived normally
+    expect(readIndexStatus("semantic/p/tie")).toBe("active");
+    expect(readMdField("semantic/p/tie.md", "status")).toBe("active"); // .md never rewritten
+    expect(readIndexStatus("semantic/p/old")).toBe("archived");
+    expect(warnings.join("\n")).toMatch(/skipped 1 id/); // the conflict was logged
+  });
 });
