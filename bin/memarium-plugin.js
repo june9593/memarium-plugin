@@ -14570,7 +14570,7 @@ function readMemoryBody(abs) {
       `memory rewrite: cannot recover body from ${abs} \u2014 no "# heading" after frontmatter; aborting so a metadata-only rewrite never clobbers the entry body`
     );
   }
-  return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();
+  return afterFm.replace(/^\s*#[^\n]*\n+/, "").replace(/^\n+/, "").replace(/\n+$/, "");
 }
 function assertWritableMemoryTarget(repoPath, entry) {
   const memRoot = resolve2(join14(repoPath, "memory"));
@@ -16813,7 +16813,13 @@ async function memoryArchiveCmd(opts) {
   if (entries.length < rawCount) {
     console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
   }
-  const plan = planArchival(entries, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });
+  const view = resolveMemoryView(cfg.repoPath);
+  const localWinners = entries.filter((e) => (view.sources[e.id] ?? "local") === "local");
+  const skippedOverlay = entries.length - localWinners.length;
+  if (skippedOverlay > 0) {
+    console.warn(`memory-archive: skipped ${skippedOverlay} id(s) with a newer active copy on another device`);
+  }
+  const plan = planArchival(localWinners, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });
   if (!opts.apply) {
     if (opts.json) console.log(JSON.stringify(plan, null, 2));
     else if (plan.archive.length === 0) console.log("nothing to archive");
@@ -16846,6 +16852,7 @@ var init_memory_archive = __esm({
     init_archive();
     init_known_sessions();
     init_lint();
+    init_source_resolver();
     init_apply();
   }
 });
@@ -16864,10 +16871,11 @@ async function memoryUnarchiveCmd(opts) {
     return;
   }
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  const pastValidTo = typeof e.validTo === "string" && e.validTo !== "" && e.validTo <= now;
+  const restoreSuperseded = e.archivedReason === "superseded-cleanup";
+  const pastValidTo = !restoreSuperseded && typeof e.validTo === "string" && e.validTo !== "" && e.validTo <= now;
   const next = {
     ...e,
-    status: "active",
+    status: restoreSuperseded ? "superseded" : "active",
     archivedAt: null,
     archivedReason: null,
     updatedAt: now,
@@ -16877,7 +16885,7 @@ async function memoryUnarchiveCmd(opts) {
   idx.entries[opts.id] = next;
   saveMemoryIndex(cfg.repoPath, idx);
   console.log(
-    pastValidTo ? `restored ${opts.id} (cleared past validTo=${e.validTo} so it is recallable again)` : `restored ${opts.id}`
+    restoreSuperseded ? `restored ${opts.id} to superseded (its replacement is live; was archived as superseded-cleanup)` : pastValidTo ? `restored ${opts.id} (cleared past validTo=${e.validTo} so it is recallable again)` : `restored ${opts.id}`
   );
 }
 var init_memory_unarchive = __esm({
