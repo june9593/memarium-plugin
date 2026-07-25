@@ -289,4 +289,85 @@ describe("memoryArchiveCmd", () => {
     expect(readIndexStatus("semantic/p/old")).toBe("archived");
     expect(warnings.join("\n")).toMatch(/skipped 1 id/); // the conflict was logged
   });
+
+  it("archives an EQUIVALENT same-day synced copy (regression), but skips a DIVERGENT same-day and a strictly-NEWER overlay copy", async () => {
+    // The overlay aggregates almost EVERY local id back — so at steady state most
+    // local rows have an overlay copy at the SAME updatedAt with IDENTICAL content.
+    // A raw `updatedAt >=` guard would skip all of those, breaking archival for a
+    // synced user. The corrected rule: an equal-timestamp overlay copy blocks
+    // archival ONLY when it substantively DIVERGES (a same-day sibling edit we
+    // could clobber). An equivalent synced copy is archivable; provenance-only
+    // differences (path/originDevice/sourceSessions) are NOT divergence.
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    const base = {
+      confidence: 1, importance: 1, createdAt: "2026-01-01",
+      validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+      supersedes: null, entities: [] as string[], trust: "trusted" as const, originDevice: null,
+      accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+    };
+    const localEntries = {
+      // overlay copy is an EQUIVALENT synced copy at the SAME updatedAt → ARCHIVE (regression case)
+      "semantic/p/eqv": { id: "semantic/p/eqv", type: "semantic", scope: "project:p", project: "p",
+        title: "Eqv fact", summary: "s", path: "memory/semantic/p/eqv.md", status: "active",
+        validTo: "2000-01-01", updatedAt: "2026-05-05", ...base },
+      // overlay copy is SAME updatedAt but DIVERGES (different status) → SKIP
+      "semantic/p/div": { id: "semantic/p/div", type: "semantic", scope: "project:p", project: "p",
+        title: "Div fact", summary: "s", path: "memory/semantic/p/div.md", status: "active",
+        validTo: "2000-01-01", updatedAt: "2026-05-05", ...base },
+      // overlay copy is strictly NEWER → SKIP
+      "semantic/p/new": { id: "semantic/p/new", type: "semantic", scope: "project:p", project: "p",
+        title: "New fact", summary: "s", path: "memory/semantic/p/new.md", status: "active",
+        validTo: "2000-01-01", updatedAt: "2026-05-05", ...base },
+      // overlay copy is strictly OLDER → local authoritative → ARCHIVE
+      "semantic/p/old": { id: "semantic/p/old", type: "semantic", scope: "project:p", project: "p",
+        title: "Old fact", summary: "s", path: "memory/semantic/p/old.md", status: "active",
+        validTo: "2000-01-01", updatedAt: "2026-05-05", ...base },
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries: localEntries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const md = (title: string, id: string) =>
+      `---\nid: ${id}\ntype: semantic\nstatus: active\n---\n\n# ${title}\n\nThe real body of ${id}.\n`;
+    for (const id of ["eqv", "div", "new", "old"])
+      writeFileSync(join(repo, `memory/semantic/p/${id}.md`), md(id, `semantic/p/${id}`));
+
+    const overlayRoot = join(home, ".memarium", "aggregated");
+    mkdirSync(join(overlayRoot, ".memarium"), { recursive: true });
+    const overlayEntries = {
+      // EQUIVALENT content at SAME updatedAt — differs ONLY in provenance
+      // (path/originDevice/sourceSessions), which must NOT count as divergence.
+      "semantic/p/eqv": { id: "semantic/p/eqv", type: "semantic", scope: "project:p", project: "p",
+        title: "Eqv fact", summary: "s", path: "memory/semantic/p/eqv-aggregated.md", status: "active",
+        validTo: "2000-01-01", updatedAt: "2026-05-05",
+        ...base, sourceSessions: ["s1", "s2"], originDevice: "other-device" },
+      // SAME updatedAt but a genuinely different status → divergent → conflict
+      "semantic/p/div": { id: "semantic/p/div", type: "semantic", scope: "project:p", project: "p",
+        title: "Div fact", summary: "s", path: "memory/semantic/p/div.md", status: "pinned",
+        validTo: "2000-01-01", updatedAt: "2026-05-05", ...base },
+      // strictly NEWER → conflict
+      "semantic/p/new": { id: "semantic/p/new", type: "semantic", scope: "project:p", project: "p",
+        title: "New fact (sibling)", summary: "s", path: "memory/semantic/p/new.md", status: "active",
+        validTo: null, updatedAt: "2026-07-01", ...base },
+      // strictly OLDER → local authoritative
+      "semantic/p/old": { id: "semantic/p/old", type: "semantic", scope: "project:p", project: "p",
+        title: "Old fact", summary: "s", path: "memory/semantic/p/old.md", status: "active",
+        validTo: "2000-01-01", updatedAt: "2026-01-01", ...base },
+    };
+    writeFileSync(join(overlayRoot, ".memarium", "index.memory.json"),
+      JSON.stringify({ version: 1, entries: overlayEntries }, null, 2) + "\n");
+
+    await memoryArchiveCmd({ cwd: repo, apply: true });
+
+    // KEY regression assertion: the equivalent synced copy is archived, NOT skipped.
+    expect(readIndexStatus("semantic/p/eqv")).toBe("archived");
+    expect(readMdField("semantic/p/eqv.md", "status")).toBe("archived");
+    // older-overlay id archived normally
+    expect(readIndexStatus("semantic/p/old")).toBe("archived");
+    // divergent same-day + strictly-newer both skipped (stay active, .md untouched)
+    expect(readIndexStatus("semantic/p/div")).toBe("active");
+    expect(readMdField("semantic/p/div.md", "status")).toBe("active");
+    expect(readIndexStatus("semantic/p/new")).toBe("active");
+    expect(readMdField("semantic/p/new.md", "status")).toBe("active");
+    expect(warnings.join("\n")).toMatch(/skipped 2 id/); // div + new
+  });
 });
