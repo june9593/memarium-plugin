@@ -16821,7 +16821,7 @@ function sameStringSet(a, b2) {
   return sa.length === sb.length && sa.every((v, i2) => v === sb[i2]);
 }
 function sameMemoryContent(a, b2) {
-  return a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && (a.validTo ?? null) === (b2.validTo ?? null) && (a.validFrom ?? null) === (b2.validFrom ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && a.type === b2.type && a.scope === b2.scope && (a.project ?? null) === (b2.project ?? null) && (a.trust ?? "unknown") === (b2.trust ?? "unknown") && sameStringSet(a.entities, b2.entities);
+  return a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && (a.validTo ?? null) === (b2.validTo ?? null) && (a.validFrom ?? null) === (b2.validFrom ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && (a.archivedReason ?? null) === (b2.archivedReason ?? null) && (a.archivedAt ?? null) === (b2.archivedAt ?? null) && a.type === b2.type && a.scope === b2.scope && (a.project ?? null) === (b2.project ?? null) && (a.trust ?? "unknown") === (b2.trust ?? "unknown") && sameStringSet(a.entities, b2.entities);
 }
 function extractBody(md) {
   const norm = md.replace(/\r\n/g, "\n");
@@ -16864,6 +16864,9 @@ var memory_archive_exports = {};
 __export(memory_archive_exports, {
   memoryArchiveCmd: () => memoryArchiveCmd
 });
+function isPlannableEntry(e) {
+  return typeof e.id === "string" && e.id.length > 0 && typeof e.type === "string" && PLANNABLE_TYPES.has(e.type) && (e.project === null || typeof e.project === "string") && typeof e.status === "string" && typeof e.updatedAt === "string";
+}
 async function memoryArchiveCmd(opts) {
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
@@ -16871,7 +16874,7 @@ async function memoryArchiveCmd(opts) {
   const usage = loadUsage(cfg.repoPath);
   const knownSessions = loadKnownSessions(cfg.repoPath);
   const rawCount = Object.keys(idx.entries ?? {}).length;
-  const entries = safeValues(idx.entries);
+  const entries = safeValues(idx.entries).filter(isPlannableEntry);
   if (entries.length < rawCount) {
     console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
   }
@@ -16907,6 +16910,7 @@ async function memoryArchiveCmd(opts) {
   if (archived > 0) saveMemoryIndex(cfg.repoPath, idx);
   console.log(opts.json ? JSON.stringify({ archived }) : `archived ${archived}`);
 }
+var PLANNABLE_TYPES;
 var init_memory_archive = __esm({
   "src/commands/memory-archive.ts"() {
     "use strict";
@@ -16919,6 +16923,7 @@ var init_memory_archive = __esm({
     init_source_resolver();
     init_overlay_conflict();
     init_apply();
+    PLANNABLE_TYPES = /* @__PURE__ */ new Set(["core", "semantic", "episodic", "procedural"]);
   }
 });
 
