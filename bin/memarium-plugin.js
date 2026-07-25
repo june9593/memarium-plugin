@@ -15191,20 +15191,34 @@ function runColdPass({ entries, scored, query, sources }) {
     trust: s.entry.trust ?? "unknown"
   }));
 }
+function coldRestoreInstruction(c3) {
+  if (c3.source === "overlay") {
+    const dev = c3.originDevice ? `device ${c3.originDevice}` : "another device";
+    return `archived on ${dev}; restore it there`;
+  }
+  return `memory-unarchive ${c3.id} to restore`;
+}
 function renderColdHints(coldStorage) {
   if (!coldStorage.length) return [];
   const lines = [`
 \u2744\uFE0F ${coldStorage.length} archived also matched:`];
   for (const c3 of coldStorage) {
     const flag = c3.trust !== "trusted" ? " (untrusted)" : "";
-    if (c3.source === "overlay") {
-      const dev = c3.originDevice ? `device ${c3.originDevice}` : "another device";
-      lines.push(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 archived on ${dev}; restore it there`);
-    } else {
-      lines.push(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 memory-unarchive ${c3.id} to restore`);
-    }
+    lines.push(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 ${coldRestoreInstruction(c3)}`);
   }
   return lines;
+}
+function renderColdNextStep(coldStorage) {
+  if (!coldStorage.length) return "";
+  const head = "No ACTIVE memory matched, but archived entries did \u2014 see coldStorage";
+  const overlay = coldStorage.filter((c3) => c3.source === "overlay");
+  if (!overlay.length) return `${head} (memory-unarchive <id> to restore).`;
+  if (overlay.length < coldStorage.length) {
+    return `${head}; each hit carries its own restore path (local hits: memory-unarchive <id>; the rest: restore on their origin device).`;
+  }
+  const devices = [...new Set(overlay.map((c3) => c3.originDevice).filter((d) => !!d))];
+  const tail = devices.length === 1 ? `archived on device ${devices[0]}; restore it there` : "each is archived on another device; restore it there";
+  return `${head} \u2014 ${tail} (memory-unarchive is local-only).`;
 }
 var CONTENT_HIT_MARKERS, isContentHitReason, isContentHit, COLD_FLOOR, COLD_TOP_K, COLD_SCORE_FLOOR, NON_RESURRECTABLE_REASONS, isResurrectable;
 var init_cold_pass = __esm({
@@ -17345,7 +17359,7 @@ function buildRecallPayload(opts = {}) {
       total: scored.length,
       returned: hits.length,
       ...cwdUnresolved ? { cwdUnresolved: true } : {},
-      nextStep: hits.length > 0 ? "Read the top 1\u20135 entry.path with the Read tool for full bodies (episodes carry the arc)." : cwdUnresolved ? "cwd didn't resolve to a synced project \u2014 pass --project <slug> or --all." : coldStorage.length > 0 ? "No ACTIVE memory matched, but archived entries did \u2014 see coldStorage (memory-unarchive <id> to restore)." : "No memory yet for this project. Run /memarium to digest sessions."
+      nextStep: hits.length > 0 ? "Read the top 1\u20135 entry.path with the Read tool for full bodies (episodes carry the arc)." : cwdUnresolved ? "cwd didn't resolve to a synced project \u2014 pass --project <slug> or --all." : coldStorage.length > 0 ? renderColdNextStep(coldStorage) : "No memory yet for this project. Run /memarium to digest sessions."
     }
   };
   if (!query && projectFilter) {
