@@ -14168,7 +14168,7 @@ function expandHome(p2) {
   return p2;
 }
 function pushWithProgress(cwd, branch) {
-  return new Promise((resolve9) => {
+  return new Promise((resolve10) => {
     const errBuf = [];
     let bufLen = 0;
     const p2 = spawn2(
@@ -14186,10 +14186,10 @@ function pushWithProgress(cwd, branch) {
         if (drop) bufLen -= drop.length;
       }
     });
-    p2.on("error", () => resolve9({ ok: false, secretBlocked: false, stderrTail: errBuf.join("") }));
+    p2.on("error", () => resolve10({ ok: false, secretBlocked: false, stderrTail: errBuf.join("") }));
     p2.on("close", (code) => {
       const tail = errBuf.join("");
-      resolve9({
+      resolve10({
         ok: code === 0,
         secretBlocked: code !== 0 && SECRET_BLOCK_RE.test(tail),
         stderrTail: tail.slice(-4096)
@@ -16812,20 +16812,58 @@ var init_archive = __esm({
   }
 });
 
-// src/commands/memory-archive.ts
-var memory_archive_exports = {};
-__export(memory_archive_exports, {
-  memoryArchiveCmd: () => memoryArchiveCmd,
-  sameMemoryContent: () => sameMemoryContent
-});
+// src/memory/overlay-conflict.ts
+import { readFileSync as readFileSync22 } from "node:fs";
+import { join as join24, resolve as resolve8 } from "node:path";
 function sameStringSet(a, b2) {
   const sa = [...a ?? []].sort();
   const sb = [...b2 ?? []].sort();
   return sa.length === sb.length && sa.every((v, i2) => v === sb[i2]);
 }
 function sameMemoryContent(a, b2) {
-  return a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && (a.validTo ?? null) === (b2.validTo ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && a.type === b2.type && a.scope === b2.scope && sameStringSet(a.entities, b2.entities);
+  return a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && (a.validTo ?? null) === (b2.validTo ?? null) && (a.validFrom ?? null) === (b2.validFrom ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && a.type === b2.type && a.scope === b2.scope && (a.project ?? null) === (b2.project ?? null) && (a.trust ?? "unknown") === (b2.trust ?? "unknown") && sameStringSet(a.entities, b2.entities);
 }
+function extractBody(md) {
+  const norm = md.replace(/\r\n/g, "\n");
+  if (!/^---\n[\s\S]*?\n---\n?/.test(norm)) return null;
+  const afterFm = norm.replace(/^---\n[\s\S]*?\n---\n?/, "");
+  if (!/^\n*# [^\n]*/.test(afterFm)) return null;
+  return afterFm.replace(/^\n*# [^\n]*\n*/, "").replace(/\n+$/, "");
+}
+function readCanonicalBody(root, entry) {
+  if (!root) return null;
+  try {
+    const abs = resolve8(join24(root, canonicalMemoryPath(entry)));
+    return extractBody(readFileSync22(abs, "utf8"));
+  } catch {
+    return null;
+  }
+}
+function isOverlayConflict(local, overlay, roots) {
+  if (!overlay || typeof overlay !== "object" || Array.isArray(overlay)) return false;
+  const ov = overlay;
+  const ovUpdated = ov.updatedAt ?? "";
+  const localUpdated = local.updatedAt ?? "";
+  if (ovUpdated > localUpdated) return true;
+  if (ovUpdated < localUpdated) return false;
+  if (!sameMemoryContent(local, ov)) return true;
+  const localBody = readCanonicalBody(roots.local, local);
+  const overlayBody = readCanonicalBody(roots.overlay, ov);
+  if (localBody === null || overlayBody === null) return true;
+  return localBody !== overlayBody;
+}
+var init_overlay_conflict = __esm({
+  "src/memory/overlay-conflict.ts"() {
+    "use strict";
+    init_gate();
+  }
+});
+
+// src/commands/memory-archive.ts
+var memory_archive_exports = {};
+__export(memory_archive_exports, {
+  memoryArchiveCmd: () => memoryArchiveCmd
+});
 async function memoryArchiveCmd(opts) {
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
@@ -16839,16 +16877,7 @@ async function memoryArchiveCmd(opts) {
   }
   const view = resolveMemoryView(cfg.repoPath);
   const overlayEntries = view.roots.overlay ? loadMemoryIndex(view.roots.overlay).entries : {};
-  const inCrossDeviceConflict = (e) => {
-    const ov = overlayEntries[e.id];
-    if (!ov || typeof ov !== "object" || Array.isArray(ov)) return false;
-    const ovEntry = ov;
-    const ovUpdated = ovEntry.updatedAt ?? "";
-    const localUpdated = e.updatedAt ?? "";
-    if (ovUpdated > localUpdated) return true;
-    if (ovUpdated < localUpdated) return false;
-    return !sameMemoryContent(e, ovEntry);
-  };
+  const inCrossDeviceConflict = (e) => isOverlayConflict(e, overlayEntries[e.id], { local: cfg.repoPath, overlay: view.roots.overlay });
   const localWinners = entries.filter((e) => !inCrossDeviceConflict(e));
   const skippedOverlay = entries.length - localWinners.length;
   if (skippedOverlay > 0) {
@@ -16888,6 +16917,7 @@ var init_memory_archive = __esm({
     init_known_sessions();
     init_lint();
     init_source_resolver();
+    init_overlay_conflict();
     init_apply();
   }
 });
@@ -16904,6 +16934,13 @@ async function memoryUnarchiveCmd(opts) {
   if (!e || e.status !== "archived") {
     console.log(`not archived: ${opts.id}`);
     return;
+  }
+  const view = resolveMemoryView(cfg.repoPath);
+  const overlayEntries = view.roots.overlay ? loadMemoryIndex(view.roots.overlay).entries : {};
+  if (isOverlayConflict(e, overlayEntries[opts.id], { local: cfg.repoPath, overlay: view.roots.overlay })) {
+    throw new Error(
+      `refusing to unarchive ${opts.id}: a newer/divergent copy exists on another device \u2014 resolve there`
+    );
   }
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const restoreSuperseded = e.archivedReason === "superseded-cleanup";
@@ -16929,6 +16966,8 @@ var init_memory_unarchive = __esm({
     init_plugin_config();
     init_index_store2();
     init_apply();
+    init_source_resolver();
+    init_overlay_conflict();
   }
 });
 
@@ -16937,12 +16976,12 @@ var memory_propose_exports = {};
 __export(memory_propose_exports, {
   memoryProposeCmd: () => memoryProposeCmd
 });
-import { existsSync as existsSync23, readFileSync as readFileSync22 } from "node:fs";
+import { existsSync as existsSync23, readFileSync as readFileSync23 } from "node:fs";
 async function memoryProposeCmd(opts) {
   if (!opts.inputPath || !existsSync23(opts.inputPath)) {
     throw new Error(`memory-propose: --input JSON not found: ${opts.inputPath}`);
   }
-  const items = JSON.parse(readFileSync22(opts.inputPath, "utf8"));
+  const items = JSON.parse(readFileSync23(opts.inputPath, "utf8"));
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
   assertNoBlockingLeak(items, "memory-propose");
@@ -17135,9 +17174,9 @@ __export(memory_approve_exports, {
   memoryApproveCmd: () => memoryApproveCmd
 });
 import { existsSync as existsSync24, readdirSync as readdirSync6, rmSync as rmSync2 } from "node:fs";
-import { join as join24 } from "node:path";
+import { join as join25 } from "node:path";
 function refreshPrimers(repoPath, entry) {
-  const dir = join24(repoPath, "memory", "_primer");
+  const dir = join25(repoPath, "memory", "_primer");
   if (!existsSync24(dir)) return [];
   assertNoSymlinkedComponent(repoPath, dir, "memory-approve");
   const deleted = [];
@@ -17148,12 +17187,12 @@ function refreshPrimers(repoPath, entry) {
     deleted.push(file);
   };
   const deleteAll = () => {
-    for (const name of readdirSync6(dir)) if (name.endsWith(".md")) del(join24(dir, name));
+    for (const name of readdirSync6(dir)) if (name.endsWith(".md")) del(join25(dir, name));
   };
   const scope = typeof entry.scope === "string" ? entry.scope : "";
   const project = scope.startsWith("project:") ? scope.slice("project:".length) : null;
   if (project && isSafePathSegment(project)) {
-    del(join24(dir, `${project}.md`));
+    del(join25(dir, `${project}.md`));
   } else {
     deleteAll();
   }
@@ -17298,16 +17337,16 @@ var init_recall = __esm({
 });
 
 // src/spool/plugin-state.ts
-import { existsSync as existsSync25, mkdirSync as mkdirSync13, readFileSync as readFileSync23, writeFileSync as writeFileSync15 } from "node:fs";
-import { dirname as dirname7, join as join25 } from "node:path";
+import { existsSync as existsSync25, mkdirSync as mkdirSync13, readFileSync as readFileSync24, writeFileSync as writeFileSync15 } from "node:fs";
+import { dirname as dirname7, join as join26 } from "node:path";
 function statePath() {
-  return join25(memariumHome(), ".plugin-state.json");
+  return join26(memariumHome(), ".plugin-state.json");
 }
 function loadState() {
   const p2 = statePath();
   if (!existsSync25(p2)) return {};
   try {
-    return JSON.parse(readFileSync23(p2, "utf8"));
+    return JSON.parse(readFileSync24(p2, "utf8"));
   } catch {
     return {};
   }
@@ -17361,11 +17400,11 @@ var init_first_run = __esm({
 
 // src/spool/ensure-dir.ts
 import { mkdirSync as mkdirSync14, existsSync as existsSync26 } from "node:fs";
-import { join as join26 } from "node:path";
+import { join as join27 } from "node:path";
 function ensureSpoolDir() {
-  const spoolRoot = join26(memariumHome(), "session-repo");
+  const spoolRoot = join27(memariumHome(), "session-repo");
   const created = !existsSync26(spoolRoot);
-  const rawSessionsDir = join26(spoolRoot, "raw_sessions");
+  const rawSessionsDir = join27(spoolRoot, "raw_sessions");
   mkdirSync14(rawSessionsDir, { recursive: true });
   return { spoolRoot, rawSessionsDir, created };
 }
@@ -17379,12 +17418,12 @@ var init_ensure_dir = __esm({
 // src/_shared/content-project-inference.ts
 import { readdirSync as readdirSync7 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { join as join27 } from "node:path";
+import { join as join28 } from "node:path";
 function decodeProjectDirName(name) {
   if (!name.startsWith("-")) return name;
   return "/" + name.slice(1).replace(/-/g, "/");
 }
-function listKnownProjectRoots(projectsDir = join27(homedir4(), ".claude", "projects")) {
+function listKnownProjectRoots(projectsDir = join28(homedir4(), ".claude", "projects")) {
   let entries;
   try {
     entries = readdirSync7(projectsDir);
@@ -17484,9 +17523,9 @@ var init_content_project_inference = __esm({
 
 // src/_shared/sources/claude-code.ts
 import { createHash as createHash4 } from "node:crypto";
-import { readdirSync as readdirSync8, readFileSync as readFileSync24, statSync as statSync4, existsSync as existsSync27 } from "node:fs";
+import { readdirSync as readdirSync8, readFileSync as readFileSync25, statSync as statSync4, existsSync as existsSync27 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { join as join28, basename } from "node:path";
+import { join as join29, basename } from "node:path";
 function getRoots() {
   if (cachedRoots === null) cachedRoots = listKnownProjectRoots();
   return cachedRoots;
@@ -17633,7 +17672,7 @@ var init_claude_code = __esm({
     init_content_project_inference();
     cachedRoots = null;
     ClaudeCodeAdapter = class {
-      constructor(root = join28(homedir5(), ".claude", "projects")) {
+      constructor(root = join29(homedir5(), ".claude", "projects")) {
         this.root = root;
       }
       name = "claude";
@@ -17649,14 +17688,14 @@ var init_claude_code = __esm({
             continue;
           }
           for (const e of entries) {
-            const p2 = join28(dir, e.name);
+            const p2 = join29(dir, e.name);
             if (e.isDirectory()) {
               if (dir === this.root && isMemariumOrTmpProjectDir(e.name)) continue;
               if (e.name === "subagents") continue;
               stack.push(p2);
             } else if (e.isFile() && e.name.endsWith(".jsonl")) {
               const st = statSync4(p2);
-              const buf = readFileSync24(p2);
+              const buf = readFileSync25(p2);
               const sha = createHash4("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -17674,20 +17713,20 @@ var init_claude_code = __esm({
 
 // src/_shared/sources/vscode-copilot.ts
 import { createHash as createHash5 } from "node:crypto";
-import { readdirSync as readdirSync9, readFileSync as readFileSync25, statSync as statSync5, existsSync as existsSync28 } from "node:fs";
+import { readdirSync as readdirSync9, readFileSync as readFileSync26, statSync as statSync5, existsSync as existsSync28 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
-import { join as join29, basename as basename2 } from "node:path";
+import { join as join30, basename as basename2 } from "node:path";
 function defaultStorageRoot() {
   if (process.platform === "darwin")
-    return join29(homedir6(), "Library", "Application Support", "Code", "User", "workspaceStorage");
+    return join30(homedir6(), "Library", "Application Support", "Code", "User", "workspaceStorage");
   if (process.platform === "win32")
-    return join29(homedir6(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
-  return join29(homedir6(), ".config", "Code", "User", "workspaceStorage");
+    return join30(homedir6(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
+  return join30(homedir6(), ".config", "Code", "User", "workspaceStorage");
 }
 function readWorkspacePath(workspaceJsonPath) {
   if (!existsSync28(workspaceJsonPath)) return "";
   try {
-    const obj = JSON.parse(readFileSync25(workspaceJsonPath, "utf8"));
+    const obj = JSON.parse(readFileSync26(workspaceJsonPath, "utf8"));
     const u = obj.folder ?? obj.workspace ?? "";
     if (!u) return "";
     return u.startsWith("file://") ? decodeURIComponent(u.slice("file://".length)) : u;
@@ -17917,9 +17956,9 @@ var init_vscode_copilot = __esm({
         }
         for (const w of workspaces) {
           if (!w.isDirectory()) continue;
-          const wsDir = join29(this.root, w.name);
-          const wsPath = readWorkspacePath(join29(wsDir, "workspace.json"));
-          const chatDir = join29(wsDir, "chatSessions");
+          const wsDir = join30(this.root, w.name);
+          const wsPath = readWorkspacePath(join30(wsDir, "workspace.json"));
+          const chatDir = join30(wsDir, "chatSessions");
           const chatSessionIds = /* @__PURE__ */ new Set();
           if (existsSync28(chatDir)) {
             let files = [];
@@ -17933,11 +17972,11 @@ var init_vscode_copilot = __esm({
               const isJson = f.name.endsWith(".json");
               const isJsonl = f.name.endsWith(".jsonl");
               if (!isJson && !isJsonl) continue;
-              const p2 = join29(chatDir, f.name);
+              const p2 = join30(chatDir, f.name);
               const st = statSync5(p2);
               if (st.size === 0) continue;
               chatSessionIds.add(basename2(f.name, isJsonl ? ".jsonl" : ".json"));
-              const buf = readFileSync25(p2);
+              const buf = readFileSync26(p2);
               const sha = createHash5("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -17947,7 +17986,7 @@ var init_vscode_copilot = __esm({
               };
             }
           }
-          const transcriptsDir = join29(wsDir, "GitHub.copilot-chat", "transcripts");
+          const transcriptsDir = join30(wsDir, "GitHub.copilot-chat", "transcripts");
           if (existsSync28(transcriptsDir)) {
             let tfiles = [];
             try {
@@ -17959,10 +17998,10 @@ var init_vscode_copilot = __esm({
               if (!f.isFile() || !f.name.endsWith(".jsonl")) continue;
               const id = basename2(f.name, ".jsonl");
               if (chatSessionIds.has(id)) continue;
-              const p2 = join29(transcriptsDir, f.name);
+              const p2 = join30(transcriptsDir, f.name);
               const st = statSync5(p2);
               if (st.size === 0) continue;
-              const buf = readFileSync25(p2);
+              const buf = readFileSync26(p2);
               const sha = createHash5("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -18176,18 +18215,18 @@ var init_toc = __esm({
 
 // src/spool/writer.ts
 import { mkdirSync as mkdirSync15, writeFileSync as writeFileSync16 } from "node:fs";
-import { join as join30 } from "node:path";
+import { join as join31 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
-  const dirRel = join30("raw_sessions", s.tool, s.project, date);
-  const absDir = join30(repoRoot, dirRel);
+  const dirRel = join31("raw_sessions", s.tool, s.project, date);
+  const absDir = join31(repoRoot, dirRel);
   mkdirSync15(absDir, { recursive: true });
   const base = `${s.nameSlug}__${s.shortId}`;
-  const mdRel = join30(dirRel, `${base}.md`);
+  const mdRel = join31(dirRel, `${base}.md`);
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults = opts.fullToolResults ?? process.env.MEMARIUM_FULL_TOOL_RESULTS === "1";
   writeFileSync16(
-    join30(repoRoot, mdRel),
+    join31(repoRoot, mdRel),
     renderMarkdown(s, { includeReasoning, fullToolResults })
   );
   return { md: mdRel };
@@ -18511,14 +18550,14 @@ var {
 } = import_index.default;
 
 // src/plugin-cli.ts
-import { readFileSync as readFileSync26 } from "node:fs";
+import { readFileSync as readFileSync27 } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname as dirname8, resolve as resolve8 } from "node:path";
+import { dirname as dirname8, resolve as resolve9 } from "node:path";
 function readPackageVersion() {
   const here = dirname8(fileURLToPath(import.meta.url));
   for (const rel of ["../package.json", "../../package.json", "../../../package.json"]) {
     try {
-      return JSON.parse(readFileSync26(resolve8(here, rel), "utf8")).version;
+      return JSON.parse(readFileSync27(resolve9(here, rel), "utf8")).version;
     } catch {
     }
   }
@@ -18645,7 +18684,7 @@ async function run(argv) {
   await program2.parseAsync(argv);
 }
 var _thisFile = fileURLToPath(import.meta.url);
-var _mainFile = process.argv[1] ? resolve8(process.argv[1]) : "";
+var _mainFile = process.argv[1] ? resolve9(process.argv[1]) : "";
 if (_thisFile === _mainFile || _mainFile.endsWith("memarium-plugin.js")) {
   run(process.argv).catch((err) => {
     console.error(err instanceof Error ? err.message : err);
