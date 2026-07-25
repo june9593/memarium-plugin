@@ -14586,6 +14586,18 @@ function readMemoryBody(abs, expect) {
   }
   return afterFm.replace(/^\n*# [^\n]*\n*/, "").replace(/\n+$/, "");
 }
+function missingRewriteField(entry) {
+  const e = entry;
+  const filled = (v) => typeof v === "string" && v.length > 0;
+  if (!filled(e.id)) return "id";
+  if (!filled(e.type) || !REWRITABLE_TYPES.has(e.type)) return "type";
+  if (!filled(e.scope)) return "scope";
+  if (!(e.project === null || typeof e.project === "string")) return "project";
+  if (!filled(e.title)) return "title";
+  if (typeof e.status !== "string") return "status";
+  if (typeof e.updatedAt !== "string") return "updatedAt";
+  return null;
+}
 function assertWritableMemoryTarget(repoPath, entry) {
   const memRoot = resolve2(join14(repoPath, "memory"));
   const canonical = canonicalMemoryPath(entry);
@@ -14671,8 +14683,8 @@ function applyMemoryItems(repoPath, items) {
     if (entry.validTo === void 0) entry.validTo = null;
     if (entry.originDevice === void 0) entry.originDevice = null;
     if (entry.project === void 0) entry.project = null;
-    if (entry.archivedAt === void 0) entry.archivedAt = null;
-    if (entry.archivedReason === void 0) entry.archivedReason = null;
+    entry.archivedAt = null;
+    entry.archivedReason = null;
     if (typeof entry.confidence !== "number" || !isFinite(entry.confidence)) entry.confidence = 0.5;
     if (typeof entry.importance !== "number" || !isFinite(entry.importance)) entry.importance = 0;
     if (typeof entry.summary !== "string") entry.summary = "";
@@ -14704,6 +14716,7 @@ function applyMemoryItems(repoPath, items) {
   saveMemoryIndex(repoPath, idx);
   return { written, superseded, paths };
 }
+var REWRITABLE_TYPES, isRewritableEntry;
 var init_apply = __esm({
   "src/memory/apply.ts"() {
     "use strict";
@@ -14712,6 +14725,8 @@ var init_apply = __esm({
     init_gate();
     init_leak_scan();
     init_path_guard();
+    REWRITABLE_TYPES = /* @__PURE__ */ new Set(["core", "semantic", "episodic", "procedural"]);
+    isRewritableEntry = (entry) => missingRewriteField(entry) === null;
   }
 });
 
@@ -16906,9 +16921,6 @@ var memory_archive_exports = {};
 __export(memory_archive_exports, {
   memoryArchiveCmd: () => memoryArchiveCmd
 });
-function isPlannableEntry(e) {
-  return typeof e.id === "string" && e.id.length > 0 && typeof e.type === "string" && PLANNABLE_TYPES.has(e.type) && (e.project === null || typeof e.project === "string") && typeof e.status === "string" && typeof e.updatedAt === "string";
-}
 async function memoryArchiveCmd(opts) {
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
@@ -16916,7 +16928,7 @@ async function memoryArchiveCmd(opts) {
   const usage = loadUsage(cfg.repoPath);
   const knownSessions = loadKnownSessions(cfg.repoPath);
   const rawCount = Object.keys(idx.entries ?? {}).length;
-  const entries = Object.keys(idx.entries ?? {}).filter((key) => validEntryExists(idx.entries, key)).map((key) => idx.entries[key]).filter(isPlannableEntry);
+  const entries = Object.keys(idx.entries ?? {}).filter((key) => validEntryExists(idx.entries, key)).map((key) => idx.entries[key]).filter(isRewritableEntry);
   if (entries.length < rawCount) {
     console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
   }
@@ -16939,6 +16951,7 @@ async function memoryArchiveCmd(opts) {
   for (const { id, reason } of plan.archive) {
     if (!validEntryExists(idx.entries, id)) continue;
     const e = idx.entries[id];
+    if (!isRewritableEntry(e)) continue;
     if (e.type === "core" || e.status === "pinned" || e.status === "archived") continue;
     planned.push({ ...e, status: "archived", archivedAt: now, archivedReason: reason, updatedAt: now });
   }
@@ -16952,7 +16965,6 @@ async function memoryArchiveCmd(opts) {
   if (archived > 0) saveMemoryIndex(cfg.repoPath, idx);
   console.log(opts.json ? JSON.stringify({ archived }) : `archived ${archived}`);
 }
-var PLANNABLE_TYPES;
 var init_memory_archive = __esm({
   "src/commands/memory-archive.ts"() {
     "use strict";
@@ -16965,7 +16977,6 @@ var init_memory_archive = __esm({
     init_source_resolver();
     init_overlay_conflict();
     init_apply();
-    PLANNABLE_TYPES = /* @__PURE__ */ new Set(["core", "semantic", "episodic", "procedural"]);
   }
 });
 
@@ -16990,6 +17001,10 @@ async function memoryUnarchiveCmd(opts) {
   if (e.status !== "archived") {
     console.log(`not archived: ${opts.id}`);
     return;
+  }
+  const missing = missingRewriteField(e);
+  if (missing) {
+    throw new Error(`refusing to unarchive ${opts.id}: index row is incomplete (missing ${missing})`);
   }
   const view = resolveMemoryView(cfg.repoPath);
   const overlayEntries = view.roots.overlay ? loadMemoryIndex(view.roots.overlay).entries : {};
