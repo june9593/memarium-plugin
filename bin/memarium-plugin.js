@@ -16815,8 +16815,17 @@ var init_archive = __esm({
 // src/commands/memory-archive.ts
 var memory_archive_exports = {};
 __export(memory_archive_exports, {
-  memoryArchiveCmd: () => memoryArchiveCmd
+  memoryArchiveCmd: () => memoryArchiveCmd,
+  sameMemoryContent: () => sameMemoryContent
 });
+function sameStringSet(a, b2) {
+  const sa = [...a ?? []].sort();
+  const sb = [...b2 ?? []].sort();
+  return sa.length === sb.length && sa.every((v, i2) => v === sb[i2]);
+}
+function sameMemoryContent(a, b2) {
+  return a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && (a.validTo ?? null) === (b2.validTo ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && a.type === b2.type && a.scope === b2.scope && sameStringSet(a.entities, b2.entities);
+}
 async function memoryArchiveCmd(opts) {
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
@@ -16833,13 +16842,17 @@ async function memoryArchiveCmd(opts) {
   const inCrossDeviceConflict = (e) => {
     const ov = overlayEntries[e.id];
     if (!ov || typeof ov !== "object" || Array.isArray(ov)) return false;
-    const ovUpdated = ov.updatedAt ?? "";
-    return ovUpdated >= (e.updatedAt ?? "");
+    const ovEntry = ov;
+    const ovUpdated = ovEntry.updatedAt ?? "";
+    const localUpdated = e.updatedAt ?? "";
+    if (ovUpdated > localUpdated) return true;
+    if (ovUpdated < localUpdated) return false;
+    return !sameMemoryContent(e, ovEntry);
   };
   const localWinners = entries.filter((e) => !inCrossDeviceConflict(e));
   const skippedOverlay = entries.length - localWinners.length;
   if (skippedOverlay > 0) {
-    console.warn(`memory-archive: skipped ${skippedOverlay} id(s) in a cross-device conflict (a sibling holds a same-day-or-newer copy)`);
+    console.warn(`memory-archive: skipped ${skippedOverlay} id(s) in a cross-device conflict (a sibling holds a newer or divergent same-day copy)`);
   }
   const plan = planArchival(localWinners, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });
   if (!opts.apply) {
