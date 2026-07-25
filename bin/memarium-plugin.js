@@ -16900,7 +16900,7 @@ async function memoryArchiveCmd(opts) {
   const usage = loadUsage(cfg.repoPath);
   const knownSessions = loadKnownSessions(cfg.repoPath);
   const rawCount = Object.keys(idx.entries ?? {}).length;
-  const entries = safeValues(idx.entries).filter(isPlannableEntry);
+  const entries = Object.keys(idx.entries ?? {}).filter((key) => validEntryExists(idx.entries, key)).map((key) => idx.entries[key]).filter(isPlannableEntry);
   if (entries.length < rawCount) {
     console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
   }
@@ -16921,8 +16921,8 @@ async function memoryArchiveCmd(opts) {
   }
   const planned = [];
   for (const { id, reason } of plan.archive) {
+    if (!validEntryExists(idx.entries, id)) continue;
     const e = idx.entries[id];
-    if (!e) continue;
     if (e.type === "core" || e.status === "pinned" || e.status === "archived") continue;
     planned.push({ ...e, status: "archived", archivedAt: now, archivedReason: reason, updatedAt: now });
   }
@@ -16961,8 +16961,17 @@ __export(memory_unarchive_exports, {
 async function memoryUnarchiveCmd(opts) {
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
-  const e = idx.entries[opts.id];
-  if (!e || e.status !== "archived") {
+  const rows = idx.entries ?? {};
+  const raw = rows[opts.id];
+  if (raw === void 0 || raw === null) {
+    console.log(`not archived: ${opts.id}`);
+    return;
+  }
+  if (!validEntryExists(rows, opts.id)) {
+    throw new Error(`refusing to unarchive ${opts.id}: index row is corrupt (key/id mismatch)`);
+  }
+  const e = rows[opts.id];
+  if (e.status !== "archived") {
     console.log(`not archived: ${opts.id}`);
     return;
   }
@@ -16999,6 +17008,7 @@ var init_memory_unarchive = __esm({
     init_apply();
     init_source_resolver();
     init_overlay_conflict();
+    init_lint();
   }
 });
 
