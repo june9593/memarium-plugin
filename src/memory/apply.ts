@@ -90,6 +90,50 @@ function readMemoryBody(abs: string, expect: { id: string; type: string }): stri
   return afterFm.replace(/^\n*# [^\n]*\n*/, "").replace(/\n+$/, "");
 }
 
+/** The 4 MemoryType values, as a runtime set for validating an untrusted index row. */
+const REWRITABLE_TYPES: ReadonlySet<string> = new Set(["core", "semantic", "episodic", "procedural"]);
+
+/** Row-shape gate for the METADATA-ONLY REWRITE path (`writeMemoryEntryFile`),
+ *  shared by BOTH write paths that use it: `memory-archive --apply` and
+ *  `memory-unarchive`.
+ *
+ *  `validEntryExists` only proves a row is a non-null, non-array OBJECT filed
+ *  under its own id — it does NOT prove the row is well-formed. A partial row
+ *  like `{ id: "semantic/p/bad", type: "semantic", project: "p", status: "archived" }`
+ *  passes that check and then reaches the rewriter, where the renderer serializes
+ *  the missing fields as the LITERAL string "undefined" (`title: undefined`,
+ *  `scope: undefined`, and a `# undefined` heading) — degrading a record the
+ *  command was only supposed to stamp a status onto. (Missing `type` is worse
+ *  still: `canonicalMemoryPath` throws, which for archive means aborting the
+ *  automatic digest consolidation.)
+ *
+ *  So the required set is the union of what the archival PLAN reads
+ *  (`status` / `type` / `updatedAt`), what the canonical-path derivation needs
+ *  (`id` / `type` / `project`) and what a FAITHFUL re-render needs on top of
+ *  those (`title` / `scope`). Requiring title/scope is a strict improvement for
+ *  archive too: such a row was never archivable without corrupting itself, and
+ *  it is already reported in archive's "skipped malformed index row(s)" count.
+ *
+ *  Returns the name of the FIRST missing/invalid field, or null when the row is
+ *  complete — so `memory-unarchive` can name it in its abort message while
+ *  `memory-archive` just filters on the boolean. */
+export function missingRewriteField(entry: MemoryEntry): string | null {
+  const e = entry as unknown as Record<string, unknown>;
+  const filled = (v: unknown): boolean => typeof v === "string" && v.length > 0;
+  if (!filled(e.id)) return "id";
+  if (!filled(e.type) || !REWRITABLE_TYPES.has(e.type as string)) return "type";
+  if (!filled(e.scope)) return "scope";
+  if (!(e.project === null || typeof e.project === "string")) return "project";
+  if (!filled(e.title)) return "title";
+  if (typeof e.status !== "string") return "status";
+  if (typeof e.updatedAt !== "string") return "updatedAt";
+  return null;
+}
+
+/** Boolean form of `missingRewriteField` — a row this rejects must never be fed
+ *  to `writeMemoryEntryFile`. */
+export const isRewritableEntry = (entry: MemoryEntry): boolean => missingRewriteField(entry) === null;
+
 /** Preflight-only guard for a metadata-only rewrite: derive the CANONICAL path
  *  from {type,project,id} (untrusted entry.path is ignored), assert it stays
  *  under memory/, and reject a symlinked path component — WITHOUT reading or
@@ -258,11 +302,20 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     if (entry.validTo === undefined) entry.validTo = null;
     if (entry.originDevice === undefined) entry.originDevice = null;
     if (entry.project === undefined) entry.project = null;
-    // Archival lifecycle fields: normalize undefined → null so a live active write
-    // matches a rebuild-from-md (renderer emits `null`; parse reads `null`). An
-    // entry is only archived by the archive command, which sets these explicitly.
-    if (entry.archivedAt === undefined) entry.archivedAt = null;
-    if (entry.archivedReason === undefined) entry.archivedReason = null;
+    // Archival lifecycle fields are MACHINE-MAINTAINED: only `memory-archive`
+    // sets them and only `memory-unarchive` clears them (both write through
+    // writeMemoryEntryFile, which deliberately bypasses this normalization). The
+    // AUTHORED path must never persist them — it can't even produce an archived
+    // entry, since the status allowlist above coerces every non-
+    // active/superseded/pinned status back to "active". Left un-normalized, a
+    // memory-write / memory-propose payload could supply archivedAt/
+    // archivedReason and yield an ACTIVE entry carrying archival metadata — e.g.
+    // a bogus `superseded-cleanup` reason that memory-unarchive's restore logic
+    // and the cold valve's NON_RESURRECTABLE filter would later misread. So force
+    // both to null here (this also covers the plain undefined → null
+    // normalization that keeps a live write equal to a rebuild-from-md).
+    entry.archivedAt = null;
+    entry.archivedReason = null;
     // Numeric fields: match the render/parse defaults so the LIVE index equals a
     // rebuild (an omitted key would otherwise be dropped from the live JSON, and
     // the scorer would read it as its own default — drift). confidence→0.5 (the

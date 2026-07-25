@@ -6,29 +6,8 @@ import { loadKnownSessions } from "../memory/known-sessions.js";
 import { validEntryExists } from "../memory/lint.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
 import { isOverlayConflict } from "../memory/overlay-conflict.js";
-import { writeMemoryEntryFile, assertMemoryBodyRecoverable } from "../memory/apply.js";
+import { writeMemoryEntryFile, assertMemoryBodyRecoverable, isRewritableEntry } from "../memory/apply.js";
 import type { MemoryEntry } from "../memory/types.js";
-
-/** The 4 MemoryType values, as a runtime set for validating an untrusted index row. */
-const PLANNABLE_TYPES: ReadonlySet<string> = new Set(["core", "semantic", "episodic", "procedural"]);
-
-/** `validEntryExists` only proves a row is a non-null, non-array OBJECT filed under
- *  its own id — it does NOT prove the row is a well-formed archival candidate. A
- *  partial object like `{ id: "semantic/p/bad", status: "superseded" }` passes that
- *  check, is selected by the superseded-cleanup rule, and then throws in
- *  `canonicalMemoryPath` on the missing `type` — aborting the whole automatic
- *  digest consolidation. Validate the minimum fields the plan (`status`/`type`/
- *  `updatedAt`) and the canonical-path derivation (`id`/`type`/`project`) require;
- *  a row that fails is dropped (and counted among the skipped malformed rows). */
-function isPlannableEntry(e: MemoryEntry): boolean {
-  return (
-    typeof e.id === "string" && e.id.length > 0 &&
-    typeof e.type === "string" && PLANNABLE_TYPES.has(e.type) &&
-    (e.project === null || typeof e.project === "string") &&
-    typeof e.status === "string" &&
-    typeof e.updatedAt === "string"
-  );
-}
 
 export interface MemoryArchiveOptions {
   /** Accepted for CLI symmetry with the other memory-* commands. Archive plans
@@ -66,14 +45,18 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   // the UNRELATED healthy `semantic/p/victim`. The round-6 identity guard cannot
   // catch that: writeMemoryEntryFile derives the canonical path from `entry.id`,
   // so the victim's own .md (which really does carry the victim's id) is accepted.
-  // isPlannableEntry then drops rows that are key-consistent but still not
-  // well-formed archival candidates (e.g. missing `type`, which would throw in
-  // canonicalMemoryPath). Report how many rows, across both filters, were skipped.
+  // isRewritableEntry then drops rows that are key-consistent but still not
+  // well-formed rewrite targets — a missing `type` (which would throw in
+  // canonicalMemoryPath) or a missing `title`/`scope` (which the renderer would
+  // serialize as the literal "undefined", degrading the record this command only
+  // meant to stamp `archived` on). Same predicate memory-unarchive validates
+  // with, so the two write paths can't drift. Report how many rows, across both
+  // filters, were skipped.
   const rawCount = Object.keys(idx.entries ?? {}).length;
   const entries = Object.keys((idx.entries ?? {}) as Record<string, unknown>)
     .filter((key) => validEntryExists(idx.entries, key))
     .map((key) => (idx.entries as Record<string, MemoryEntry>)[key])
-    .filter(isPlannableEntry);
+    .filter(isRewritableEntry);
   if (entries.length < rawCount) {
     console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
   }
@@ -128,6 +111,9 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
     // record the plan never named. Skip rather than write the wrong file.
     if (!validEntryExists(idx.entries, id)) continue;
     const e = (idx.entries as Record<string, MemoryEntry>)[id];
+    // Re-assert the row-shape gate at the write sink too: only a row complete
+    // enough to be re-rendered faithfully may reach writeMemoryEntryFile.
+    if (!isRewritableEntry(e)) continue;
     if (e.type === "core" || e.status === "pinned" || e.status === "archived") continue;
     planned.push({ ...e, status: "archived", archivedAt: now, archivedReason: reason, updatedAt: now });
   }

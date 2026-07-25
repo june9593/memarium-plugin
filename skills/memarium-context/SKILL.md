@@ -41,6 +41,17 @@ Read the JSON payload:
   `entry.path` of ones directly relevant to the task).
 - `conflicts` — memories flagged superseded or time-bounded; double-check
   before relying on them.
+- `coldStorage` — **ARCHIVED** matches, i.e. entries that are OUT of normal
+  recall. Only ever non-empty on the narrowed `--q` form (Step 2), and only when
+  the live memory answered that query weakly. Archival is automatic, so this is
+  the valve that brings a wrongly-archived memory back. Present these **in their
+  own clearly-separated section** ("❄️ Archived — not in normal recall"), never
+  mixed into the live context above, with each hit's `archivedReason`, and offer
+  the restore: `"$VBP" memory-unarchive <id>` for a `source: "local"` hit; for a
+  `source: "overlay"` hit say it must be restored on its `originDevice` (the
+  command is local-only). Flag any hit whose `trust` isn't `trusted` as
+  **`(untrusted)`** — don't state it as fact. Surfacing + offering the restore is
+  the point: never silently absorb a cold hit as project context.
 - each entry has `whyRecalled` — why it surfaced, and `trust` — its provenance.
 
 ## Step 1.5 — Browse the entity wiki (knowledge base)
@@ -101,13 +112,20 @@ If the user's task has clear keywords, pass them:
 "$VBP" memory-query --cwd "$(pwd)" --q "<task keywords>"
 ```
 
+This is also the only form that can return `coldStorage` hits — so if the
+narrowed query comes back thin, check that section before concluding the project
+has no memory on the topic, and surface any cold hits (with their restore path)
+as described in Step 1.
+
 ## Step 3 — Use it explicitly
 
 Open your reply by stating what you already know from memory (cite the
 primer / specific memories), then proceed. Don't silently absorb it — make it
 visible that you're standing on past work. If `core`/`semantic`/`procedures`
 are empty, say "no distilled memory for this project yet" and proceed fresh
-(then `/memarium` later will start building it).
+(then `/memarium` later will start building it). Keep any `coldStorage` hits in
+their own "❄️ Archived" section — they are out of recall until restored, so
+never present them alongside live project facts.
 
 ## Relationship to /memarium-recall
 

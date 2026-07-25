@@ -217,6 +217,48 @@ describe("applyMemoryItems", () => {
     const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     expect(idx.entries["semantic/p/z"].trust).toBe("unknown");
   });
+
+  it("never persists caller-supplied archival lifecycle fields on the AUTHORED path (machine-maintained only)", async () => {
+    // Round-15: archivedAt/archivedReason are machine-maintained — only
+    // memory-archive sets them and only memory-unarchive clears them. The
+    // authored path (memory-write / memory-propose → memory-approve) already
+    // coerces status:"archived" back to "active" via the status allowlist, but
+    // it used to LET THE SUPPLIED LIFECYCLE VALUES THROUGH — persisting an
+    // `active` entry carrying archival metadata (and a bogus archivedReason that
+    // unarchive's superseded-cleanup logic / the cold valve's filter would later
+    // misread). Since this path can never persist status:"archived", both fields
+    // must be forced to null.
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const readIdx = () => JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+
+    // (a) status:"archived" + both lifecycle fields supplied
+    const forged = mk({
+      id: "semantic/p/forged", type: "semantic", scope: "project:p", project: "p", path: "",
+      status: "archived" as MemoryEntry["status"],
+      archivedAt: "2026-05-01", archivedReason: "superseded-cleanup",
+    });
+    applyMemoryItems(repo, [{ entry: forged, body: "b" }]);
+    const forgedMd = readFileSync(join(repo, "memory/semantic/p/forged.md"), "utf8");
+    expect(forgedMd).toContain("status: active");
+    expect(forgedMd).toContain("archivedAt: null");
+    expect(forgedMd).toContain("archivedReason: null");
+    expect(readIdx().entries["semantic/p/forged"].status).toBe("active");
+    expect(readIdx().entries["semantic/p/forged"].archivedAt).toBe(null);
+    expect(readIdx().entries["semantic/p/forged"].archivedReason).toBe(null);
+
+    // (b) the subtler one: a plainly ACTIVE authored entry that still smuggles
+    // archival metadata past the status allowlist.
+    const smuggled = mk({
+      id: "semantic/p/smuggled", type: "semantic", scope: "project:p", project: "p", path: "",
+      status: "active", archivedAt: "2026-05-01", archivedReason: "unused-low-value",
+    });
+    applyMemoryItems(repo, [{ entry: smuggled, body: "b" }]);
+    const smuggledMd = readFileSync(join(repo, "memory/semantic/p/smuggled.md"), "utf8");
+    expect(smuggledMd).toContain("archivedAt: null");
+    expect(smuggledMd).toContain("archivedReason: null");
+    expect(readIdx().entries["semantic/p/smuggled"].archivedAt).toBe(null);
+    expect(readIdx().entries["semantic/p/smuggled"].archivedReason).toBe(null);
+  });
 });
 
 describe("writeMemoryEntryFile (metadata-only rewriter)", () => {

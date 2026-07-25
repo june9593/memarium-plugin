@@ -275,6 +275,51 @@ describe("memoryUnarchiveCmd", () => {
     expect(readIndexStatus("semantic/p/b")).toBe("active");
   });
 
+  it("aborts when the archived index row is INCOMPLETE (missing title / scope) — no degraded record is written", async () => {
+    // Round-15: validEntryExists only proves the row is a non-null, non-array
+    // object filed under its OWN id — it does NOT prove the row is well-formed.
+    // A partial archived row with a valid id/type/project sailed through into
+    // writeMemoryEntryFile, and the renderer then serialized the missing fields
+    // as the literal "undefined" (`title: undefined`, `# undefined`,
+    // `scope: undefined`) — corrupting the entry on restore. Abort instead.
+    seed();
+    const idx = readIndex();
+    const partial = (over: Record<string, unknown>) => ({
+      id: "x", type: "semantic", scope: "project:p", project: "p", title: "T",
+      summary: "s", path: "", status: "archived", archivedAt: "2026-05-01",
+      archivedReason: "expired", confidence: 1, importance: 1,
+      createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+      sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
+      entities: [], trust: "trusted", originDevice: null, accessCount: 0, lastAccess: null,
+      ...over,
+    });
+    const noTitle = partial({ id: "semantic/p/notitle", path: "memory/semantic/p/notitle.md" }) as Record<string, unknown>;
+    delete noTitle.title;
+    const noScope = partial({ id: "semantic/p/noscope", path: "memory/semantic/p/noscope.md" }) as Record<string, unknown>;
+    delete noScope.scope;
+    idx.entries["semantic/p/notitle"] = noTitle;
+    idx.entries["semantic/p/noscope"] = noScope;
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    const md = (id: string, title: string) =>
+      `---\nid: ${id}\ntype: semantic\nstatus: archived\narchivedAt: 2026-05-01\narchivedReason: expired\n---\n\n# ${title}\n\nThe real body of ${id}.\n`;
+    const noTitleMd = md("semantic/p/notitle", "Partial row");
+    const noScopeMd = md("semantic/p/noscope", "Partial row");
+    writeFileSync(join(repo, "memory/semantic/p/notitle.md"), noTitleMd);
+    writeFileSync(join(repo, "memory/semantic/p/noscope.md"), noScopeMd);
+    const idxBefore = readFileSync(idxPath(), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/notitle", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/notitle.*incomplete.*title/i);
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/noscope", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/noscope.*incomplete.*scope/i);
+
+    // all-or-nothing: neither the .md nor the index was touched
+    expect(readFileSync(join(repo, "memory/semantic/p/notitle.md"), "utf8")).toBe(noTitleMd);
+    expect(readFileSync(join(repo, "memory/semantic/p/noscope.md"), "utf8")).toBe(noScopeMd);
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+    expect(readIndexStatus("semantic/p/notitle")).toBe("archived"); // still archived
+  });
+
   it("still restores normally when the overlay holds only an OLDER (non-conflicting) copy of the id", async () => {
     // Control for the guard: an overlay copy that is strictly OLDER than the local
     // archived row is NOT a conflict — local is authoritative — so the restore

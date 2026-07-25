@@ -1,6 +1,6 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadMemoryIndex, saveMemoryIndex } from "../memory/index-store.js";
-import { writeMemoryEntryFile } from "../memory/apply.js";
+import { writeMemoryEntryFile, missingRewriteField } from "../memory/apply.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
 import { isOverlayConflict } from "../memory/overlay-conflict.js";
 import { validEntryExists } from "../memory/lint.js";
@@ -30,7 +30,9 @@ export interface MemoryUnarchiveOptions {
  *  non-archived — so re-running it, or aiming it at an active entry, changes
  *  nothing. Idempotent by the same guard. ABORTS (throws, writes nothing) when
  *  the index row filed under the id carries a DIFFERENT id, since the canonical
- *  writer would follow that id and clobber an unrelated record. */
+ *  writer would follow that id and clobber an unrelated record — or when the row
+ *  is INCOMPLETE (missing a field the .md re-render needs), since restoring it
+ *  would persist a degraded record. */
 export async function memoryUnarchiveCmd(opts: MemoryUnarchiveOptions): Promise<void> {
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
@@ -55,6 +57,18 @@ export async function memoryUnarchiveCmd(opts: MemoryUnarchiveOptions): Promise<
   if (e.status !== "archived") {
     console.log(`not archived: ${opts.id}`);
     return;
+  }
+  // Round-15: key===id agreement still doesn't prove the row is WELL-FORMED. A
+  // partial archived row (valid id/type/project but no `title`, or no `scope`)
+  // would sail into writeMemoryEntryFile, and renderMemoryMarkdown would
+  // serialize the missing fields as the literal string "undefined" (`title:
+  // undefined`, `scope: undefined`, plus a `# undefined` heading) — restoring the
+  // entry as a DEGRADED record. There is no safe repair (we can't invent a title),
+  // so ABORT and change nothing. Same shared predicate memory-archive filters on,
+  // so both write paths into the rewriter demand the same completeness.
+  const missing = missingRewriteField(e);
+  if (missing) {
+    throw new Error(`refusing to unarchive ${opts.id}: index row is incomplete (missing ${missing})`);
   }
   // Cross-device clobber guard (mirrors memory-archive's): restoring a stale
   // LOCAL archived row → active and stamping today's (day-only) updatedAt could

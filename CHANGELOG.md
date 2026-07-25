@@ -26,6 +26,13 @@ Memories now have a lifecycle. A new `status: "archived"` (+ `archivedAt` /
 - Archival is a deliberate, automatic, non-gated write (the one place the digest
   bypasses the v4 human-review gate) — safe because of the core/pinned guard,
   reversibility, and R2.
+- `archivedAt` / `archivedReason` are **machine-maintained**: only
+  `memory-archive` sets them and only `memory-unarchive` clears them. Authored
+  writes (`memory-write` / `memory-propose` → `memory-approve`) always persist
+  them as `null`, so an `active` entry can never carry archival metadata. Both
+  archival commands also refuse to rewrite an index row too incomplete to
+  re-render faithfully (missing `id`/`type`/`scope`/`title`/`project`/`status`/
+  `updatedAt`).
 
 Schema-compatible: old entries parse the new fields as `null`; the npm CI
 aggregator (`merge-books.mjs`) carries `archived` through unchanged.

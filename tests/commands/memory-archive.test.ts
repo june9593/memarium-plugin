@@ -196,6 +196,39 @@ describe("memoryArchiveCmd", () => {
     expect(warnings.join("\n")).toMatch(/skipped 3 malformed index row\(s\)/);
   });
 
+  it("skips an index row missing the fields the .md rewrite needs (title/scope) — no `undefined` is ever serialized", async () => {
+    // Round-15: the shared row-shape predicate now also requires the fields the
+    // metadata-only REWRITE needs (title/scope), not just the ones the plan +
+    // canonical-path derivation need. Without them the renderer emits the literal
+    // `title: undefined` / `scope: undefined` (and a `# undefined` heading),
+    // degrading the record it was only supposed to stamp `archived` on.
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    seed();
+    const idx = readIndex();
+    // Both rows are otherwise perfectly archivable (expired rule: past validTo).
+    idx.entries["semantic/p/notitle"] = { ...idx.entries["semantic/p/exp"], id: "semantic/p/notitle", path: "memory/semantic/p/notitle.md" };
+    delete idx.entries["semantic/p/notitle"].title;
+    idx.entries["semantic/p/noscope"] = { ...idx.entries["semantic/p/exp"], id: "semantic/p/noscope", path: "memory/semantic/p/noscope.md" };
+    delete idx.entries["semantic/p/noscope"].scope;
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    const partialMd = (id: string) =>
+      `---\nid: ${id}\ntype: semantic\nstatus: active\n---\n\n# Partial row\n\nThe real body of ${id}.\n`;
+    writeFileSync(join(repo, "memory/semantic/p/notitle.md"), partialMd("semantic/p/notitle"));
+    writeFileSync(join(repo, "memory/semantic/p/noscope.md"), partialMd("semantic/p/noscope"));
+
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
+
+    // the healthy expired entry still archives — the skip is surgical
+    expect(readIndexStatus("semantic/p/exp")).toBe("archived");
+    // the two partial rows were skipped: index rows untouched, .md never rewritten
+    expect(readIndexStatus("semantic/p/notitle")).toBe("active");
+    expect(readIndexStatus("semantic/p/noscope")).toBe("active");
+    expect(readFileSync(join(repo, "memory/semantic/p/notitle.md"), "utf8")).toBe(partialMd("semantic/p/notitle"));
+    expect(readFileSync(join(repo, "memory/semantic/p/noscope.md"), "utf8")).toBe(partialMd("semantic/p/noscope"));
+    expect(warnings.join("\n")).toMatch(/skipped 2 malformed index row\(s\)/);
+  });
+
   it("drops an index row whose KEY disagrees with its own id — the named VICTIM record is never planned or clobbered", async () => {
     // Round-12: the malformed-row filter validated the ROW's fields but never that
     // the row's index KEY equalled `row.id`. planArchival plans by `row.id`, the
