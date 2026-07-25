@@ -14,11 +14,18 @@ function sameStringSet(a: string[] | undefined, b: string[] | undefined): boolea
 /** True when two copies of the same memory id have SUBSTANTIVELY equivalent
  *  frontmatter/metadata — i.e. an already-synced copy, not a divergent
  *  sibling-device edit. Compares only CONTENT fields (now including `trust`,
- *  `validFrom`, and `project`, whose edits are real divergence); deliberately
- *  IGNORES provenance/location metadata that legitimately differs between a
- *  local row and its aggregated copy (`path`, `originDevice`, and the union-able
+ *  `validFrom`, `project`, and the ARCHIVAL LIFECYCLE fields `archivedReason` /
+ *  `archivedAt`, whose edits are real divergence); deliberately IGNORES
+ *  provenance/location metadata that legitimately differs between a local row and
+ *  its aggregated copy (`path`, `originDevice`, and the union-able
  *  `sourceSessions`/`sourceCommits`/`sourceFiles`, which merge-books unions
  *  rather than treats as divergence).
+ *
+ *  `archivedReason`/`archivedAt` are lifecycle STATE, not mergeable provenance:
+ *  two equal-`updatedAt` copies archived by DIFFERENT rules (e.g. `expired` vs
+ *  `superseded-cleanup`) are genuinely divergent — unarchive restores
+ *  active-vs-superseded FROM `archivedReason`, so treating them as equivalent
+ *  would let archival/unarchival clobber the sibling's lifecycle state.
  *
  *  NOTE: this is a metadata-only comparison. The Markdown BODY is compared
  *  separately (it lives in the .md, not the index) by `isOverlayConflict`, which
@@ -33,6 +40,8 @@ export function sameMemoryContent(a: MemoryEntry, b: MemoryEntry): boolean {
     (a.validTo ?? null) === (b.validTo ?? null) &&
     (a.validFrom ?? null) === (b.validFrom ?? null) &&
     (a.supersedes ?? null) === (b.supersedes ?? null) &&
+    (a.archivedReason ?? null) === (b.archivedReason ?? null) &&
+    (a.archivedAt ?? null) === (b.archivedAt ?? null) &&
     a.type === b.type &&
     a.scope === b.scope &&
     (a.project ?? null) === (b.project ?? null) &&

@@ -174,15 +174,26 @@ describe("memoryArchiveCmd", () => {
     expect(existsSync(join(repo, "memory/semantic/p/gone.md"))).toBe(false);
   });
 
-  it("tolerates parseable-but-malformed index rows (null / non-object) — auto digest consolidation can't be crashed", async () => {
+  it("tolerates parseable-but-malformed index rows (null / non-object / partial object) — auto digest consolidation can't be crashed", async () => {
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
     seed();
     const idx = readIndex();
-    idx.entries["semantic/p/nul"] = null;              // null row
-    idx.entries["semantic/p/str"] = "not-an-object";   // wrong-typed row
+    idx.entries["semantic/p/nul"] = null;              // null row (dropped by safeValues)
+    idx.entries["semantic/p/str"] = "not-an-object";   // wrong-typed row (dropped by safeValues)
+    // OBJECT row missing `type` — passes safeValues (it IS an object) and the
+    // superseded-cleanup rule would select it, but canonicalMemoryPath throws on
+    // the missing type. isPlannableEntry must reject it BEFORE it can crash the
+    // digest, and count it among the skipped malformed rows.
+    idx.entries["semantic/p/bad"] = { id: "semantic/p/bad", status: "superseded" };
     writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
-    // must NOT throw; malformed rows are skipped; the good expired entry still archives
+    // must NOT throw; all three malformed rows are skipped; the good expired entry still archives
     await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
     expect(readIndexStatus("semantic/p/exp")).toBe("archived");
+    // the partial object was skipped, not processed — its row is left untouched (no archive stamp)
+    expect(readIndex().entries["semantic/p/bad"]).toEqual({ id: "semantic/p/bad", status: "superseded" });
+    // all three malformed rows (null + string + partial object) are counted in the skip warning
+    expect(warnings.join("\n")).toMatch(/skipped 3 malformed index row\(s\)/);
   });
 
   it("does NOT archive an id whose newer ACTIVE copy is the overlay winner, but still archives a purely-local stale id", async () => {

@@ -9,6 +9,27 @@ import { isOverlayConflict } from "../memory/overlay-conflict.js";
 import { writeMemoryEntryFile, assertMemoryBodyRecoverable } from "../memory/apply.js";
 import type { MemoryEntry } from "../memory/types.js";
 
+/** The 4 MemoryType values, as a runtime set for validating an untrusted index row. */
+const PLANNABLE_TYPES: ReadonlySet<string> = new Set(["core", "semantic", "episodic", "procedural"]);
+
+/** `safeValues` only proves a row is a non-null, non-array OBJECT — it does NOT
+ *  prove the row is a well-formed archival candidate. A partial object like
+ *  `{ id: "semantic/p/bad", status: "superseded" }` passes `safeValues`, is
+ *  selected by the superseded-cleanup rule, and then throws in
+ *  `canonicalMemoryPath` on the missing `type` — aborting the whole automatic
+ *  digest consolidation. Validate the minimum fields the plan (`status`/`type`/
+ *  `updatedAt`) and the canonical-path derivation (`id`/`type`/`project`) require;
+ *  a row that fails is dropped (and counted among the skipped malformed rows). */
+function isPlannableEntry(e: MemoryEntry): boolean {
+  return (
+    typeof e.id === "string" && e.id.length > 0 &&
+    typeof e.type === "string" && PLANNABLE_TYPES.has(e.type) &&
+    (e.project === null || typeof e.project === "string") &&
+    typeof e.status === "string" &&
+    typeof e.updatedAt === "string"
+  );
+}
+
 export interface MemoryArchiveOptions {
   /** Accepted for CLI symmetry with the other memory-* commands. Archive plans
    *  store-wide (the near-duplicate + stale-provenance rules are inherently
@@ -34,10 +55,13 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   const usage = loadUsage(cfg.repoPath);
   const knownSessions = loadKnownSessions(cfg.repoPath); // Set | undefined
   // Digest runs this automatically, so a parseable-but-malformed index row (null,
-  // or wrong-typed fields) must NOT crash consolidation. safeValues drops non-object
-  // rows (same guard the lint path uses); report how many were skipped.
+  // wrong-typed, or a partial object missing the fields the plan + canonical-path
+  // derivation need) must NOT crash consolidation. safeValues drops non-object
+  // rows; isPlannableEntry then drops object rows that aren't well-formed archival
+  // candidates (e.g. missing `type`, which would throw in canonicalMemoryPath).
+  // Report how many rows, across both filters, were skipped.
   const rawCount = Object.keys(idx.entries ?? {}).length;
-  const entries = safeValues<MemoryEntry>(idx.entries);
+  const entries = safeValues<MemoryEntry>(idx.entries).filter(isPlannableEntry);
   if (entries.length < rawCount) {
     console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
   }
