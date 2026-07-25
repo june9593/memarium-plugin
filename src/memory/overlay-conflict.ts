@@ -14,12 +14,17 @@ function sameStringSet(a: string[] | undefined, b: string[] | undefined): boolea
 /** True when two copies of the same memory id have SUBSTANTIVELY equivalent
  *  frontmatter/metadata — i.e. an already-synced copy, not a divergent
  *  sibling-device edit. Compares only CONTENT fields (now including `trust`,
- *  `validFrom`, `project`, and the ARCHIVAL LIFECYCLE fields `archivedReason` /
- *  `archivedAt`, whose edits are real divergence); deliberately IGNORES
- *  provenance/location metadata that legitimately differs between a local row and
- *  its aggregated copy (`path`, `originDevice`, and the union-able
- *  `sourceSessions`/`sourceCommits`/`sourceFiles`, which merge-books unions
- *  rather than treats as divergence).
+ *  `validFrom`, `project`, the birth stamp `createdAt`, and the ARCHIVAL
+ *  LIFECYCLE fields `archivedReason` / `archivedAt`, whose edits are real
+ *  divergence); deliberately IGNORES provenance/location metadata that
+ *  legitimately differs between a local row and its aggregated copy (`path`,
+ *  `originDevice`, and the union-able `sourceSessions`/`sourceCommits`/
+ *  `sourceFiles`, which merge-books unions rather than treats as divergence).
+ *
+ *  `createdAt` is lifecycle metadata too, not location metadata: two
+ *  equal-`updatedAt` copies with different birth stamps are different records,
+ *  so calling them equivalent would let archival restamp the local copy and
+ *  clobber the sibling's value on the next merge.
  *
  *  `archivedReason`/`archivedAt` are lifecycle STATE, not mergeable provenance:
  *  two equal-`updatedAt` copies archived by DIFFERENT rules (e.g. `expired` vs
@@ -37,6 +42,7 @@ export function sameMemoryContent(a: MemoryEntry, b: MemoryEntry): boolean {
     a.summary === b.summary &&
     a.importance === b.importance &&
     a.confidence === b.confidence &&
+    a.createdAt === b.createdAt &&
     (a.validTo ?? null) === (b.validTo ?? null) &&
     (a.validFrom ?? null) === (b.validFrom ?? null) &&
     (a.supersedes ?? null) === (b.supersedes ?? null) &&

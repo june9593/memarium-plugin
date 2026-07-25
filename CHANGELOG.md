@@ -15,9 +15,11 @@ Memories now have a lifecycle. A new `status: "archived"` (+ `archivedAt` /
   age >60d + importance ≤2, semantic/procedural only). `core` and `pinned` are
   NEVER archived.
 - **Reversible + self-correcting** — archived `.md` stay git-tracked;
-  `memory-unarchive <id>` restores. A read-only **R2 cold-storage valve** in
-  `memory-query` resurfaces strongly-matching archived entries (project-scoped)
-  when active recall is weak, so a wrongly-archived memory comes back on demand.
+  `memory-unarchive <id>` restores. A read-only **R2 cold-storage valve** shared
+  by **both** `memory-query` (`/memarium-context`) **and** `recall`
+  (`/memarium-recall`) resurfaces strongly-matching archived entries
+  (project-scoped) with a restore hint when active recall is weak, so a
+  wrongly-archived memory comes back on demand.
 - Recall + primer + the memory-query conflicts section + entity-query all
   exclude archived (single `isArchived` predicate). The R2 valve is the ONLY
   read path that surfaces archived — and it never writes.

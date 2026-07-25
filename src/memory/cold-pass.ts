@@ -62,6 +62,21 @@ function inScope(e: MemoryEntry, project: string | null): boolean {
   return project === null;
 }
 
+// Archival reasons the valve must NOT resurface. The valve's job is to undo
+// AGGRESSIVE HEURISTIC archival (unused-low-value / stale-episodic /
+// stale-provenance / expired / near-duplicate) — guesses that can be wrong.
+// `superseded-cleanup` is not a guess: planArchival Rule 1 only ever assigns it
+// to an entry that was ALREADY `superseded`, i.e. deliberately replaced, and its
+// replacement is live and findable by the primary pass. Surfacing it here would
+// also be an ineffective hint: memory-unarchive deliberately restores a
+// superseded-cleanup archive to `superseded` (NOT active) so restoring can't
+// reintroduce an obsolete fact — and primary recall EXCLUDES superseded, so the
+// advertised "memory-unarchive <id> to restore" would put it right back out of
+// recall while surfacing a fact its live replacement already supersedes.
+const NON_RESURRECTABLE_REASONS = new Set(["superseded-cleanup"]);
+const isResurrectable = (e: MemoryEntry): boolean =>
+  !NON_RESURRECTABLE_REASONS.has(e.archivedReason ?? "");
+
 export interface ColdPassInput {
   /** The full merged (local + overlay) entry list the primary pass scored. */
   entries: MemoryEntry[];
@@ -79,10 +94,11 @@ export interface ColdPassInput {
  * scope/importance hits don't count — the whole point is "the live memory
  * doesn't answer this query").
  *
- * scoreArchived filters ONLY on archived status, so we (a) scope-filter to the
- * query's project and (b) apply the query's type filter — SAME as the primary
- * pass — so a `--type procedural` query can't surface an archived `semantic`
- * hit. NEVER writes/mutates status.
+ * scoreArchived filters ONLY on archived status, so we (a) drop entries archived
+ * for a NON-RESURRECTABLE reason (see NON_RESURRECTABLE_REASONS), (b) scope-filter
+ * to the query's project and (c) apply the query's type filter — SAME as the
+ * primary pass — so a `--type procedural` query can't surface an archived
+ * `semantic` hit. NEVER writes/mutates status.
  */
 export function runColdPass({ entries, scored, query, sources }: ColdPassInput): ColdStorageHit[] {
   if (query.text.trim() === "") return [];
@@ -90,6 +106,7 @@ export function runColdPass({ entries, scored, query, sources }: ColdPassInput):
   if (strongPrimary >= COLD_FLOOR) return [];
 
   return scoreArchived(entries, query)
+    .filter((s) => isResurrectable(s.entry))
     .filter((s) => inScope(s.entry, query.project))
     .filter((s) => !query.type || s.entry.type === query.type)
     .filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR)

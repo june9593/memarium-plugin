@@ -139,6 +139,44 @@ describe("memoryQueryCmd — R2 cold-storage resurrect valve", () => {
     expect(conflictIds).toContain("semantic/code-demo/active-bounded");   // non-archived time-bounded still surfaces
   });
 
+  it("a superseded-cleanup archive never surfaces in coldStorage (its replacement is already live)", async () => {
+    // The valve exists to undo AGGRESSIVE HEURISTIC archival (unused-low-value /
+    // stale-episodic / stale-provenance / expired / near-duplicate). A
+    // `superseded-cleanup` archive is not a heuristic guess: the entry was
+    // deliberately superseded and its live replacement is findable by primary
+    // recall. Worse, memory-unarchive restores it to `superseded` (not active),
+    // so the "memory-unarchive <id> to restore" hint can't even bring it back
+    // into recall — the hint would be misleading and acting on it would surface
+    // an obsolete fact.
+    writeIndex({
+      // active non-matching → 0 active content hits, so the valve fires
+      "semantic/code-demo/local": mk({ id: "semantic/code-demo/local", scope: "project:code-demo",
+        project: "code-demo", title: "Local unrelated note", summary: "nothing about the query",
+        path: "memory/semantic/code-demo/local.md", status: "active", entities: [] }),
+      // archived by superseded-cleanup, STRONG match for "vim" → MUST be excluded
+      "semantic/code-demo/supvim": mk({ id: "semantic/code-demo/supvim", scope: "project:code-demo",
+        project: "code-demo", title: "Vim keybindings", summary: "vim editor setup",
+        path: "memory/semantic/code-demo/supvim.md", status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "superseded-cleanup", entities: ["vim"] }),
+      // archived by a HEURISTIC rule, same strong match → control, MUST surface
+      "semantic/code-demo/coldvim": mk({ id: "semantic/code-demo/coldvim", scope: "project:code-demo",
+        project: "code-demo", title: "Vim keybindings", summary: "vim editor setup",
+        path: "memory/semantic/code-demo/coldvim.md", status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value", entities: ["vim"] }),
+    });
+    const errs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => { errs.push(a.map(String).join(" ")); });
+
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const result = await memoryQueryCmd({ cwd: "/work/code-demo", q: "vim" });
+
+    const coldIds = result.coldStorage.map((c) => c.id);
+    expect(coldIds).not.toContain("semantic/code-demo/supvim"); // ineffective hint suppressed
+    expect(coldIds).toContain("semantic/code-demo/coldvim");    // heuristic archive still resurfaces
+    // ...and no restore hint is ever printed for the superseded-cleanup id
+    expect(errs.join("\n")).not.toMatch(/supvim/);
+  });
+
   it("empty query → coldStorage empty (never fires the valve on a plain primer refresh)", async () => {
     writeIndex({
       "semantic/code-demo/coldvim": mk({ id: "semantic/code-demo/coldvim", scope: "project:code-demo",
