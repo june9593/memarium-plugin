@@ -3,6 +3,7 @@ import { loadMemoryIndex, saveMemoryIndex } from "../memory/index-store.js";
 import { writeMemoryEntryFile } from "../memory/apply.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
 import { isOverlayConflict } from "../memory/overlay-conflict.js";
+import { validEntryExists } from "../memory/lint.js";
 import type { MemoryEntry } from "../memory/types.js";
 
 export interface MemoryUnarchiveOptions {
@@ -27,12 +28,31 @@ export interface MemoryUnarchiveOptions {
  *
  *  No-op (exit 0, message, nothing written) when the id is unknown OR already
  *  non-archived — so re-running it, or aiming it at an active entry, changes
- *  nothing. Idempotent by the same guard. */
+ *  nothing. Idempotent by the same guard. ABORTS (throws, writes nothing) when
+ *  the index row filed under the id carries a DIFFERENT id, since the canonical
+ *  writer would follow that id and clobber an unrelated record. */
 export async function memoryUnarchiveCmd(opts: MemoryUnarchiveOptions): Promise<void> {
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
-  const e = idx.entries[opts.id] as MemoryEntry | undefined;
-  if (!e || e.status !== "archived") {
+  const rows = (idx.entries ?? {}) as Record<string, unknown>;
+  const raw = rows[opts.id];
+  // Genuinely unknown id (absent or a null tombstone) → the documented no-op.
+  if (raw === undefined || raw === null) {
+    console.log(`not archived: ${opts.id}`);
+    return;
+  }
+  // Round-12: the row is PRESENT, but it must actually be filed under its own id.
+  // `writeMemoryEntryFile` derives the canonical .md path from `entry.id`, so a
+  // corrupt row filed under `semantic/p/a` while carrying `id: "semantic/p/b"`
+  // would be rewritten OVER the unrelated `semantic/p/b` record — and the round-6
+  // identity guard would wave it through, because that .md genuinely carries
+  // `semantic/p/b`. There is no safe repair here (we cannot know which of the key
+  // and the id is the truth), so ABORT and change nothing.
+  if (!validEntryExists(rows, opts.id)) {
+    throw new Error(`refusing to unarchive ${opts.id}: index row is corrupt (key/id mismatch)`);
+  }
+  const e = rows[opts.id] as MemoryEntry;
+  if (e.status !== "archived") {
     console.log(`not archived: ${opts.id}`);
     return;
   }

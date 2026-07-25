@@ -196,6 +196,63 @@ describe("memoryArchiveCmd", () => {
     expect(warnings.join("\n")).toMatch(/skipped 3 malformed index row\(s\)/);
   });
 
+  it("drops an index row whose KEY disagrees with its own id — the named VICTIM record is never planned or clobbered", async () => {
+    // Round-12: the malformed-row filter validated the ROW's fields but never that
+    // the row's index KEY equalled `row.id`. planArchival plans by `row.id`, the
+    // apply loop then resolves `idx.entries[id]` — so a row filed under key `bad`
+    // carrying `id: "semantic/p/victim"` planned, and then archived + rewrote, the
+    // UNRELATED healthy `semantic/p/victim`. The round-6 identity guard cannot
+    // catch it: writeMemoryEntryFile derives the canonical path from `entry.id`,
+    // so the victim's own .md (which really does carry the victim's id) is
+    // accepted and clobbered. The key/id-mismatched row must be dropped up front
+    // and counted among the skipped malformed rows.
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    seed();
+    const idx = readIndex();
+    const victim = {
+      id: "semantic/p/victim", type: "semantic", scope: "project:p", project: "p",
+      title: "Deploy pipeline uses a staged rollout", summary: "unrelated healthy record",
+      path: "memory/semantic/p/victim.md", status: "active", validTo: null,
+      confidence: 1, importance: 5, createdAt: "2026-01-01", updatedAt: "2026-06-01",
+      validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+      supersedes: null, entities: [], trust: "trusted", originDevice: null,
+      accessCount: 3, lastAccess: "2026-06-01", archivedAt: null, archivedReason: null,
+    };
+    // A healthy, NON-archivable active entry (importance 5 keeps it out of the
+    // unused-low-value rule regardless of when this test runs) with its own .md.
+    idx.entries["semantic/p/victim"] = victim;
+    // The poison row: well-formed enough to pass isPlannableEntry AND selected by
+    // the superseded-cleanup rule, but filed under a key that is NOT its id.
+    idx.entries["bad"] = {
+      id: "semantic/p/victim", type: "semantic", scope: "project:p", project: "p",
+      title: "Poison row", summary: "filed under the wrong key",
+      path: "memory/semantic/p/bad.md", status: "superseded", validTo: null,
+      confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+      validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+      supersedes: null, entities: [], trust: "trusted", originDevice: null,
+      accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+    };
+    const badRowBefore = JSON.parse(JSON.stringify(idx.entries["bad"]));
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    writeFileSync(join(repo, "memory/semantic/p/victim.md"),
+      `---\nid: semantic/p/victim\ntype: semantic\nstatus: active\n---\n\n# Deploy pipeline uses a staged rollout\n\nThe real body of semantic/p/victim.\n`);
+    const victimMdBefore = readFileSync(join(repo, "memory/semantic/p/victim.md"), "utf8");
+
+    // must NOT throw, and the good expired entry still archives
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
+    expect(readIndexStatus("semantic/p/exp")).toBe("archived");
+
+    // THE LANDMINE: the victim the poison row named is byte-identical on disk and in the index
+    expect(readFileSync(join(repo, "memory/semantic/p/victim.md"), "utf8")).toBe(victimMdBefore);
+    expect(readIndex().entries["semantic/p/victim"]).toEqual(victim);
+    expect(readIndexStatus("semantic/p/victim")).toBe("active");
+    // the mismatched row is skipped AND counted
+    expect(warnings.join("\n")).toMatch(/skipped 1 malformed index row\(s\)/);
+    // the poison row itself is untouched (never stamped)
+    expect(readIndex().entries["bad"]).toEqual(badRowBefore);
+  });
+
   it("does NOT archive an id whose newer ACTIVE copy is the overlay winner, but still archives a purely-local stale id", async () => {
     // Seed a stale-locally entry `sib` that ALSO has a NEWER active copy on a
     // sibling device (the aggregated overlay). resolveMemoryView resolves `sib`

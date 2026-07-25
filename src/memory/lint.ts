@@ -24,8 +24,12 @@ export function safeValues<T>(rec: unknown): T[] {
 
 /** Returns true only when rec[id] is a non-null, non-array object whose id field equals the lookup key.
  *  A truthy-but-corrupt value (string, number, array, empty object, or object with a mismatched id) returns false.
- *  An id/key mismatch is itself a corruption — treat the entry as not a valid target. */
-function validEntryExists(rec: unknown, id: string): boolean {
+ *  An id/key mismatch is itself a corruption — treat the entry as not a valid target.
+ *  Exported because the archival commands need the same key===id agreement check: they
+ *  plan/resolve by `row.id` while looking rows up by KEY, and `writeMemoryEntryFile`
+ *  derives the canonical .md path from `entry.id` — so a row filed under the wrong key
+ *  would silently rewrite the UNRELATED record its id names. */
+export function validEntryExists(rec: unknown, id: string): boolean {
   if (!rec || typeof rec !== "object" || Array.isArray(rec)) return false;
   const v = (rec as Record<string, unknown>)[id];
   return v !== null && typeof v === "object" && !Array.isArray(v) && (v as { id?: unknown }).id === id;

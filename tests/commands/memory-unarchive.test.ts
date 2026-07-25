@@ -243,6 +243,38 @@ describe("memoryUnarchiveCmd", () => {
     expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
   });
 
+  it("aborts when the index row under the requested id carries a DIFFERENT id — the named victim is never rewritten", async () => {
+    // Round-12: unarchive looked up `idx.entries[opts.id]` and rewrote from that
+    // row without checking the row's own `id` matched the key. Since
+    // writeMemoryEntryFile derives the canonical path from `entry.id`, a corrupt
+    // row filed under `semantic/p/a` but carrying `id: "semantic/p/b"` would be
+    // written over the UNRELATED `semantic/p/b` record — and the round-6 identity
+    // guard would accept it, because that .md genuinely carries `semantic/p/b`.
+    seed();
+    const idx = readIndex();
+    idx.entries["semantic/p/a"] = {
+      ...idx.entries["semantic/p/c"],
+      id: "semantic/p/b",                 // key/id MISMATCH: filed under "a", claims to be "b"
+      title: "Corrupt row claiming to be b", path: "memory/semantic/p/b.md",
+    };
+    idx.entries["semantic/p/b"] = {
+      ...idx.entries["semantic/p/act"],
+      id: "semantic/p/b", title: "The real b", path: "memory/semantic/p/b.md", status: "active",
+    };
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    const bMd = `---\nid: semantic/p/b\ntype: semantic\nstatus: active\narchivedAt: null\narchivedReason: null\n---\n\n# The real b\n\nThe real body of semantic/p/b.\n`;
+    writeFileSync(join(repo, "memory/semantic/p/b.md"), bMd);
+    const idxBefore = readFileSync(idxPath(), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/a", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/a.*corrupt.*key\/id mismatch/i);
+
+    // nothing changed: neither the victim's .md nor the index
+    expect(readFileSync(join(repo, "memory/semantic/p/b.md"), "utf8")).toBe(bMd);
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+    expect(readIndexStatus("semantic/p/b")).toBe("active");
+  });
+
   it("still restores normally when the overlay holds only an OLDER (non-conflicting) copy of the id", async () => {
     // Control for the guard: an overlay copy that is strictly OLDER than the local
     // archived row is NOT a conflict — local is authoritative — so the restore

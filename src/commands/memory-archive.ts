@@ -3,7 +3,7 @@ import { loadMemoryIndex, saveMemoryIndex } from "../memory/index-store.js";
 import { loadUsage } from "../memory/usage-store.js";
 import { planArchival, ARCHIVE_DEFAULTS } from "../memory/archive.js";
 import { loadKnownSessions } from "../memory/known-sessions.js";
-import { safeValues } from "../memory/lint.js";
+import { validEntryExists } from "../memory/lint.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
 import { isOverlayConflict } from "../memory/overlay-conflict.js";
 import { writeMemoryEntryFile, assertMemoryBodyRecoverable } from "../memory/apply.js";
@@ -12,10 +12,10 @@ import type { MemoryEntry } from "../memory/types.js";
 /** The 4 MemoryType values, as a runtime set for validating an untrusted index row. */
 const PLANNABLE_TYPES: ReadonlySet<string> = new Set(["core", "semantic", "episodic", "procedural"]);
 
-/** `safeValues` only proves a row is a non-null, non-array OBJECT — it does NOT
- *  prove the row is a well-formed archival candidate. A partial object like
- *  `{ id: "semantic/p/bad", status: "superseded" }` passes `safeValues`, is
- *  selected by the superseded-cleanup rule, and then throws in
+/** `validEntryExists` only proves a row is a non-null, non-array OBJECT filed under
+ *  its own id — it does NOT prove the row is a well-formed archival candidate. A
+ *  partial object like `{ id: "semantic/p/bad", status: "superseded" }` passes that
+ *  check, is selected by the superseded-cleanup rule, and then throws in
  *  `canonicalMemoryPath` on the missing `type` — aborting the whole automatic
  *  digest consolidation. Validate the minimum fields the plan (`status`/`type`/
  *  `updatedAt`) and the canonical-path derivation (`id`/`type`/`project`) require;
@@ -55,13 +55,25 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   const usage = loadUsage(cfg.repoPath);
   const knownSessions = loadKnownSessions(cfg.repoPath); // Set | undefined
   // Digest runs this automatically, so a parseable-but-malformed index row (null,
-  // wrong-typed, or a partial object missing the fields the plan + canonical-path
-  // derivation need) must NOT crash consolidation. safeValues drops non-object
-  // rows; isPlannableEntry then drops object rows that aren't well-formed archival
-  // candidates (e.g. missing `type`, which would throw in canonicalMemoryPath).
-  // Report how many rows, across both filters, were skipped.
+  // wrong-typed, a partial object missing the fields the plan + canonical-path
+  // derivation need, or one filed under a key that disagrees with its own `id`)
+  // must NOT crash consolidation — or, worse, act on the WRONG record.
+  //
+  // `validEntryExists` subsumes safeValues' check (non-null, non-array object) and
+  // adds the key===id agreement that was missing: planArchival plans by `row.id`
+  // and the apply loop resolves `idx.entries[id]`, so a row filed under key `bad`
+  // carrying `id: "semantic/p/victim"` would plan — and then archive + rewrite —
+  // the UNRELATED healthy `semantic/p/victim`. The round-6 identity guard cannot
+  // catch that: writeMemoryEntryFile derives the canonical path from `entry.id`,
+  // so the victim's own .md (which really does carry the victim's id) is accepted.
+  // isPlannableEntry then drops rows that are key-consistent but still not
+  // well-formed archival candidates (e.g. missing `type`, which would throw in
+  // canonicalMemoryPath). Report how many rows, across both filters, were skipped.
   const rawCount = Object.keys(idx.entries ?? {}).length;
-  const entries = safeValues<MemoryEntry>(idx.entries).filter(isPlannableEntry);
+  const entries = Object.keys((idx.entries ?? {}) as Record<string, unknown>)
+    .filter((key) => validEntryExists(idx.entries, key))
+    .map((key) => (idx.entries as Record<string, MemoryEntry>)[key])
+    .filter(isPlannableEntry);
   if (entries.length < rawCount) {
     console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
   }
@@ -109,8 +121,13 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   // protected, and an already-archived entry is skipped for idempotency.
   const planned: MemoryEntry[] = [];
   for (const { id, reason } of plan.archive) {
-    const e = idx.entries[id] as MemoryEntry | undefined;
-    if (!e) continue;
+    // Defense in depth for the key/id confusion filtered above: re-assert at the
+    // write sink that the row we resolve for this id is actually FILED under it.
+    // The plan is a list of ids, but the write derives its .md path from the
+    // resolved row's `id` — so if the two ever disagreed, we would rewrite a
+    // record the plan never named. Skip rather than write the wrong file.
+    if (!validEntryExists(idx.entries, id)) continue;
+    const e = (idx.entries as Record<string, MemoryEntry>)[id];
     if (e.type === "core" || e.status === "pinned" || e.status === "archived") continue;
     planned.push({ ...e, status: "archived", archivedAt: now, archivedReason: reason, updatedAt: now });
   }
