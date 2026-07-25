@@ -15174,7 +15174,7 @@ function runColdPass({ entries, scored, query, sources }) {
   if (query.text.trim() === "") return [];
   const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
   if (strongPrimary >= COLD_FLOOR) return [];
-  return scoreArchived(entries, query).filter((s) => inScope(s.entry, query.project)).filter((s) => !query.type || s.entry.type === query.type).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => ({
+  return scoreArchived(entries, query).filter((s) => isResurrectable(s.entry)).filter((s) => inScope(s.entry, query.project)).filter((s) => !query.type || s.entry.type === query.type).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => ({
     id: s.entry.id,
     title: s.entry.title,
     score: s.score,
@@ -15206,7 +15206,7 @@ function renderColdHints(coldStorage) {
   }
   return lines;
 }
-var CONTENT_HIT_MARKERS, isContentHitReason, isContentHit, COLD_FLOOR, COLD_TOP_K, COLD_SCORE_FLOOR;
+var CONTENT_HIT_MARKERS, isContentHitReason, isContentHit, COLD_FLOOR, COLD_TOP_K, COLD_SCORE_FLOOR, NON_RESURRECTABLE_REASONS, isResurrectable;
 var init_cold_pass = __esm({
   "src/memory/cold-pass.ts"() {
     "use strict";
@@ -15217,6 +15217,8 @@ var init_cold_pass = __esm({
     COLD_FLOOR = 3;
     COLD_TOP_K = 3;
     COLD_SCORE_FLOOR = 2;
+    NON_RESURRECTABLE_REASONS = /* @__PURE__ */ new Set(["superseded-cleanup"]);
+    isResurrectable = (e) => !NON_RESURRECTABLE_REASONS.has(e.archivedReason ?? "");
   }
 });
 
@@ -16847,7 +16849,7 @@ function sameStringSet(a, b2) {
   return sa.length === sb.length && sa.every((v, i2) => v === sb[i2]);
 }
 function sameMemoryContent(a, b2) {
-  return a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && (a.validTo ?? null) === (b2.validTo ?? null) && (a.validFrom ?? null) === (b2.validFrom ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && (a.archivedReason ?? null) === (b2.archivedReason ?? null) && (a.archivedAt ?? null) === (b2.archivedAt ?? null) && a.type === b2.type && a.scope === b2.scope && (a.project ?? null) === (b2.project ?? null) && (a.trust ?? "unknown") === (b2.trust ?? "unknown") && sameStringSet(a.entities, b2.entities);
+  return a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && a.createdAt === b2.createdAt && (a.validTo ?? null) === (b2.validTo ?? null) && (a.validFrom ?? null) === (b2.validFrom ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && (a.archivedReason ?? null) === (b2.archivedReason ?? null) && (a.archivedAt ?? null) === (b2.archivedAt ?? null) && a.type === b2.type && a.scope === b2.scope && (a.project ?? null) === (b2.project ?? null) && (a.trust ?? "unknown") === (b2.trust ?? "unknown") && sameStringSet(a.entities, b2.entities);
 }
 function extractBody(md) {
   const norm = md.replace(/\r\n/g, "\n");
