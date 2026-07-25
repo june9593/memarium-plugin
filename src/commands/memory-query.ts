@@ -4,7 +4,7 @@ import { resolveMemoryView, type MemorySource } from "../memory/source-resolver.
 import { scoreMemories, scoreArchived, isArchived, type ScoredMemory } from "../memory/score.js";
 import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
 import { renderPrimer } from "../memory/primer.js";
-import type { MemoryEntry, MemoryType } from "../memory/types.js";
+import type { MemoryEntry, MemoryType, MemoryTrust } from "../memory/types.js";
 
 export interface MemoryQueryOptions { cwd?: string; type?: string; q?: string; }
 
@@ -20,6 +20,10 @@ export interface ColdStorageHit {
   archivedReason: string | null;
   source: MemorySource;
   originDevice: string | null;
+  /** Provenance trust of the archived entry, preserved through the cold pass so a
+   *  restored-from-cold UNTRUSTED semantic (issue #23) is never mistaken for an
+   *  established fact. Anything other than "trusted" is flagged in the human hint. */
+  trust: MemoryTrust;
 }
 
 export interface MemoryQueryResult {
@@ -145,6 +149,10 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQu
         // can't touch, so we point the user at its origin device instead.
         source: view.sources[s.entry.id] ?? "local",
         originDevice: s.entry.originDevice ?? null,
+        // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
+        // surfaced indistinguishably from a trusted fact. Same rule the primary
+        // pass uses: anything not "trusted" is untrusted for surfacing.
+        trust: s.entry.trust ?? "unknown",
       }));
   }
 
@@ -171,11 +179,15 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQu
   if (coldStorage.length) {
     console.error(`\n❄️ ${coldStorage.length} archived also matched:`);
     for (const c of coldStorage) {
+      // Flag any non-trusted cold result so a restored-from-cold untrusted semantic
+      // (#23) is never read as an established fact — mirrors how the primary recall
+      // splits `untrustedSemantic` out of plain "Project facts".
+      const flag = c.trust !== "trusted" ? " (untrusted)" : "";
       if (c.source === "overlay") {
         const dev = c.originDevice ? `device ${c.originDevice}` : "another device";
-        console.error(`  ${c.id}  (${c.archivedReason})  — ${c.title}  — archived on ${dev}; restore it there`);
+        console.error(`  ${c.id}  (${c.archivedReason})  — ${c.title}${flag}  — archived on ${dev}; restore it there`);
       } else {
-        console.error(`  ${c.id}  (${c.archivedReason})  — ${c.title}  — memory-unarchive ${c.id} to restore`);
+        console.error(`  ${c.id}  (${c.archivedReason})  — ${c.title}${flag}  — memory-unarchive ${c.id} to restore`);
       }
     }
   }

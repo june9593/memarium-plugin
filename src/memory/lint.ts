@@ -81,15 +81,23 @@ const daysBetween = (a: string, b: string): number =>
 
 /** Near-duplicate pairs by Jaccard over title+summary content tokens ≥ threshold.
  *  Pure + shared by lint (the `duplicate-like` check) and the archival engine.
- *  Considers only ACTIVE entries and only compares within the same
- *  type/scope/project bucket (so a semantic and a procedural memory are never
- *  reported as duplicates). Each returned pair is lexicographically sorted
- *  ([idA, idB] with idA < idB); order across pairs follows bucket/insertion
- *  order. Malformed pairs are skipped defensively. */
-export function nearDuplicatePairs(entries: MemoryEntry[], threshold = 0.8): [string, string][] {
-  const active = entries.filter((e) => e.status === "active");
+ *  `candidateStatuses` selects which statuses count as duplicate candidates —
+ *  DEFAULT is ACTIVE-only (lint's behavior, unchanged). The archival pass passes
+ *  active+pinned so a PINNED entry can be a duplicate WINNER (its lower-value
+ *  active dup then gets archived); pinned is never a loser because archive.ts's
+ *  archivable() guard rejects it. Only compares within the same type/scope/project
+ *  bucket (so a semantic and a procedural memory are never reported as duplicates).
+ *  Each returned pair is lexicographically sorted ([idA, idB] with idA < idB);
+ *  order across pairs follows bucket/insertion order. Malformed pairs are skipped
+ *  defensively. */
+export function nearDuplicatePairs(
+  entries: MemoryEntry[],
+  threshold = 0.8,
+  candidateStatuses: ReadonlySet<MemoryEntry["status"]> = new Set(["active"]),
+): [string, string][] {
+  const candidates = entries.filter((e) => candidateStatuses.has(e.status));
   const buckets = new Map<string, { e: MemoryEntry; tokens: Set<string> }[]>();
-  for (const e of active) {
+  for (const e of candidates) {
     const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
     const arr = buckets.get(key) ?? [];
     arr.push({ e, tokens: tokenize(`${e.title} ${e.summary}`) });

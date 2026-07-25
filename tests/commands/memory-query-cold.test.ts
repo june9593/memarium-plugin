@@ -228,4 +228,47 @@ describe("memoryQueryCmd — R2 cold-storage resurrect valve", () => {
     expect(hit!.originDevice).toBe(null);
     expect(errs.join("\n")).toMatch(/memory-unarchive semantic\/code-demo\/coldvim to restore/);
   });
+
+  it("cold hits preserve trust: an UNTRUSTED archived hit carries trust in JSON and is flagged; a TRUSTED one is not", async () => {
+    // An archived untrusted semantic must NOT be surfaced indistinguishably from a
+    // trusted one (issue #23 boundary): the cold hit carries `trust` in the JSON and
+    // its human ❄️ hint is flagged (untrusted), so a restored-from-cold untrusted
+    // fact is never mistaken for an established project fact.
+    writeIndex({
+      // active non-matching so the valve fires (0 active content hits for "vim")
+      "semantic/code-demo/local": mk({ id: "semantic/code-demo/local", scope: "project:code-demo",
+        project: "code-demo", title: "Local unrelated note", summary: "nothing about the query",
+        path: "memory/semantic/code-demo/local.md", status: "active", entities: [] }),
+      // archived UNTRUSTED semantic matching "vim" → flagged
+      "semantic/code-demo/uvim": mk({ id: "semantic/code-demo/uvim", scope: "project:code-demo",
+        project: "code-demo", title: "Vim keybindings", summary: "vim editor setup",
+        path: "memory/semantic/code-demo/uvim.md", status: "archived", trust: "untrusted",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value", entities: ["vim"] }),
+      // archived TRUSTED semantic matching "vim" → NOT flagged (control)
+      "semantic/code-demo/tvim": mk({ id: "semantic/code-demo/tvim", scope: "project:code-demo",
+        project: "code-demo", title: "Vim keybindings", summary: "vim editor setup",
+        path: "memory/semantic/code-demo/tvim.md", status: "archived", trust: "trusted",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value", entities: ["vim"] }),
+    });
+    const errs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => { errs.push(a.map(String).join(" ")); });
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const result = await memoryQueryCmd({ cwd: "/work/code-demo", q: "vim" });
+
+    // (a) returned object + JSON payload carry trust
+    const u = result.coldStorage.find((c) => c.id === "semantic/code-demo/uvim")!;
+    const t = result.coldStorage.find((c) => c.id === "semantic/code-demo/tvim")!;
+    expect(u.trust).toBe("untrusted");
+    expect(t.trust).toBe("trusted");
+    const payload = JSON.parse(stdout.join(""));
+    const pu = payload.coldStorage.find((c: { id: string }) => c.id === "semantic/code-demo/uvim");
+    expect(pu.trust).toBe("untrusted");
+
+    // (b) human ❄️ hint flags the untrusted line only
+    const lines = errs.join("\n").split("\n");
+    const uLine = lines.find((l) => l.includes("uvim"))!;
+    const tLine = lines.find((l) => l.includes("tvim"))!;
+    expect(uLine).toMatch(/untrusted/);
+    expect(tLine).not.toMatch(/untrusted/);
+  });
 });

@@ -79,9 +79,13 @@ export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: Arch
   // Near-duplicate pass LAST (needs the whole set + the per-entry decisions above).
   // Loser = lower importance; tie-break to the one updated earlier (<=). Index the
   // entries by id ONCE so each pair is an O(1) lookup, not two O(n) scans (which
-  // made the whole pair loop O(n³) store-wide).
+  // made the whole pair loop O(n³) store-wide). We include PINNED as a candidate
+  // (active+pinned) so a lower-value active dup of a higher-value pinned memory is
+  // caught — the pinned entry can only ever be the WINNER here (archivable() below
+  // rejects it as a loser), so an active dup of a pinned memory is archived while
+  // the pinned one stays hot.
   const byId = new Map(entries.map((e) => [e.id, e]));
-  for (const [a, b] of nearDuplicatePairs(entries)) {
+  for (const [a, b] of nearDuplicatePairs(entries, 0.8, new Set(["active", "pinned"]))) {
     const ea = byId.get(a), eb = byId.get(b);
     if (!ea || !eb) continue;
     const loser = ea.importance !== eb.importance

@@ -98,6 +98,20 @@ it("near-dup: the normal case (winner stays active) still archives the loser as 
   expect(p.archive[0].reason).toBe("near-duplicate-of:semantic/p/win");
 });
 
+it("near-dup: a low-importance ACTIVE dup of a higher-importance PINNED is archived; the PINNED stays", () => {
+  // A recent, lower-value ACTIVE memory duplicates a higher-value PINNED one. The
+  // pinned entry is a valid near-dup WINNER (the archival pass considers pinned as a
+  // candidate), and can NEVER be the loser (archivable() rejects pinned). So the
+  // active dup is archived as near-duplicate-of:<pinnedId> while the pinned stays hot.
+  const pinned = e({ id: "semantic/p/pin", status: "pinned", importance: 4, updatedAt: daysAgo(10),
+    title: "declare list params as array", summary: "type array not string" });
+  const active = e({ id: "semantic/p/dup", status: "active", importance: 1, updatedAt: daysAgo(10),
+    title: "declare list params as array", summary: "type array not string" });
+  const p = planArchival([pinned, active], {}, opts);
+  expect(ids(p)).toEqual(["semantic/p/dup"]); // pinned NOT archived
+  expect(p.archive.find((a) => a.id === "semantic/p/dup")!.reason).toBe("near-duplicate-of:semantic/p/pin");
+});
+
 it("does not re-plan an already-archived entry", () => {
   const p = planArchival([e({ id: "semantic/p/a", status: "archived", validTo: daysAgo(1) })], {}, opts);
   expect(p.archive).toEqual([]);
