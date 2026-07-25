@@ -355,10 +355,13 @@ describe("memoryArchiveCmd", () => {
     };
     writeFileSync(join(overlayRoot, ".memarium", "index.memory.json"),
       JSON.stringify({ version: 1, entries: overlayEntries }, null, 2) + "\n");
+    // The `eqv` overlay copy must have an IDENTICAL BODY at its CANONICAL overlay
+    // path (the conflict check now also compares the .md body, not just metadata),
+    // so an equivalent synced copy is still archivable. Body matches local eqv.
+    mkdirSync(join(overlayRoot, "memory/semantic/p"), { recursive: true });
+    writeFileSync(join(overlayRoot, "memory/semantic/p/eqv.md"), md("Eqv fact", "semantic/p/eqv"));
 
     await memoryArchiveCmd({ cwd: repo, apply: true });
-
-    // KEY regression assertion: the equivalent synced copy is archived, NOT skipped.
     expect(readIndexStatus("semantic/p/eqv")).toBe("archived");
     expect(readMdField("semantic/p/eqv.md", "status")).toBe("archived");
     // older-overlay id archived normally
@@ -369,5 +372,74 @@ describe("memoryArchiveCmd", () => {
     expect(readIndexStatus("semantic/p/new")).toBe("active");
     expect(readMdField("semantic/p/new.md", "status")).toBe("active");
     expect(warnings.join("\n")).toMatch(/skipped 2 id/); // div + new
+  });
+
+  it("skips a same-day overlay copy that differs ONLY in the BODY, or only in trust/validFrom/project", async () => {
+    // Round-8: a sibling edit that changes ONLY the Markdown body — or only a
+    // field the old metadata comparison omitted (trust / validFrom / project) —
+    // used to be misread as an equivalent synced copy and archived, clobbering
+    // the sibling's edit on the next merge. All of these must now be SKIPPED.
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    const base = {
+      confidence: 1, importance: 1, createdAt: "2026-01-01",
+      sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+      supersedes: null, entities: [] as string[], originDevice: null,
+      accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+    };
+    const localEntries = {
+      // identical metadata + same updatedAt, overlay .md body DIFFERS → SKIP
+      "semantic/p/body": { id: "semantic/p/body", type: "semantic", scope: "project:p", project: "p",
+        title: "Body fact", summary: "s", path: "memory/semantic/p/body.md", status: "active",
+        validTo: "2000-01-01", validFrom: null, trust: "trusted" as const, updatedAt: "2026-05-05", ...base },
+      // overlay copy differs ONLY in trust → SKIP
+      "semantic/p/trust": { id: "semantic/p/trust", type: "semantic", scope: "project:p", project: "p",
+        title: "Trust fact", summary: "s", path: "memory/semantic/p/trust.md", status: "active",
+        validTo: "2000-01-01", validFrom: null, trust: "trusted" as const, updatedAt: "2026-05-05", ...base },
+      // overlay copy differs ONLY in validFrom → SKIP
+      "semantic/p/vf": { id: "semantic/p/vf", type: "semantic", scope: "project:p", project: "p",
+        title: "ValidFrom fact", summary: "s", path: "memory/semantic/p/vf.md", status: "active",
+        validTo: "2000-01-01", validFrom: "2026-01-01", trust: "trusted" as const, updatedAt: "2026-05-05", ...base },
+      // equivalent (metadata + body identical) at same updatedAt → ARCHIVE (control)
+      "semantic/p/eqv": { id: "semantic/p/eqv", type: "semantic", scope: "project:p", project: "p",
+        title: "Eqv fact", summary: "s", path: "memory/semantic/p/eqv.md", status: "active",
+        validTo: "2000-01-01", validFrom: null, trust: "trusted" as const, updatedAt: "2026-05-05", ...base },
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries: localEntries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const mdBody = (id: string, body: string) =>
+      `---\nid: ${id}\ntype: semantic\nstatus: active\n---\n\n# ${id}\n\n${body}\n`;
+    for (const id of ["body", "trust", "vf", "eqv"])
+      writeFileSync(join(repo, `memory/semantic/p/${id}.md`), mdBody(`semantic/p/${id}`, `Local body of ${id}.`));
+
+    const overlayRoot = join(home, ".memarium", "aggregated");
+    mkdirSync(join(overlayRoot, ".memarium"), { recursive: true });
+    const overlayEntries = {
+      // identical metadata, same updatedAt — only the .md body differs
+      "semantic/p/body": { ...localEntries["semantic/p/body"], title: "Body fact" },
+      // only trust differs
+      "semantic/p/trust": { ...localEntries["semantic/p/trust"], trust: "untrusted" as const },
+      // only validFrom differs
+      "semantic/p/vf": { ...localEntries["semantic/p/vf"], validFrom: "2025-01-01" },
+      // fully equivalent (metadata + body) → archivable
+      "semantic/p/eqv": { ...localEntries["semantic/p/eqv"] },
+    };
+    writeFileSync(join(overlayRoot, ".memarium", "index.memory.json"),
+      JSON.stringify({ version: 1, entries: overlayEntries }, null, 2) + "\n");
+    mkdirSync(join(overlayRoot, "memory/semantic/p"), { recursive: true });
+    // body case: overlay .md body DIFFERS from local; trust/vf/eqv: identical body
+    writeFileSync(join(overlayRoot, "memory/semantic/p/body.md"), mdBody("semantic/p/body", "SIBLING body of body."));
+    for (const id of ["trust", "vf", "eqv"])
+      writeFileSync(join(overlayRoot, `memory/semantic/p/${id}.md`), mdBody(`semantic/p/${id}`, `Local body of ${id}.`));
+
+    await memoryArchiveCmd({ cwd: repo, apply: true });
+
+    // body-only, trust-only, validFrom-only divergences are all SKIPPED (stay active)
+    expect(readIndexStatus("semantic/p/body")).toBe("active");
+    expect(readIndexStatus("semantic/p/trust")).toBe("active");
+    expect(readIndexStatus("semantic/p/vf")).toBe("active");
+    // the fully-equivalent control still archives
+    expect(readIndexStatus("semantic/p/eqv")).toBe("archived");
+    expect(warnings.join("\n")).toMatch(/skipped 3 id/); // body + trust + vf
   });
 });

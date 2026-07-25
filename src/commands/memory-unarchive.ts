@@ -1,6 +1,8 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadMemoryIndex, saveMemoryIndex } from "../memory/index-store.js";
 import { writeMemoryEntryFile } from "../memory/apply.js";
+import { resolveMemoryView } from "../memory/source-resolver.js";
+import { isOverlayConflict } from "../memory/overlay-conflict.js";
 import type { MemoryEntry } from "../memory/types.js";
 
 export interface MemoryUnarchiveOptions {
@@ -33,6 +35,21 @@ export async function memoryUnarchiveCmd(opts: MemoryUnarchiveOptions): Promise<
   if (!e || e.status !== "archived") {
     console.log(`not archived: ${opts.id}`);
     return;
+  }
+  // Cross-device clobber guard (mirrors memory-archive's): restoring a stale
+  // LOCAL archived row → active and stamping today's (day-only) updatedAt could
+  // win the next merge and clobber a NEWER or same-day DIVERGENT sibling edit the
+  // aggregated overlay holds for this id. Compare the overlay's OWN row against
+  // the local one; on a genuine conflict, ABORT (one id) rather than silently
+  // clobber — the user must resolve it on the device that made the newer edit.
+  const view = resolveMemoryView(cfg.repoPath);
+  const overlayEntries: Record<string, unknown> = view.roots.overlay
+    ? loadMemoryIndex(view.roots.overlay).entries
+    : {};
+  if (isOverlayConflict(e, overlayEntries[opts.id], { local: cfg.repoPath, overlay: view.roots.overlay })) {
+    throw new Error(
+      `refusing to unarchive ${opts.id}: a newer/divergent copy exists on another device — resolve there`,
+    );
   }
   const now = new Date().toISOString().slice(0, 10);
   // Restore the PRE-ARCHIVE status. `superseded-cleanup` only ever archives an

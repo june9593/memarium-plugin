@@ -5,37 +5,9 @@ import { planArchival, ARCHIVE_DEFAULTS } from "../memory/archive.js";
 import { loadKnownSessions } from "../memory/known-sessions.js";
 import { safeValues } from "../memory/lint.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
+import { isOverlayConflict } from "../memory/overlay-conflict.js";
 import { writeMemoryEntryFile, assertMemoryBodyRecoverable } from "../memory/apply.js";
 import type { MemoryEntry } from "../memory/types.js";
-
-/** Order-independent equality for a memory's string tags (e.g. `entities`).
- *  A mere reorder between a local row and its aggregated copy is not a divergence. */
-function sameStringSet(a: string[] | undefined, b: string[] | undefined): boolean {
-  const sa = [...(a ?? [])].sort();
-  const sb = [...(b ?? [])].sort();
-  return sa.length === sb.length && sa.every((v, i) => v === sb[i]);
-}
-
-/** True when two copies of the same memory id are SUBSTANTIVELY equivalent —
- *  i.e. an already-synced copy, not a divergent sibling-device edit. Compares
- *  only CONTENT fields; deliberately IGNORES provenance/location metadata that
- *  legitimately differs between a local row and its aggregated copy (`path`,
- *  `originDevice`, and the union-able `sourceSessions`/`sourceCommits`/
- *  `sourceFiles`, which merge-books unions rather than treats as divergence). */
-export function sameMemoryContent(a: MemoryEntry, b: MemoryEntry): boolean {
-  return (
-    a.status === b.status &&
-    a.title === b.title &&
-    a.summary === b.summary &&
-    a.importance === b.importance &&
-    a.confidence === b.confidence &&
-    (a.validTo ?? null) === (b.validTo ?? null) &&
-    (a.supersedes ?? null) === (b.supersedes ?? null) &&
-    a.type === b.type &&
-    a.scope === b.scope &&
-    sameStringSet(a.entities, b.entities)
-  );
-}
 
 export interface MemoryArchiveOptions {
   /** Accepted for CLI symmetry with the other memory-* commands. Archive plans
@@ -85,24 +57,14 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   //   - overlay strictly NEWER than local → a newer remote edit; archiving+restamping
   //     local (day-only updatedAt) could win the next merge and clobber it → skip.
   //   - overlay EQUAL updatedAt → skip ONLY IF it substantively DIFFERS from local
-  //     (a same-day sibling edit we could clobber); an equivalent synced copy is
-  //     archivable normally.
+  //     (a same-day sibling edit we could clobber, including a body-only edit); an
+  //     equivalent synced copy is archivable normally.
   const view = resolveMemoryView(cfg.repoPath);
   const overlayEntries: Record<string, unknown> = view.roots.overlay
     ? loadMemoryIndex(view.roots.overlay).entries
     : {};
-  const inCrossDeviceConflict = (e: MemoryEntry): boolean => {
-    const ov = overlayEntries[e.id];
-    if (!ov || typeof ov !== "object" || Array.isArray(ov)) return false; // absent/malformed overlay row → no conflict
-    const ovEntry = ov as MemoryEntry;
-    const ovUpdated = ovEntry.updatedAt ?? "";
-    const localUpdated = e.updatedAt ?? "";
-    if (ovUpdated > localUpdated) return true;   // strictly-newer remote edit → clobber risk → skip
-    if (ovUpdated < localUpdated) return false;  // strictly-older → local authoritative → archivable
-    // EQUAL updatedAt: a genuine same-day sibling edit blocks archival; an
-    // equivalent already-synced copy does not.
-    return !sameMemoryContent(e, ovEntry);
-  };
+  const inCrossDeviceConflict = (e: MemoryEntry): boolean =>
+    isOverlayConflict(e, overlayEntries[e.id], { local: cfg.repoPath, overlay: view.roots.overlay });
   const localWinners = entries.filter((e) => !inCrossDeviceConflict(e));
   const skippedOverlay = entries.length - localWinners.length;
   if (skippedOverlay > 0) {

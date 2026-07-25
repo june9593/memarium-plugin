@@ -199,4 +199,71 @@ describe("memoryUnarchiveCmd", () => {
     expect(readIndexStatus("semantic/p/c")).toBe("archived");         // still archived
     expect(readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8")).toBe(badMd); // .md not rewritten
   });
+
+  it("aborts (leaves entry archived) when the aggregated overlay holds a NEWER or same-day DIVERGENT copy", async () => {
+    // Round-8: unarchive had NO counterpart to memory-archive's cross-device guard.
+    // Restoring a stale LOCAL archived row → active and stamping today's updatedAt
+    // could win the next merge and clobber a newer/divergent sibling edit. Both a
+    // strictly-newer overlay copy and a same-day divergent one must ABORT the
+    // restore, leaving the entry archived and untouched.
+    seed();
+    const overlayRoot = join(home, ".memarium", "aggregated");
+    mkdirSync(join(overlayRoot, ".memarium"), { recursive: true });
+    const ovBase = {
+      confidence: 1, importance: 1, createdAt: "2026-01-01",
+      validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+      supersedes: null, entities: [], trust: "trusted" as const, originDevice: null,
+      accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+    };
+    const overlayEntries = {
+      // strictly NEWER than the local archived row (updatedAt 2026-01-01) → conflict
+      "semantic/p/c": { id: "semantic/p/c", type: "semantic", scope: "project:p", project: "p",
+        title: "Archived fact (sibling newer)", summary: "s", path: "memory/semantic/p/c.md",
+        status: "active", validTo: null, updatedAt: "2026-07-01", ...ovBase },
+      // SAME updatedAt (2026-01-01) but DIVERGENT (active vs local archived) → conflict
+      "semantic/p/exp": { id: "semantic/p/exp", type: "semantic", scope: "project:p", project: "p",
+        title: "Archived expired fact", summary: "s", path: "memory/semantic/p/exp.md",
+        status: "active", validTo: null, updatedAt: "2026-01-01", ...ovBase },
+    };
+    writeFileSync(join(overlayRoot, ".memarium", "index.memory.json"),
+      JSON.stringify({ version: 1, entries: overlayEntries }, null, 2) + "\n");
+    const idxBefore = readFileSync(idxPath(), "utf8");
+
+    // strictly-newer overlay copy → abort
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }))
+      .rejects.toThrow(/newer\/divergent copy exists|resolve there/i);
+    expect(readIndexStatus("semantic/p/c")).toBe("archived");
+
+    // same-day divergent overlay copy → abort
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/exp", cwd: repo }))
+      .rejects.toThrow(/newer\/divergent copy exists|resolve there/i);
+    expect(readIndexStatus("semantic/p/exp")).toBe("archived");
+
+    // all-or-nothing: neither abort wrote anything
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+  });
+
+  it("still restores normally when the overlay holds only an OLDER (non-conflicting) copy of the id", async () => {
+    // Control for the guard: an overlay copy that is strictly OLDER than the local
+    // archived row is NOT a conflict — local is authoritative — so the restore
+    // proceeds exactly as with no overlay at all.
+    seed();
+    const overlayRoot = join(home, ".memarium", "aggregated");
+    mkdirSync(join(overlayRoot, ".memarium"), { recursive: true });
+    const overlayEntries = {
+      "semantic/p/c": { id: "semantic/p/c", type: "semantic", scope: "project:p", project: "p",
+        title: "Archived fact", summary: "s", path: "memory/semantic/p/c.md", status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "expired",
+        confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2000-01-01",
+        validFrom: null, validTo: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+        supersedes: null, entities: [], trust: "trusted" as const, originDevice: null,
+        accessCount: 0, lastAccess: null },
+    };
+    writeFileSync(join(overlayRoot, ".memarium", "index.memory.json"),
+      JSON.stringify({ version: 1, entries: overlayEntries }, null, 2) + "\n");
+
+    await memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo });
+    expect(readIndexStatus("semantic/p/c")).toBe("active");
+    expect(readMdField("semantic/p/c.md", "status")).toBe("active");
+  });
 });
