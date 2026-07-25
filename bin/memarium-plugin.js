@@ -15219,7 +15219,11 @@ async function memoryQueryCmd(opts) {
       // a sibling device's archived memory that memory-unarchive (local-only)
       // can't touch, so we point the user at its origin device instead.
       source: view.sources[s.entry.id] ?? "local",
-      originDevice: s.entry.originDevice ?? null
+      originDevice: s.entry.originDevice ?? null,
+      // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
+      // surfaced indistinguishably from a trusted fact. Same rule the primary
+      // pass uses: anything not "trusted" is untrusted for surfacing.
+      trust: s.entry.trust ?? "unknown"
     }));
   }
   const payload = {
@@ -15239,11 +15243,12 @@ async function memoryQueryCmd(opts) {
     console.error(`
 \u2744\uFE0F ${coldStorage.length} archived also matched:`);
     for (const c3 of coldStorage) {
+      const flag = c3.trust !== "trusted" ? " (untrusted)" : "";
       if (c3.source === "overlay") {
         const dev = c3.originDevice ? `device ${c3.originDevice}` : "another device";
-        console.error(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}  \u2014 archived on ${dev}; restore it there`);
+        console.error(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 archived on ${dev}; restore it there`);
       } else {
-        console.error(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}  \u2014 memory-unarchive ${c3.id} to restore`);
+        console.error(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 memory-unarchive ${c3.id} to restore`);
       }
     }
   }
@@ -16208,10 +16213,10 @@ function inScope2(scope, cwdProject) {
   const scopeProject = scope.startsWith("project:") ? scope.slice("project:".length) : null;
   return scopeProject === cwdProject;
 }
-function nearDuplicatePairs(entries, threshold = 0.8) {
-  const active = entries.filter((e) => e.status === "active");
+function nearDuplicatePairs(entries, threshold = 0.8, candidateStatuses = /* @__PURE__ */ new Set(["active"])) {
+  const candidates = entries.filter((e) => candidateStatuses.has(e.status));
   const buckets = /* @__PURE__ */ new Map();
-  for (const e of active) {
+  for (const e of candidates) {
     const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
     const arr4 = buckets.get(key) ?? [];
     arr4.push({ e, tokens: tokenize4(`${e.title} ${e.summary}`) });
@@ -16793,7 +16798,7 @@ function planArchival(entries, usage, opts) {
     }
   }
   const byId = new Map(entries.map((e) => [e.id, e]));
-  for (const [a, b2] of nearDuplicatePairs(entries)) {
+  for (const [a, b2] of nearDuplicatePairs(entries, 0.8, /* @__PURE__ */ new Set(["active", "pinned"]))) {
     const ea = byId.get(a), eb = byId.get(b2);
     if (!ea || !eb) continue;
     const loser = ea.importance !== eb.importance ? ea.importance < eb.importance ? ea : eb : Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb;
