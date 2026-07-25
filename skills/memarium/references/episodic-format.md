@@ -48,9 +48,15 @@ the fields can't.
 ## ⚠️ Work status is NOT `entry.status`
 
 `entry.status` is the memory **lifecycle** axis — it is only ever `active`,
-`superseded`, or `pinned`. The work's outcome (shipped / blocked / abandoned)
-goes in a **body line** (`**Work status:** blocked`). Setting
+`superseded`, `pinned`, or `archived`. The work's outcome (shipped / blocked /
+abandoned) goes in a **body line** (`**Work status:** blocked`). Setting
 `entry.status: "blocked"` is invalid and will break scoring/filtering.
+
+`archived` means "demoted to cold storage" — out of recall, but retained
+(git-tracked) and restorable with `memory-unarchive <id>`. It is
+machine-maintained: the `memory-archive` pass sets it together with
+`archivedAt` / `archivedReason`. Never hand-write it in a digest — author
+`active` and let archival demote.
 
 ## Body sections
 

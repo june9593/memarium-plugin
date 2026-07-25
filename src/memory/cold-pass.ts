@@ -126,6 +126,19 @@ export function runColdPass({ entries, scored, query, sources }: ColdPassInput):
     }));
 }
 
+/** Where a single cold hit can actually be restored — the ONE place that decides
+ *  whether `memory-unarchive <id>` is an honest instruction. `memory-unarchive`
+ *  reads the LOCAL index, so advertising it for an `overlay` hit (a sibling
+ *  device's archive) would always come back "not archived". Every surface that
+ *  tells a user how to restore a cold hit must go through here. */
+export function coldRestoreInstruction(c: ColdStorageHit): string {
+  if (c.source === "overlay") {
+    const dev = c.originDevice ? `device ${c.originDevice}` : "another device";
+    return `archived on ${dev}; restore it there`;
+  }
+  return `memory-unarchive ${c.id} to restore`;
+}
+
 /**
  * Human hint lines for a cold-storage result (caller writes them to STDERR, so
  * the JSON on stdout stays a clean machine payload for the skills). The restore
@@ -142,12 +155,30 @@ export function renderColdHints(coldStorage: ColdStorageHit[]): string[] {
     // (#23) is never read as an established fact — mirrors how the primary recall
     // splits `untrustedSemantic` out of plain "Project facts".
     const flag = c.trust !== "trusted" ? " (untrusted)" : "";
-    if (c.source === "overlay") {
-      const dev = c.originDevice ? `device ${c.originDevice}` : "another device";
-      lines.push(`  ${c.id}  (${c.archivedReason})  — ${c.title}${flag}  — archived on ${dev}; restore it there`);
-    } else {
-      lines.push(`  ${c.id}  (${c.archivedReason})  — ${c.title}${flag}  — memory-unarchive ${c.id} to restore`);
-    }
+    lines.push(`  ${c.id}  (${c.archivedReason})  — ${c.title}${flag}  — ${coldRestoreInstruction(c)}`);
   }
   return lines;
+}
+
+/**
+ * The machine-read `meta.nextStep` sentence for a recall whose ONLY matches were
+ * cold. Origin-aware for exactly the reason renderColdHints is: when every cold
+ * hit came from the overlay, a blanket "memory-unarchive <id> to restore" is a
+ * dead end (memory-unarchive only touches the local index), so we name the origin
+ * device instead. Mixed sets defer to the per-hit stderr hints. Returns "" when
+ * there's nothing cold — caller falls back to its own no-memory message.
+ */
+export function renderColdNextStep(coldStorage: ColdStorageHit[]): string {
+  if (!coldStorage.length) return "";
+  const head = "No ACTIVE memory matched, but archived entries did — see coldStorage";
+  const overlay = coldStorage.filter((c) => c.source === "overlay");
+  if (!overlay.length) return `${head} (memory-unarchive <id> to restore).`;
+  if (overlay.length < coldStorage.length) {
+    return `${head}; each hit carries its own restore path (local hits: memory-unarchive <id>; the rest: restore on their origin device).`;
+  }
+  const devices = [...new Set(overlay.map((c) => c.originDevice).filter((d): d is string => !!d))];
+  const tail = devices.length === 1
+    ? `archived on device ${devices[0]}; restore it there`
+    : "each is archived on another device; restore it there";
+  return `${head} — ${tail} (memory-unarchive is local-only).`;
 }

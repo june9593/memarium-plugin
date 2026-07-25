@@ -8,7 +8,7 @@ import { renderPrimer } from "../memory/primer.js";
 // `recall` is the PRIMARY task-recall path (/memarium-recall), so archival's
 // "a wrongly-archived memory resurfaces on demand" guarantee has to hold HERE,
 // not only in /memarium-context's memory-query.
-import { runColdPass, renderColdHints, isContentHitReason, type ColdStorageHit } from "../memory/cold-pass.js";
+import { runColdPass, renderColdHints, renderColdNextStep, isContentHitReason, type ColdStorageHit } from "../memory/cold-pass.js";
 import type { MemoryType } from "../memory/types.js";
 
 /**
@@ -148,8 +148,12 @@ export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
         ? "Read the top 1–5 entry.path with the Read tool for full bodies (episodes carry the arc)."
         : (cwdUnresolved
             ? "cwd didn't resolve to a synced project — pass --project <slug> or --all."
+            // Cold-only recall: the restore instruction comes from the SHARED
+            // origin-aware renderer, never a hard-coded local command — when every
+            // cold hit is an overlay (sibling-device) archive, `memory-unarchive`
+            // reads the LOCAL index and would just report "not archived".
             : coldStorage.length > 0
-              ? "No ACTIVE memory matched, but archived entries did — see coldStorage (memory-unarchive <id> to restore)."
+              ? renderColdNextStep(coldStorage)
               : "No memory yet for this project. Run /memarium to digest sessions."),
     },
   };

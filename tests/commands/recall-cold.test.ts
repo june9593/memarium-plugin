@@ -172,4 +172,49 @@ describe("recall — R2 cold-storage valve (shared with memory-query)", () => {
     expect(hint).toMatch(/archived on device laptop; restore it there/);
     expect(hint).not.toMatch(/memory-unarchive semantic\/code-demo\/ovim/);
   });
+
+  // meta.nextStep is the line the /memarium-recall skill reads when the ranked
+  // list is empty. It used to hard-code "memory-unarchive <id> to restore" — a
+  // lie when every cold hit came from the OVERLAY (memory-unarchive reads the
+  // LOCAL index and would report "not archived"). It now goes through the same
+  // origin-aware renderer as the stderr hint.
+  it("no active hits + ONLY overlay cold hits → nextStep points at the origin device, not a local memory-unarchive", async () => {
+    writeLocalIndex({}); // nothing active locally → p.entries === [] → the cold nextStep branch
+    const overlayRoot = join(fakeHome, ".memarium/aggregated");
+    mkdirSync(join(overlayRoot, ".memarium"), { recursive: true });
+    writeFileSync(join(overlayRoot, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
+      "semantic/code-demo/ovim": mk({ id: "semantic/code-demo/ovim", title: "Vim keybindings",
+        summary: "vim editor setup", entities: ["vim"], status: "archived", originDevice: "laptop",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value",
+        path: "memory/semantic/code-demo/ovim.md" }),
+    } }, null, 2) + "\n");
+
+    const p = await run({ cwd: "/work/code-demo", q: "vim" });
+    expect(p.entries).toEqual([]);
+    expect(p.coldStorage.map((c: { id: string }) => c.id)).toEqual(["semantic/code-demo/ovim"]);
+    expect(p.coldStorage[0].source).toBe("overlay");
+
+    // origin-aware: names the device, and NEVER advertises the local restore
+    // command (which would fail for an overlay-only archive).
+    expect(p.meta.nextStep).toMatch(/device laptop/);
+    expect(p.meta.nextStep).toMatch(/restore it there/);
+    expect(p.meta.nextStep).not.toMatch(/memory-unarchive <id> to restore/);
+    expect(p.meta.nextStep).not.toMatch(/memory-unarchive semantic\/code-demo\/ovim/);
+  });
+
+  it("no active hits + LOCAL cold hits → nextStep keeps the memory-unarchive restore instruction", async () => {
+    writeLocalIndex({
+      // archived-only local index → no active hits, one local cold hit
+      "semantic/code-demo/coldvim": mk({ id: "semantic/code-demo/coldvim", title: "Vim keybindings",
+        summary: "vim editor setup", entities: ["vim"], status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value",
+        path: "memory/semantic/code-demo/coldvim.md" }),
+    });
+
+    const p = await run({ cwd: "/work/code-demo", q: "vim" });
+    expect(p.entries).toEqual([]);
+    expect(p.coldStorage[0].source).toBe("local");
+    expect(p.meta.nextStep).toMatch(/memory-unarchive <id> to restore/);
+    expect(p.meta.nextStep).not.toMatch(/restore it there/);
+  });
 });

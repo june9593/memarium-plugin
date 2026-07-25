@@ -264,7 +264,10 @@ item:
 - **`sourceSessions` must be present + correct** — it's what marks the thread's
   sessions digested. Wrong/missing → the session re-digests forever.
 - **Work status lives in the BODY.** `entry.status` is the lifecycle axis
-  (`active`/`superseded`/`pinned`) — never set it to a work status.
+  (`active`/`superseded`/`pinned`/`archived`) — never set it to a work status.
+  Write `active`; `archived` (demoted to cold storage — out of recall, retained
+  and restorable via `memory-unarchive <id>`) is set by the `memory-archive` pass
+  in Step P8, never by you.
 - Imperative agent-reuse voice; preserve commit hashes / file paths / DCHECK
   strings verbatim — **but write file paths repo-relative**: strip any absolute
   `/Users/…` / `/home/…` / `C:\Users\…` home prefix (the write guard rejects an
@@ -583,7 +586,12 @@ Print a per-project summary (episodics + facts added) and the finalize result.
 - ❌ `Write` directly into `memory/**/*.md` — always go through `"$VBP"
   memory-write` / `memory-propose` so the index + gate stay in sync.
 - ❌ Set `entry.status` to a work status (shipped/blocked/…) — it's the lifecycle
-  axis (`active`/`superseded`/`pinned`); work status goes in the episodic body.
+  axis (`active`/`superseded`/`pinned`/`archived`); work status goes in the
+  episodic body.
+- ❌ Hand-set `status: "archived"` — it's machine-maintained, like `archivedAt` /
+  `archivedReason`: `memory-archive` (Step P8) sets it, `memory-unarchive <id>`
+  clears it. Author `active` — an authored status outside
+  `active`/`superseded`/`pinned` is coerced back to `active` anyway.
 - ❌ Omit or fake `sourceSessions` on an episodic — it's the digest receipt; a
   wrong value re-digests the session forever or skips real work.
 - ❌ Write an episodic for a SKIP'd session (ledger it instead), or force-merge
