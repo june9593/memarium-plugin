@@ -556,6 +556,19 @@ that's what avoids the concurrent-index-write races). For each project's
 "$VBP" skip-write     --input /tmp/memarium/<slug>/skips.json     # if any
 ```
 
+Once EVERY project has been persisted, run archival ONCE for the whole sweep
+(the same automatic memory hygiene P8 runs in project mode — archival plans
+store-wide, so it is one call here, NOT one per project inside the fan-out):
+
+```bash
+"$VBP" memory-archive --apply
+```
+
+Same safety argument as P8: core/pinned are never archived, nothing is deleted
+(`memory-unarchive <id>` restores), and a wrongly-archived memory resurfaces —
+`recall` / `memory-query` surface strong archived matches in a read-only "cold
+storage" section (R2). Do NOT reroute it through `memory-propose`.
+
 Then surface any gated proposals for review (`"$VBP" memory-diff --json`,
 non-blocking), and commit the whole sweep once:
 

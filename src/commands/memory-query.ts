@@ -1,30 +1,18 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
-import { resolveMemoryView, type MemorySource } from "../memory/source-resolver.js";
-import { scoreMemories, scoreArchived, isArchived, type ScoredMemory } from "../memory/score.js";
+import { resolveMemoryView } from "../memory/source-resolver.js";
+import { scoreMemories, isArchived, type ScoredMemory } from "../memory/score.js";
 import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
 import { renderPrimer } from "../memory/primer.js";
-import type { MemoryEntry, MemoryType, MemoryTrust } from "../memory/types.js";
+// R2 cold-storage valve — SHARED with `recall` (src/memory/cold-pass.ts) so both
+// primary recall surfaces honour archival's "wrongly-archived resurfaces on
+// demand" guarantee identically.
+import { runColdPass, renderColdHints, isContentHit, type ColdStorageHit } from "../memory/cold-pass.js";
+import type { MemoryEntry, MemoryType } from "../memory/types.js";
 
 export interface MemoryQueryOptions { cwd?: string; type?: string; q?: string; }
 
-/** One read-only "cold storage" hit — a strongly-matching ARCHIVED entry
- *  surfaced by the R2 resurrect valve. A `local` hit is restorable HERE with
- *  `memory-unarchive <id>` (it lives in this device's index); an `overlay` hit
- *  is a sibling device's archived memory, so it must be restored on
- *  `originDevice` (memory-unarchive only touches the local index). */
-export interface ColdStorageHit {
-  id: string;
-  title: string;
-  score: number;
-  archivedReason: string | null;
-  source: MemorySource;
-  originDevice: string | null;
-  /** Provenance trust of the archived entry, preserved through the cold pass so a
-   *  restored-from-cold UNTRUSTED semantic (issue #23) is never mistaken for an
-   *  established fact. Anything other than "trusted" is flagged in the human hint. */
-  trust: MemoryTrust;
-}
+export type { ColdStorageHit };
 
 export interface MemoryQueryResult {
   project: string | null;
@@ -44,31 +32,11 @@ function isType(s: string | undefined): MemoryType | null {
   return s && ok.includes(s) ? (s as MemoryType) : null;
 }
 
-// A real CONTENT hit (vs scope/importance/recency baseline) — same markers
-// eval.ts uses. Only content-hit results are recorded as an "access"; bumping
-// baseline entries would let an unrelated query (e.g. "kubernetes helm") slowly
-// inflate high-importance memories and poison local preference.
-const CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
-const isContentHit = (s: ScoredMemory): boolean =>
-  CONTENT_HIT_MARKERS.some((m) => s.whyRecalled.includes(m));
+// Only content-hit results are recorded as an "access" (see cold-pass.ts for the
+// marker list) — bumping baseline entries would let an unrelated query (e.g.
+// "kubernetes helm") slowly inflate high-importance memories and poison local
+// preference.
 const BUMP_TOP_N = 5;
-
-// R2 "resurrect valve" — when the ACTIVE recall has few content-matched hits,
-// surface strongly-matching ARCHIVED entries in a read-only cold-storage
-// section so aggressive auto-archival stays reversible. NO write on this path.
-const COLD_FLOOR = 3;        // fire only when fewer than this many active content hits clear the floor…
-const COLD_TOP_K = 3;        // …surface up to this many archived matches…
-const COLD_SCORE_FLOOR = 2;  // …each of which must be a content match clearing this score.
-
-// Project/scope eligibility — the SAME scope rule scoreMemories' isEligible
-// applies to the primary pass. scoreArchived filters ONLY on status==="archived"
-// (not scope), so cold-storage results must be scope-filtered here or they'd
-// leak OTHER projects' archived memory into this project's recall.
-function inScope(e: MemoryEntry, project: string | null): boolean {
-  if (e.scope === "global" || e.scope === "user") return true;
-  if (project && e.scope === `project:${project}`) return true;
-  return project === null;
-}
 
 export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQueryResult> {
   const cfg = readPluginConfig();
@@ -127,34 +95,12 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQu
   const isTrusted = (s: ScoredMemory): boolean => (s.entry.trust ?? "unknown") === "trusted";
 
   // R2 resurrect valve (READ ONLY): if the active recall produced few
-  // content-matched hits (baseline scope/importance hits don't count — the whole
-  // point is "the live memory doesn't answer this query"), surface the top
-  // strongly-matching ARCHIVED entries. scoreArchived filters ONLY on archived
-  // status, so we (a) scope-filter to the query's project and (b) apply the
-  // query's --type filter — SAME as the primary pass — so a `--type procedural`
-  // query can't surface an archived `semantic` hit. NEVER writes/mutates status.
-  const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
-  let coldStorage: ColdStorageHit[] = [];
-  if (strongPrimary < COLD_FLOOR && (opts.q ?? "").trim() !== "") {
-    coldStorage = scoreArchived(entries, scoreQuery)
-      .filter((s) => inScope(s.entry, project))
-      .filter((s) => !scoreQuery.type || s.entry.type === scoreQuery.type)
-      .filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR)
-      .slice(0, COLD_TOP_K)
-      .map((s) => ({
-        id: s.entry.id, title: s.entry.title, score: s.score, archivedReason: s.entry.archivedReason,
-        // Origin decides which restore hint is honest: a `local` cold hit lives
-        // in THIS device's index (memory-unarchive works); an `overlay` hit is
-        // a sibling device's archived memory that memory-unarchive (local-only)
-        // can't touch, so we point the user at its origin device instead.
-        source: view.sources[s.entry.id] ?? "local",
-        originDevice: s.entry.originDevice ?? null,
-        // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
-        // surfaced indistinguishably from a trusted fact. Same rule the primary
-        // pass uses: anything not "trusted" is untrusted for surfacing.
-        trust: s.entry.trust ?? "unknown",
-      }));
-  }
+  // content-matched hits, surface the top strongly-matching ARCHIVED entries.
+  // Shared with `recall` — see src/memory/cold-pass.ts for the gate, the scope/
+  // type filtering and the trust handling. NEVER writes/mutates status.
+  const coldStorage: ColdStorageHit[] = runColdPass({
+    entries, scored, query: scoreQuery, sources: view.sources,
+  });
 
   const payload: MemoryQueryResult = {
     project,
@@ -171,26 +117,9 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQu
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
 
   // Human hint for cold storage → stderr, so the JSON on stdout stays a clean
-  // machine payload for the skill (memory-query is consumed as JSON). The restore
-  // instruction is per-hit: local hits can be unarchived HERE; overlay-only hits
-  // live on another device and must be restored there (memory-unarchive is
-  // local-only, so advertising it for an overlay hit would always report "not
-  // archived").
-  if (coldStorage.length) {
-    console.error(`\n❄️ ${coldStorage.length} archived also matched:`);
-    for (const c of coldStorage) {
-      // Flag any non-trusted cold result so a restored-from-cold untrusted semantic
-      // (#23) is never read as an established fact — mirrors how the primary recall
-      // splits `untrustedSemantic` out of plain "Project facts".
-      const flag = c.trust !== "trusted" ? " (untrusted)" : "";
-      if (c.source === "overlay") {
-        const dev = c.originDevice ? `device ${c.originDevice}` : "another device";
-        console.error(`  ${c.id}  (${c.archivedReason})  — ${c.title}${flag}  — archived on ${dev}; restore it there`);
-      } else {
-        console.error(`  ${c.id}  (${c.archivedReason})  — ${c.title}${flag}  — memory-unarchive ${c.id} to restore`);
-      }
-    }
-  }
+  // machine payload for the skill (memory-query is consumed as JSON). Lines are
+  // rendered by the shared cold pass so `recall` prints the identical hint.
+  for (const line of renderColdHints(coldStorage)) console.error(line);
 
   // BUMP (the ONLY write side effect) — only on a real recall: non-empty query
   // AND a content hit. Take the top BUMP_TOP_N content-hit, finite-scored

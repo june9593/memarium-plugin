@@ -72,6 +72,7 @@ Output:
       "source": "local"
     }
   ],
+  "coldStorage": [],
   "meta": { "total": 13, "returned": 13, "nextStep": "Read the top 1–5 entry.path …" }
 }
 ```
@@ -86,6 +87,14 @@ Output:
   `path` is already resolved to the right tree — pass it straight to `Read`.
 - With **no `--q`**, recall returns a scope-eligible overview + a `primer` header
   (like a "what do we know here" catch-up).
+- **`coldStorage`** (usually `[]`) is the **archive valve**: when the live memory
+  answers your query weakly, recall surfaces strongly-matching **archived**
+  entries here — id, title, `archivedReason`, `trust`. Archival is automatic, so
+  this is how a wrongly-archived memory comes back. If a cold hit is clearly
+  on-topic, tell the user and offer the restore
+  (`"$VBP" memory-unarchive <id>` — for a hit with `source: "overlay"` say it
+  must be restored on its `originDevice` instead). Treat any hit whose `trust`
+  isn't `trusted` as unverified — don't state it as fact.
 
 ## Step 2 — Read the top hits
 
