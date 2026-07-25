@@ -15164,6 +15164,62 @@ var init_primer = __esm({
   }
 });
 
+// src/memory/cold-pass.ts
+function inScope(e, project) {
+  if (e.scope === "global" || e.scope === "user") return true;
+  if (project && e.scope === `project:${project}`) return true;
+  return project === null;
+}
+function runColdPass({ entries, scored, query, sources }) {
+  if (query.text.trim() === "") return [];
+  const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
+  if (strongPrimary >= COLD_FLOOR) return [];
+  return scoreArchived(entries, query).filter((s) => inScope(s.entry, query.project)).filter((s) => !query.type || s.entry.type === query.type).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => ({
+    id: s.entry.id,
+    title: s.entry.title,
+    score: s.score,
+    archivedReason: s.entry.archivedReason,
+    // Origin decides which restore hint is honest: a `local` cold hit lives
+    // in THIS device's index (memory-unarchive works); an `overlay` hit is
+    // a sibling device's archived memory that memory-unarchive (local-only)
+    // can't touch, so we point the user at its origin device instead.
+    source: sources[s.entry.id] ?? "local",
+    originDevice: s.entry.originDevice ?? null,
+    // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
+    // surfaced indistinguishably from a trusted fact. Same rule the primary
+    // pass uses: anything not "trusted" is untrusted for surfacing.
+    trust: s.entry.trust ?? "unknown"
+  }));
+}
+function renderColdHints(coldStorage) {
+  if (!coldStorage.length) return [];
+  const lines = [`
+\u2744\uFE0F ${coldStorage.length} archived also matched:`];
+  for (const c3 of coldStorage) {
+    const flag = c3.trust !== "trusted" ? " (untrusted)" : "";
+    if (c3.source === "overlay") {
+      const dev = c3.originDevice ? `device ${c3.originDevice}` : "another device";
+      lines.push(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 archived on ${dev}; restore it there`);
+    } else {
+      lines.push(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 memory-unarchive ${c3.id} to restore`);
+    }
+  }
+  return lines;
+}
+var CONTENT_HIT_MARKERS, isContentHitReason, isContentHit, COLD_FLOOR, COLD_TOP_K, COLD_SCORE_FLOOR;
+var init_cold_pass = __esm({
+  "src/memory/cold-pass.ts"() {
+    "use strict";
+    init_score();
+    CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
+    isContentHitReason = (whyRecalled) => CONTENT_HIT_MARKERS.some((m) => whyRecalled.includes(m));
+    isContentHit = (s) => isContentHitReason(s.whyRecalled);
+    COLD_FLOOR = 3;
+    COLD_TOP_K = 3;
+    COLD_SCORE_FLOOR = 2;
+  }
+});
+
 // src/commands/memory-query.ts
 var memory_query_exports = {};
 __export(memory_query_exports, {
@@ -15172,11 +15228,6 @@ __export(memory_query_exports, {
 function isType(s) {
   const ok = ["core", "semantic", "episodic", "procedural"];
   return s && ok.includes(s) ? s : null;
-}
-function inScope(e, project) {
-  if (e.scope === "global" || e.scope === "user") return true;
-  if (project && e.scope === `project:${project}`) return true;
-  return project === null;
 }
 async function memoryQueryCmd(opts) {
   const cfg = readPluginConfig();
@@ -15206,26 +15257,12 @@ async function memoryQueryCmd(opts) {
   }));
   const semanticAll = byType("semantic");
   const isTrusted = (s) => (s.entry.trust ?? "unknown") === "trusted";
-  const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
-  let coldStorage = [];
-  if (strongPrimary < COLD_FLOOR && (opts.q ?? "").trim() !== "") {
-    coldStorage = scoreArchived(entries, scoreQuery).filter((s) => inScope(s.entry, project)).filter((s) => !scoreQuery.type || s.entry.type === scoreQuery.type).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => ({
-      id: s.entry.id,
-      title: s.entry.title,
-      score: s.score,
-      archivedReason: s.entry.archivedReason,
-      // Origin decides which restore hint is honest: a `local` cold hit lives
-      // in THIS device's index (memory-unarchive works); an `overlay` hit is
-      // a sibling device's archived memory that memory-unarchive (local-only)
-      // can't touch, so we point the user at its origin device instead.
-      source: view.sources[s.entry.id] ?? "local",
-      originDevice: s.entry.originDevice ?? null,
-      // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
-      // surfaced indistinguishably from a trusted fact. Same rule the primary
-      // pass uses: anything not "trusted" is untrusted for surfacing.
-      trust: s.entry.trust ?? "unknown"
-    }));
-  }
+  const coldStorage = runColdPass({
+    entries,
+    scored,
+    query: scoreQuery,
+    sources: view.sources
+  });
   const payload = {
     project,
     primer,
@@ -15239,19 +15276,7 @@ async function memoryQueryCmd(opts) {
     meta: { total: scored.length, project }
   };
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
-  if (coldStorage.length) {
-    console.error(`
-\u2744\uFE0F ${coldStorage.length} archived also matched:`);
-    for (const c3 of coldStorage) {
-      const flag = c3.trust !== "trusted" ? " (untrusted)" : "";
-      if (c3.source === "overlay") {
-        const dev = c3.originDevice ? `device ${c3.originDevice}` : "another device";
-        console.error(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 archived on ${dev}; restore it there`);
-      } else {
-        console.error(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 memory-unarchive ${c3.id} to restore`);
-      }
-    }
-  }
+  for (const line of renderColdHints(coldStorage)) console.error(line);
   if ((opts.q ?? "").trim() !== "") {
     try {
       const bumpIds = scored.filter((s) => Number.isFinite(s.score) && isContentHit(s)).slice(0, BUMP_TOP_N).map((s) => s.entry.id);
@@ -15261,7 +15286,7 @@ async function memoryQueryCmd(opts) {
   }
   return payload;
 }
-var CONTENT_HIT_MARKERS, isContentHit, BUMP_TOP_N, COLD_FLOOR, COLD_TOP_K, COLD_SCORE_FLOOR;
+var BUMP_TOP_N;
 var init_memory_query = __esm({
   "src/commands/memory-query.ts"() {
     "use strict";
@@ -15271,12 +15296,8 @@ var init_memory_query = __esm({
     init_score();
     init_usage_store();
     init_primer();
-    CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
-    isContentHit = (s) => CONTENT_HIT_MARKERS.some((m) => s.whyRecalled.includes(m));
+    init_cold_pass();
     BUMP_TOP_N = 5;
-    COLD_FLOOR = 3;
-    COLD_TOP_K = 3;
-    COLD_SCORE_FLOOR = 2;
   }
 });
 
@@ -17285,7 +17306,9 @@ function buildRecallPayload(opts = {}) {
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   overlayUsage(entries, loadUsage(cfg.repoPath));
   const query = (opts.q ?? "").trim();
-  const scored = scoreMemories(entries, { project: projectFilter, text: query, type: null, now });
+  const scoreQuery = { project: projectFilter, text: query, type: null, now };
+  const scored = scoreMemories(entries, scoreQuery);
+  const coldStorage = runColdPass({ entries, scored, query: scoreQuery, sources: view.sources });
   const limit = opts.limit && opts.limit > 0 ? opts.limit : DEFAULT_LIMIT;
   const hits = scored.slice(0, limit).map((s) => ({
     id: s.entry.id,
@@ -17305,11 +17328,12 @@ function buildRecallPayload(opts = {}) {
     query,
     repoPath: cfg.repoPath,
     entries: hits,
+    coldStorage,
     meta: {
       total: scored.length,
       returned: hits.length,
       ...cwdUnresolved ? { cwdUnresolved: true } : {},
-      nextStep: hits.length > 0 ? "Read the top 1\u20135 entry.path with the Read tool for full bodies (episodes carry the arc)." : cwdUnresolved ? "cwd didn't resolve to a synced project \u2014 pass --project <slug> or --all." : "No memory yet for this project. Run /memarium to digest sessions."
+      nextStep: hits.length > 0 ? "Read the top 1\u20135 entry.path with the Read tool for full bodies (episodes carry the arc)." : cwdUnresolved ? "cwd didn't resolve to a synced project \u2014 pass --project <slug> or --all." : coldStorage.length > 0 ? "No ACTIVE memory matched, but archived entries did \u2014 see coldStorage (memory-unarchive <id> to restore)." : "No memory yet for this project. Run /memarium to digest sessions."
     }
   };
   if (!query && projectFilter) {
@@ -17321,16 +17345,17 @@ function buildRecallPayload(opts = {}) {
 async function recallCmd(opts) {
   const payload = buildRecallPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+  for (const line of renderColdHints(payload.coldStorage)) console.error(line);
   if (payload.query !== "") {
     try {
-      const bumpIds = payload.entries.filter((h2) => Number.isFinite(h2.score) && CONTENT_HIT_MARKERS2.some((m) => h2.whyRecalled.includes(m))).slice(0, BUMP_TOP_N2).map((h2) => h2.id);
+      const bumpIds = payload.entries.filter((h2) => Number.isFinite(h2.score) && isContentHitReason(h2.whyRecalled)).slice(0, BUMP_TOP_N2).map((h2) => h2.id);
       const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
       bumpUsage(payload.repoPath, bumpIds, now);
     } catch {
     }
   }
 }
-var DEFAULT_LIMIT, CONTENT_HIT_MARKERS2, BUMP_TOP_N2;
+var DEFAULT_LIMIT, BUMP_TOP_N2;
 var init_recall = __esm({
   "src/commands/recall.ts"() {
     "use strict";
@@ -17340,8 +17365,8 @@ var init_recall = __esm({
     init_score();
     init_usage_store();
     init_primer();
+    init_cold_pass();
     DEFAULT_LIMIT = 25;
-    CONTENT_HIT_MARKERS2 = ["keyword", "file", "commit"];
     BUMP_TOP_N2 = 5;
   }
 });
