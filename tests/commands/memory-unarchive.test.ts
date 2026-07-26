@@ -344,3 +344,64 @@ describe("memoryUnarchiveCmd", () => {
     expect(readMdField("semantic/p/c.md", "status")).toBe("active");
   });
 });
+
+describe("memoryUnarchiveCmd — round-16 fail-closed guards", () => {
+  const overlayRoot = () => join(home, ".memarium", "aggregated");
+  function writeOverlayRaw(raw: string) {
+    mkdirSync(join(overlayRoot(), ".memarium"), { recursive: true });
+    writeFileSync(join(overlayRoot(), ".memarium", "index.memory.json"), raw);
+  }
+
+  it("aborts when the archived row's COLLECTION field is not an array — naming the field", async () => {
+    // `sourceSessions: "s1"` (a STRING) passed the scalar-only completeness gate
+    // and then crashed renderMemoryMarkdown's `.join()` on the way out.
+    seed();
+    const idx = readIndex();
+    idx.entries["semantic/p/c"].sourceSessions = "s1";
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    const idxBefore = readFileSync(idxPath(), "utf8");
+    const mdBefore = readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/c.*incomplete.*sourceSessions/i);
+
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+    expect(readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8")).toBe(mdBefore);
+  });
+
+  it("refuses when the overlay row EXISTS but cannot be compared (non-object, or no updatedAt)", async () => {
+    seed();
+    const idxBefore = readFileSync(idxPath(), "utf8");
+    writeOverlayRaw(JSON.stringify({ version: 1, entries: { "semantic/p/c": "not-an-object" } }, null, 2) + "\n");
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo })).rejects.toThrow(/refusing to unarchive semantic\/p\/c/i);
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+
+    const noUpd: Record<string, unknown> = { ...readIndex().entries["semantic/p/c"] };
+    delete noUpd.updatedAt;
+    writeOverlayRaw(JSON.stringify({ version: 1, entries: { "semantic/p/c": noUpd } }, null, 2) + "\n");
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo })).rejects.toThrow(/refusing to unarchive semantic\/p\/c/i);
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+    expect(readIndexStatus("semantic/p/c")).toBe("archived"); // still archived, never restamped
+  });
+
+  it("refuses (writes nothing) when the overlay index EXISTS but is corrupt", async () => {
+    seed();
+    const idxBefore = readFileSync(idxPath(), "utf8");
+    const mdBefore = readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8");
+    writeOverlayRaw("{ this is not valid json");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }))
+      .rejects.toThrow(/overlay index is unreadable/i);
+
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+    expect(readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8")).toBe(mdBefore);
+    expect(readIndexStatus("semantic/p/c")).toBe("archived");
+  });
+
+  it("restores normally when the overlay directory exists but holds NO index file (genuinely absent)", async () => {
+    seed();
+    mkdirSync(join(overlayRoot(), ".memarium"), { recursive: true }); // dir, no index file
+    await memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo });
+    expect(readIndexStatus("semantic/p/c")).toBe("active");
+  });
+});

@@ -1,5 +1,5 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
-import { loadMemoryIndex, saveMemoryIndex } from "../memory/index-store.js";
+import { loadMemoryIndex, loadMemoryIndexStrict, saveMemoryIndex, type MemoryIndexLoad } from "../memory/index-store.js";
 import { loadUsage } from "../memory/usage-store.js";
 import { planArchival, ARCHIVE_DEFAULTS } from "../memory/archive.js";
 import { loadKnownSessions } from "../memory/known-sessions.js";
@@ -78,16 +78,34 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   //   - overlay EQUAL updatedAt → skip ONLY IF it substantively DIFFERS from local
   //     (a same-day sibling edit we could clobber, including a body-only edit); an
   //     equivalent synced copy is archivable normally.
+  //
+  // The overlay index is read STRICTLY here. `loadMemoryIndex` intentionally turns
+  // an unreadable/corrupt index into an EMPTY one — right for read paths, wrong on
+  // this MUTATION path: with a corrupt overlay index EVERY local candidate would
+  // look overlay-absent, so the whole store becomes archivable/restampable and can
+  // clobber sibling state wholesale on the next merge. So we distinguish "overlay
+  // genuinely absent / no index file" (proceed; the normal local-only case) from
+  // "overlay index exists but is unreadable" (fail closed: archive NOTHING this run).
   const view = resolveMemoryView(cfg.repoPath);
-  const overlayEntries: Record<string, unknown> = view.roots.overlay
-    ? loadMemoryIndex(view.roots.overlay).entries
-    : {};
-  const inCrossDeviceConflict = (e: MemoryEntry): boolean =>
-    isOverlayConflict(e, overlayEntries[e.id], { local: cfg.repoPath, overlay: view.roots.overlay });
-  const localWinners = entries.filter((e) => !inCrossDeviceConflict(e));
-  const skippedOverlay = entries.length - localWinners.length;
-  if (skippedOverlay > 0) {
-    console.warn(`memory-archive: skipped ${skippedOverlay} id(s) in a cross-device conflict (a sibling holds a newer or divergent same-day copy)`);
+  const overlayLoad: MemoryIndexLoad = view.roots.overlay
+    ? loadMemoryIndexStrict(view.roots.overlay)
+    : { kind: "absent" };
+
+  let localWinners: MemoryEntry[];
+  if (overlayLoad.kind === "corrupt") {
+    console.warn(
+      "memory-archive: overlay index unreadable — skipping archival this run to avoid clobbering sibling state",
+    );
+    localWinners = []; // archive nothing rather than archive everything
+  } else {
+    const overlayEntries: Record<string, unknown> = overlayLoad.kind === "ok" ? overlayLoad.index.entries : {};
+    const inCrossDeviceConflict = (e: MemoryEntry): boolean =>
+      isOverlayConflict(e, overlayEntries[e.id], { local: cfg.repoPath, overlay: view.roots.overlay });
+    localWinners = entries.filter((e) => !inCrossDeviceConflict(e));
+    const skippedOverlay = entries.length - localWinners.length;
+    if (skippedOverlay > 0) {
+      console.warn(`memory-archive: skipped ${skippedOverlay} id(s) in a cross-device conflict (a sibling holds a newer or divergent same-day copy)`);
+    }
   }
 
   const plan = planArchival(localWinners, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });

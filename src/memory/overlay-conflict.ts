@@ -97,7 +97,17 @@ export interface ConflictRoots {
  *  copy (day-only updatedAt can win the next merge). Shared by memory-archive
  *  (which SKIPS a conflicting id) and memory-unarchive (which ABORTS one).
  *
- *   - overlay absent/malformed row → NOT a conflict (local is authoritative).
+ *  This is a WRITE-SAFETY check, so it FAILS CLOSED: the only "no conflict"
+ *  answers are ones we could actually establish.
+ *
+ *   - overlay row genuinely ABSENT (undefined/null) → NOT a conflict. This is the
+ *     normal local-only path: there is no sibling copy to clobber.
+ *   - overlay row PRESENT but UNCOMPARABLE (not a non-null non-array object, or
+ *     no usable string `updatedAt`) → CONFLICT. Round-16: this used to return
+ *     false, and a missing `updatedAt` compared as `""` — i.e. "strictly older,
+ *     local wins" — so archive/unarchive would restamp the local copy even though
+ *     the sibling's state was never actually compared. That is exactly the
+ *     clobbering write this guard exists to prevent.
  *   - overlay strictly NEWER updatedAt → conflict (a newer remote edit; clobber risk).
  *   - overlay strictly OLDER updatedAt → NOT a conflict (local wins).
  *   - EQUAL updatedAt → conflict IFF the copies substantively DIVERGE: any
@@ -109,10 +119,14 @@ export function isOverlayConflict(
   overlay: unknown,
   roots: ConflictRoots,
 ): boolean {
-  if (!overlay || typeof overlay !== "object" || Array.isArray(overlay)) return false;
+  // Genuinely absent → nothing to clobber.
+  if (overlay === undefined || overlay === null) return false;
+  // Present but not a usable row → we cannot compare state, so refuse the write.
+  if (typeof overlay !== "object" || Array.isArray(overlay)) return true;
   const ov = overlay as MemoryEntry;
-  const ovUpdated = ov.updatedAt ?? "";
-  const localUpdated = local.updatedAt ?? "";
+  const ovUpdated = ov.updatedAt;
+  if (typeof ovUpdated !== "string" || ovUpdated === "") return true; // uncomparable → conflict
+  const localUpdated = typeof local.updatedAt === "string" ? local.updatedAt : "";
   if (ovUpdated > localUpdated) return true;   // strictly-newer remote edit → clobber risk
   if (ovUpdated < localUpdated) return false;  // strictly-older → local authoritative
   // EQUAL updatedAt: a genuine same-day sibling edit blocks; an equivalent synced copy does not.

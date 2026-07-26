@@ -389,3 +389,45 @@ describe("writeMemoryEntryFile (metadata-only rewriter)", () => {
     expect(readFileSync(abs, "utf8")).toBe(foreign);
   });
 });
+
+describe("missingRewriteField — COLLECTION fields the renderer joins", () => {
+  // Round-16: the rewrite gate validated only SCALAR fields, so a superseded row
+  // carrying `sourceSessions: "s1"` (a STRING, not an array) passed, was planned
+  // for archival, and then renderMemoryMarkdown called `.join()` on it — throwing
+  // mid-run inside the AUTOMATIC digest consolidation (no human in the loop).
+  // The gate must reject any collection field that isn't an array.
+  const complete = (): MemoryEntry => mk({
+    id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p", title: "T",
+  });
+  const COLLECTIONS = ["sourceSessions", "sourceCommits", "sourceFiles", "entities"] as const;
+
+  it("accepts a complete row (control)", async () => {
+    const { missingRewriteField } = await import("../../src/memory/apply.js");
+    expect(missingRewriteField(complete())).toBeNull();
+  });
+
+  it("rejects a non-array collection field, naming it — and that row really would crash the renderer", async () => {
+    const { missingRewriteField } = await import("../../src/memory/apply.js");
+    const { renderMemoryMarkdown } = await import("../../src/memory/render.js");
+    for (const field of COLLECTIONS) {
+      for (const bad of ["s1", 42, { a: 1 }]) {
+        const row = { ...complete(), [field]: bad } as unknown as MemoryEntry;
+        expect(missingRewriteField(row)).toBe(field);
+        // proof the gate is load-bearing: the renderer genuinely throws on this row
+        expect(() => renderMemoryMarkdown(row, "body")).toThrow(TypeError);
+      }
+    }
+  });
+
+  it("tolerates an UNSET collection field (undefined / null) — the renderer coerces it to []", async () => {
+    const { missingRewriteField } = await import("../../src/memory/apply.js");
+    const { renderMemoryMarkdown } = await import("../../src/memory/render.js");
+    for (const field of COLLECTIONS) {
+      for (const unset of [undefined, null]) {
+        const row = { ...complete(), [field]: unset } as unknown as MemoryEntry;
+        expect(missingRewriteField(row)).toBeNull();
+        expect(renderMemoryMarkdown(row, "body")).toContain(`${field}: []`);
+      }
+    }
+  });
+});

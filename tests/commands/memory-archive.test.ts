@@ -544,3 +544,123 @@ describe("memoryArchiveCmd", () => {
     expect(warnings.join("\n")).toMatch(/skipped 3 id/); // body + trust + vf
   });
 });
+
+describe("memoryArchiveCmd — round-16 fail-closed guards", () => {
+  const base = {
+    confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+    supersedes: null, entities: [] as string[], trust: "trusted" as const, originDevice: null,
+    accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+  };
+  /** An expired (therefore archivable) semantic row + its .md. */
+  const expired = (slug: string, over: Record<string, unknown> = {}) => ({
+    id: `semantic/p/${slug}`, type: "semantic", scope: "project:p", project: "p",
+    title: `${slug} fact`, summary: "s", path: `memory/semantic/p/${slug}.md`, status: "active",
+    validTo: "2000-01-01", ...base, ...over,
+  });
+  const md = (slug: string) =>
+    `---\nid: semantic/p/${slug}\ntype: semantic\nstatus: active\n---\n\n# ${slug} fact\n\nThe real body of semantic/p/${slug}.\n`;
+  function writeLocal(entries: Record<string, unknown>) {
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    for (const key of Object.keys(entries)) {
+      const slug = key.split("/").pop()!;
+      writeFileSync(join(repo, `memory/semantic/p/${slug}.md`), md(slug));
+    }
+  }
+  const overlayRoot = () => join(home, ".memarium", "aggregated");
+  function writeOverlayRaw(raw: string) {
+    mkdirSync(join(overlayRoot(), ".memarium"), { recursive: true });
+    writeFileSync(join(overlayRoot(), ".memarium", "index.memory.json"), raw);
+  }
+
+  it("skips (and counts) a row whose COLLECTION field is not an array — the automatic run never throws", async () => {
+    // A superseded/expired row carrying `sourceSessions: "s1"` (a STRING) used to
+    // pass the scalar-only rewrite gate, get planned, and then crash
+    // renderMemoryMarkdown's `.join()` — inside the AUTOMATIC digest consolidation.
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    writeLocal({
+      "semantic/p/good": expired("good"),
+      "semantic/p/badcoll": expired("badcoll", { sourceSessions: "s1" }),   // string, not array
+      "semantic/p/badents": expired("badents", { entities: { a: 1 } }),      // object, not array
+    });
+    const badcollMd = readFileSync(join(repo, "memory/semantic/p/badcoll.md"), "utf8");
+
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
+
+    expect(readIndexStatus("semantic/p/good")).toBe("archived");      // healthy row still archives
+    expect(readIndexStatus("semantic/p/badcoll")).toBe("active");     // malformed rows skipped
+    expect(readIndexStatus("semantic/p/badents")).toBe("active");
+    expect(readFileSync(join(repo, "memory/semantic/p/badcoll.md"), "utf8")).toBe(badcollMd); // .md untouched
+    expect(warnings.join("\n")).toMatch(/skipped 2 malformed index row\(s\)/);
+  });
+
+  it("skips an id whose overlay row EXISTS but cannot be compared (non-object, or no updatedAt)", async () => {
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    writeLocal({
+      "semantic/p/ovbad": expired("ovbad"),
+      "semantic/p/ovnoupd": expired("ovnoupd"),
+      "semantic/p/ovnone": expired("ovnone"),   // genuinely no overlay row → archivable
+    });
+    const noUpd: Record<string, unknown> = { ...expired("ovnoupd"), title: "sibling edit" };
+    delete noUpd.updatedAt;
+    writeOverlayRaw(JSON.stringify({
+      version: 1,
+      entries: {
+        "semantic/p/ovbad": "not-an-object",   // present but unusable
+        "semantic/p/ovnoupd": noUpd,           // present but not comparable (no updatedAt)
+      },
+    }, null, 2) + "\n");
+
+    await memoryArchiveCmd({ cwd: repo, apply: true });
+
+    expect(readIndexStatus("semantic/p/ovbad")).toBe("active");
+    expect(readMdField("semantic/p/ovbad.md", "status")).toBe("active");
+    expect(readIndexStatus("semantic/p/ovnoupd")).toBe("active");
+    expect(readIndexStatus("semantic/p/ovnone")).toBe("archived"); // absent overlay row still archives
+    expect(warnings.join("\n")).toMatch(/skipped 2 id\(s\) in a cross-device conflict/);
+  });
+
+  it("archives NOTHING and warns when the overlay index EXISTS but is corrupt (guard must not fail open)", async () => {
+    // loadMemoryIndex turns a corrupt index into an EMPTY one — fine for read
+    // paths, catastrophic here: every local candidate would look overlay-absent,
+    // so the whole store becomes archivable/restampable and can clobber sibling
+    // state wholesale on the next merge.
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    writeLocal({ "semantic/p/a": expired("a"), "semantic/p/b": expired("b") });
+    writeOverlayRaw("{ this is not valid json");
+    const idxBefore = readFileSync(idxPath(), "utf8");
+    const aMd = readFileSync(join(repo, "memory/semantic/p/a.md"), "utf8");
+
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
+
+    expect(warnings.join("\n")).toMatch(/overlay index unreadable — skipping archival this run/);
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);   // index byte-identical
+    expect(readFileSync(join(repo, "memory/semantic/p/a.md"), "utf8")).toBe(aMd);
+    expect(readIndexStatus("semantic/p/a")).toBe("active");
+    expect(readIndexStatus("semantic/p/b")).toBe("active");
+    expect(out.join("\n")).toContain("archived 0");
+  });
+
+  it("also refuses when the overlay index parses but is not a v1 entries map", async () => {
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    writeLocal({ "semantic/p/a": expired("a") });
+    writeOverlayRaw(JSON.stringify({ version: 1, entries: ["not", "a", "map"] }) + "\n");
+
+    await memoryArchiveCmd({ cwd: repo, apply: true });
+
+    expect(warnings.join("\n")).toMatch(/overlay index unreadable/);
+    expect(readIndexStatus("semantic/p/a")).toBe("active");
+  });
+
+  it("proceeds normally when the overlay directory exists but holds NO index file (genuinely absent)", async () => {
+    writeLocal({ "semantic/p/a": expired("a") });
+    mkdirSync(join(overlayRoot(), ".memarium"), { recursive: true }); // dir, no index file
+    await memoryArchiveCmd({ cwd: repo, apply: true });
+    expect(readIndexStatus("semantic/p/a")).toBe("archived");
+  });
+});

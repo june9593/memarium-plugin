@@ -93,6 +93,14 @@ function readMemoryBody(abs: string, expect: { id: string; type: string }): stri
 /** The 4 MemoryType values, as a runtime set for validating an untrusted index row. */
 const REWRITABLE_TYPES: ReadonlySet<string> = new Set(["core", "semantic", "episodic", "procedural"]);
 
+/** The COLLECTION fields `renderMemoryMarkdown` serializes through its `arr()`
+ *  helper (`xs ?? []` then `.join(", ")`). `arr` coerces an UNSET value
+ *  (undefined/null) to `[]`, so an omitted field renders fine — but a PRESENT
+ *  non-array value reaches `.join()` and THROWS (`sourceSessions: "s1"` →
+ *  "a.join is not a function"), or, for a value whose `.length` happens to be 0
+ *  (`""`), silently renders `[]` and drops content. Validated below. */
+const REWRITE_COLLECTION_FIELDS = ["sourceSessions", "sourceCommits", "sourceFiles", "entities"] as const;
+
 /** Row-shape gate for the METADATA-ONLY REWRITE path (`writeMemoryEntryFile`),
  *  shared by BOTH write paths that use it: `memory-archive --apply` and
  *  `memory-unarchive`.
@@ -110,9 +118,18 @@ const REWRITABLE_TYPES: ReadonlySet<string> = new Set(["core", "semantic", "epis
  *  So the required set is the union of what the archival PLAN reads
  *  (`status` / `type` / `updatedAt`), what the canonical-path derivation needs
  *  (`id` / `type` / `project`) and what a FAITHFUL re-render needs on top of
- *  those (`title` / `scope`). Requiring title/scope is a strict improvement for
- *  archive too: such a row was never archivable without corrupting itself, and
- *  it is already reported in archive's "skipped malformed index row(s)" count.
+ *  those (`title` / `scope`, plus the COLLECTION fields the renderer joins).
+ *  Requiring title/scope is a strict improvement for archive too: such a row was
+ *  never archivable without corrupting itself, and it is already reported in
+ *  archive's "skipped malformed index row(s)" count.
+ *
+ *  Round-16: validating only the SCALAR fields still let a MALFORMED COLLECTION
+ *  through — a row with `sourceSessions: "s1"` (a STRING) passed, got planned,
+ *  and then `renderMemoryMarkdown` called `.join()` on that string, THROWING
+ *  inside the automatic digest consolidation (`memory-archive --apply` runs with
+ *  no human in the loop). Each collection field must therefore be an ARRAY, or
+ *  genuinely unset — `arr()` maps undefined/null to `[]`, so an omitted field
+ *  renders faithfully and must not be rejected.
  *
  *  Returns the name of the FIRST missing/invalid field, or null when the row is
  *  complete — so `memory-unarchive` can name it in its abort message while
@@ -127,6 +144,11 @@ export function missingRewriteField(entry: MemoryEntry): string | null {
   if (!filled(e.title)) return "title";
   if (typeof e.status !== "string") return "status";
   if (typeof e.updatedAt !== "string") return "updatedAt";
+  for (const field of REWRITE_COLLECTION_FIELDS) {
+    const v = e[field];
+    if (v === undefined || v === null) continue; // unset → the renderer emits []
+    if (!Array.isArray(v)) return field;
+  }
   return null;
 }
 

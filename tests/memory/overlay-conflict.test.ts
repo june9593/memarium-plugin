@@ -86,3 +86,37 @@ describe("isOverlayConflict — equal-updatedAt archival divergence is a conflic
     }
   });
 });
+
+describe("isOverlayConflict — fails CLOSED on an overlay row it cannot compare", () => {
+  const roots = { local: "/nonexistent", overlay: "/nonexistent" };
+
+  it("a genuinely ABSENT overlay row is NOT a conflict (the normal local-only path)", () => {
+    // No sibling copy at all → local is authoritative → archival/unarchival proceeds.
+    expect(isOverlayConflict(entry(), undefined, roots)).toBe(false);
+    expect(isOverlayConflict(entry(), null, roots)).toBe(false);
+  });
+
+  it("a PRESENT but non-object overlay row is a CONFLICT (state could not be compared)", () => {
+    // Round-16: this used to return false — "no conflict" — so archive/unarchive
+    // would restamp the local copy even though the sibling's state was never
+    // actually compared, permitting exactly the clobbering write the guard exists
+    // to prevent. A row that EXISTS but is unusable must fail CLOSED.
+    for (const bad of ["not-an-object", 42, true, ["a"], [] as unknown]) {
+      expect(isOverlayConflict(entry(), bad, roots)).toBe(true);
+    }
+  });
+
+  it("a present overlay row with a missing / non-string / empty updatedAt is a CONFLICT", () => {
+    // A missing updatedAt used to compare as "" — i.e. strictly OLDER than local —
+    // so the guard waved it through as "local wins" when in truth the two copies
+    // were never comparable at all.
+    expect(isOverlayConflict(entry(), { ...entry(), updatedAt: undefined }, roots)).toBe(true);
+    expect(isOverlayConflict(entry(), { ...entry(), updatedAt: null }, roots)).toBe(true);
+    expect(isOverlayConflict(entry(), { ...entry(), updatedAt: 20260505 }, roots)).toBe(true);
+    expect(isOverlayConflict(entry(), { ...entry(), updatedAt: "" }, roots)).toBe(true);
+  });
+
+  it("a comparable, strictly-OLDER overlay row is still NOT a conflict (control)", () => {
+    expect(isOverlayConflict(entry({ updatedAt: "2026-05-05" }), entry({ updatedAt: "2026-01-01" }), roots)).toBe(false);
+  });
+});

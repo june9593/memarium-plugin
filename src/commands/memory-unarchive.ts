@@ -1,5 +1,5 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
-import { loadMemoryIndex, saveMemoryIndex } from "../memory/index-store.js";
+import { loadMemoryIndex, loadMemoryIndexStrict, saveMemoryIndex, type MemoryIndexLoad } from "../memory/index-store.js";
 import { writeMemoryEntryFile, missingRewriteField } from "../memory/apply.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
 import { isOverlayConflict } from "../memory/overlay-conflict.js";
@@ -76,10 +76,23 @@ export async function memoryUnarchiveCmd(opts: MemoryUnarchiveOptions): Promise<
   // aggregated overlay holds for this id. Compare the overlay's OWN row against
   // the local one; on a genuine conflict, ABORT (one id) rather than silently
   // clobber — the user must resolve it on the device that made the newer edit.
+  //
+  // Read the overlay index STRICTLY: `loadMemoryIndex` turns a corrupt index into
+  // an EMPTY one, which would make this id look overlay-absent and wave the
+  // restore through — the guard failing open precisely when the sibling's state is
+  // unknown. "No overlay index file at all" still means local-only (proceed);
+  // "an overlay index that exists but can't be read" means REFUSE.
   const view = resolveMemoryView(cfg.repoPath);
-  const overlayEntries: Record<string, unknown> = view.roots.overlay
-    ? loadMemoryIndex(view.roots.overlay).entries
-    : {};
+  const overlayLoad: MemoryIndexLoad = view.roots.overlay
+    ? loadMemoryIndexStrict(view.roots.overlay)
+    : { kind: "absent" };
+  if (overlayLoad.kind === "corrupt") {
+    throw new Error(
+      `refusing to unarchive ${opts.id}: the aggregated overlay index is unreadable — ` +
+      `cannot rule out a newer/divergent copy on another device`,
+    );
+  }
+  const overlayEntries: Record<string, unknown> = overlayLoad.kind === "ok" ? overlayLoad.index.entries : {};
   if (isOverlayConflict(e, overlayEntries[opts.id], { local: cfg.repoPath, overlay: view.roots.overlay })) {
     throw new Error(
       `refusing to unarchive ${opts.id}: a newer/divergent copy exists on another device — resolve there`,
