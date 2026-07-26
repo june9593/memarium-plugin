@@ -14557,7 +14557,7 @@ var init_path_guard = __esm({
 });
 
 // src/memory/apply.ts
-import { existsSync as existsSync11, mkdirSync as mkdirSync8, readFileSync as readFileSync9, writeFileSync as writeFileSync7 } from "node:fs";
+import { existsSync as existsSync11, mkdirSync as mkdirSync8, readFileSync as readFileSync9, rmSync, writeFileSync as writeFileSync7 } from "node:fs";
 import { dirname as dirname4, join as join14, resolve as resolve2, sep as sep2 } from "node:path";
 function normalizeRel(p2) {
   return p2.split("\\").join("/");
@@ -14636,6 +14636,37 @@ function writeMemoryEntryFile(repoPath, entry) {
 function assertMemoryBodyRecoverable(repoPath, entry) {
   const canonical = assertWritableMemoryTarget(repoPath, entry);
   readMemoryBody(resolve2(join14(repoPath, canonical)), { id: entry.id, type: entry.type });
+}
+function snapshotMemoryEntryFile(repoPath, entry) {
+  const canonical = assertWritableMemoryTarget(repoPath, entry);
+  const abs = resolve2(join14(repoPath, canonical));
+  return { abs, canonical, bytes: existsSync11(abs) ? readFileSync9(abs) : null };
+}
+function restoreMemoryEntryFiles(snaps) {
+  const failed = [];
+  for (const s of snaps) {
+    try {
+      if (s.bytes === null) {
+        if (existsSync11(s.abs)) rmSync(s.abs);
+      } else {
+        mkdirSync8(dirname4(s.abs), { recursive: true });
+        writeFileSync7(s.abs, s.bytes);
+      }
+    } catch {
+      failed.push(s.canonical);
+    }
+  }
+  return failed;
+}
+function rollbackMemoryWrites(context, snaps, cause) {
+  const failed = restoreMemoryEntryFiles(snaps);
+  const restored = snaps.length - failed.length;
+  const partial = failed.length ? ` \u2014 PARTIAL ROLLBACK: ${failed.length} file(s) could NOT be restored and now disagree with the index: ${failed.join(", ")}` : "";
+  const original = cause instanceof Error ? cause.message : String(cause);
+  throw new Error(
+    `${context} \u2014 rolled back ${restored} .md rewrite(s)${partial}: ${original}`,
+    { cause }
+  );
 }
 function applyMemoryItems(repoPath, items) {
   const idx = loadMemoryIndex(repoPath);
@@ -16611,7 +16642,7 @@ var init_known_sessions = __esm({
 
 // src/memory/proposal-store.ts
 import { createHash as createHash3 } from "node:crypto";
-import { existsSync as existsSync21, mkdirSync as mkdirSync12, readFileSync as readFileSync20, readdirSync as readdirSync5, rmSync, writeFileSync as writeFileSync14 } from "node:fs";
+import { existsSync as existsSync21, mkdirSync as mkdirSync12, readFileSync as readFileSync20, readdirSync as readdirSync5, rmSync as rmSync2, writeFileSync as writeFileSync14 } from "node:fs";
 import { join as join22, resolve as resolve7 } from "node:path";
 function proposalsDir(repoPath) {
   const repoHash = createHash3("sha256").update(resolve7(repoPath)).digest("hex").slice(0, 12);
@@ -16682,7 +16713,7 @@ function deleteProposal(repoPath, idOrKey) {
   }
   guardQueuePath(file);
   if (!existsSync21(file)) return null;
-  rmSync(file);
+  rmSync2(file);
   return file;
 }
 var init_proposal_store = __esm({
@@ -16890,13 +16921,26 @@ var init_archive = __esm({
 // src/memory/overlay-conflict.ts
 import { readFileSync as readFileSync22 } from "node:fs";
 import { join as join24, resolve as resolve8 } from "node:path";
-function sameStringSet(a, b2) {
-  const sa = [...a ?? []].sort();
-  const sb = [...b2 ?? []].sort();
-  return sa.length === sb.length && sa.every((v, i2) => v === sb[i2]);
+function compareStringSet(a, b2) {
+  const norm = (v) => {
+    if (v === void 0 || v === null) return [];
+    if (!Array.isArray(v)) return null;
+    return [...v].sort();
+  };
+  const sa = norm(a);
+  const sb = norm(b2);
+  if (sa === null || sb === null) return "uncomparable";
+  return sa.length === sb.length && sa.every((v, i2) => v === sb[i2]) ? "same" : "different";
+}
+function hasWellFormedCollections(row) {
+  const r2 = row;
+  return COLLECTION_FIELDS.every((f) => {
+    const v = r2[f];
+    return v === void 0 || v === null || Array.isArray(v);
+  });
 }
 function sameMemoryContent(a, b2) {
-  return a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && a.createdAt === b2.createdAt && (a.validTo ?? null) === (b2.validTo ?? null) && (a.validFrom ?? null) === (b2.validFrom ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && (a.archivedReason ?? null) === (b2.archivedReason ?? null) && (a.archivedAt ?? null) === (b2.archivedAt ?? null) && a.type === b2.type && a.scope === b2.scope && (a.project ?? null) === (b2.project ?? null) && (a.trust ?? "unknown") === (b2.trust ?? "unknown") && sameStringSet(a.entities, b2.entities);
+  return a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && a.createdAt === b2.createdAt && (a.validTo ?? null) === (b2.validTo ?? null) && (a.validFrom ?? null) === (b2.validFrom ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && (a.archivedReason ?? null) === (b2.archivedReason ?? null) && (a.archivedAt ?? null) === (b2.archivedAt ?? null) && a.type === b2.type && a.scope === b2.scope && (a.project ?? null) === (b2.project ?? null) && (a.trust ?? "unknown") === (b2.trust ?? "unknown") && compareStringSet(a.entities, b2.entities) === "same";
 }
 function extractBody(md) {
   const norm = md.replace(/\r\n/g, "\n");
@@ -16917,9 +16961,16 @@ function readCanonicalBody(root, entry) {
 function isOverlayConflict(local, overlay, roots) {
   if (overlay === void 0 || overlay === null) return false;
   if (typeof overlay !== "object" || Array.isArray(overlay)) return true;
-  const ov = overlay;
+  try {
+    return divergesFromOverlay(local, overlay, roots);
+  } catch {
+    return true;
+  }
+}
+function divergesFromOverlay(local, ov, roots) {
   const ovUpdated = ov.updatedAt;
   if (typeof ovUpdated !== "string" || ovUpdated === "") return true;
+  if (!hasWellFormedCollections(ov) || !hasWellFormedCollections(local)) return true;
   const localUpdated = typeof local.updatedAt === "string" ? local.updatedAt : "";
   if (ovUpdated > localUpdated) return true;
   if (ovUpdated < localUpdated) return false;
@@ -16929,10 +16980,12 @@ function isOverlayConflict(local, overlay, roots) {
   if (localBody === null || overlayBody === null) return true;
   return localBody !== overlayBody;
 }
+var COLLECTION_FIELDS;
 var init_overlay_conflict = __esm({
   "src/memory/overlay-conflict.ts"() {
     "use strict";
     init_gate();
+    COLLECTION_FIELDS = ["entities", "sourceSessions", "sourceCommits", "sourceFiles"];
   }
 });
 
@@ -16985,13 +17038,24 @@ async function memoryArchiveCmd(opts) {
     planned.push({ ...e, status: "archived", archivedAt: now, archivedReason: reason, updatedAt: now });
   }
   for (const next of planned) assertMemoryBodyRecoverable(cfg.repoPath, next);
+  const snapshots = planned.map((next) => snapshotMemoryEntryFile(cfg.repoPath, next));
   let archived = 0;
-  for (const next of planned) {
-    writeMemoryEntryFile(cfg.repoPath, next);
-    idx.entries[next.id] = next;
-    archived++;
+  try {
+    for (const next of planned) {
+      writeMemoryEntryFile(cfg.repoPath, next);
+      idx.entries[next.id] = next;
+      archived++;
+    }
+  } catch (err) {
+    rollbackMemoryWrites("memory-archive: a .md rewrite failed mid-batch", snapshots, err);
   }
-  if (archived > 0) saveMemoryIndex(cfg.repoPath, idx);
+  if (archived > 0) {
+    try {
+      saveMemoryIndex(cfg.repoPath, idx);
+    } catch (err) {
+      rollbackMemoryWrites("memory-archive: index save failed", snapshots, err);
+    }
+  }
   console.log(opts.json ? JSON.stringify({ archived }) : `archived ${archived}`);
 }
 var init_memory_archive = __esm({
@@ -17059,9 +17123,14 @@ async function memoryUnarchiveCmd(opts) {
     updatedAt: now,
     ...pastValidTo ? { validTo: null } : {}
   };
+  const snapshot = snapshotMemoryEntryFile(cfg.repoPath, next);
   writeMemoryEntryFile(cfg.repoPath, next);
   idx.entries[opts.id] = next;
-  saveMemoryIndex(cfg.repoPath, idx);
+  try {
+    saveMemoryIndex(cfg.repoPath, idx);
+  } catch (err) {
+    rollbackMemoryWrites(`unarchive ${opts.id}: index save failed`, [snapshot], err);
+  }
   console.log(
     restoreSuperseded ? `restored ${opts.id} to superseded (its replacement is live; was archived as superseded-cleanup)` : pastValidTo ? `restored ${opts.id} (cleared past validTo=${e.validTo} so it is recallable again)` : `restored ${opts.id}`
   );
@@ -17280,7 +17349,7 @@ var memory_approve_exports = {};
 __export(memory_approve_exports, {
   memoryApproveCmd: () => memoryApproveCmd
 });
-import { existsSync as existsSync24, readdirSync as readdirSync6, rmSync as rmSync2 } from "node:fs";
+import { existsSync as existsSync24, readdirSync as readdirSync6, rmSync as rmSync3 } from "node:fs";
 import { join as join25 } from "node:path";
 function refreshPrimers(repoPath, entry) {
   const dir = join25(repoPath, "memory", "_primer");
@@ -17290,7 +17359,7 @@ function refreshPrimers(repoPath, entry) {
   const del = (file) => {
     if (!existsSync24(file)) return;
     assertNoSymlinkedComponent(repoPath, file, "memory-approve");
-    rmSync2(file);
+    rmSync3(file);
     deleted.push(file);
   };
   const deleteAll = () => {
