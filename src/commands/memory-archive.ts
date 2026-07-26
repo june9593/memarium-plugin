@@ -155,6 +155,12 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   // first; on any failure restore all of them byte-for-byte and rethrow with
   // context. A rollback that itself fails is named as a PARTIAL ROLLBACK rather
   // than swallowed.
+  //
+  // Round-18: that rollback only reaches the .md side, so it restores real
+  // CONSISTENCY only because saveMemoryIndex is atomic (temp file + rename) and
+  // leaves the intact old index behind when it throws. Before that, an ENOSPC
+  // could truncate the index mid-write and the "rollback" would land us on a
+  // corrupt index rather than the pre-run state.
   const snapshots = planned.map((next) => snapshotMemoryEntryFile(cfg.repoPath, next));
   let archived = 0;
   try {

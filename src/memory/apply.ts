@@ -226,6 +226,13 @@ export interface MemoryFileSnapshot {
  *  N files at once. The whole-plan preflight can't cover this: it runs before any
  *  write, while this is the complementary POST-write guard.
  *
+ *  Round-18 completes the pair: this restores only the .md side, so it returns
+ *  the pair to a CONSISTENT pre-run state only because `saveMemoryIndex` is
+ *  atomic (temp file + rename) and therefore leaves the whole OLD index in place
+ *  when it throws. While the index was written in place, a failed save could
+ *  truncate it, and rolling the .md back landed us on a CORRUPT index instead of
+ *  the pre-run state. Don't make the index save non-atomic again.
+ *
  *  Derives the path through the same containment/symlink guard the writer uses,
  *  so a snapshot can only ever name a file the writer could legitimately touch. */
 export function snapshotMemoryEntryFile(repoPath: string, entry: MemoryEntry): MemoryFileSnapshot {
@@ -260,7 +267,11 @@ function restoreMemoryEntryFiles(snaps: readonly MemoryFileSnapshot[]): string[]
  *  NEVER returns. `context` is the caller's own prefix (e.g.
  *  `unarchive semantic/p/x: index save failed`). The original error is preserved
  *  both in the message tail and as `cause`, so nothing is swallowed; a rollback
- *  that itself failed is called out explicitly as a PARTIAL ROLLBACK. */
+ *  that itself failed is called out explicitly as a PARTIAL ROLLBACK.
+ *
+ *  Scope note (round-18): this restores the .md side ONLY. It is paired with an
+ *  ATOMIC `saveMemoryIndex`, which leaves the complete old index behind when it
+ *  throws — together the two put BOTH stores back exactly as they were. */
 export function rollbackMemoryWrites(
   context: string,
   snaps: readonly MemoryFileSnapshot[],

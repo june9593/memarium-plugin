@@ -130,6 +130,11 @@ export async function memoryUnarchiveCmd(opts: MemoryUnarchiveOptions): Promise<
   // byte-for-byte and rethrow with context (a rollback that itself fails is named
   // in the message rather than hidden). Complements — does not replace — the
   // pre-write validation above.
+  //
+  // Round-18: undoing the .md restores the PAIR only because saveMemoryIndex is
+  // atomic (temp file + rename), so a throwing save leaves the whole old index on
+  // disk. A non-atomic save could truncate it, and this rollback would then
+  // "restore" us into a corrupt-index state.
   try {
     saveMemoryIndex(cfg.repoPath, idx);
   } catch (err) {
