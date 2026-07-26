@@ -7313,7 +7313,7 @@ var init_types2 = __esm({
 });
 
 // src/memory/index-store.ts
-import { existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "node:fs";
+import { closeSync, existsSync as existsSync4, fsyncSync, mkdirSync as mkdirSync3, openSync, readFileSync as readFileSync4, renameSync as renameSync2, rmSync, writeFileSync as writeFileSync3 } from "node:fs";
 import { dirname, join as join6 } from "node:path";
 function loadMemoryIndexStrict(repoRoot) {
   const p2 = join6(repoRoot, MEMORY_INDEX_REL);
@@ -7340,8 +7340,25 @@ function loadMemoryIndex(repoRoot) {
 }
 function saveMemoryIndex(repoRoot, idx) {
   const p2 = join6(repoRoot, MEMORY_INDEX_REL);
-  mkdirSync3(dirname(p2), { recursive: true });
-  writeFileSync3(p2, JSON.stringify(idx, null, 2) + "\n");
+  const dir = dirname(p2);
+  mkdirSync3(dir, { recursive: true });
+  const tmp = join6(dir, `index.memory.json.tmp-${process.pid}`);
+  try {
+    const fd = openSync(tmp, "w");
+    try {
+      writeFileSync3(fd, JSON.stringify(idx, null, 2) + "\n");
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync2(tmp, p2);
+  } catch (err) {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+    }
+    throw err;
+  }
 }
 function upsertMemory(idx, entry) {
   idx.entries[memoryKey(entry)] = entry;
@@ -14557,7 +14574,7 @@ var init_path_guard = __esm({
 });
 
 // src/memory/apply.ts
-import { existsSync as existsSync11, mkdirSync as mkdirSync8, readFileSync as readFileSync9, rmSync, writeFileSync as writeFileSync7 } from "node:fs";
+import { existsSync as existsSync11, mkdirSync as mkdirSync8, readFileSync as readFileSync9, rmSync as rmSync2, writeFileSync as writeFileSync7 } from "node:fs";
 import { dirname as dirname4, join as join14, resolve as resolve2, sep as sep2 } from "node:path";
 function normalizeRel(p2) {
   return p2.split("\\").join("/");
@@ -14647,7 +14664,7 @@ function restoreMemoryEntryFiles(snaps) {
   for (const s of snaps) {
     try {
       if (s.bytes === null) {
-        if (existsSync11(s.abs)) rmSync(s.abs);
+        if (existsSync11(s.abs)) rmSync2(s.abs);
       } else {
         mkdirSync8(dirname4(s.abs), { recursive: true });
         writeFileSync7(s.abs, s.bytes);
@@ -15097,7 +15114,7 @@ var init_score = __esm({
 
 // src/memory/usage-store.ts
 import { createHash } from "node:crypto";
-import { existsSync as existsSync14, mkdirSync as mkdirSync9, readFileSync as readFileSync13, renameSync as renameSync2, writeFileSync as writeFileSync9 } from "node:fs";
+import { existsSync as existsSync14, mkdirSync as mkdirSync9, readFileSync as readFileSync13, renameSync as renameSync3, writeFileSync as writeFileSync9 } from "node:fs";
 import { join as join16, resolve as resolve3 } from "node:path";
 function usageDir(repoPath) {
   const repoHash = createHash("sha256").update(resolve3(repoPath)).digest("hex").slice(0, 12);
@@ -15150,7 +15167,7 @@ function saveUsage(repoPath, usage) {
   const file = usageFile(repoPath);
   const tmp = join16(dir, `access.json.tmp-${process.pid}`);
   writeFileSync9(tmp, JSON.stringify(usage, null, 2) + "\n");
-  renameSync2(tmp, file);
+  renameSync3(tmp, file);
 }
 function bumpUsage(repoPath, ids, now) {
   if (ids.length === 0) return;
@@ -15415,7 +15432,7 @@ __export(retro_gate_exports, {
   decideRetroGate: () => decideRetroGate,
   retroGateCmd: () => retroGateCmd
 });
-import { readFileSync as readFileSync14, existsSync as existsSync15, openSync, fstatSync, readSync, closeSync } from "node:fs";
+import { readFileSync as readFileSync14, existsSync as existsSync15, openSync as openSync2, fstatSync, readSync, closeSync as closeSync2 } from "node:fs";
 function isRetroSignal(tu) {
   if (tu.name === "Skill" && String(tu.input?.skill ?? "").includes("memarium-retro")) return true;
   if (tu.name === "Bash") {
@@ -15453,7 +15470,7 @@ function decideRetroGate(evt, rows) {
   return mutated && !didRetro ? { block: true, reason: RETRO_REASON } : { block: false };
 }
 function readTailLines(path, cap) {
-  const fd = openSync(path, "r");
+  const fd = openSync2(path, "r");
   try {
     const size = fstatSync(fd).size;
     const start = size > cap ? size - cap : 0;
@@ -15465,7 +15482,7 @@ function readTailLines(path, cap) {
     if (start > 0) lines.shift();
     return lines.filter(Boolean);
   } finally {
-    closeSync(fd);
+    closeSync2(fd);
   }
 }
 async function retroGateCmd() {
@@ -16642,7 +16659,7 @@ var init_known_sessions = __esm({
 
 // src/memory/proposal-store.ts
 import { createHash as createHash3 } from "node:crypto";
-import { existsSync as existsSync21, mkdirSync as mkdirSync12, readFileSync as readFileSync20, readdirSync as readdirSync5, rmSync as rmSync2, writeFileSync as writeFileSync14 } from "node:fs";
+import { existsSync as existsSync21, mkdirSync as mkdirSync12, readFileSync as readFileSync20, readdirSync as readdirSync5, rmSync as rmSync3, writeFileSync as writeFileSync14 } from "node:fs";
 import { join as join22, resolve as resolve7 } from "node:path";
 function proposalsDir(repoPath) {
   const repoHash = createHash3("sha256").update(resolve7(repoPath)).digest("hex").slice(0, 12);
@@ -16713,7 +16730,7 @@ function deleteProposal(repoPath, idOrKey) {
   }
   guardQueuePath(file);
   if (!existsSync21(file)) return null;
-  rmSync2(file);
+  rmSync3(file);
   return file;
 }
 var init_proposal_store = __esm({
@@ -17349,7 +17366,7 @@ var memory_approve_exports = {};
 __export(memory_approve_exports, {
   memoryApproveCmd: () => memoryApproveCmd
 });
-import { existsSync as existsSync24, readdirSync as readdirSync6, rmSync as rmSync3 } from "node:fs";
+import { existsSync as existsSync24, readdirSync as readdirSync6, rmSync as rmSync4 } from "node:fs";
 import { join as join25 } from "node:path";
 function refreshPrimers(repoPath, entry) {
   const dir = join25(repoPath, "memory", "_primer");
@@ -17359,7 +17376,7 @@ function refreshPrimers(repoPath, entry) {
   const del = (file) => {
     if (!existsSync24(file)) return;
     assertNoSymlinkedComponent(repoPath, file, "memory-approve");
-    rmSync3(file);
+    rmSync4(file);
     deleted.push(file);
   };
   const deleteAll = () => {
