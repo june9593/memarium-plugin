@@ -13025,7 +13025,7 @@ var init_esm = __esm({
         var { Scheduler: Scheduler2 } = (init_scheduler(), __toCommonJS(scheduler_exports));
         var { adhocExecTask: adhocExecTask2, configurationErrorTask: configurationErrorTask2 } = (init_task(), __toCommonJS(task_exports));
         var {
-          asArray: asArray2,
+          asArray: asArray22,
           filterArray: filterArray2,
           filterPrimitives: filterPrimitives2,
           filterString: filterString2,
@@ -13283,13 +13283,13 @@ var init_esm = __esm({
         };
         Git2.prototype.rm = function(files) {
           return this._runTask(
-            straightThroughStringTask2(["rm", "-f", ...asArray2(files)]),
+            straightThroughStringTask2(["rm", "-f", ...asArray22(files)]),
             trailingFunctionArgument2(arguments)
           );
         };
         Git2.prototype.rmKeepLocal = function(files) {
           return this._runTask(
-            straightThroughStringTask2(["rm", "--cached", ...asArray2(files)]),
+            straightThroughStringTask2(["rm", "--cached", ...asArray22(files)]),
             trailingFunctionArgument2(arguments)
           );
         };
@@ -13330,7 +13330,7 @@ var init_esm = __esm({
         Git2.prototype.applyPatch = function(patches) {
           const task = !filterStringOrStringArray2(patches) ? configurationErrorTask2(
             `git.applyPatch requires one or more string patches as the first argument`
-          ) : applyPatchTask2(asArray2(patches), getTrailingOptions2([].slice.call(arguments, 1)));
+          ) : applyPatchTask2(asArray22(patches), getTrailingOptions2([].slice.call(arguments, 1)));
           return this._runTask(task, trailingFunctionArgument2(arguments));
         };
         Git2.prototype.revparse = function() {
@@ -13372,7 +13372,7 @@ var init_esm = __esm({
         };
         Git2.prototype.checkIgnore = function(pathnames, then) {
           return this._runTask(
-            checkIgnoreTask2(asArray2(filterType2(pathnames, filterStringOrStringArray2, []))),
+            checkIgnoreTask2(asArray22(filterType2(pathnames, filterStringOrStringArray2, []))),
             trailingFunctionArgument2(arguments)
           );
         };
@@ -14740,16 +14740,23 @@ function applyMemoryItems(repoPath, items) {
     if (!isDate(entry.createdAt)) entry.createdAt = fallbackDate;
     if (!isDate(entry.updatedAt)) entry.updatedAt = fallbackDate;
     if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
-    if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
-      entry.status = "active";
+    const prior = idx.entries[entry.id];
+    if (prior && prior.status === "archived") {
+      entry.status = "archived";
+      entry.archivedAt = prior.archivedAt ?? null;
+      entry.archivedReason = prior.archivedReason ?? null;
+    } else {
+      if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
+        entry.status = "active";
+      }
+      entry.archivedAt = null;
+      entry.archivedReason = null;
     }
     if (entry.supersedes === void 0) entry.supersedes = null;
     if (entry.validFrom === void 0) entry.validFrom = null;
     if (entry.validTo === void 0) entry.validTo = null;
     if (entry.originDevice === void 0) entry.originDevice = null;
     if (entry.project === void 0) entry.project = null;
-    entry.archivedAt = null;
-    entry.archivedReason = null;
     if (typeof entry.confidence !== "number" || !isFinite(entry.confidence)) entry.confidence = 0.5;
     if (typeof entry.importance !== "number" || !isFinite(entry.importance)) entry.importance = 0;
     if (typeof entry.summary !== "string") entry.summary = "";
@@ -14757,7 +14764,6 @@ function applyMemoryItems(repoPath, items) {
     if (!Array.isArray(entry.sourceCommits)) entry.sourceCommits = [];
     if (!Array.isArray(entry.sourceFiles)) entry.sourceFiles = [];
     if (!Array.isArray(entry.entities)) entry.entities = [];
-    const prior = idx.entries[entry.id];
     if (prior) {
       const uni = (next, prev) => Array.from(/* @__PURE__ */ new Set([...Array.isArray(prev) ? prev : [], ...next]));
       entry.sourceSessions = uni(entry.sourceSessions, prior.sourceSessions);
@@ -15031,6 +15037,9 @@ function tokenize(s) {
 function num(v, dflt = 0) {
   return typeof v === "number" && isFinite(v) ? v : dflt;
 }
+function asArray2(v) {
+  return Array.isArray(v) ? v : [];
+}
 function isArchived(e) {
   return e.status === "archived";
 }
@@ -15055,7 +15064,7 @@ function rankMemories(list, q2) {
     let score = 0;
     const why = [];
     if (qTokens.size > 0) {
-      const haystack = new Set(tokenize(`${e.title} ${e.summary} ${e.entities.join(" ")}`));
+      const haystack = new Set(tokenize(`${e.title} ${e.summary} ${asArray2(e.entities).join(" ")}`));
       let hits = 0;
       for (const t2 of qTokens) if (haystack.has(t2)) hits++;
       if (hits > 0) {
@@ -15076,13 +15085,13 @@ function rankMemories(list, q2) {
       why.push("pinned");
     }
     const qf = new Set(q2.files ?? []);
-    const fileHit = e.sourceFiles.filter((f) => qf.has(f)).length;
+    const fileHit = asArray2(e.sourceFiles).filter((f) => qf.has(f)).length;
     if (fileHit > 0) {
       score += fileHit * 3;
       why.push(`file\xD7${fileHit}`);
     }
     const qc = new Set(q2.commits ?? []);
-    const commitHit = e.sourceCommits.filter((c3) => qc.has(c3)).length;
+    const commitHit = asArray2(e.sourceCommits).filter((c3) => qc.has(c3)).length;
     if (commitHit > 0) {
       score += commitHit * 3;
       why.push(`commit\xD7${commitHit}`);
@@ -15094,7 +15103,7 @@ function rankMemories(list, q2) {
     if (importance >= 3) why.push(`importance:${importance}`);
     out.push({ entry: e, score, whyRecalled: why.join(" ") || "scope-eligible" });
   }
-  out.sort((a, b2) => b2.score - a.score || a.entry.id.localeCompare(b2.entry.id));
+  out.sort((a, b2) => b2.score - a.score || String(a.entry.id ?? "").localeCompare(String(b2.entry.id ?? "")));
   return out;
 }
 function recencyBoost(updatedAt, now) {
