@@ -7315,16 +7315,28 @@ var init_types2 = __esm({
 // src/memory/index-store.ts
 import { existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "node:fs";
 import { dirname, join as join6 } from "node:path";
-function loadMemoryIndex(repoRoot) {
+function loadMemoryIndexStrict(repoRoot) {
   const p2 = join6(repoRoot, MEMORY_INDEX_REL);
-  if (!existsSync4(p2)) return emptyMemoryIndex();
+  if (!existsSync4(p2)) return { kind: "absent" };
+  let parsed;
   try {
-    const parsed = JSON.parse(readFileSync4(p2, "utf8"));
-    if (parsed.version !== 1 || !parsed.entries) return emptyMemoryIndex();
-    return parsed;
-  } catch {
-    return emptyMemoryIndex();
+    parsed = JSON.parse(readFileSync4(p2, "utf8"));
+  } catch (err) {
+    return { kind: "corrupt", reason: `unparseable JSON (${err.message})` };
   }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { kind: "corrupt", reason: "not a JSON object" };
+  }
+  const obj = parsed;
+  if (obj.version !== 1) return { kind: "corrupt", reason: `unsupported index version ${JSON.stringify(obj.version)}` };
+  if (!obj.entries || typeof obj.entries !== "object" || Array.isArray(obj.entries)) {
+    return { kind: "corrupt", reason: "missing or non-object `entries` map" };
+  }
+  return { kind: "ok", index: parsed };
+}
+function loadMemoryIndex(repoRoot) {
+  const loaded = loadMemoryIndexStrict(repoRoot);
+  return loaded.kind === "ok" ? loaded.index : emptyMemoryIndex();
 }
 function saveMemoryIndex(repoRoot, idx) {
   const p2 = join6(repoRoot, MEMORY_INDEX_REL);
@@ -14596,6 +14608,11 @@ function missingRewriteField(entry) {
   if (!filled(e.title)) return "title";
   if (typeof e.status !== "string") return "status";
   if (typeof e.updatedAt !== "string") return "updatedAt";
+  for (const field of REWRITE_COLLECTION_FIELDS) {
+    const v = e[field];
+    if (v === void 0 || v === null) continue;
+    if (!Array.isArray(v)) return field;
+  }
   return null;
 }
 function assertWritableMemoryTarget(repoPath, entry) {
@@ -14716,7 +14733,7 @@ function applyMemoryItems(repoPath, items) {
   saveMemoryIndex(repoPath, idx);
   return { written, superseded, paths };
 }
-var REWRITABLE_TYPES, isRewritableEntry;
+var REWRITABLE_TYPES, REWRITE_COLLECTION_FIELDS, isRewritableEntry;
 var init_apply = __esm({
   "src/memory/apply.ts"() {
     "use strict";
@@ -14726,6 +14743,7 @@ var init_apply = __esm({
     init_leak_scan();
     init_path_guard();
     REWRITABLE_TYPES = /* @__PURE__ */ new Set(["core", "semantic", "episodic", "procedural"]);
+    REWRITE_COLLECTION_FIELDS = ["sourceSessions", "sourceCommits", "sourceFiles", "entities"];
     isRewritableEntry = (entry) => missingRewriteField(entry) === null;
   }
 });
@@ -16897,10 +16915,12 @@ function readCanonicalBody(root, entry) {
   }
 }
 function isOverlayConflict(local, overlay, roots) {
-  if (!overlay || typeof overlay !== "object" || Array.isArray(overlay)) return false;
+  if (overlay === void 0 || overlay === null) return false;
+  if (typeof overlay !== "object" || Array.isArray(overlay)) return true;
   const ov = overlay;
-  const ovUpdated = ov.updatedAt ?? "";
-  const localUpdated = local.updatedAt ?? "";
+  const ovUpdated = ov.updatedAt;
+  if (typeof ovUpdated !== "string" || ovUpdated === "") return true;
+  const localUpdated = typeof local.updatedAt === "string" ? local.updatedAt : "";
   if (ovUpdated > localUpdated) return true;
   if (ovUpdated < localUpdated) return false;
   if (!sameMemoryContent(local, ov)) return true;
@@ -16933,12 +16953,21 @@ async function memoryArchiveCmd(opts) {
     console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
   }
   const view = resolveMemoryView(cfg.repoPath);
-  const overlayEntries = view.roots.overlay ? loadMemoryIndex(view.roots.overlay).entries : {};
-  const inCrossDeviceConflict = (e) => isOverlayConflict(e, overlayEntries[e.id], { local: cfg.repoPath, overlay: view.roots.overlay });
-  const localWinners = entries.filter((e) => !inCrossDeviceConflict(e));
-  const skippedOverlay = entries.length - localWinners.length;
-  if (skippedOverlay > 0) {
-    console.warn(`memory-archive: skipped ${skippedOverlay} id(s) in a cross-device conflict (a sibling holds a newer or divergent same-day copy)`);
+  const overlayLoad = view.roots.overlay ? loadMemoryIndexStrict(view.roots.overlay) : { kind: "absent" };
+  let localWinners;
+  if (overlayLoad.kind === "corrupt") {
+    console.warn(
+      "memory-archive: overlay index unreadable \u2014 skipping archival this run to avoid clobbering sibling state"
+    );
+    localWinners = [];
+  } else {
+    const overlayEntries = overlayLoad.kind === "ok" ? overlayLoad.index.entries : {};
+    const inCrossDeviceConflict = (e) => isOverlayConflict(e, overlayEntries[e.id], { local: cfg.repoPath, overlay: view.roots.overlay });
+    localWinners = entries.filter((e) => !inCrossDeviceConflict(e));
+    const skippedOverlay = entries.length - localWinners.length;
+    if (skippedOverlay > 0) {
+      console.warn(`memory-archive: skipped ${skippedOverlay} id(s) in a cross-device conflict (a sibling holds a newer or divergent same-day copy)`);
+    }
   }
   const plan = planArchival(localWinners, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });
   if (!opts.apply) {
@@ -17007,7 +17036,13 @@ async function memoryUnarchiveCmd(opts) {
     throw new Error(`refusing to unarchive ${opts.id}: index row is incomplete (missing ${missing})`);
   }
   const view = resolveMemoryView(cfg.repoPath);
-  const overlayEntries = view.roots.overlay ? loadMemoryIndex(view.roots.overlay).entries : {};
+  const overlayLoad = view.roots.overlay ? loadMemoryIndexStrict(view.roots.overlay) : { kind: "absent" };
+  if (overlayLoad.kind === "corrupt") {
+    throw new Error(
+      `refusing to unarchive ${opts.id}: the aggregated overlay index is unreadable \u2014 cannot rule out a newer/divergent copy on another device`
+    );
+  }
+  const overlayEntries = overlayLoad.kind === "ok" ? overlayLoad.index.entries : {};
   if (isOverlayConflict(e, overlayEntries[opts.id], { local: cfg.repoPath, overlay: view.roots.overlay })) {
     throw new Error(
       `refusing to unarchive ${opts.id}: a newer/divergent copy exists on another device \u2014 resolve there`
