@@ -392,10 +392,50 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     // trust: a new entry that didn't set it (or set garbage) defaults to "unknown"
     // — never auto-promote to trusted (#23 decision #3). unknown stays out of the primer.
     if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
-    // status: authored entries routinely omit it; default to "active" (never let it
-    // reach the renderer as undefined → the literal "undefined" string, #54).
-    if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
-      entry.status = "active";
+    // The LIVE index row this write updates, if any. Read BEFORE any
+    // normalization: the archival rules just below key off the EXISTING status,
+    // and the continuation upsert further down unions its provenance arrays.
+    const prior = idx.entries[entry.id];
+
+    // Status + archival lifecycle. `archivedAt` / `archivedReason` are
+    // MACHINE-MAINTAINED: only `memory-archive` sets them and only
+    // `memory-unarchive` clears them (both write through writeMemoryEntryFile,
+    // which deliberately bypasses this normalization). The AUTHORED path
+    // (memory-write, and memory-propose → memory-approve) may therefore neither
+    // SET nor CLEAR archival lifecycle state. The rule is SYMMETRIC:
+    //
+    //  • existing row NOT archived (or brand new) → the status allowlist coerces
+    //    anything outside {active,superseded,pinned} back to "active" (authored
+    //    entries routinely omit status; never let it reach the renderer as
+    //    undefined → the literal "undefined" string, #54), and BOTH lifecycle
+    //    fields are forced to null. Otherwise a payload could smuggle
+    //    archivedAt/archivedReason onto an ACTIVE entry — e.g. a bogus
+    //    `superseded-cleanup` reason that memory-unarchive's restore logic and
+    //    the cold valve's NON_RESURRECTABLE filter would later misread. (This
+    //    also covers the plain undefined → null normalization that keeps a live
+    //    write equal to a rebuild-from-md.)
+    //
+    //  • existing row IS archived → PRESERVE status:"archived" plus the existing
+    //    archivedAt/archivedReason verbatim, and update only the entry's CONTENT.
+    //    Round-19: the clears used to run unconditionally, so an authored write
+    //    (or a proposal queued before the archive and approved after it) that
+    //    touched an id archived in the meantime got status-normalized to "active"
+    //    and SILENTLY REACTIVATED — restoring an archived memory without any of
+    //    the checks that make restoring safe. Restoring is `memory-unarchive`'s
+    //    job, deliberately: only it applies the cross-device overlay conflict
+    //    guard, the row-completeness gate, and the pre-archive status logic that
+    //    puts a `superseded-cleanup` archive back to `superseded` rather than
+    //    `active`.
+    if (prior && prior.status === "archived") {
+      entry.status = "archived";
+      entry.archivedAt = prior.archivedAt ?? null;
+      entry.archivedReason = prior.archivedReason ?? null;
+    } else {
+      if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
+        entry.status = "active";
+      }
+      entry.archivedAt = null;
+      entry.archivedReason = null;
     }
     // Optional nullable fields: normalize undefined → null so the persisted md and
     // the live index agree (the renderer emits `null`, and a rebuild would too). #54.
@@ -404,20 +444,6 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     if (entry.validTo === undefined) entry.validTo = null;
     if (entry.originDevice === undefined) entry.originDevice = null;
     if (entry.project === undefined) entry.project = null;
-    // Archival lifecycle fields are MACHINE-MAINTAINED: only `memory-archive`
-    // sets them and only `memory-unarchive` clears them (both write through
-    // writeMemoryEntryFile, which deliberately bypasses this normalization). The
-    // AUTHORED path must never persist them — it can't even produce an archived
-    // entry, since the status allowlist above coerces every non-
-    // active/superseded/pinned status back to "active". Left un-normalized, a
-    // memory-write / memory-propose payload could supply archivedAt/
-    // archivedReason and yield an ACTIVE entry carrying archival metadata — e.g.
-    // a bogus `superseded-cleanup` reason that memory-unarchive's restore logic
-    // and the cold valve's NON_RESURRECTABLE filter would later misread. So force
-    // both to null here (this also covers the plain undefined → null
-    // normalization that keeps a live write equal to a rebuild-from-md).
-    entry.archivedAt = null;
-    entry.archivedReason = null;
     // Numeric fields: match the render/parse defaults so the LIVE index equals a
     // rebuild (an omitted key would otherwise be dropped from the live JSON, and
     // the scorer would read it as its own default — drift). confidence→0.5 (the
@@ -437,8 +463,8 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     // with the prior entry so an agent re-writing a thread with only its NEW
     // sessions can't erase the old receipt — which would make those raw sessions
     // "pending" again and re-digest forever. (A supersede targets a DIFFERENT id;
-    // this is the plain create/update-of-same-id path.)
-    const prior = idx.entries[entry.id];
+    // this is the plain create/update-of-same-id path.) `prior` was captured at
+    // the top of this iteration, before any normalization.
     if (prior) {
       // Tolerate a malformed prior entry (a prior sourceSessions:{} would make the
       // spread throw and break memory-write → the digest). Non-array prev → [].

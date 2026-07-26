@@ -259,6 +259,91 @@ describe("applyMemoryItems", () => {
     expect(readIdx().entries["semantic/p/smuggled"].archivedAt).toBe(null);
     expect(readIdx().entries["semantic/p/smuggled"].archivedReason).toBe(null);
   });
+
+  it("PRESERVES an existing ARCHIVED state on an authored update (never silently reactivates)", async () => {
+    // Round-19: round-15's unconditional `archivedAt = archivedReason = null`
+    // also fired when the id being written had SINCE become ARCHIVED — and since
+    // the status allowlist normalizes the authored path to "active", that write
+    // (or a queued proposal approved later) SILENTLY REACTIVATED the entry,
+    // bypassing memory-unarchive entirely. The rule is symmetric: the authored
+    // path may neither SET nor CLEAR archival lifecycle state.
+    const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    const idxPath = join(repo, ".memarium/index.memory.json");
+    const readIdx = () => JSON.parse(readFileSync(idxPath, "utf8"));
+    const mdPath = join(repo, "memory/semantic/p/cold.md");
+    const base = mk({
+      id: "semantic/p/cold", type: "semantic", scope: "project:p", project: "p", path: "",
+      title: "Old title", summary: "old summary",
+    });
+
+    // 1. create it, then archive it the way memory-archive does: metadata-only
+    //    .md rewrite + the matching index row.
+    applyMemoryItems(repo, [{ entry: { ...base }, body: "original body" }]);
+    writeMemoryEntryFile(repo, {
+      ...base, path: "memory/semantic/p/cold.md",
+      status: "archived" as MemoryEntry["status"], archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    });
+    const seeded = readIdx();
+    seeded.entries["semantic/p/cold"] = {
+      ...seeded.entries["semantic/p/cold"],
+      status: "archived", archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    };
+    writeFileSync(idxPath, JSON.stringify(seeded));
+
+    // 2. a plain AUTHORED write to the same id — the shape memory-write / an
+    //    approved proposal produces (no status, no archival fields).
+    const update = mk({
+      id: "semantic/p/cold", type: "semantic", scope: "project:p", project: "p", path: "",
+      title: "New title", summary: "new summary",
+    });
+    delete (update as unknown as Record<string, unknown>).status;
+    applyMemoryItems(repo, [{ entry: update, body: "updated body" }]);
+
+    // CONTENT is updated normally…
+    const row = readIdx().entries["semantic/p/cold"];
+    const written = readFileSync(mdPath, "utf8");
+    expect(row.title).toBe("New title");
+    expect(row.summary).toBe("new summary");
+    expect(written).toContain("title: New title");
+    expect(written).toContain("updated body");
+    expect(written).not.toContain("original body");
+
+    // …the archival LIFECYCLE is left exactly as memory-archive set it, in BOTH stores.
+    expect(row.status).toBe("archived");
+    expect(row.archivedAt).toBe("2026-07-01");
+    expect(row.archivedReason).toBe("unused-low-value");
+    expect(written).toContain("status: archived");
+    expect(written).toContain("archivedAt: 2026-07-01");
+    expect(written).toContain("archivedReason: unused-low-value");
+  });
+
+  it("still nulls archival fields + normalizes status when the EXISTING row is NOT archived (round-15 holds; no forged archive)", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const readIdx = () => JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    const id = "semantic/p/live";
+    const at = (over: Partial<MemoryEntry>) =>
+      mk({ id, type: "semantic", scope: "project:p", project: "p", path: "", ...over });
+
+    // seed an ACTIVE row
+    applyMemoryItems(repo, [{ entry: at({ title: "v1" }), body: "b1" }]);
+    expect(readIdx().entries[id].status).toBe("active");
+
+    // an authored update that tries to FORGE an archive on a non-archived entry
+    applyMemoryItems(repo, [{ entry: at({
+      title: "v2", status: "archived" as MemoryEntry["status"],
+      archivedAt: "2026-05-01", archivedReason: "superseded-cleanup",
+    }), body: "b2" }]);
+
+    const row = readIdx().entries[id];
+    const md = readFileSync(join(repo, "memory/semantic/p/live.md"), "utf8");
+    expect(row.title).toBe("v2");            // content still updated
+    expect(row.status).toBe("active");       // status coerced back
+    expect(row.archivedAt).toBe(null);       // supplied lifecycle values dropped
+    expect(row.archivedReason).toBe(null);
+    expect(md).toContain("status: active");
+    expect(md).toContain("archivedAt: null");
+    expect(md).toContain("archivedReason: null");
+  });
 });
 
 describe("writeMemoryEntryFile (metadata-only rewriter)", () => {

@@ -126,3 +126,62 @@ describe("scoreMemories", () => {
     expect(cold.map((x) => x.entry.id)).toEqual(["semantic/p/cold"]);
   });
 });
+
+// Round-19: the memory index is read LENIENTLY on every READ surface, so a
+// parseable-but-malformed row (`entities: {}`, `sourceFiles: "x"`) reaches the
+// ranker. `scoreArchived` feeds EVERY archived row straight in, so an unguarded
+// `.join()`/`.filter()` meant ONE corrupt archived row could throw and break
+// /memarium-recall + memory-query entirely — worse than the write-path cases,
+// because recall is the primary user-facing read. Ranking must degrade, never abort.
+describe("ranking tolerates malformed collection fields (read path never throws)", () => {
+  const corrupt = (over: Partial<MemoryEntry>, bad: Record<string, unknown>): MemoryEntry => {
+    const row = e(over);
+    Object.assign(row as unknown as Record<string, unknown>, bad);
+    return row;
+  };
+
+  it("scoreArchived ranks a corrupt archived row without throwing (entities:{} / sourceFiles:'x' / sourceCommits:5)", () => {
+    const rows = [
+      corrupt({ id: "semantic/p/bad-entities", title: "vim keybindings", status: "archived" }, { entities: {} }),
+      corrupt({ id: "semantic/p/bad-files", title: "vim keybindings", status: "archived" }, { sourceFiles: "src/a.ts" }),
+      corrupt({ id: "semantic/p/bad-commits", title: "vim keybindings", status: "archived" }, { sourceCommits: 5 }),
+      corrupt({ id: "semantic/p/bad-missing", title: "vim keybindings", status: "archived" }, { entities: undefined, sourceFiles: null }),
+      e({ id: "semantic/p/good", title: "vim keybindings", status: "archived" }),
+    ];
+    const q = Q({ text: "vim", files: ["src/a.ts"], commits: ["deadbeef"] });
+    let cold: ReturnType<typeof scoreArchived> = [];
+    expect(() => { cold = scoreArchived(rows, q); }).not.toThrow();
+    // The well-formed archived row is still surfaced, and every score is finite.
+    expect(cold.map((x) => x.entry.id)).toContain("semantic/p/good");
+    for (const s of cold) expect(Number.isFinite(s.score)).toBe(true);
+  });
+
+  it("a row with no `id` at all cannot break the sort tiebreak", () => {
+    // Equal-scoring rows fall through to the `id.localeCompare` tiebreak, which
+    // throws on a row whose `id` key the lenient reader let through as missing.
+    const rows = [
+      e({ id: "semantic/p/good", title: "vim keybindings", status: "archived" }),
+      corrupt({ title: "vim keybindings", status: "archived" }, { id: undefined }),
+      e({ id: "semantic/p/also", title: "vim keybindings", status: "archived" }),
+      e({ id: "semantic/p/third", title: "vim keybindings", status: "archived" }),
+    ];
+    expect(() => scoreArchived(rows, Q({ text: "vim" }))).not.toThrow();
+  });
+
+  it("scoreMemories is defensive the same way, and well-formed ordering/scores are UNCHANGED", () => {
+    const a = e({ id: "a", title: "auth crash", sourceFiles: ["src/auth.ts"] });
+    const b = e({ id: "b", title: "auth thing", entities: ["AuthTokenView"] });
+    const c = e({ id: "c", title: "totally unrelated" });
+    const q = Q({ text: "auth crash", files: ["src/auth.ts"] });
+
+    const baseline = scoreMemories([a, b, c], q).map((x) => [x.entry.id, x.score, x.whyRecalled]);
+
+    const bad = corrupt({ id: "zbad", title: "auth crash" }, { entities: {}, sourceCommits: "abc" });
+    let mixed: ReturnType<typeof scoreMemories> = [];
+    expect(() => { mixed = scoreMemories([a, b, c, bad], q); }).not.toThrow();
+
+    // Same rows, same scores, same relative order — the guard is a pure widening.
+    expect(mixed.filter((x) => x.entry.id !== "zbad").map((x) => [x.entry.id, x.score, x.whyRecalled]))
+      .toEqual(baseline);
+  });
+});

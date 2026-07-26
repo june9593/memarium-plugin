@@ -26,6 +26,21 @@ function num(v: unknown, dflt = 0): number {
   return typeof v === "number" && isFinite(v) ? v : dflt;
 }
 
+/** Coerce a possibly-malformed COLLECTION field to an array (non-array → []).
+ *  The index is read LENIENTLY on every read surface, so a parseable-but-
+ *  malformed row (`entities: {}`, `sourceFiles: "src/a.ts"`, a missing key) does
+ *  reach the ranker. Unguarded `.join()` / `.filter()` on such a value THROWS —
+ *  and `scoreArchived` feeds EVERY archived row straight in, so ONE corrupt
+ *  archived row would break `/memarium-recall` and `memory-query` entirely.
+ *  That is worse than the equivalent write-path cases (which fail closed on a
+ *  single command): recall is the primary user-facing READ. Ranking must
+ *  DEGRADE — the corrupt row simply contributes no keyword/file/commit overlap —
+ *  never abort. For a well-formed array this is the identity, so scoring and
+ *  ordering of healthy rows are unchanged. */
+function asArray(v: unknown): string[] {
+  return Array.isArray(v) ? v : [];
+}
+
 /** Max score contribution from `importance`. Keeps it a secondary boost (file/
  *  commit/pinned tier) that can't outrank a keyword content match (+5). */
 const IMPORTANCE_CAP = 3;
@@ -80,7 +95,7 @@ function rankMemories(list: MemoryEntry[], q: MemoryQuery): ScoredMemory[] {
     // keyword (lexical term-overlap — NOT BM25: no IDF/TF/length-norm, so rare
     // and common tokens weigh equally): presence overlap over title+summary+entities
     if (qTokens.size > 0) {
-      const haystack = new Set(tokenize(`${e.title} ${e.summary} ${e.entities.join(" ")}`));
+      const haystack = new Set(tokenize(`${e.title} ${e.summary} ${asArray(e.entities).join(" ")}`));
       let hits = 0;
       for (const t of qTokens) if (haystack.has(t)) hits++;
       if (hits > 0) { score += hits * 5; why.push(`keyword×${hits}`); }
@@ -93,10 +108,10 @@ function rankMemories(list: MemoryEntry[], q: MemoryQuery): ScoredMemory[] {
 
     // file / commit overlap
     const qf = new Set(q.files ?? []);
-    const fileHit = e.sourceFiles.filter((f) => qf.has(f)).length;
+    const fileHit = asArray(e.sourceFiles).filter((f) => qf.has(f)).length;
     if (fileHit > 0) { score += fileHit * 3; why.push(`file×${fileHit}`); }
     const qc = new Set(q.commits ?? []);
-    const commitHit = e.sourceCommits.filter((c) => qc.has(c)).length;
+    const commitHit = asArray(e.sourceCommits).filter((c) => qc.has(c)).length;
     if (commitHit > 0) { score += commitHit * 3; why.push(`commit×${commitHit}`); }
 
     // recency: newer updatedAt scores a little higher (string ISO compare is monotone)
@@ -121,7 +136,13 @@ function rankMemories(list: MemoryEntry[], q: MemoryQuery): ScoredMemory[] {
     out.push({ entry: e, score, whyRecalled: why.join(" ") || "scope-eligible" });
   }
 
-  out.sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id));
+  // Sort by score desc, id asc as a stable tiebreak. `id` is coerced through
+  // String() for the same reason the collection accesses go through asArray:
+  // the lenient index reader can hand us a row with no `id` key at all, and a
+  // bare `.localeCompare` on it would throw HERE — after every entry already
+  // scored fine — taking the whole recall down. For a real string id this is
+  // the identity, so healthy ordering is untouched.
+  out.sort((a, b) => b.score - a.score || String(a.entry.id ?? "").localeCompare(String(b.entry.id ?? "")));
   return out;
 }
 
