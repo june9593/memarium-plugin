@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "./index-store.js";
 import { renderMemoryMarkdown } from "./render.js";
@@ -207,6 +207,75 @@ export function writeMemoryEntryFile(repoPath: string, entry: MemoryEntry): void
 export function assertMemoryBodyRecoverable(repoPath: string, entry: MemoryEntry): void {
   const canonical = assertWritableMemoryTarget(repoPath, entry);
   readMemoryBody(resolve(join(repoPath, canonical)), { id: entry.id, type: entry.type }); // throws on missing/corrupt/foreign md
+}
+
+/** A captured copy of one memory .md, taken BEFORE a metadata-only rewrite. */
+export interface MemoryFileSnapshot {
+  /** Absolute canonical .md path this snapshot restores. */
+  abs: string;
+  /** Repo-relative canonical path — what we NAME in a partial-rollback error. */
+  canonical: string;
+  /** Original bytes, or null when the file did not exist before the rewrite. */
+  bytes: Buffer | null;
+}
+
+/** Capture an entry's canonical .md bytes so a LATER failure can undo the
+ *  rewrite. Round-17: the archival commands persist to TWO stores and the .md
+ *  rewrite(s) land FIRST, so a `saveMemoryIndex` that throws afterwards leaves
+ *  the .md and the index disagreeing — and memory-archive's batch path diverges
+ *  N files at once. The whole-plan preflight can't cover this: it runs before any
+ *  write, while this is the complementary POST-write guard.
+ *
+ *  Derives the path through the same containment/symlink guard the writer uses,
+ *  so a snapshot can only ever name a file the writer could legitimately touch. */
+export function snapshotMemoryEntryFile(repoPath: string, entry: MemoryEntry): MemoryFileSnapshot {
+  const canonical = assertWritableMemoryTarget(repoPath, entry);
+  const abs = resolve(join(repoPath, canonical));
+  return { abs, canonical, bytes: existsSync(abs) ? readFileSync(abs) : null };
+}
+
+/** Restore captured .md bytes byte-for-byte. NEVER throws: it returns the
+ *  canonical paths it could NOT restore, so the caller can surface a PARTIAL
+ *  rollback (a real, remaining divergence) instead of hiding it behind the
+ *  original error. A snapshot of a file that did not exist is undone by deleting
+ *  the file the rewrite created. */
+function restoreMemoryEntryFiles(snaps: readonly MemoryFileSnapshot[]): string[] {
+  const failed: string[] = [];
+  for (const s of snaps) {
+    try {
+      if (s.bytes === null) {
+        if (existsSync(s.abs)) rmSync(s.abs);
+      } else {
+        mkdirSync(dirname(s.abs), { recursive: true });
+        writeFileSync(s.abs, s.bytes);
+      }
+    } catch {
+      failed.push(s.canonical);
+    }
+  }
+  return failed;
+}
+
+/** Undo a set of .md rewrites and rethrow `cause` wrapped with rollback context.
+ *  NEVER returns. `context` is the caller's own prefix (e.g.
+ *  `unarchive semantic/p/x: index save failed`). The original error is preserved
+ *  both in the message tail and as `cause`, so nothing is swallowed; a rollback
+ *  that itself failed is called out explicitly as a PARTIAL ROLLBACK. */
+export function rollbackMemoryWrites(
+  context: string,
+  snaps: readonly MemoryFileSnapshot[],
+  cause: unknown,
+): never {
+  const failed = restoreMemoryEntryFiles(snaps);
+  const restored = snaps.length - failed.length;
+  const partial = failed.length
+    ? ` — PARTIAL ROLLBACK: ${failed.length} file(s) could NOT be restored and now disagree with the index: ${failed.join(", ")}`
+    : "";
+  const original = cause instanceof Error ? cause.message : String(cause);
+  throw new Error(
+    `${context} — rolled back ${restored} .md rewrite(s)${partial}: ${original}`,
+    { cause },
+  );
 }
 
 interface PlannedItem {

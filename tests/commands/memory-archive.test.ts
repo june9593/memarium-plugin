@@ -663,4 +663,41 @@ describe("memoryArchiveCmd — round-16 fail-closed guards", () => {
     await memoryArchiveCmd({ cwd: repo, apply: true });
     expect(readIndexStatus("semantic/p/a")).toBe("archived");
   });
+
+  describe("round-17: an UNCOMPARABLE overlay row is SKIPPED, never thrown", () => {
+    it("skips an overlay row with a malformed collection field instead of aborting the unattended run", async () => {
+      // Round-16 promised isOverlayConflict FAILS CLOSED, but the metadata
+      // comparison spread `entities` unconditionally — so an overlay row that is
+      // otherwise IDENTICAL to the local one but carries `entities: {}` threw
+      // "is not iterable". That throw escaped and ABORTED `memory-archive
+      // --apply`, which digest runs automatically with no human in the loop.
+      const warnings: string[] = [];
+      vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+      writeLocal({
+        "semantic/p/ovents": expired("ovents"),
+        "semantic/p/ovsrc": expired("ovsrc"),
+        "semantic/p/ovnone": expired("ovnone"),   // no overlay row → still archivable
+      });
+      const ovEntsMd = readFileSync(join(repo, "memory/semantic/p/ovents.md"), "utf8");
+      writeOverlayRaw(JSON.stringify({
+        version: 1,
+        entries: {
+          // byte-for-byte the local row EXCEPT a non-array `entities` — every
+          // scalar matches, so the comparison reaches the collection compare.
+          "semantic/p/ovents": { ...expired("ovents"), entities: {} },
+          // the shape the finding names literally: a partial row whose only
+          // collection field is a bare string.
+          "semantic/p/ovsrc": { updatedAt: "2026-01-01", sourceSessions: "s1" },
+        },
+      }, null, 2) + "\n");
+
+      await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined(); // no exception escapes
+
+      expect(readIndexStatus("semantic/p/ovents")).toBe("active");   // skipped, not archived
+      expect(readIndexStatus("semantic/p/ovsrc")).toBe("active");    // skipped, not archived
+      expect(readFileSync(join(repo, "memory/semantic/p/ovents.md"), "utf8")).toBe(ovEntsMd); // .md untouched
+      expect(readIndexStatus("semantic/p/ovnone")).toBe("archived"); // healthy id still archives
+      expect(warnings.join("\n")).toMatch(/skipped 2 id\(s\) in a cross-device conflict/);
+    });
+  });
 });

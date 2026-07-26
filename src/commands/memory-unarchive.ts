@@ -1,6 +1,6 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadMemoryIndex, loadMemoryIndexStrict, saveMemoryIndex, type MemoryIndexLoad } from "../memory/index-store.js";
-import { writeMemoryEntryFile, missingRewriteField } from "../memory/apply.js";
+import { writeMemoryEntryFile, missingRewriteField, snapshotMemoryEntryFile, rollbackMemoryWrites } from "../memory/apply.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
 import { isOverlayConflict } from "../memory/overlay-conflict.js";
 import { validEntryExists } from "../memory/lint.js";
@@ -119,9 +119,22 @@ export async function memoryUnarchiveCmd(opts: MemoryUnarchiveOptions): Promise<
     archivedAt: null, archivedReason: null, updatedAt: now,
     ...(pastValidTo ? { validTo: null } : {}),
   };
+  // Capture the .md's CURRENT bytes before touching it, so a failed index save
+  // below can put the file back exactly as it was.
+  const snapshot = snapshotMemoryEntryFile(cfg.repoPath, next);
   writeMemoryEntryFile(cfg.repoPath, next); // guarded canonical-path write (bypasses active-coercion allowlist)
   idx.entries[opts.id] = next;
-  saveMemoryIndex(cfg.repoPath, idx);
+  // Round-17: the .md rewrite above already landed. If saveMemoryIndex now fails,
+  // the .md says active/superseded while the index still says archived — the two
+  // stores silently disagree, and nothing later reconciles them. Undo the rewrite
+  // byte-for-byte and rethrow with context (a rollback that itself fails is named
+  // in the message rather than hidden). Complements — does not replace — the
+  // pre-write validation above.
+  try {
+    saveMemoryIndex(cfg.repoPath, idx);
+  } catch (err) {
+    rollbackMemoryWrites(`unarchive ${opts.id}: index save failed`, [snapshot], err);
+  }
   console.log(
     restoreSuperseded
       ? `restored ${opts.id} to superseded (its replacement is live; was archived as superseded-cleanup)`

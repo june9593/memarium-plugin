@@ -6,7 +6,7 @@ import { loadKnownSessions } from "../memory/known-sessions.js";
 import { validEntryExists } from "../memory/lint.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
 import { isOverlayConflict } from "../memory/overlay-conflict.js";
-import { writeMemoryEntryFile, assertMemoryBodyRecoverable, isRewritableEntry } from "../memory/apply.js";
+import { writeMemoryEntryFile, assertMemoryBodyRecoverable, isRewritableEntry, snapshotMemoryEntryFile, rollbackMemoryWrites } from "../memory/apply.js";
 import type { MemoryEntry } from "../memory/types.js";
 
 export interface MemoryArchiveOptions {
@@ -146,12 +146,32 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   for (const next of planned) assertMemoryBodyRecoverable(cfg.repoPath, next);
 
   // Write phase — every target validated above.
+  //
+  // Round-17: validation up front is not enough on its own. The N .md rewrites
+  // land BEFORE the single saveMemoryIndex, so a failure at (or after) the first
+  // write leaves rewritten files claiming `archived` while the index still says
+  // active — for the batch path, the WHOLE plan diverges at once, unattended
+  // (digest runs this automatically). Capture every target's original bytes
+  // first; on any failure restore all of them byte-for-byte and rethrow with
+  // context. A rollback that itself fails is named as a PARTIAL ROLLBACK rather
+  // than swallowed.
+  const snapshots = planned.map((next) => snapshotMemoryEntryFile(cfg.repoPath, next));
   let archived = 0;
-  for (const next of planned) {
-    writeMemoryEntryFile(cfg.repoPath, next); // guarded canonical-path write (bypasses the active-coercion allowlist)
-    idx.entries[next.id] = next;
-    archived++;
+  try {
+    for (const next of planned) {
+      writeMemoryEntryFile(cfg.repoPath, next); // guarded canonical-path write (bypasses the active-coercion allowlist)
+      idx.entries[next.id] = next;
+      archived++;
+    }
+  } catch (err) {
+    rollbackMemoryWrites("memory-archive: a .md rewrite failed mid-batch", snapshots, err);
   }
-  if (archived > 0) saveMemoryIndex(cfg.repoPath, idx);
+  if (archived > 0) {
+    try {
+      saveMemoryIndex(cfg.repoPath, idx);
+    } catch (err) {
+      rollbackMemoryWrites("memory-archive: index save failed", snapshots, err);
+    }
+  }
   console.log(opts.json ? JSON.stringify({ archived }) : `archived ${archived}`);
 }

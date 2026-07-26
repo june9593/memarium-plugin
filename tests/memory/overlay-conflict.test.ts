@@ -120,3 +120,88 @@ describe("isOverlayConflict — fails CLOSED on an overlay row it cannot compare
     expect(isOverlayConflict(entry({ updatedAt: "2026-05-05" }), entry({ updatedAt: "2026-01-01" }), roots)).toBe(false);
   });
 });
+
+describe("sameMemoryContent — a malformed COLLECTION field is uncomparable, never a throw (round-17)", () => {
+  it("a non-array `entities` on either side is NOT equivalent (and does not throw)", () => {
+    // Round-17: `sameStringSet` spread its arguments (`[...(b ?? [])]`), so a
+    // parseable-but-malformed `entities: {}` threw "is not iterable" instead of
+    // being reported as non-equivalent. The throw escaped isOverlayConflict and
+    // ABORTED the unattended `memory-archive --apply` digest consolidation.
+    for (const bad of [{}, "e1", 42, true]) {
+      expect(() => sameMemoryContent(entry(), { ...entry(), entities: bad } as unknown as MemoryEntry)).not.toThrow();
+      expect(sameMemoryContent(entry(), { ...entry(), entities: bad } as unknown as MemoryEntry)).toBe(false);
+      // …and symmetrically when the LOCAL row is the malformed one.
+      expect(() => sameMemoryContent({ ...entry(), entities: bad } as unknown as MemoryEntry, entry())).not.toThrow();
+      expect(sameMemoryContent({ ...entry(), entities: bad } as unknown as MemoryEntry, entry())).toBe(false);
+    }
+  });
+
+  it("an ABSENT `entities` still compares equal to [] (no new false divergence)", () => {
+    // undefined/null mean "never set" — the renderer emits [] for them — so they
+    // must stay equivalent to an explicit empty array, or every legacy row would
+    // suddenly read as a cross-device conflict.
+    expect(sameMemoryContent(entry(), { ...entry(), entities: undefined } as unknown as MemoryEntry)).toBe(true);
+    expect(sameMemoryContent(entry(), { ...entry(), entities: null } as unknown as MemoryEntry)).toBe(true);
+  });
+
+  it("equal, non-empty `entities` in a DIFFERENT order stay equivalent (regression)", () => {
+    const a = entry({ entities: ["b", "a"] });
+    const b = entry({ entities: ["a", "b"] });
+    expect(sameMemoryContent(a, b)).toBe(true);
+  });
+});
+
+describe("isOverlayConflict — an UNCOMPARABLE overlay row is a CONFLICT, never a throw (round-17)", () => {
+  /** Both trees hold a readable .md with an IDENTICAL body, so the body check
+   *  alone would answer "not a conflict" — the ONLY thing that can flip these to
+   *  `true` is the malformed-field handling under test. */
+  function withBodyRoots(fn: (roots: { local: string; overlay: string }) => void) {
+    const root = mkdtempSync(join(tmpdir(), "vbp-ovl-r17-"));
+    try {
+      for (const tree of ["local", "overlay"]) {
+        const p = join(root, tree, "memory/semantic/p");
+        mkdirSync(p, { recursive: true });
+        writeFileSync(join(p, "x.md"), `---\nid: semantic/p/x\n---\n\n# T\n\nSame body on both devices.\n`);
+      }
+      fn({ local: join(root, "local"), overlay: join(root, "overlay") });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("an overlay row whose `entities` is a non-array object → CONFLICT, no exception", () => {
+    withBodyRoots((roots) => {
+      // control: the SAME row with a well-formed entities is NOT a conflict, so
+      // the `true` below is caused by the malformed field, not the fixture.
+      expect(isOverlayConflict(entry(), entry(), roots)).toBe(false);
+      const overlay = { ...entry(), entities: {} } as unknown;
+      expect(() => isOverlayConflict(entry(), overlay, roots)).not.toThrow();
+      expect(isOverlayConflict(entry(), overlay, roots)).toBe(true);
+    });
+  });
+
+  it("an overlay row whose `sourceSessions` is a bare string → CONFLICT, no exception", () => {
+    withBodyRoots((roots) => {
+      // A structurally corrupt collection field makes the whole row untrustworthy,
+      // even though sourceSessions itself is union-able provenance we don't diff.
+      const partial = { updatedAt: entry().updatedAt, sourceSessions: "s1" } as unknown;
+      expect(() => isOverlayConflict(entry(), partial, roots)).not.toThrow();
+      expect(isOverlayConflict(entry(), partial, roots)).toBe(true);
+      const full = { ...entry(), sourceSessions: "s1" } as unknown;
+      expect(() => isOverlayConflict(entry(), full, roots)).not.toThrow();
+      expect(isOverlayConflict(entry(), full, roots)).toBe(true);
+    });
+  });
+
+  it("an overlay row whose field ACCESS throws is a CONFLICT, not a crash (defensive backstop)", () => {
+    withBodyRoots((roots) => {
+      const row: Record<string, unknown> = { ...entry() };
+      Object.defineProperty(row, "title", {
+        get() { throw new Error("boom: exploding accessor"); },
+        enumerable: true, configurable: true,
+      });
+      expect(() => isOverlayConflict(entry(), row, roots)).not.toThrow();
+      expect(isOverlayConflict(entry(), row, roots)).toBe(true);
+    });
+  });
+});

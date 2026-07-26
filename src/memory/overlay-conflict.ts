@@ -3,12 +3,46 @@ import { join, resolve } from "node:path";
 import { canonicalMemoryPath } from "./gate.js";
 import type { MemoryEntry } from "./types.js";
 
-/** Order-independent equality for a memory's string tags (e.g. `entities`).
- *  A mere reorder between a local row and its aggregated copy is not a divergence. */
-function sameStringSet(a: string[] | undefined, b: string[] | undefined): boolean {
-  const sa = [...(a ?? [])].sort();
-  const sb = [...(b ?? [])].sort();
-  return sa.length === sb.length && sa.every((v, i) => v === sb[i]);
+/** Tri-state comparison for a memory's string-tag collection (e.g. `entities`).
+ *
+ *  Order-independent: a mere reorder between a local row and its aggregated copy
+ *  is not a divergence. `undefined`/`null` mean "never set" (the renderer emits
+ *  `[]` for them), so they compare EQUAL to an explicit empty array — otherwise
+ *  every legacy row would read as a cross-device conflict.
+ *
+ *  Anything else that is not an ARRAY is `"uncomparable"`. Round-17: this used to
+ *  spread its arguments unconditionally (`[...(b ?? [])]`), so a parseable but
+ *  malformed row like `{ updatedAt, entities: {} }` THREW "is not iterable"
+ *  rather than being reported as non-equivalent — and the throw escaped
+ *  `isOverlayConflict`, aborting the unattended `memory-archive --apply` digest
+ *  consolidation instead of being handled as a conflict. */
+type SetCmp = "same" | "different" | "uncomparable";
+
+function compareStringSet(a: unknown, b: unknown): SetCmp {
+  const norm = (v: unknown): unknown[] | null => {
+    if (v === undefined || v === null) return []; // unset ≡ empty
+    if (!Array.isArray(v)) return null;           // present but not a collection → uncomparable
+    return [...v].sort();
+  };
+  const sa = norm(a);
+  const sb = norm(b);
+  if (sa === null || sb === null) return "uncomparable";
+  return sa.length === sb.length && sa.every((v, i) => v === sb[i]) ? "same" : "different";
+}
+
+/** Collection fields a well-formed memory row must carry as arrays (or leave
+ *  unset). A row with, say, `sourceSessions: "s1"` is structurally corrupt: even
+ *  though we deliberately do NOT diff union-able provenance, we cannot trust ANY
+ *  comparison against a row whose shape is wrong, so the caller fails closed. */
+const COLLECTION_FIELDS = ["entities", "sourceSessions", "sourceCommits", "sourceFiles"] as const;
+
+/** True when EVERY collection field on the row is absent or a real array. */
+function hasWellFormedCollections(row: unknown): boolean {
+  const r = row as Record<string, unknown>;
+  return COLLECTION_FIELDS.every((f) => {
+    const v = r[f];
+    return v === undefined || v === null || Array.isArray(v);
+  });
 }
 
 /** True when two copies of the same memory id have SUBSTANTIVELY equivalent
@@ -32,6 +66,10 @@ function sameStringSet(a: string[] | undefined, b: string[] | undefined): boolea
  *  active-vs-superseded FROM `archivedReason`, so treating them as equivalent
  *  would let archival/unarchival clobber the sibling's lifecycle state.
  *
+ *  NEVER THROWS on a malformed field: an UNCOMPARABLE `entities` yields `false`
+ *  ("not established as equivalent"), which every caller already treats as
+ *  divergence — the fail-closed answer.
+ *
  *  NOTE: this is a metadata-only comparison. The Markdown BODY is compared
  *  separately (it lives in the .md, not the index) by `isOverlayConflict`, which
  *  reads both trees' files — so a body-only sibling edit is still caught. */
@@ -52,7 +90,7 @@ export function sameMemoryContent(a: MemoryEntry, b: MemoryEntry): boolean {
     a.scope === b.scope &&
     (a.project ?? null) === (b.project ?? null) &&
     (a.trust ?? "unknown") === (b.trust ?? "unknown") &&
-    sameStringSet(a.entities, b.entities)
+    compareStringSet(a.entities, b.entities) === "same"
   );
 }
 
@@ -102,18 +140,28 @@ export interface ConflictRoots {
  *
  *   - overlay row genuinely ABSENT (undefined/null) → NOT a conflict. This is the
  *     normal local-only path: there is no sibling copy to clobber.
- *   - overlay row PRESENT but UNCOMPARABLE (not a non-null non-array object, or
- *     no usable string `updatedAt`) → CONFLICT. Round-16: this used to return
- *     false, and a missing `updatedAt` compared as `""` — i.e. "strictly older,
- *     local wins" — so archive/unarchive would restamp the local copy even though
- *     the sibling's state was never actually compared. That is exactly the
- *     clobbering write this guard exists to prevent.
+ *   - overlay row PRESENT but UNCOMPARABLE (not a non-null non-array object, no
+ *     usable string `updatedAt`, a MALFORMED COLLECTION field, or any field whose
+ *     comparison throws) → CONFLICT. Round-16: this used to return false, and a
+ *     missing `updatedAt` compared as `""` — i.e. "strictly older, local wins" —
+ *     so archive/unarchive would restamp the local copy even though the sibling's
+ *     state was never actually compared. That is exactly the clobbering write this
+ *     guard exists to prevent.
  *   - overlay strictly NEWER updatedAt → conflict (a newer remote edit; clobber risk).
  *   - overlay strictly OLDER updatedAt → NOT a conflict (local wins).
  *   - EQUAL updatedAt → conflict IFF the copies substantively DIVERGE: any
  *     metadata field (`sameMemoryContent`) OR the Markdown BODY differs. Reading
  *     either body fails → treated as divergent (safe default). An equivalent
- *     already-synced copy (identical metadata AND body) is NOT a conflict. */
+ *     already-synced copy (identical metadata AND body) is NOT a conflict.
+ *
+ *  Round-17: this function must also NEVER THROW. It runs inside the automatic
+ *  `memory-archive --apply` consolidation at the end of a digest — unattended —
+ *  so an exception here doesn't "fail closed", it ABORTS the whole run. A
+ *  parseable-but-malformed overlay row (e.g. `{ updatedAt, entities: {} }`) used
+ *  to do exactly that. Malformed shapes are now validated EXPLICITLY (above), and
+ *  the whole comparison is additionally wrapped in a defensive catch that
+ *  converts any residual throw into `true` (conflict) — a skipped id, never a
+ *  crashed run. */
 export function isOverlayConflict(
   local: MemoryEntry,
   overlay: unknown,
@@ -123,9 +171,24 @@ export function isOverlayConflict(
   if (overlay === undefined || overlay === null) return false;
   // Present but not a usable row → we cannot compare state, so refuse the write.
   if (typeof overlay !== "object" || Array.isArray(overlay)) return true;
-  const ov = overlay as MemoryEntry;
+  try {
+    return divergesFromOverlay(local, overlay as MemoryEntry, roots);
+  } catch {
+    // Backstop for anything the explicit validation above didn't anticipate
+    // (an exploding accessor, a proxy, a future field type). Uncomparable →
+    // CONFLICT: skip this id rather than let the exception abort the run.
+    return true;
+  }
+}
+
+/** The comparison proper; only ever called with a non-null, non-array object
+ *  overlay row. May throw — `isOverlayConflict` converts that into a conflict. */
+function divergesFromOverlay(local: MemoryEntry, ov: MemoryEntry, roots: ConflictRoots): boolean {
   const ovUpdated = ov.updatedAt;
   if (typeof ovUpdated !== "string" || ovUpdated === "") return true; // uncomparable → conflict
+  // A row whose collection fields aren't arrays is structurally corrupt; no
+  // comparison against it can be trusted, so fail closed rather than diff it.
+  if (!hasWellFormedCollections(ov) || !hasWellFormedCollections(local)) return true;
   const localUpdated = typeof local.updatedAt === "string" ? local.updatedAt : "";
   if (ovUpdated > localUpdated) return true;   // strictly-newer remote edit → clobber risk
   if (ovUpdated < localUpdated) return false;  // strictly-older → local authoritative

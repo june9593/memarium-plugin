@@ -404,4 +404,41 @@ describe("memoryUnarchiveCmd — round-16 fail-closed guards", () => {
     await memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo });
     expect(readIndexStatus("semantic/p/c")).toBe("active");
   });
+
+  describe("round-17: an UNCOMPARABLE overlay row REFUSES, never throws a raw TypeError", () => {
+    it("refuses (controlled message, nothing written) when the overlay row's `entities` is not an array", async () => {
+      seed();
+      const local = readIndex().entries["semantic/p/c"];
+      const idxBefore = readFileSync(idxPath(), "utf8");
+      const mdBefore = readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8");
+      // Otherwise byte-for-byte the local row, so every scalar matches and the
+      // comparison reaches the collection compare — which used to throw
+      // "entities is not iterable" straight out of the command.
+      writeOverlayRaw(JSON.stringify({
+        version: 1, entries: { "semantic/p/c": { ...local, entities: {} } },
+      }, null, 2) + "\n");
+
+      await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }))
+        .rejects.toThrow(/newer\/divergent copy exists|resolve there/i);
+      await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }))
+        .rejects.not.toThrow(/is not iterable/i);
+
+      expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+      expect(readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8")).toBe(mdBefore);
+      expect(readIndexStatus("semantic/p/c")).toBe("archived");
+    });
+
+    it("refuses when the overlay row is a partial row whose `sourceSessions` is a bare string", async () => {
+      seed();
+      const idxBefore = readFileSync(idxPath(), "utf8");
+      writeOverlayRaw(JSON.stringify({
+        version: 1, entries: { "semantic/p/c": { updatedAt: "2026-01-01", sourceSessions: "s1" } },
+      }, null, 2) + "\n");
+
+      await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }))
+        .rejects.toThrow(/newer\/divergent copy exists|resolve there/i);
+      expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+      expect(readIndexStatus("semantic/p/c")).toBe("archived");
+    });
+  });
 });
