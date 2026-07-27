@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, symlinkSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { memoryArchiveCmd } from "../../src/commands/memory-archive.js";
@@ -972,5 +972,105 @@ describe("memoryArchiveCmd — round-27: a row whose `status` is not a MemoryEnt
     expect(readIndexStatus("semantic/p/sup")).toBe("archived");     // superseded is archivable too
     expect(readIndexStatus("semantic/p/pin")).toBe("pinned");       // protected, not skipped-as-malformed
     expect(readIndexStatus("semantic/p/arc")).toBe("archived");     // idempotent
+  });
+});
+
+describe("memoryArchiveCmd — round-32 (SECURITY): an id that FORGES frontmatter", () => {
+  // Round-32: the rewrite gate validated only the id's FINAL SLUG SEGMENT, so a
+  // KEY-CONSISTENT row whose id carried a NEWLINE in an earlier segment —
+  // `semantic/p\nforged: value/safe` — passed, got PLANNED, and reached the
+  // automatic rewrite path. `renderMemoryMarkdown` writes `id: ${entry.id}` into
+  // YAML frontmatter, which is LINE-ORIENTED, so the newline FORGES ADDITIONAL
+  // FRONTMATTER LINES in the written .md (`status: active` would silently
+  // UN-ARCHIVE the entry). This runs unattended from digest consolidation. The
+  // gate now validates the FULL id via the shared `isSafeMemoryId`, so such a row
+  // is SKIPPED and COUNTED like every other malformed-row class — the run must
+  // neither throw nor write anything for it.
+  const base = {
+    confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+    supersedes: null, entities: [] as string[], trust: "trusted" as const, originDevice: null,
+    accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+  };
+  /** An expired (therefore archivable) row filed under its OWN id, so
+   *  `validEntryExists` waves it through and only the id gate can reject it. */
+  const expired = (key: string, over: Record<string, unknown> = {}) => ({
+    id: key, type: "semantic", scope: "project:p", project: "p",
+    title: "a fact", summary: "s", path: "", status: "active",
+    validTo: "2000-01-01", ...base, ...over,
+  });
+  const md = (id: string) =>
+    `---\nid: ${id}\ntype: semantic\nstatus: active\n---\n\n# a fact\n\nThe real body of ${id}.\n`;
+
+  /** Every .md now under memory/, as raw text. */
+  function allWrittenMd(): string[] {
+    const outp: string[] = [];
+    const walk = (dir: string): void => {
+      for (const name of readdirSync(dir)) {
+        const abs = join(dir, name);
+        if (statSync(abs).isDirectory()) walk(abs);
+        else if (name.endsWith(".md")) outp.push(readFileSync(abs, "utf8"));
+      }
+    };
+    walk(join(repo, "memory"));
+    return outp;
+  }
+
+  it("SKIPS + COUNTS a newline-bearing and a metacharacter-bearing id; the healthy row still archives; nothing throws", async () => {
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    // THE PAYLOAD: the final segment ("safe") is innocuous, so the OLD slug-only
+    // check accepted it — while `id: semantic/p` + `forged: value/safe` would be
+    // written as TWO frontmatter lines.
+    const FORGED_ID = "semantic/p\nforged: value/safe";
+    const SPACED_ID = "semantic/p q/safe";
+    const entries: Record<string, unknown> = {
+      "semantic/p/good": expired("semantic/p/good", { path: "memory/semantic/p/good.md" }),
+      [FORGED_ID]: expired(FORGED_ID),
+      [SPACED_ID]: expired(SPACED_ID),
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    writeFileSync(join(repo, "memory/semantic/p/good.md"), md("semantic/p/good"));
+    const forgedBefore = JSON.parse(JSON.stringify(entries[FORGED_ID]));
+    const spacedBefore = JSON.parse(JSON.stringify(entries[SPACED_ID]));
+
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
+
+    // the healthy row still archives normally (index + .md both stamped)
+    expect(readIndexStatus("semantic/p/good")).toBe("archived");
+    expect(readMdField("semantic/p/good.md", "status")).toBe("archived");
+    // the poisoned rows are untouched in the index and counted in the warning
+    expect(readIndex().entries[FORGED_ID]).toEqual(forgedBefore);
+    expect(readIndex().entries[SPACED_ID]).toEqual(spacedBefore);
+    expect(warnings.join("\n")).toMatch(/skipped 2 malformed index row\(s\)/);
+    // NO forged frontmatter key anywhere on disk, and no extra .md was created
+    const written = allWrittenMd();
+    expect(written.length).toBe(1);
+    for (const doc of written) {
+      expect(doc).not.toMatch(/^forged:/m);
+      expect(doc).not.toContain("forged");
+      // the only id line is the healthy one
+      expect(doc.match(/^id: .*$/gm)).toEqual(["id: semantic/p/good"]);
+    }
+    // the poisoned rows' would-be canonical target was never written
+    expect(existsSync(join(repo, "memory/semantic/p/safe.md"))).toBe(false);
+    expect(existsSync(join(repo, "memory/semantic/p q"))).toBe(false);
+  });
+
+  it("normal ids are unaffected (regression lock)", async () => {
+    const entries: Record<string, unknown> = {
+      "semantic/my.proj-1/a.b-c": expired("semantic/my.proj-1/a.b-c", {
+        project: "my.proj-1", path: "memory/semantic/my.proj-1/a.b-c.md",
+      }),
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/my.proj-1"), { recursive: true });
+    writeFileSync(join(repo, "memory/semantic/my.proj-1/a.b-c.md"), md("semantic/my.proj-1/a.b-c"));
+
+    await memoryArchiveCmd({ cwd: repo, apply: true });
+
+    expect(readIndexStatus("semantic/my.proj-1/a.b-c")).toBe("archived");
+    expect(readMdField("semantic/my.proj-1/a.b-c.md", "status")).toBe("archived");
   });
 });

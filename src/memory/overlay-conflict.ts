@@ -241,6 +241,14 @@ function divergesFromOverlay(local: MemoryEntry, ov: MemoryEntry, roots: Conflic
   // EDIT is caught. Ordering them by instant instead would read the day-only side
   // as 00:00Z and call every same-day timestamped copy a "newer remote edit",
   // blocking archival for that id forever on a difference that isn't one.
+  //
+  // Round-32: day granularity is a CROSS-SURFACE CONTRACT. This write guard, the
+  // READ merge (`mergeIndexById`, source-resolver.ts) and the LIFECYCLE WRITERS
+  // (memory-archive / memory-unarchive / the supersede transition, which only
+  // ever stamp a DAY) agree on it BY DESIGN — a future change to one must change
+  // all three, or the read view and the write guard disagree about which copy is
+  // authoritative (round-31 ordered the read merge by INSTANT and reintroduced
+  // exactly that skew).
   const ovDay = calendarDate(ov.updatedAt);
   const localDay = calendarDate(local.updatedAt);
   if (ovDay !== localDay) return ovMs > localMs; // newer UTC day → conflict; earlier → local authoritative

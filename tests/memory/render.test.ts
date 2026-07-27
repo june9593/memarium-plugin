@@ -91,3 +91,56 @@ describe("trust round-trip + legacy derivation (#23)", () => {
     expect(parseMemoryMarkdown(md)?.trust).toBe("unknown");
   });
 });
+
+describe("renderMemoryMarkdown — round-32 (SECURITY): frontmatter is LINE-ORIENTED", () => {
+  // Defense in depth for the round-32 gate fix. YAML frontmatter here is emitted
+  // as plain `key: value` LINES, so a CONTROL CHARACTER — above all a NEWLINE —
+  // inside a scalar emits EXTRA lines that `parseMemoryMarkdown` reads back as
+  // REAL FIELDS. A crafted id like `semantic/p\nstatus: active` therefore FORGES
+  // frontmatter (e.g. silently un-archiving an entry). The archival rewrite gate
+  // now rejects such a row before it can get here, but the renderer is the
+  // serialization boundary EVERY caller shares — `applyMemoryItems`
+  // (memory-write / memory-approve) derives the .md path from the id's SLUG and
+  // never validated the whole id either — so it refuses on its own too.
+  //
+  // SCOPE: the IDENTIFIER-ish scalars only — id / type / scope / status /
+  // project. Those are schema-constrained (an id is `<type>/<project>/<slug>`, a
+  // status is one of four literals, a project is a single path segment), so a
+  // control character in them is always corruption. `title` / `summary` are free
+  // prose and are deliberately NOT touched: refusing or rewriting them would
+  // change behavior for legitimate authored content.
+  const IDENT_FIELDS = ["id", "type", "scope", "status", "project"] as const;
+
+  it("refuses a NEWLINE in any identifier field instead of forging a frontmatter line", () => {
+    for (const field of IDENT_FIELDS) {
+      const poisoned = entry({ [field]: `${String(entry()[field])}\nforged: value` } as Partial<MemoryEntry>);
+      expect(() => renderMemoryMarkdown(poisoned, "body")).toThrow(/control character|refusing/i);
+    }
+  });
+
+  it("refuses CR / NUL / other control characters too (character-class rule, not just \\n)", () => {
+    for (const ch of ["\r", "\u0000", "\u0007", "\u001f", "\u007f"]) {
+      expect(() => renderMemoryMarkdown(entry({ id: `semantic/p${ch}x/y` }), "body")).toThrow(/control character|refusing/i);
+    }
+  });
+
+  it("the forged line never reaches the document — nothing is emitted at all", () => {
+    const poisoned = entry({ id: "semantic/p\nstatus: active/safe" });
+    let md: string | null = null;
+    try { md = renderMemoryMarkdown(poisoned, "body"); } catch { md = null; }
+    expect(md).toBeNull(); // refused outright — no document, so no forged key
+  });
+
+  it("legitimate entries — multi-line BODY, dotted segments, null project — still render (regression lock)", () => {
+    const md = renderMemoryMarkdown(
+      entry({ project: "my.proj-1", id: "semantic/my.proj-1/a.b-c" }),
+      "line 1\nline 2\n\nline 3",
+    );
+    expect(md).toContain("id: semantic/my.proj-1/a.b-c");
+    expect(md).toContain("project: my.proj-1");
+    expect(md).toContain("line 1\nline 2");
+    expect(parseMemoryMarkdown(md)?.id).toBe("semantic/my.proj-1/a.b-c");
+    // a null project (global entries) still serializes as the YAML literal null
+    expect(renderMemoryMarkdown(entry({ project: null }), "b")).toContain("project: null");
+  });
+});

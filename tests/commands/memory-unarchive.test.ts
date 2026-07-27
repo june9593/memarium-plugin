@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { memoryUnarchiveCmd } from "../../src/commands/memory-unarchive.js";
@@ -765,5 +765,49 @@ describe("memoryUnarchiveCmd — archived-then-superseded restores to superseded
     expect(readMdField("semantic/p/old.md", "status")).toBe("superseded");
     expect(readIndexStatus("semantic/p/new")).toBe("active"); // replacement stays live
     expect(out.join("\n")).toMatch(/to superseded/);
+  });
+});
+
+describe("memoryUnarchiveCmd — round-32 (SECURITY): an id that FORGES frontmatter", () => {
+  // Mirror of the archive-side gate fix. The rewrite gate validated only the id's
+  // FINAL SLUG SEGMENT, so a key-consistent archived row whose id carried a
+  // NEWLINE (`semantic/p\nforged: value/safe`) passed and reached the rewriter,
+  // where `id: ${entry.id}` in the LINE-ORIENTED frontmatter forges extra fields.
+  // Unarchive must ABORT that one id — naming the defect — and write nothing.
+  const base = {
+    confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    validFrom: null, validTo: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+    supersedes: null, entities: [] as string[], trust: "trusted" as const, originDevice: null,
+    accessCount: 0, lastAccess: null,
+  };
+  const archived = (key: string) => ({
+    id: key, type: "semantic", scope: "project:p", project: "p",
+    title: "a fact", summary: "s", path: "", status: "archived",
+    archivedAt: "2026-05-01", archivedReason: "expired", ...base,
+  });
+
+  it("ABORTS on a newline-bearing id, naming the defect, and writes nothing", async () => {
+    const FORGED_ID = "semantic/p\nforged: value/safe";
+    const entries: Record<string, unknown> = { [FORGED_ID]: archived(FORGED_ID) };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    const idxBefore = readFileSync(idxPath(), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: FORGED_ID, cwd: repo })).rejects.toThrow(/refusing to unarchive/);
+    await expect(memoryUnarchiveCmd({ id: FORGED_ID, cwd: repo })).rejects.toThrow(/unsafe id/);
+
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);      // index byte-identical
+    expect(existsSync(join(repo, "memory/semantic/p/safe.md"))).toBe(false); // no .md forged
+  });
+
+  it("ABORTS on a whitespace/metacharacter id too", async () => {
+    const SPACED_ID = "semantic/p q/safe";
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries: { [SPACED_ID]: archived(SPACED_ID) } }, null, 2) + "\n");
+    await expect(memoryUnarchiveCmd({ id: SPACED_ID, cwd: repo })).rejects.toThrow(/unsafe id/);
+  });
+
+  it("a normal archived id still restores (regression lock)", async () => {
+    seed();
+    await memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo });
+    expect(readIndexStatus("semantic/p/c")).toBe("active");
   });
 });

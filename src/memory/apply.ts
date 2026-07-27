@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join, resolve, sep } from "node:path";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "./index-store.js";
 import { renderMemoryMarkdown } from "./render.js";
-import { canonicalMemoryPath, isSafePathSegment, supersedesId } from "./gate.js";
+import { canonicalMemoryPath, isSafeMemoryId, isSafePathSegment, supersedesId } from "./gate.js";
 import { calendarDate } from "./dates.js";
 import { assertNoBlockingLeak } from "./leak-scan.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
@@ -215,8 +215,23 @@ export function missingRewriteField(entry: MemoryEntry): string | null {
   // canonicalMemoryPath's own segment rules so we can NAME the bad ingredient
   // instead of surfacing its raw throw.
   if (!isSafePathSegment((e.project as string | null) ?? "_global")) return "unsafe project segment";
-  const id = e.id as string;
-  if (!isSafePathSegment(id.split("/").pop() ?? id)) return "unsafe id segment";
+  // Round-32 (SECURITY): validate the WHOLE id, not just its final slug segment.
+  // The slug-only check let a KEY-CONSISTENT row like
+  // `id: "semantic/p\nforged: value/safe"` through — its last segment ("safe") is
+  // innocuous — and the row then reached the AUTOMATIC rewrite path, where
+  // `renderMemoryMarkdown` writes `id: ${entry.id}` into YAML frontmatter. That
+  // block is LINE-ORIENTED, so a newline in the id FORGES ADDITIONAL FRONTMATTER
+  // LINES in the written .md (a forged `status: active` silently UN-ARCHIVES an
+  // entry; any other field can be forged the same way). Memory content is
+  // digested from sessions, so a poisoned id is squarely in this project's threat
+  // model — and this path runs unattended from digest consolidation.
+  //
+  // Reuse `isSafeMemoryId` (round-28's allowlist: `[A-Za-z0-9._-]` segments
+  // joined by `/`, no whitespace, no shell metacharacters, no traversal,
+  // length-capped) rather than write a second predicate, so the RENDER/hint-side
+  // and WRITE-side notions of a safe id cannot drift apart. It subsumes the old
+  // per-slug `isSafePathSegment` check (it applies that rule to EVERY segment).
+  if (!isSafeMemoryId(e.id)) return "unsafe id";
   let canonical: string;
   try {
     canonical = canonicalMemoryPath(entry);
