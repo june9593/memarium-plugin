@@ -15264,11 +15264,25 @@ function inScope(e, project) {
   if (project && e.scope === `project:${project}`) return true;
   return project === null;
 }
+function resolveColdOrigin(entries, sources) {
+  const keyOf = /* @__PURE__ */ new Map();
+  for (const [key, e] of Object.entries(entries)) {
+    if (!e || typeof e !== "object") continue;
+    keyOf.set(e, keyOf.has(e) ? null : key);
+  }
+  return (e) => {
+    const key = keyOf.get(e);
+    if (key == null) return "unknown";
+    const src = sources[key];
+    return src === "local" || src === "overlay" ? src : "unknown";
+  };
+}
 function runColdPass({ entries, scored, query, sources }) {
   if (query.text.trim() === "") return [];
   const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
   if (strongPrimary >= COLD_FLOOR) return [];
-  return scoreArchived(entries, query).filter((s) => isResurrectable(s.entry)).filter((s) => inScope(s.entry, query.project)).filter((s) => !query.type || s.entry.type === query.type).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => ({
+  const originOf = resolveColdOrigin(entries, sources);
+  return scoreArchived(Object.values(entries), query).filter((s) => isResurrectable(s.entry)).filter((s) => inScope(s.entry, query.project)).filter((s) => !query.type || s.entry.type === query.type).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => ({
     id: s.entry.id,
     title: s.entry.title,
     score: s.score,
@@ -15276,8 +15290,9 @@ function runColdPass({ entries, scored, query, sources }) {
     // Origin decides which restore hint is honest: a `local` cold hit lives
     // in THIS device's index (memory-unarchive works); an `overlay` hit is
     // a sibling device's archived memory that memory-unarchive (local-only)
-    // can't touch, so we point the user at its origin device instead.
-    source: sources[s.entry.id] ?? "local",
+    // can't touch, so we point the user at its origin device instead; an
+    // `unknown` origin gets the generic instruction rather than a guess.
+    source: originOf(s.entry),
     originDevice: s.entry.originDevice ?? null,
     // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
     // surfaced indistinguishably from a trusted fact. Same rule the primary
@@ -15286,11 +15301,12 @@ function runColdPass({ entries, scored, query, sources }) {
   }));
 }
 function coldRestoreInstruction(c3) {
+  if (c3.source === "local") return `memory-unarchive ${c3.id} to restore`;
   if (c3.source === "overlay") {
     const dev = c3.originDevice ? `device ${c3.originDevice}` : "another device";
     return `archived on ${dev}; restore it there`;
   }
-  return `memory-unarchive ${c3.id} to restore`;
+  return "origin unknown; restore it on the device that archived it";
 }
 function renderColdHints(coldStorage) {
   if (!coldStorage.length) return [];
@@ -15305,14 +15321,18 @@ function renderColdHints(coldStorage) {
 function renderColdNextStep(coldStorage) {
   if (!coldStorage.length) return "";
   const head = "No ACTIVE memory matched, but archived entries did \u2014 see coldStorage";
-  const overlay = coldStorage.filter((c3) => c3.source === "overlay");
-  if (!overlay.length) return `${head} (memory-unarchive <id> to restore).`;
-  if (overlay.length < coldStorage.length) {
+  const local = coldStorage.filter((c3) => c3.source === "local");
+  if (local.length === coldStorage.length) return `${head} (memory-unarchive <id> to restore).`;
+  if (local.length > 0) {
     return `${head}; each hit carries its own restore path (local hits: memory-unarchive <id>; the rest: restore on their origin device).`;
   }
-  const devices = [...new Set(overlay.map((c3) => c3.originDevice).filter((d) => !!d))];
-  const tail = devices.length === 1 ? `archived on device ${devices[0]}; restore it there` : "each is archived on another device; restore it there";
-  return `${head} \u2014 ${tail} (memory-unarchive is local-only).`;
+  const overlay = coldStorage.filter((c3) => c3.source === "overlay");
+  if (overlay.length === coldStorage.length) {
+    const devices = [...new Set(overlay.map((c3) => c3.originDevice).filter((d) => !!d))];
+    const tail = devices.length === 1 ? `archived on device ${devices[0]}; restore it there` : "each is archived on another device; restore it there";
+    return `${head} \u2014 ${tail} (memory-unarchive is local-only).`;
+  }
+  return `${head} \u2014 restore each on the device that archived it (memory-unarchive is local-only).`;
 }
 var CONTENT_HIT_MARKERS, isContentHitReason, isContentHit, COLD_FLOOR, COLD_TOP_K, COLD_SCORE_FLOOR, NON_RESURRECTABLE_REASONS, isResurrectable;
 var init_cold_pass = __esm({
@@ -15368,7 +15388,7 @@ async function memoryQueryCmd(opts) {
   const semanticAll = byType("semantic");
   const isTrusted = (s) => (s.entry.trust ?? "unknown") === "trusted";
   const coldStorage = runColdPass({
-    entries,
+    entries: view.entries,
     scored,
     query: scoreQuery,
     sources: view.sources
@@ -16982,7 +17002,7 @@ function hasWellFormedCollections(row) {
   });
 }
 function sameMemoryContent(a, b2) {
-  return a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && a.createdAt === b2.createdAt && (a.validTo ?? null) === (b2.validTo ?? null) && (a.validFrom ?? null) === (b2.validFrom ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && (a.archivedReason ?? null) === (b2.archivedReason ?? null) && (a.archivedAt ?? null) === (b2.archivedAt ?? null) && a.type === b2.type && a.scope === b2.scope && (a.project ?? null) === (b2.project ?? null) && (a.trust ?? "unknown") === (b2.trust ?? "unknown") && compareStringSet(a.entities, b2.entities) === "same";
+  return a.id === b2.id && a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && a.createdAt === b2.createdAt && (a.validTo ?? null) === (b2.validTo ?? null) && (a.validFrom ?? null) === (b2.validFrom ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && (a.archivedReason ?? null) === (b2.archivedReason ?? null) && (a.archivedAt ?? null) === (b2.archivedAt ?? null) && a.type === b2.type && a.scope === b2.scope && (a.project ?? null) === (b2.project ?? null) && (a.trust ?? "unknown") === (b2.trust ?? "unknown") && compareStringSet(a.entities, b2.entities) === "same";
 }
 function extractBody(md) {
   const norm = md.replace(/\r\n/g, "\n");
@@ -16991,11 +17011,17 @@ function extractBody(md) {
   if (!/^\n*# [^\n]*/.test(afterFm)) return null;
   return afterFm.replace(/^\n*# [^\n]*\n*/, "").replace(/\n+$/, "");
 }
-function readCanonicalBody(root, entry) {
-  if (!root) return null;
+function canonicalRel(entry) {
   try {
-    const abs = resolve8(join24(root, canonicalMemoryPath(entry)));
-    return extractBody(readFileSync22(abs, "utf8"));
+    return canonicalMemoryPath(entry);
+  } catch {
+    return null;
+  }
+}
+function readBodyAt(root, rel) {
+  if (!root || !rel) return null;
+  try {
+    return extractBody(readFileSync22(resolve8(join24(root, rel)), "utf8"));
   } catch {
     return null;
   }
@@ -17017,8 +17043,11 @@ function divergesFromOverlay(local, ov, roots) {
   if (ovUpdated > localUpdated) return true;
   if (ovUpdated < localUpdated) return false;
   if (!sameMemoryContent(local, ov)) return true;
-  const localBody = readCanonicalBody(roots.local, local);
-  const overlayBody = readCanonicalBody(roots.overlay, ov);
+  const localRel = canonicalRel(local);
+  const overlayRel = canonicalRel(ov);
+  if (localRel === null || overlayRel === null || localRel !== overlayRel) return true;
+  const localBody = readBodyAt(roots.local, localRel);
+  const overlayBody = readBodyAt(roots.overlay, overlayRel);
   if (localBody === null || overlayBody === null) return true;
   return localBody !== overlayBody;
 }
@@ -17495,7 +17524,7 @@ function buildRecallPayload(opts = {}) {
   const query = (opts.q ?? "").trim();
   const scoreQuery = { project: projectFilter, text: query, type: null, now };
   const scored = scoreMemories(entries, scoreQuery);
-  const coldStorage = runColdPass({ entries, scored, query: scoreQuery, sources: view.sources });
+  const coldStorage = runColdPass({ entries: view.entries, scored, query: scoreQuery, sources: view.sources });
   const limit = opts.limit && opts.limit > 0 ? opts.limit : DEFAULT_LIMIT;
   const hits = scored.slice(0, limit).map((s) => ({
     id: s.entry.id,
