@@ -14982,6 +14982,26 @@ var init_memory_write = __esm({
   }
 });
 
+// src/_shared/frontmatter.ts
+function readFrontmatterBlock(md) {
+  const m = md.replace(/\r\n/g, "\n").match(/^---\n([\s\S]*?)\n---/);
+  if (!m) return null;
+  const fm = /* @__PURE__ */ Object.create(null);
+  for (const line3 of m[1].split("\n")) {
+    const i2 = line3.indexOf(":");
+    if (i2 === -1) continue;
+    const key = line3.slice(0, i2).trim();
+    if (key in fm) return null;
+    fm[key] = line3.slice(i2 + 1).trim();
+  }
+  return fm;
+}
+var init_frontmatter = __esm({
+  "src/_shared/frontmatter.ts"() {
+    "use strict";
+  }
+});
+
 // src/memory/parse.ts
 function parseArr(v) {
   const t2 = (v ?? "").trim();
@@ -15012,17 +15032,8 @@ function deriveLegacyTrust(sourceSessions, sourceCommits, scope, project) {
   return ownProvenance && projectScoped ? "trusted" : "unknown";
 }
 function parseMemoryMarkdown(md) {
-  md = md.replace(/\r\n/g, "\n");
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  const fm = /* @__PURE__ */ Object.create(null);
-  for (const line3 of m[1].split("\n")) {
-    const i2 = line3.indexOf(":");
-    if (i2 === -1) continue;
-    const key = line3.slice(0, i2).trim();
-    if (key in fm) continue;
-    fm[key] = line3.slice(i2 + 1).trim();
-  }
+  const fm = readFrontmatterBlock(md);
+  if (!fm) return null;
   if (!fm.id || !fm.type) return null;
   const scope = fm.scope;
   const project = parseScalar(fm.project);
@@ -15063,6 +15074,7 @@ function parseMemoryMarkdown(md) {
 var init_parse = __esm({
   "src/memory/parse.ts"() {
     "use strict";
+    init_frontmatter();
   }
 });
 
@@ -15113,6 +15125,7 @@ async function memoryIndexCmd() {
   const idx = emptyMemoryIndex();
   let indexed = 0;
   let healed = 0;
+  let skipped = 0;
   assertNoSymlinkedComponent(cfg.repoPath, memRoot, "memory-index");
   if (existsSync13(memRoot)) {
     for (const abs of walkMd(memRoot)) {
@@ -15126,14 +15139,17 @@ async function memoryIndexCmd() {
         healed++;
       }
       const entry = parseMemoryMarkdown(md);
-      if (!entry) continue;
+      if (!entry) {
+        skipped++;
+        continue;
+      }
       entry.path = relative2(cfg.repoPath, abs);
       upsertMemory(idx, entry);
       indexed++;
     }
   }
   saveMemoryIndex(cfg.repoPath, idx);
-  return { indexed, healed };
+  return { indexed, healed, skipped };
 }
 var init_memory_index = __esm({
   "src/commands/memory-index.ts"() {
@@ -15887,17 +15903,8 @@ function parseDate2(v) {
   return t2 === "undefined" || t2 === "null" ? "" : t2;
 }
 function parseEntityMarkdown(md) {
-  md = md.replace(/\r\n/g, "\n");
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  const fm = /* @__PURE__ */ Object.create(null);
-  for (const line3 of m[1].split("\n")) {
-    const i2 = line3.indexOf(":");
-    if (i2 === -1) continue;
-    const key = line3.slice(0, i2).trim();
-    if (key in fm) continue;
-    fm[key] = line3.slice(i2 + 1).trim();
-  }
+  const fm = readFrontmatterBlock(md);
+  if (!fm) return null;
   if (!fm.id || !fm.kind) return null;
   return {
     id: fm.id,
@@ -15919,6 +15926,7 @@ function parseEntityMarkdown(md) {
 var init_parse2 = __esm({
   "src/entity/parse.ts"() {
     "use strict";
+    init_frontmatter();
   }
 });
 
@@ -15954,6 +15962,7 @@ async function entityIndexCmd() {
   const idx = emptyEntityIndex();
   let indexed = 0;
   let healed = 0;
+  let skipped = 0;
   assertNoSymlinkedComponent(cfg.repoPath, entitiesRoot, "entity-index");
   if (existsSync17(entitiesRoot)) {
     for (const abs of walkMd2(entitiesRoot)) {
@@ -15966,14 +15975,17 @@ async function entityIndexCmd() {
         healed++;
       }
       const entry = parseEntityMarkdown(md);
-      if (!entry) continue;
+      if (!entry) {
+        skipped++;
+        continue;
+      }
       entry.path = relative3(cfg.repoPath, abs);
       upsertEntity(idx, entry);
       indexed++;
     }
   }
   saveEntityIndex(cfg.repoPath, idx);
-  return { indexed, healed };
+  return { indexed, healed, skipped };
 }
 var init_entity_index = __esm({
   "src/commands/entity-index.ts"() {
@@ -16353,17 +16365,8 @@ function parseQuoted(v) {
   return t2;
 }
 function parseQaMarkdown(md) {
-  md = md.replace(/\r\n/g, "\n");
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  const fm = /* @__PURE__ */ Object.create(null);
-  for (const line3 of m[1].split("\n")) {
-    const i2 = line3.indexOf(":");
-    if (i2 === -1) continue;
-    const key = line3.slice(0, i2).trim();
-    if (key in fm) continue;
-    fm[key] = line3.slice(i2 + 1).trim();
-  }
+  const fm = readFrontmatterBlock(md);
+  if (!fm) return null;
   if (!fm.id || !fm.kind) return null;
   return {
     id: fm.id,
@@ -16385,6 +16388,7 @@ function parseQaMarkdown(md) {
 var init_parse3 = __esm({
   "src/qa/parse.ts"() {
     "use strict";
+    init_frontmatter();
   }
 });
 
@@ -16420,6 +16424,7 @@ async function qaIndexCmd() {
   const idx = emptyQaIndex();
   let indexed = 0;
   let healed = 0;
+  let skipped = 0;
   assertNoSymlinkedComponent(cfg.repoPath, qaRoot, "qa-index");
   if (existsSync20(qaRoot)) {
     for (const abs of walkMd3(qaRoot)) {
@@ -16432,14 +16437,17 @@ async function qaIndexCmd() {
         healed++;
       }
       const entry = parseQaMarkdown(md);
-      if (!entry) continue;
+      if (!entry) {
+        skipped++;
+        continue;
+      }
       entry.path = relative4(cfg.repoPath, abs);
       upsertQa(idx, entry);
       indexed++;
     }
   }
   saveQaIndex(cfg.repoPath, idx);
-  return { indexed, healed };
+  return { indexed, healed, skipped };
 }
 var init_qa_index = __esm({
   "src/commands/qa-index.ts"() {
