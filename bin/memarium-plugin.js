@@ -14625,6 +14625,8 @@ function missingRewriteField(entry) {
   if (!filled(e.title)) return "title";
   if (typeof e.status !== "string") return "status";
   if (typeof e.updatedAt !== "string") return "updatedAt";
+  if (e.importance === void 0 || e.importance === null) return "importance";
+  if (typeof e.importance !== "number" || !Number.isFinite(e.importance)) return "unsafe importance";
   for (const field of REWRITE_COLLECTION_FIELDS) {
     const v = e[field];
     if (v === void 0 || v === null) continue;
@@ -16942,6 +16944,10 @@ function calendarDate(v) {
     return null;
   }
 }
+function importanceOf(e) {
+  const v = e.importance;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
 function archivable(e) {
   return e.type !== "core" && e.status !== "pinned" && e.status !== "archived";
 }
@@ -16971,7 +16977,8 @@ function planArchival(entries, usage, opts) {
       continue;
     }
     const count = usage[e.id]?.count ?? e.accessCount ?? 0;
-    if ((e.type === "semantic" || e.type === "procedural") && count === 0 && e.importance <= opts.unusedMaxImportance && daysBetween2(opts.now, e.updatedAt) > opts.unusedMinAgeDays) {
+    const imp = importanceOf(e);
+    if ((e.type === "semantic" || e.type === "procedural") && count === 0 && imp !== null && imp <= opts.unusedMaxImportance && daysBetween2(opts.now, e.updatedAt) > opts.unusedMinAgeDays) {
       pick2(e.id, "unused-low-value");
       continue;
     }
@@ -16980,7 +16987,9 @@ function planArchival(entries, usage, opts) {
   for (const [a, b2] of nearDuplicatePairs(entries, 0.8, /* @__PURE__ */ new Set(["active", "pinned"]))) {
     const ea = byId.get(a), eb = byId.get(b2);
     if (!ea || !eb) continue;
-    const loser = ea.importance !== eb.importance ? ea.importance < eb.importance ? ea : eb : Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb;
+    const ia = importanceOf(ea), ib = importanceOf(eb);
+    if (ia === null || ib === null) continue;
+    const loser = ia !== ib ? ia < ib ? ea : eb : Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb;
     const winner = loser === ea ? eb : ea;
     if (chosen.has(winner.id)) continue;
     if (archivable(loser)) chosen.set(loser.id, `near-duplicate-of:${winner.id}`);
