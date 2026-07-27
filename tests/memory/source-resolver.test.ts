@@ -56,6 +56,70 @@ describe("mergeIndexById", () => {
     expect(mergeIndexById(local, overlay).entries["x"].summary).toBe("local-new");
   });
 
+  // Round-31: the winner is picked CHRONOLOGICALLY (shared `epochMs`), not by
+  // comparing the raw strings. A raw compare is not chronological for valid mixed
+  // ISO forms, so the read view could hand consumers the OLDER copy — and worse,
+  // disagree with the write guard (`isOverlayConflict`), which orders
+  // chronologically since round-30.
+  it("mixed ISO forms: overlay chronologically NEWER but lexically SMALLER wins", () => {
+    // overlay 2026-05-05T23:00:00-10:00 === 2026-05-06T09:00Z (NEWER)
+    // local   2026-05-06T01:00:00Z      === 2026-05-06T01:00Z (older)
+    // ...yet lexically "2026-05-06T01:00:00Z" > "2026-05-05T23:00:00-10:00".
+    const local = { "x": mem({ id: "x", updatedAt: "2026-05-06T01:00:00Z", summary: "local-older" }) };
+    const overlay = { "x": mem({ id: "x", updatedAt: "2026-05-05T23:00:00-10:00", summary: "overlay-newer" }) };
+    const r = mergeIndexById(local, overlay);
+    expect(r.entries["x"].summary).toBe("overlay-newer");
+    expect(r.sources["x"]).toBe("overlay");
+  });
+
+  it("mixed ISO forms: overlay chronologically OLDER but lexically LARGER loses", () => {
+    // overlay 2026-05-06T01:00:00+14:00 === 2026-05-05T11:00Z (older)
+    // local   2026-05-06                === 2026-05-06T00:00Z (NEWER)
+    // ...yet lexically "2026-05-06" < "2026-05-06T01:00:00+14:00" (prefix).
+    const local = { "x": mem({ id: "x", updatedAt: "2026-05-06", summary: "local-newer" }) };
+    const overlay = { "x": mem({ id: "x", updatedAt: "2026-05-06T01:00:00+14:00", summary: "overlay-older" }) };
+    const r = mergeIndexById(local, overlay);
+    expect(r.entries["x"].summary).toBe("local-newer");
+    expect(r.sources["x"]).toBe("local");
+  });
+
+  it("unreadable OVERLAY stamp never beats a valid local one", () => {
+    for (const bad of ["not-a-date", "", undefined as unknown as string]) {
+      const local = { "x": mem({ id: "x", updatedAt: "2026-06-01", summary: "local" }) };
+      const overlay = { "x": mem({ id: "x", updatedAt: bad, summary: "overlay-corrupt" }) };
+      const r = mergeIndexById(local, overlay);
+      expect(r.entries["x"].summary).toBe("local");
+      expect(r.sources["x"]).toBe("local");
+    }
+  });
+
+  it("unreadable LOCAL stamp never beats a valid overlay one", () => {
+    for (const bad of ["not-a-date", "", undefined as unknown as string]) {
+      const local = { "x": mem({ id: "x", updatedAt: bad, summary: "local-corrupt" }) };
+      const overlay = { "x": mem({ id: "x", updatedAt: "2026-06-01", summary: "overlay" }) };
+      const r = mergeIndexById(local, overlay);
+      expect(r.entries["x"].summary).toBe("overlay");
+      expect(r.sources["x"]).toBe("overlay");
+    }
+  });
+
+  it("BOTH stamps unreadable: falls back to the local-wins tie", () => {
+    const local = { "x": mem({ id: "x", updatedAt: "garbage", summary: "local" }) };
+    const overlay = { "x": mem({ id: "x", updatedAt: "also-garbage", summary: "overlay" }) };
+    const r = mergeIndexById(local, overlay);
+    expect(r.entries["x"].summary).toBe("local");
+    expect(r.sources["x"]).toBe("local");
+  });
+
+  it("equal instant expressed in DIFFERENT zones is a tie → local wins", () => {
+    // 2026-06-05T12:00:00Z === 2026-06-05T14:00:00+02:00 (same instant)
+    const local = { "x": mem({ id: "x", updatedAt: "2026-06-05T12:00:00Z", summary: "local" }) };
+    const overlay = { "x": mem({ id: "x", updatedAt: "2026-06-05T14:00:00+02:00", summary: "overlay" }) };
+    const r = mergeIndexById(local, overlay);
+    expect(r.entries["x"].summary).toBe("local");
+    expect(r.sources["x"]).toBe("local");
+  });
+
   it("keeps superseded entries (does NOT pre-filter status)", () => {
     const local = { "x": mem({ id: "x", status: "superseded", updatedAt: "2026-06-09" }) };
     const overlay = {};

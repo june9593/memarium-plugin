@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { memariumHome } from "../memarium-home.js";
+import { epochMs } from "./dates.js";
 import { loadMemoryIndex, MEMORY_INDEX_REL } from "./index-store.js";
 import type { MemoryEntry } from "./types.js";
 
@@ -47,6 +48,34 @@ export function aggregatedOverlayPath(): string {
  * newer unpushed state). NOTE: this is a read-view override, NOT CI parity —
  * merge-books uses strict `>` and keeps the first-traversed device on ties.
  * Does NOT filter status (superseded kept; consumers filter).
+ *
+ * Round-31: "latest" is decided CHRONOLOGICALLY (shared `epochMs`), not by
+ * comparing the raw strings, which this used to do. A raw compare is not
+ * chronological for valid mixed ISO forms — `2026-05-05T23:00:00-10:00` is
+ * 2026-05-06T09:00Z (genuinely NEWER than `2026-05-06T01:00:00Z`) yet sorts
+ * lexically SMALLER, and `2026-05-06T01:00:00+14:00` is 2026-05-05T11:00Z
+ * (genuinely OLDER than `2026-05-06`) yet sorts lexically LARGER — so the read
+ * view could hand every consumer (recall, primer, memory-query, archive) the
+ * OLDER copy of a memory. Worse, the cross-device WRITE guard
+ * (`isOverlayConflict`) orders chronologically since round-30: leaving the read
+ * merge lexical would make the two surfaces disagree about which copy is newer,
+ * the same planner-vs-reader skew that already bit this PR at rounds 20→24.
+ *
+ * Deliberately NOT day-granular, unlike the write guard. `isOverlayConflict`
+ * treats a same calendar day as a TIE so a same-day sibling EDIT still reaches
+ * its substantive divergence check; the read merge has no such second stage — it
+ * just needs one deterministic, chronologically-correct winner, and instant
+ * ordering already matches what the old lexical compare did within a day (a
+ * day-only `2026-06-05` loses to `2026-06-05T10:00:00Z` either way).
+ *
+ * UNREADABLE STAMPS (absent / non-string / unparseable → `epochMs` null): a
+ * timestamp we cannot read cannot be PROVEN newer, so it never beats a readable
+ * one — in either direction. That keeps a corrupt row from silently winning the
+ * read view: under the old lexical compare a garbage string like `"not-a-date"`
+ * outranked every real ISO date, so an unreadable overlay row displaced a
+ * perfectly good local one (and vice versa). When BOTH sides are unreadable
+ * there is nothing to order by, so it falls back to the documented tie behavior:
+ * LOCAL wins.
  */
 export function mergeIndexById(
   local: Record<string, MemoryEntry>,
@@ -60,13 +89,22 @@ export function mergeIndexById(
   }
   for (const [id, e] of Object.entries(local)) {
     const ex = entries[id];
-    // `>=` → local wins on a tie; overlay only survives when strictly newer.
-    if (!ex || (e.updatedAt ?? "") >= (ex.updatedAt ?? "")) {
+    if (!ex || localWins(e.updatedAt, ex.updatedAt)) {
       entries[id] = e;
       sources[id] = "local";
     }
   }
   return { entries, sources };
+}
+
+/** True when the LOCAL copy should own the merged slot for a colliding id.
+ *  Overlay survives only when it is strictly, provably newer. */
+function localWins(localAt: unknown, overlayAt: unknown): boolean {
+  const localMs = epochMs(localAt);
+  const overlayMs = epochMs(overlayAt);
+  if (overlayMs === null) return true;   // overlay unreadable (or both) → can't be newer; tie → local
+  if (localMs === null) return false;    // only local unreadable → can't be proven newer either
+  return localMs >= overlayMs;           // `>=` → local wins on a tie (own-device authority)
 }
 
 /**
