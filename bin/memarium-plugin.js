@@ -14751,80 +14751,105 @@ function applyMemoryItems(repoPath, items) {
         assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
         mdPath = tabs;
       }
-      supersede = { targetId: sup, mdPath };
+      supersede = { targetId: sup, mdPath, target };
     }
     planned.push({ entry, body, canonical, abs, supersede });
     willExist[entry.id] = entry;
   }
+  const snapshots = [];
+  const snapped = /* @__PURE__ */ new Set();
+  const capture = (e) => {
+    const s = snapshotMemoryEntryFile(repoPath, e);
+    if (snapped.has(s.abs)) return;
+    snapped.add(s.abs);
+    snapshots.push(s);
+  };
+  for (const p2 of planned) {
+    capture(p2.entry);
+    if (p2.supersede && p2.supersede.mdPath) capture(p2.supersede.target);
+  }
   let written = 0, superseded = 0;
   const paths = [];
-  for (const { entry, body, canonical, abs, supersede } of planned) {
-    entry.path = canonical;
-    if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
-    if (entry.lastAccess === void 0) entry.lastAccess = null;
-    const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
-    const fallbackDate = isDate(entry.validFrom) ? entry.validFrom.slice(0, 10) : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-    if (!isDate(entry.createdAt)) entry.createdAt = fallbackDate;
-    if (!isDate(entry.updatedAt)) entry.updatedAt = fallbackDate;
-    if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
-    const prior = idx.entries[entry.id];
-    if (prior && prior.status === "archived") {
-      entry.status = "archived";
-      entry.archivedAt = prior.archivedAt ?? null;
-      entry.archivedReason = prior.archivedReason ?? null;
-    } else {
-      if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
-        entry.status = "active";
-      }
-      entry.archivedAt = null;
-      entry.archivedReason = null;
-    }
-    if (entry.supersedes === void 0) entry.supersedes = null;
-    if (entry.validFrom === void 0) entry.validFrom = null;
-    if (entry.validTo === void 0) entry.validTo = null;
-    if (entry.originDevice === void 0) entry.originDevice = null;
-    if (entry.project === void 0) entry.project = null;
-    if (typeof entry.confidence !== "number" || !isFinite(entry.confidence)) entry.confidence = 0.5;
-    if (typeof entry.importance !== "number" || !isFinite(entry.importance)) entry.importance = 0;
-    if (typeof entry.summary !== "string") entry.summary = "";
-    if (!Array.isArray(entry.sourceSessions)) entry.sourceSessions = [];
-    if (!Array.isArray(entry.sourceCommits)) entry.sourceCommits = [];
-    if (!Array.isArray(entry.sourceFiles)) entry.sourceFiles = [];
-    if (!Array.isArray(entry.entities)) entry.entities = [];
-    if (prior) {
-      const uni = (next, prev) => Array.from(/* @__PURE__ */ new Set([...Array.isArray(prev) ? prev : [], ...next]));
-      entry.sourceSessions = uni(entry.sourceSessions, prior.sourceSessions);
-      entry.sourceFiles = uni(entry.sourceFiles, prior.sourceFiles);
-      entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);
-    }
-    if (supersede) {
-      const target = idx.entries[supersede.targetId];
-      const patchMd = (fields) => {
-        if (!supersede.mdPath || !existsSync11(supersede.mdPath)) return;
-        let md = readFileSync9(supersede.mdPath, "utf8");
-        for (const [k2, v] of fields) md = setFrontmatterField(md, k2, v);
-        writeFileSync7(supersede.mdPath, md);
-      };
-      if (target && target.status === "archived") {
-        if (target.archivedReason !== "superseded-cleanup") {
-          const at = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-          target.archivedReason = "superseded-cleanup";
-          target.archivedAt = at;
-          patchMd([["archivedReason", "superseded-cleanup"], ["archivedAt", at]]);
+  try {
+    for (const { entry, body, canonical, abs, supersede } of planned) {
+      entry.path = canonical;
+      if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
+      if (entry.lastAccess === void 0) entry.lastAccess = null;
+      const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+      const fallbackDate = isDate(entry.validFrom) ? entry.validFrom.slice(0, 10) : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      if (!isDate(entry.createdAt)) entry.createdAt = fallbackDate;
+      if (!isDate(entry.updatedAt)) entry.updatedAt = fallbackDate;
+      if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
+      const prior = idx.entries[entry.id];
+      if (prior && prior.status === "archived") {
+        entry.status = "archived";
+        entry.archivedAt = prior.archivedAt ?? null;
+        entry.archivedReason = prior.archivedReason ?? null;
+      } else {
+        if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
+          entry.status = "active";
         }
-      } else if (target) {
-        target.status = "superseded";
-        superseded++;
-        patchMd([["status", "superseded"]]);
+        entry.archivedAt = null;
+        entry.archivedReason = null;
       }
+      if (entry.supersedes === void 0) entry.supersedes = null;
+      if (entry.validFrom === void 0) entry.validFrom = null;
+      if (entry.validTo === void 0) entry.validTo = null;
+      if (entry.originDevice === void 0) entry.originDevice = null;
+      if (entry.project === void 0) entry.project = null;
+      if (typeof entry.confidence !== "number" || !isFinite(entry.confidence)) entry.confidence = 0.5;
+      if (typeof entry.importance !== "number" || !isFinite(entry.importance)) entry.importance = 0;
+      if (typeof entry.summary !== "string") entry.summary = "";
+      if (!Array.isArray(entry.sourceSessions)) entry.sourceSessions = [];
+      if (!Array.isArray(entry.sourceCommits)) entry.sourceCommits = [];
+      if (!Array.isArray(entry.sourceFiles)) entry.sourceFiles = [];
+      if (!Array.isArray(entry.entities)) entry.entities = [];
+      if (prior) {
+        const uni = (next, prev) => Array.from(/* @__PURE__ */ new Set([...Array.isArray(prev) ? prev : [], ...next]));
+        entry.sourceSessions = uni(entry.sourceSessions, prior.sourceSessions);
+        entry.sourceFiles = uni(entry.sourceFiles, prior.sourceFiles);
+        entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);
+      }
+      if (supersede) {
+        const target = idx.entries[supersede.targetId];
+        const patchMd = (fields) => {
+          if (!supersede.mdPath || !existsSync11(supersede.mdPath)) return;
+          let md = readFileSync9(supersede.mdPath, "utf8");
+          for (const [k2, v] of fields) md = setFrontmatterField(md, k2, v);
+          writeFileSync7(supersede.mdPath, md);
+        };
+        if (target && target.status === "archived") {
+          if (target.archivedReason !== "superseded-cleanup") {
+            const at = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+            target.archivedReason = "superseded-cleanup";
+            target.archivedAt = at;
+            target.updatedAt = at;
+            patchMd([
+              ["archivedReason", "superseded-cleanup"],
+              ["archivedAt", at],
+              ["updatedAt", at]
+            ]);
+          }
+        } else if (target) {
+          target.status = "superseded";
+          superseded++;
+          patchMd([["status", "superseded"]]);
+        }
+      }
+      mkdirSync8(dirname4(abs), { recursive: true });
+      writeFileSync7(abs, renderMemoryMarkdown(entry, body));
+      upsertMemory(idx, entry);
+      written++;
+      paths.push(canonical);
     }
-    mkdirSync8(dirname4(abs), { recursive: true });
-    writeFileSync7(abs, renderMemoryMarkdown(entry, body));
-    upsertMemory(idx, entry);
-    written++;
-    paths.push(canonical);
+  } catch (err) {
+    rollbackMemoryWrites("applyMemoryItems: a .md write failed mid-batch", snapshots, err);
   }
-  saveMemoryIndex(repoPath, idx);
+  try {
+    saveMemoryIndex(repoPath, idx);
+  } catch (err) {
+    rollbackMemoryWrites("applyMemoryItems: index save failed", snapshots, err);
+  }
   return { written, superseded, paths };
 }
 var REWRITABLE_TYPES, REWRITE_COLLECTION_FIELDS, isRewritableEntry;
