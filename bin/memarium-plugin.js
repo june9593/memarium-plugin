@@ -14615,6 +14615,9 @@ function readMemoryBody(abs, expect) {
   }
   return afterFm.replace(/^\n*# [^\n]*\n*/, "").replace(/\n+$/, "");
 }
+function isMemoryStatus(v) {
+  return typeof v === "string" && REWRITABLE_STATUSES.has(v);
+}
 function missingRewriteField(entry) {
   const e = entry;
   const filled = (v) => typeof v === "string" && v.length > 0;
@@ -14623,7 +14626,8 @@ function missingRewriteField(entry) {
   if (!filled(e.scope)) return "scope";
   if (!(e.project === null || typeof e.project === "string")) return "project";
   if (!filled(e.title)) return "title";
-  if (typeof e.status !== "string") return "status";
+  if (e.status === void 0 || e.status === null) return "status";
+  if (!isMemoryStatus(e.status)) return "unsafe status";
   if (typeof e.updatedAt !== "string") return "updatedAt";
   if (e.importance === void 0 || e.importance === null) return "importance";
   if (typeof e.importance !== "number" || !Number.isFinite(e.importance)) return "unsafe importance";
@@ -14852,7 +14856,7 @@ function applyMemoryItems(repoPath, items) {
   }
   return { written, superseded, paths };
 }
-var REWRITABLE_TYPES, REWRITE_COLLECTION_FIELDS, isRewritableEntry;
+var REWRITABLE_TYPES, MEMORY_STATUSES, REWRITABLE_STATUSES, REWRITE_COLLECTION_FIELDS, isRewritableEntry;
 var init_apply = __esm({
   "src/memory/apply.ts"() {
     "use strict";
@@ -14862,6 +14866,13 @@ var init_apply = __esm({
     init_leak_scan();
     init_path_guard();
     REWRITABLE_TYPES = /* @__PURE__ */ new Set(["core", "semantic", "episodic", "procedural"]);
+    MEMORY_STATUSES = {
+      active: true,
+      superseded: true,
+      pinned: true,
+      archived: true
+    };
+    REWRITABLE_STATUSES = new Set(Object.keys(MEMORY_STATUSES));
     REWRITE_COLLECTION_FIELDS = ["sourceSessions", "sourceCommits", "sourceFiles", "entities"];
     isRewritableEntry = (entry) => missingRewriteField(entry) === null;
   }
@@ -17255,6 +17266,9 @@ async function memoryUnarchiveCmd(opts) {
     throw new Error(`refusing to unarchive ${opts.id}: index row is corrupt (key/id mismatch)`);
   }
   const e = rows[opts.id];
+  if (e.status !== void 0 && e.status !== null && !isMemoryStatus(e.status)) {
+    throw new Error(`refusing to unarchive ${opts.id}: index row is incomplete (${describeRewriteDefect("unsafe status")})`);
+  }
   if (e.status !== "archived") {
     console.log(`not archived: ${opts.id}`);
     return;
