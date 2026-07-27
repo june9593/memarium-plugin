@@ -4,6 +4,7 @@ import type { EntityPage } from "../entity/types.js";
 import type { QaIndex } from "../qa/types.js";
 import type { QaEntry } from "../qa/types.js";
 import { scanLeaks } from "./leak-scan.js";
+import { calendarDate } from "./dates.js";
 
 /** Returns a short, truncated, safe snapshot of an unknown entry for use in error details. */
 function entrySnapshot(e: unknown): string {
@@ -138,9 +139,11 @@ export function lintMemory(
   for (const e of memEntries) {
     try {
       if (e.status === "active" && e.validTo !== null) {
-        const ts = Date.parse(e.validTo);
-        let vDate: string | null = null;
-        if (isFinite(ts)) { try { vDate = new Date(ts).toISOString().slice(0, 10); } catch { vDate = null; } }
+        // Round-24: the same shared `calendarDate()` the archival planner, the
+        // restorer and the read paths use (this check is where those semantics
+        // came from — it just kept its own copy of them until now). null ⇒ we
+        // cannot read the date at all: report it as malformed, never as expired.
+        const vDate = calendarDate(e.validTo);
         if (vDate === null) {
           issues.push({ check: "malformed-date", severity: "warning", layer: "memory", id: e.id,
             detail: `unparseable validTo=${JSON.stringify(e.validTo)}` });

@@ -1,5 +1,6 @@
 import type { MemoryEntry, MemoryType } from "./types.js";
 import { isArchived } from "./score.js";
+import { calendarDate } from "./dates.js";
 
 /** Per-section entry cap so a huge project can't blow the session-start token
  *  budget. Sections render their top-N; the overflow is surfaced (not silent). */
@@ -18,9 +19,15 @@ function num(v: unknown, dflt: number): number {
  *  recency (updatedAt), then title — so a shaky or stale entry can't crowd out a
  *  solid one near the truncation cap (issues #19/#21). */
 function eligible(entries: MemoryEntry[], type: MemoryType, project: string, now: string): MemoryEntry[] {
+  // Round-24: expiry compares CALENDAR DATES through the shared helper, so a
+  // same-day ISO TIMESTAMP validTo is expired here exactly as it is to
+  // planArchival / memory-lint / recall (raw strings sorted it AFTER the plain
+  // `YYYY-MM-DD` now and kept it in the primer). An unparseable validTo yields
+  // null and is KEPT — it can't be proven past.
+  const nowDate = calendarDate(now) ?? now;
   return entries
     .filter((e) => e.status !== "superseded" && !isArchived(e) && e.type === type)
-    .filter((e) => e.validTo === null || e.validTo > now)
+    .filter((e) => { const v = calendarDate(e.validTo); return v === null || v > nowDate; })
     .filter((e) => e.scope === "global" || e.scope === "user" || e.project === project)
     // Trust gate (#23): only `trusted` semantic auto-injects into the primer.
     // untrusted/unknown semantic (possible prompt-injection from external content

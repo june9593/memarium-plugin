@@ -1,6 +1,7 @@
 import type { MemoryEntry } from "./types.js";
 import type { UsageMap } from "./usage-store.js";
 import { nearDuplicatePairs } from "./lint.js";
+import { calendarDate } from "./dates.js";
 
 /** Tunable thresholds for the age/importance rules. Overridable per call via
  *  ArchiveOpts; these are the shipped defaults. */
@@ -28,27 +29,6 @@ function daysBetween(now: string, then: string): number {
   return (a - b) / 864e5;
 }
 
-/** Normalize a date-ish value to a plain `YYYY-MM-DD` CALENDAR date, or null when
- *  it isn't a parseable string. Mirrors `memory-lint`'s expired check exactly
- *  (`Date.parse` → `toISOString().slice(0,10)`) so the archival planner and the
- *  linter agree on what "expired" means.
- *
- *  Round-20: Rule 2 used to compare `validTo <= now` LEXICALLY, which reads an
- *  ISO TIMESTAMP as GREATER than the same day's plain date
- *  ("2026-07-24T00:00:00Z" > "2026-07-24"). A same-day-timestamp entry therefore
- *  escaped archival while lint flagged the very same row as expired — and,
- *  symmetrically, `validTo: ""` compared LESS than any date and got archived as
- *  "expired". Normalizing BOTH sides fixes both directions. Returning null for an
- *  unparseable value preserves the module's NaN/garbage-date safety: an entry
- *  whose validTo we cannot read is never archived (lint reports it as
- *  `malformed-date` instead). */
-function calendarDate(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const ts = Date.parse(v);
-  if (!isFinite(ts)) return null;
-  try { return new Date(ts).toISOString().slice(0, 10); } catch { return null; }
-}
-
 /** An entry's importance, or null when it is absent / non-numeric / non-finite.
  *
  *  Round-23: `planArchival` is a PURE exported function and can be called with
@@ -71,6 +51,22 @@ function calendarDate(v: unknown): string | null {
 function importanceOf(e: MemoryEntry): number | null {
   const v = (e as unknown as Record<string, unknown>).importance;
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/** An entry's `updatedAt` as a millisecond timestamp, or null when it is absent /
+ *  non-string / unparseable. The recency counterpart to `importanceOf`, and it
+ *  exists for exactly the same reason (round-24): the equal-importance branch of
+ *  the near-duplicate ranking did a raw `Date.parse(ea.updatedAt) <=
+ *  Date.parse(eb.updatedAt)`, and `Date.parse` returns NaN on a malformed date.
+ *  `NaN <= x` is FALSE, so the loser fell out as `eb` purely from PAIR ORDERING —
+ *  the same defect round-23 fixed one field over, and the same consequence: a
+ *  malformed row could get a HEALTHY entry archived. Returning null forces the
+ *  caller to make the unrankable case explicit. */
+function updatedAtMs(e: MemoryEntry): number | null {
+  const v = (e as unknown as Record<string, unknown>).updatedAt;
+  if (typeof v !== "string") return null;
+  const ts = Date.parse(v);
+  return Number.isFinite(ts) ? ts : null;
 }
 
 /** core and pinned are NEVER archivable; an already-archived entry is skipped so
@@ -151,9 +147,21 @@ export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: Arch
     // Skipping is pair-LOCAL: each row's own per-entry rule above still stands.
     const ia = importanceOf(ea), ib = importanceOf(eb);
     if (ia === null || ib === null) continue;
-    const loser = ia !== ib
-      ? (ia < ib ? ea : eb)
-      : (Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb);
+    let loser: MemoryEntry;
+    if (ia !== ib) {
+      loser = ia < ib ? ea : eb;
+    } else {
+      // Round-24: EQUAL importance falls through to a RECENCY tie-break, which was
+      // the very same trap one field over — `Date.parse` returns NaN on a malformed
+      // `updatedAt` and `NaN <= x` is FALSE, so `eb` became the loser purely from
+      // pair ORDERING and a malformed row could again archive a HEALTHY entry. Same
+      // rule as importance, for the same reason: a pair we cannot rank is SKIPPED,
+      // so no mutation decision is ever made on a value we cannot read. The skip is
+      // pair-LOCAL — each row's own per-entry rule above still stands.
+      const ta = updatedAtMs(ea), tb = updatedAtMs(eb);
+      if (ta === null || tb === null) continue;
+      loser = ta <= tb ? ea : eb;
+    }
     const winner = loser === ea ? eb : ea;
     // If the winner is already being archived by a per-entry rule, do NOT add the
     // loser for the dedup reason — archiving both would wipe the shared knowledge

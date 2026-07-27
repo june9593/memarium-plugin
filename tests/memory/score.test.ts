@@ -31,6 +31,29 @@ describe("scoreMemories", () => {
     expect(r.map((x) => x.entry.id)).toEqual(["ok"]);
   });
 
+  // Round-24: expiry was a RAW LEXICAL compare here, so an ISO TIMESTAMP validTo
+  // sorted AFTER the plain `YYYY-MM-DD` now and a SAME-DAY-expiring entry stayed
+  // recallable — while planArchival/memory-lint already called it expired. All the
+  // expiry sites now normalize through the shared `calendarDate()` helper.
+  it("excludes a SAME-DAY ISO TIMESTAMP validTo (matches planArchival/lint), keeps a future one", () => {
+    const entries = [
+      e({ id: "same-day", title: "auth crash", validTo: "2026-06-09T00:00:00Z" }),
+      e({ id: "same-day-late", title: "auth crash", validTo: "2026-06-09T23:59:59Z" }),
+      e({ id: "future", title: "auth crash", validTo: "2026-06-10T00:00:00Z" }),
+    ];
+    const r = scoreMemories(entries, Q({ text: "auth", now: "2026-06-09" }));
+    expect(r.map((x) => x.entry.id)).toEqual(["future"]);
+  });
+
+  it("an UNPARSEABLE validTo is NOT treated as expired (it cannot be proven past)", () => {
+    const entries = [
+      e({ id: "garbage", title: "auth crash", validTo: "not-a-date" }),
+      e({ id: "empty", title: "auth crash", validTo: "" }),
+    ];
+    const r = scoreMemories(entries, Q({ text: "auth" })).map((x) => x.entry.id).sort();
+    expect(r).toEqual(["empty", "garbage"]);
+  });
+
   it("keyword match in title/summary/entities raises score", () => {
     const entries = [
       e({ id: "match", title: "auth token crash", entities: ["AuthTokenView"] }),

@@ -4,6 +4,7 @@ import { writeMemoryEntryFile, missingRewriteField, describeRewriteDefect, snaps
 import { resolveMemoryView } from "../memory/source-resolver.js";
 import { isOverlayConflict } from "../memory/overlay-conflict.js";
 import { validEntryExists } from "../memory/lint.js";
+import { calendarDate } from "../memory/dates.js";
 import type { MemoryEntry } from "../memory/types.js";
 
 export interface MemoryUnarchiveOptions {
@@ -120,8 +121,19 @@ export async function memoryUnarchiveCmd(opts: MemoryUnarchiveOptions): Promise<
   // past validTo to null on restore; a null/future validTo is left untouched.
   // ONLY for the active-restore path — a restored-superseded entry keeps its
   // validTo untouched (it's hidden by its superseded status regardless).
-  const pastValidTo = !restoreSuperseded &&
-    typeof e.validTo === "string" && e.validTo !== "" && e.validTo <= now;
+  //
+  // Round-24: compare CALENDAR DATES via the SAME `calendarDate()` helper
+  // `planArchival` uses, not raw strings. The raw compare read an ISO TIMESTAMP as
+  // lexically GREATER than the plain `YYYY-MM-DD` now, so an entry archived for
+  // `validTo: "<today>T00:00:00Z"` — which the planner DID consider expired — came
+  // back with that validTo intact, was immediately re-excluded by the expiry
+  // filters, and went invisible the next day: a broken restore loop. It also read
+  // a non-ISO string like "06/11/2026" as lexically LESS than now and cleared a
+  // validTo it could not actually read. `calendarDate` returns null for
+  // absent/empty/unparseable, so those are never cleared (can't be proven past),
+  // and `now` here is already a plain calendar date.
+  const validToDate = calendarDate(e.validTo);
+  const pastValidTo = !restoreSuperseded && validToDate !== null && validToDate <= now;
   // Fresh spread — writeMemoryEntryFile mutates entry.path to the canonical path.
   const next: MemoryEntry = {
     ...e, status: restoreSuperseded ? "superseded" : "active",

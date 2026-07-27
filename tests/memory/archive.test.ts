@@ -229,3 +229,48 @@ describe("round-23: a NON-FINITE importance can never make a HEALTHY entry the n
     expect(q.archive[0].reason).toBe("near-duplicate-of:semantic/p/newer");
   });
 });
+
+describe("round-24: a malformed updatedAt can never make a HEALTHY entry the near-dup tie-break loser", () => {
+  // Round-23 hardened the IMPORTANCE branch of the near-duplicate ranking, but the
+  // EQUAL-importance branch fell through to `Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt)`.
+  // `Date.parse` returns NaN on a malformed date and `NaN <= x` is FALSE, so the
+  // loser came out as `eb` purely from PAIR ORDERING — a malformed row could once
+  // again get a HEALTHY entry archived. Same rule as importance now applies: a pair
+  // we cannot rank is SKIPPED, so no mutation decision is made on an unreadable value.
+  const UNREADABLE = [undefined, null, "", "not-a-date", "06/11/2026x", NaN, 0, {}, []];
+  const dup = (o: Partial<MemoryEntry>) =>
+    e({ title: "declare list params as array", summary: "type array not string", importance: 5, updatedAt: daysAgo(10), ...o });
+
+  it("archives NEITHER side when the pair ties on importance and one updatedAt is unreadable — in BOTH orderings", () => {
+    for (const bad of UNREADABLE) {
+      const healthy = dup({ id: "semantic/p/healthy" });
+      const broken = { ...dup({ id: "semantic/p/broken" }), updatedAt: bad } as unknown as MemoryEntry;
+      for (const set of [[healthy, broken], [broken, healthy]]) {
+        let p!: ReturnType<typeof planArchival>;
+        expect(() => { p = planArchival(set, {}, opts); }).not.toThrow();
+        // the healthy entry is NEVER the loser…
+        expect(ids(p)).not.toContain("semantic/p/healthy");
+        // …and neither is the unreadable row (no decision off a value we can't read)
+        expect(p.archive).toEqual([]);
+      }
+    }
+  });
+
+  it("regression lock: an equal-importance pair with two VALID timestamps still loses the OLDER one (both orderings)", () => {
+    const older = dup({ id: "semantic/p/older", updatedAt: daysAgo(20) });
+    const newer = dup({ id: "semantic/p/newer", updatedAt: daysAgo(5) });
+    for (const set of [[older, newer], [newer, older]]) {
+      const p = planArchival(set, {}, opts);
+      expect(ids(p)).toEqual(["semantic/p/older"]);
+      expect(p.archive[0].reason).toBe("near-duplicate-of:semantic/p/newer");
+    }
+  });
+
+  it("a malformed-updatedAt row still gets its OWN per-entry rule (the tie-break skip is pair-local)", () => {
+    const healthy = dup({ id: "semantic/p/healthy" });
+    const broken = { ...dup({ id: "semantic/p/broken", validTo: daysAgo(1) }), updatedAt: "not-a-date" } as unknown as MemoryEntry;
+    const p = planArchival([healthy, broken], {}, opts);
+    expect(ids(p)).toEqual(["semantic/p/broken"]);
+    expect(p.archive[0].reason).toBe("expired");
+  });
+});

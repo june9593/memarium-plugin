@@ -1,4 +1,5 @@
 import type { MemoryEntry, MemoryType } from "./types.js";
+import { calendarDate } from "./dates.js";
 
 export interface MemoryQuery {
   project: string | null;   // cwd project slug
@@ -57,7 +58,14 @@ export function isArchived(e: MemoryEntry): boolean {
 
 function isEligible(e: MemoryEntry, q: MemoryQuery): boolean {
   if (e.status === "superseded" || isArchived(e)) return false;
-  if (e.validTo !== null && e.validTo <= q.now) return false;
+  // Round-24: expiry is a CALENDAR-DATE compare through the shared helper, not a
+  // raw string compare. Lexically, an ISO TIMESTAMP sorts AFTER the same day's
+  // plain `YYYY-MM-DD`, so a same-day-expiring entry stayed recallable here while
+  // planArchival/memory-lint already called it expired — and `validTo: ""` sorted
+  // BEFORE any date and was dropped as "expired" though it is merely malformed.
+  // A validTo we cannot parse yields null and is never treated as expired.
+  const validToDate = calendarDate(e.validTo);
+  if (validToDate !== null && validToDate <= (calendarDate(q.now) ?? q.now)) return false;
   if (q.type && e.type !== q.type) return false;
   // scope: global/user always eligible; project-scoped only for the cwd project
   if (e.scope === "global" || e.scope === "user") return true;

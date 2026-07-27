@@ -137,6 +137,65 @@ describe("memoryUnarchiveCmd", () => {
     expect(readFileSync(join(repo, "memory/semantic/p/exp.md"), "utf8")).toContain("The real body of semantic/p/exp.");
   });
 
+  // Round-24: the past-validTo decision compared RAW STRINGS, which is exactly what
+  // round-20 fixed in planArchival via `calendarDate()`. An entry archived for
+  // `validTo: "<today>T00:00:00Z"` IS expired to the planner, but the restorer read
+  // the ISO timestamp as LEXICALLY GREATER than the plain `YYYY-MM-DD` now and left
+  // it in place — so the restored entry was immediately re-excluded by the expiry
+  // filters and went invisible again: a broken restore loop. Planner and restorer
+  // now share the SAME helper, so they agree by construction.
+  describe("round-24: validTo is compared as a CALENDAR DATE, like planArchival", () => {
+    /** Re-point the archived expired entry's validTo (index + .md) at `v`. */
+    function setValidTo(v: string) {
+      const idx = readIndex();
+      idx.entries["semantic/p/exp"].validTo = v;
+      writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+      writeFileSync(join(repo, "memory/semantic/p/exp.md"),
+        `---\nid: semantic/p/exp\ntype: semantic\nstatus: archived\narchivedAt: 2026-05-01\narchivedReason: expired\nvalidTo: ${v}\n---\n\n# Archived expired fact\n\nThe real body of semantic/p/exp.\n`);
+    }
+    const today = () => new Date().toISOString().slice(0, 10);
+
+    it("CLEARS a SAME-DAY ISO TIMESTAMP validTo (planArchival calls it expired, so the restore must too)", async () => {
+      seed();
+      const sameDay = `${today()}T00:00:00Z`;
+      setValidTo(sameDay);
+      await memoryUnarchiveCmd({ id: "semantic/p/exp", cwd: repo });
+      expect(readIndexStatus("semantic/p/exp")).toBe("active");
+      expect(readIndex().entries["semantic/p/exp"].validTo).toBe(null);
+      expect(readMdNullable("semantic/p/exp.md", "validTo")).toBe(null);
+      expect(out.join("\n")).toMatch(/cleared past validTo/);
+    });
+
+    it("CLEARS a same-day ISO timestamp late in the day too (the whole calendar day is expired)", async () => {
+      seed();
+      setValidTo(`${today()}T23:59:59Z`);
+      await memoryUnarchiveCmd({ id: "semantic/p/exp", cwd: repo });
+      expect(readIndex().entries["semantic/p/exp"].validTo).toBe(null);
+    });
+
+    it("does NOT clear a FUTURE validTo (plain date or ISO timestamp)", async () => {
+      for (const v of ["2099-12-31", "2099-12-31T00:00:00Z"]) {
+        seed();
+        setValidTo(v);
+        await memoryUnarchiveCmd({ id: "semantic/p/exp", cwd: repo });
+        expect(readIndexStatus("semantic/p/exp")).toBe("active");
+        expect(readIndex().entries["semantic/p/exp"].validTo).toBe(v); // untouched
+        expect(out.join("\n")).not.toMatch(/cleared past validTo/);
+      }
+    });
+
+    it("does NOT clear an UNPARSEABLE validTo — it cannot be proven past", async () => {
+      for (const v of ["not-a-date", "06/11/2026x"]) {
+        seed();
+        setValidTo(v);
+        await memoryUnarchiveCmd({ id: "semantic/p/exp", cwd: repo });
+        expect(readIndexStatus("semantic/p/exp")).toBe("active");
+        expect(readIndex().entries["semantic/p/exp"].validTo).toBe(v); // untouched
+        expect(out.join("\n")).not.toMatch(/cleared past validTo/);
+      }
+    });
+  });
+
   it("leaves a null validTo untouched on restore (no spurious clear note)", async () => {
     seed();
     await memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }); // validTo === null
