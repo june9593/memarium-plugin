@@ -116,8 +116,10 @@ export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
   // excludes every archived entry, so without this a wrongly-archived memory is
   // invisible on the primary /memarium-recall path. Fires only on a weak
   // content-matched primary recall; scope/type filtered like the primary pass;
-  // NEVER writes or mutates status/index.
-  const coldStorage = runColdPass({ entries, scored, query: scoreQuery, sources: view.sources });
+  // NEVER writes or mutates status/index. Takes `view.entries` (the KEYED map)
+  // rather than the value array so each cold hit's origin is resolved under the
+  // same key `view.sources` is keyed with — never the row's untrusted `id`.
+  const coldStorage = runColdPass({ entries: view.entries, scored, query: scoreQuery, sources: view.sources });
 
   const limit = opts.limit && opts.limit > 0 ? opts.limit : DEFAULT_LIMIT;
   const hits: RecallHit[] = scored.slice(0, limit).map((s) => ({

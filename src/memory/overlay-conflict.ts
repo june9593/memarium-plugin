@@ -47,13 +47,22 @@ function hasWellFormedCollections(row: unknown): boolean {
 
 /** True when two copies of the same memory id have SUBSTANTIVELY equivalent
  *  frontmatter/metadata — i.e. an already-synced copy, not a divergent
- *  sibling-device edit. Compares only CONTENT fields (now including `trust`,
- *  `validFrom`, `project`, the birth stamp `createdAt`, and the ARCHIVAL
- *  LIFECYCLE fields `archivedReason` / `archivedAt`, whose edits are real
- *  divergence); deliberately IGNORES provenance/location metadata that
+ *  sibling-device edit. Compares only CONTENT fields (now including the row's own
+ *  `id`, `trust`, `validFrom`, `project`, the birth stamp `createdAt`, and the
+ *  ARCHIVAL LIFECYCLE fields `archivedReason` / `archivedAt`, whose edits are
+ *  real divergence); deliberately IGNORES provenance/location metadata that
  *  legitimately differs between a local row and its aggregated copy (`path`,
  *  `originDevice`, and the union-able `sourceSessions`/`sourceCommits`/
  *  `sourceFiles`, which merge-books unions rather than treats as divergence).
+ *
+ *  `id` is compared because callers pass rows they looked up by MAP KEY, and no
+ *  index loader checks that a row's key agrees with the row's own `id`
+ *  (`loadMemoryIndexStrict` validates only the top-level `entries` map). So the
+ *  overlay row fetched under the LOCAL key can name a DIFFERENT record. Two rows
+ *  that disagree on identity are never "the same memory, already synced" — and
+ *  the write this guard protects derives its `.md` path from `entry.id`, so
+ *  calling them equivalent lets archival write against a record the comparison
+ *  never examined (round-21; same key/id-confusion class as the round-12 fix).
  *
  *  `createdAt` is lifecycle metadata too, not location metadata: two
  *  equal-`updatedAt` copies with different birth stamps are different records,
@@ -75,6 +84,7 @@ function hasWellFormedCollections(row: unknown): boolean {
  *  reads both trees' files — so a body-only sibling edit is still caught. */
 export function sameMemoryContent(a: MemoryEntry, b: MemoryEntry): boolean {
   return (
+    a.id === b.id &&
     a.status === b.status &&
     a.title === b.title &&
     a.summary === b.summary &&
@@ -108,16 +118,26 @@ function extractBody(md: string): string | null {
   return afterFm.replace(/^\n*# [^\n]*\n*/, "").replace(/\n+$/, "");
 }
 
-/** Read a memory's body from its CANONICAL .md under `root` (derived from
- *  {type,project,id}, never the untrusted entry.path — matching the derivation
- *  the writer uses). Returns `null` on ANY failure (missing/unreadable file,
- *  unsafe canonical path, or unparseable body) so the conflict check can treat
- *  a body it can't read on either side as divergence (the safe default). */
-function readCanonicalBody(root: string | null, entry: MemoryEntry): string | null {
-  if (!root) return null;
+/** The repo-relative CANONICAL `.md` path for a row, derived from its own
+ *  {type, project, id} exactly as the writer derives it — never the untrusted
+ *  `entry.path`. Returns `null` when it cannot be derived (e.g. an invalid
+ *  `type`, or an id that isn't a string), so the caller can fail closed. */
+function canonicalRel(entry: MemoryEntry): string | null {
   try {
-    const abs = resolve(join(root, canonicalMemoryPath(entry)));
-    return extractBody(readFileSync(abs, "utf8"));
+    return canonicalMemoryPath(entry);
+  } catch {
+    return null;
+  }
+}
+
+/** Read a memory's body from `<root>/<rel>`. Returns `null` on ANY failure
+ *  (no root, no derivable path, missing/unreadable file, or unparseable body) so
+ *  the conflict check can treat a body it can't read on either side as
+ *  divergence (the safe default). */
+function readBodyAt(root: string | null, rel: string | null): string | null {
+  if (!root || !rel) return null;
+  try {
+    return extractBody(readFileSync(resolve(join(root, rel)), "utf8"));
   } catch {
     return null;
   }
@@ -194,9 +214,19 @@ function divergesFromOverlay(local: MemoryEntry, ov: MemoryEntry, roots: Conflic
   if (ovUpdated < localUpdated) return false;  // strictly-older → local authoritative
   // EQUAL updatedAt: a genuine same-day sibling edit blocks; an equivalent synced copy does not.
   if (!sameMemoryContent(local, ov)) return true; // metadata diverges → conflict
-  // Metadata matches — the last place a sibling edit can hide is the BODY.
-  const localBody = readCanonicalBody(roots.local, local);
-  const overlayBody = readCanonicalBody(roots.overlay, ov);
+  // Metadata matches — the last place a sibling edit can hide is the BODY. Each
+  // side's body is read from the path its OWN {type, project, id} derives, so
+  // before comparing them we require those paths to AGREE: two rows whose
+  // canonical paths differ are not two copies of one record, and diffing their
+  // bodies would compare two DIFFERENT entries as if they were the same one.
+  // (`sameMemoryContent` now compares id/type/project, so an agreeing pair is
+  // the only pair that gets here — this pins that invariant explicitly and fails
+  // closed if it ever regresses, rather than silently answering "equivalent".)
+  const localRel = canonicalRel(local);
+  const overlayRel = canonicalRel(ov);
+  if (localRel === null || overlayRel === null || localRel !== overlayRel) return true;
+  const localBody = readBodyAt(roots.local, localRel);
+  const overlayBody = readBodyAt(roots.overlay, overlayRel);
   if (localBody === null || overlayBody === null) return true; // can't compare → safe skip
   return localBody !== overlayBody;
 }

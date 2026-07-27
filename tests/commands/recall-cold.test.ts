@@ -217,4 +217,32 @@ describe("recall — R2 cold-storage valve (shared with memory-query)", () => {
     expect(p.meta.nextStep).toMatch(/memory-unarchive <id> to restore/);
     expect(p.meta.nextStep).not.toMatch(/restore it there/);
   });
+
+  // Round-21: `view.sources` is keyed by the index MAP KEY, but the cold pass
+  // looked the origin up under the untrusted `entry.id` and defaulted a miss to
+  // "local". No index loader checks that a row's key matches its own `id`, so an
+  // OVERLAY-only archive filed under a mismatched key rendered a local
+  // `memory-unarchive <id>` — a command that fails (the id isn't in the local
+  // index) or, worse, acts on a different local record that happens to own that id.
+  it("an overlay-only cold hit whose row `id` disagrees with its index KEY is never reported as local", async () => {
+    writeLocalIndex({}); // nothing local at all → any "local" claim is provably false
+    const overlayRoot = join(fakeHome, ".memarium/aggregated");
+    mkdirSync(join(overlayRoot, ".memarium"), { recursive: true });
+    writeFileSync(join(overlayRoot, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: {
+      // filed under one key, carrying a DIFFERENT id of its own
+      "semantic/code-demo/keyed": mk({ id: "semantic/code-demo/ovim", title: "Vim keybindings",
+        summary: "vim editor setup", entities: ["vim"], status: "archived", originDevice: "laptop",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value",
+        path: "memory/semantic/code-demo/ovim.md" }),
+    } }, null, 2) + "\n");
+
+    const p = await run({ cwd: "/work/code-demo", q: "vim" });
+    expect(p.coldStorage).toHaveLength(1);
+    expect(p.coldStorage[0].source).not.toBe("local");
+
+    // neither the per-hit stderr hint nor meta.nextStep may advertise the local
+    // restore command for an archive that does not live in the local index.
+    expect(errs.join("\n")).not.toMatch(/memory-unarchive semantic\/code-demo\/ovim/);
+    expect(p.meta.nextStep).not.toMatch(/memory-unarchive <id> to restore/);
+  });
 });

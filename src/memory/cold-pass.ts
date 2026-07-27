@@ -16,17 +16,25 @@ import { scoreArchived, type MemoryQuery, type ScoredMemory } from "./score.js";
 import type { MemorySource } from "./source-resolver.js";
 import type { MemoryEntry, MemoryTrust } from "./types.js";
 
+/** Where a cold hit's archived copy actually lives. `local` and `overlay` are
+ *  ESTABLISHED answers; `unknown` means we could not resolve the origin at all
+ *  and must not guess — see `resolveColdOrigin`. Only `local` may be advertised
+ *  with the local `memory-unarchive` command. */
+export type ColdOrigin = MemorySource | "unknown";
+
 /** One read-only "cold storage" hit — a strongly-matching ARCHIVED entry
  *  surfaced by the R2 resurrect valve. A `local` hit is restorable HERE with
  *  `memory-unarchive <id>` (it lives in this device's index); an `overlay` hit
  *  is a sibling device's archived memory, so it must be restored on
- *  `originDevice` (memory-unarchive only touches the local index). */
+ *  `originDevice` (memory-unarchive only touches the local index); an `unknown`
+ *  origin gets the generic instruction — a wrong local command is worse than a
+ *  vaguer correct one. */
 export interface ColdStorageHit {
   id: string;
   title: string;
   score: number;
   archivedReason: string | null;
-  source: MemorySource;
+  source: ColdOrigin;
   originDevice: string | null;
   /** Provenance trust of the archived entry, preserved through the cold pass so a
    *  restored-from-cold UNTRUSTED semantic (issue #23) is never mistaken for an
@@ -78,14 +86,54 @@ const isResurrectable = (e: MemoryEntry): boolean =>
   !NON_RESURRECTABLE_REASONS.has(e.archivedReason ?? "");
 
 export interface ColdPassInput {
-  /** The full merged (local + overlay) entry list the primary pass scored. */
-  entries: MemoryEntry[];
+  /** The full merged (local + overlay) entry MAP the primary pass scored —
+   *  `view.entries`, keyed EXACTLY as `sources` is. It is the map (not a bare
+   *  array) on purpose: a hit's origin must be resolved under the same key
+   *  `sources` uses, and only the map carries those keys. */
+  entries: Record<string, MemoryEntry>;
   /** The primary pass's results — used ONLY to decide whether the valve fires. */
   scored: ScoredMemory[];
   /** The SAME query object the primary pass used (project / text / type / now). */
   query: MemoryQuery;
-  /** `view.sources` — which tree each entry id came from (local vs overlay). */
+  /** `view.sources` — which tree each entry came from, keyed by INDEX MAP KEY
+   *  (see `mergeIndexById`), NOT by the row's own `id`. */
   sources: Record<string, MemorySource>;
+}
+
+/**
+ * Resolve a scored row's ORIGIN under the same KEY `sources` is keyed with.
+ *
+ * Round-21: this used to be `sources[entry.id] ?? "local"`, which is wrong twice
+ * over. `sources` is keyed by the index MAP KEY, and no index loader checks that
+ * a row's key agrees with the row's embedded `id` (`loadMemoryIndexStrict`
+ * validates only the top-level `entries` map) — so a key/id mismatch looked the
+ * origin up under a key that isn't there, and the `?? "local"` default then
+ * claimed an OVERLAY-only archive lives here. That renders
+ * `memory-unarchive <id>`: a command that fails (the id is not in the local
+ * index) or, worse, acts on a different local record that owns that id.
+ *
+ * So: map the row back to its key by OBJECT IDENTITY (the scorer hands back the
+ * very objects it was given), then read `sources` under that key — and FAIL
+ * CLOSED to `"unknown"` whenever the key, or a valid source under it, cannot be
+ * established. A vaguer correct instruction beats a wrong local one.
+ */
+function resolveColdOrigin(
+  entries: Record<string, MemoryEntry>,
+  sources: Record<string, MemorySource>,
+): (e: MemoryEntry) => ColdOrigin {
+  const keyOf = new Map<MemoryEntry, string | null>();
+  for (const [key, e] of Object.entries(entries)) {
+    if (!e || typeof e !== "object") continue;
+    // The same object filed under two keys is ambiguous — we cannot say which
+    // tree it came from, so refuse to guess (null → "unknown").
+    keyOf.set(e, keyOf.has(e) ? null : key);
+  }
+  return (e) => {
+    const key = keyOf.get(e);
+    if (key == null) return "unknown";           // not in the view, or ambiguous
+    const src = sources[key];
+    return src === "local" || src === "overlay" ? src : "unknown";
+  };
 }
 
 /**
@@ -105,7 +153,9 @@ export function runColdPass({ entries, scored, query, sources }: ColdPassInput):
   const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
   if (strongPrimary >= COLD_FLOOR) return [];
 
-  return scoreArchived(entries, query)
+  const originOf = resolveColdOrigin(entries, sources);
+
+  return scoreArchived(Object.values(entries), query)
     .filter((s) => isResurrectable(s.entry))
     .filter((s) => inScope(s.entry, query.project))
     .filter((s) => !query.type || s.entry.type === query.type)
@@ -116,8 +166,9 @@ export function runColdPass({ entries, scored, query, sources }: ColdPassInput):
       // Origin decides which restore hint is honest: a `local` cold hit lives
       // in THIS device's index (memory-unarchive works); an `overlay` hit is
       // a sibling device's archived memory that memory-unarchive (local-only)
-      // can't touch, so we point the user at its origin device instead.
-      source: sources[s.entry.id] ?? "local",
+      // can't touch, so we point the user at its origin device instead; an
+      // `unknown` origin gets the generic instruction rather than a guess.
+      source: originOf(s.entry),
       originDevice: s.entry.originDevice ?? null,
       // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
       // surfaced indistinguishably from a trusted fact. Same rule the primary
@@ -129,14 +180,17 @@ export function runColdPass({ entries, scored, query, sources }: ColdPassInput):
 /** Where a single cold hit can actually be restored — the ONE place that decides
  *  whether `memory-unarchive <id>` is an honest instruction. `memory-unarchive`
  *  reads the LOCAL index, so advertising it for an `overlay` hit (a sibling
- *  device's archive) would always come back "not archived". Every surface that
+ *  device's archive) would always come back "not archived", and advertising it
+ *  for an `unknown` origin is a guess that can name the wrong record entirely.
+ *  Only an ESTABLISHED local origin gets the local command. Every surface that
  *  tells a user how to restore a cold hit must go through here. */
 export function coldRestoreInstruction(c: ColdStorageHit): string {
+  if (c.source === "local") return `memory-unarchive ${c.id} to restore`;
   if (c.source === "overlay") {
     const dev = c.originDevice ? `device ${c.originDevice}` : "another device";
     return `archived on ${dev}; restore it there`;
   }
-  return `memory-unarchive ${c.id} to restore`;
+  return "origin unknown; restore it on the device that archived it";
 }
 
 /**
@@ -162,23 +216,32 @@ export function renderColdHints(coldStorage: ColdStorageHit[]): string[] {
 
 /**
  * The machine-read `meta.nextStep` sentence for a recall whose ONLY matches were
- * cold. Origin-aware for exactly the reason renderColdHints is: when every cold
- * hit came from the overlay, a blanket "memory-unarchive <id> to restore" is a
- * dead end (memory-unarchive only touches the local index), so we name the origin
- * device instead. Mixed sets defer to the per-hit stderr hints. Returns "" when
- * there's nothing cold — caller falls back to its own no-memory message.
+ * cold. Origin-aware for exactly the reason renderColdHints is: a blanket
+ * "memory-unarchive <id> to restore" is a dead end for anything that isn't an
+ * ESTABLISHED local archive (memory-unarchive only touches the local index), so
+ * it is emitted only when EVERY hit resolved to `local`. All-overlay names the
+ * origin device; mixed sets defer to the per-hit stderr hints; anything with an
+ * unresolvable origin and nothing local gets the safe generic wording. Returns
+ * "" when there's nothing cold — caller falls back to its own no-memory message.
  */
 export function renderColdNextStep(coldStorage: ColdStorageHit[]): string {
   if (!coldStorage.length) return "";
   const head = "No ACTIVE memory matched, but archived entries did — see coldStorage";
-  const overlay = coldStorage.filter((c) => c.source === "overlay");
-  if (!overlay.length) return `${head} (memory-unarchive <id> to restore).`;
-  if (overlay.length < coldStorage.length) {
+  const local = coldStorage.filter((c) => c.source === "local");
+  // Only an ALL-local set may advertise the bare local command.
+  if (local.length === coldStorage.length) return `${head} (memory-unarchive <id> to restore).`;
+  if (local.length > 0) {
     return `${head}; each hit carries its own restore path (local hits: memory-unarchive <id>; the rest: restore on their origin device).`;
   }
-  const devices = [...new Set(overlay.map((c) => c.originDevice).filter((d): d is string => !!d))];
-  const tail = devices.length === 1
-    ? `archived on device ${devices[0]}; restore it there`
-    : "each is archived on another device; restore it there";
-  return `${head} — ${tail} (memory-unarchive is local-only).`;
+  const overlay = coldStorage.filter((c) => c.source === "overlay");
+  if (overlay.length === coldStorage.length) {
+    const devices = [...new Set(overlay.map((c) => c.originDevice).filter((d): d is string => !!d))];
+    const tail = devices.length === 1
+      ? `archived on device ${devices[0]}; restore it there`
+      : "each is archived on another device; restore it there";
+    return `${head} — ${tail} (memory-unarchive is local-only).`;
+  }
+  // Nothing established local, and at least one origin we could not resolve →
+  // say the safe thing rather than name a device or a command we can't back.
+  return `${head} — restore each on the device that archived it (memory-unarchive is local-only).`;
 }

@@ -219,10 +219,11 @@ describe("ranking drops rows with no usable id (round-20)", () => {
     // The malformed row scores identically to the valid ones; with the sort's
     // String(id ?? "") tiebreak, "" sorts FIRST — so pre-fix it took slot 1 and
     // pushed the third valid match out of the top-K window.
-    const entries = [
-      corrupt({ title: "vim keybindings", status: "archived" }, { id: undefined }),
-      arch("semantic/p/a"), arch("semantic/p/b"), arch("semantic/p/c"),
-    ];
+    const entries = {
+      "semantic/p/idless": corrupt({ title: "vim keybindings", status: "archived" }, { id: undefined }),
+      "semantic/p/a": arch("semantic/p/a"), "semantic/p/b": arch("semantic/p/b"),
+      "semantic/p/c": arch("semantic/p/c"),
+    };
     const q = Q({ text: "vim" });
     const cold = runColdPass({ entries, scored: [], query: q, sources: {} });
     expect(cold.length).toBe(COLD_TOP_K);

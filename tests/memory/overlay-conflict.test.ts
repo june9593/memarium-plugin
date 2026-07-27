@@ -87,6 +87,80 @@ describe("isOverlayConflict — equal-updatedAt archival divergence is a conflic
   });
 });
 
+describe("sameMemoryContent — a differing `id` is DIVERGENCE (round-21)", () => {
+  // Neither index loader checks that a row's MAP KEY agrees with the row's own
+  // `id` (loadMemoryIndexStrict validates only the top-level `entries` map), so
+  // the overlay row fetched under the LOCAL key can carry a DIFFERENT `id`.
+  // Omitting `id` from the substantive comparison made two rows that name
+  // different records read as "an already-synced copy" — and the cross-device
+  // guard then waved through a write whose .md path is derived from `entry.id`,
+  // i.e. against a record the comparison never looked at.
+  it("two copies identical in every OTHER compared field but with different ids are NOT equivalent", () => {
+    expect(sameMemoryContent(entry({ id: "semantic/p/x" }), entry({ id: "semantic/p/victim" }))).toBe(false);
+  });
+
+  it("…including the shape whose FINAL PATH SEGMENT (and canonical .md path) still matches", () => {
+    // canonicalMemoryPath keys off {type, project, LAST segment of id}, so these
+    // two DIFFERENT ids derive the SAME .md path — the body check cannot see the
+    // difference either. Only comparing `id` catches it.
+    expect(sameMemoryContent(entry({ id: "semantic/p/x" }), entry({ id: "semantic/q/x" }))).toBe(false);
+  });
+
+  it("equal ids stay equivalent (regression lock — no new false divergence)", () => {
+    expect(sameMemoryContent(entry(), entry())).toBe(true);
+    expect(sameMemoryContent(entry({ id: "procedural/p/y" }), entry({ id: "procedural/p/y" }))).toBe(true);
+  });
+});
+
+describe("isOverlayConflict — an overlay row whose `id` disagrees is a CONFLICT (round-21)", () => {
+  /** Write `<tree>/memory/semantic/p/<slug>.md` with a body identical in BOTH
+   *  trees, for every slug asked for — so every body comparison the guard can
+   *  reach answers "equivalent". The ONLY thing that can flip these cases to
+   *  `true` is `id` being compared, not an unreadable-body fallback. */
+  function withBodies(slugs: string[], fn: (roots: { local: string; overlay: string }) => void) {
+    const root = mkdtempSync(join(tmpdir(), "vbp-ovl-r21-"));
+    try {
+      for (const tree of ["local", "overlay"]) {
+        const p = join(root, tree, "memory/semantic/p");
+        mkdirSync(p, { recursive: true });
+        for (const slug of slugs) {
+          writeFileSync(join(p, `${slug}.md`), `---\nid: semantic/p/${slug}\n---\n\n# T\n\nSame body on both devices.\n`);
+        }
+      }
+      fn({ local: join(root, "local"), overlay: join(root, "overlay") });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("equal updatedAt + identical readable body, but the overlay row carries a DIFFERENT id → conflict", () => {
+    // The overlay id's canonical .md EXISTS in the overlay tree with the very
+    // same body, so pre-fix this compared as an equivalent synced copy and the
+    // archival write went through against a record it never compared.
+    withBodies(["x", "victim"], (roots) => {
+      expect(isOverlayConflict(entry(), entry(), roots)).toBe(false);                      // control
+      expect(isOverlayConflict(entry(), entry({ id: "semantic/p/victim" }), roots)).toBe(true);
+    });
+  });
+
+  it("a differing id that derives the SAME canonical .md path is a conflict too (body check can't see it)", () => {
+    // `semantic/p/x` vs `semantic/q/x`: same type/project/slug → both bodies
+    // resolve to memory/semantic/p/x.md, one per tree, and match. Divergent
+    // identity is invisible to every other comparison in the module.
+    withBodies(["x"], (roots) => {
+      expect(isOverlayConflict(entry(), entry(), roots)).toBe(false);                      // control
+      expect(isOverlayConflict(entry(), entry({ id: "semantic/q/x" }), roots)).toBe(true);
+    });
+  });
+
+  it("an overlay row with a missing / non-string id is a CONFLICT (uncomparable identity)", () => {
+    withBodies(["x"], (roots) => {
+      expect(isOverlayConflict(entry(), { ...entry(), id: undefined } as unknown, roots)).toBe(true);
+      expect(isOverlayConflict(entry(), { ...entry(), id: 7 } as unknown, roots)).toBe(true);
+    });
+  });
+});
+
 describe("isOverlayConflict — fails CLOSED on an overlay row it cannot compare", () => {
   const roots = { local: "/nonexistent", overlay: "/nonexistent" };
 

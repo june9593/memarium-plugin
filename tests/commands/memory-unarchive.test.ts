@@ -343,6 +343,45 @@ describe("memoryUnarchiveCmd", () => {
     expect(readIndexStatus("semantic/p/c")).toBe("active");
     expect(readMdField("semantic/p/c.md", "status")).toBe("active");
   });
+
+  it("round-21: REFUSES when the overlay row under this id carries a DIFFERENT `id`", async () => {
+    // The overlay index is filed by MAP KEY and no loader checks the key against
+    // the row's own `id`, so `overlayEntries[opts.id]` can hand back a row that
+    // names a DIFFERENT record. Pre-fix `sameMemoryContent` omitted `id`, so a
+    // same-day row identical in every other compared field read as "an
+    // already-synced copy" and the restore (which restamps updatedAt and can win
+    // the next merge) went through without ever comparing the real sibling.
+    // Discriminating fixture: the overlay tree ALSO holds the .md the foreign id
+    // derives, with the same body, so the body check answers "equivalent" too.
+    seed();
+    const overlayRoot = join(home, ".memarium", "aggregated");
+    mkdirSync(join(overlayRoot, ".memarium"), { recursive: true });
+    const overlayEntries = {
+      // equal updatedAt (2026-01-01) + every compared field identical to the
+      // local archived row — the ONLY difference is the row's own `id`.
+      "semantic/p/c": { id: "semantic/p/victim", type: "semantic", scope: "project:p", project: "p",
+        title: "Archived fact", summary: "s", path: "memory/semantic/p/c.md", status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "expired",
+        confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+        validFrom: null, validTo: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+        supersedes: null, entities: [], trust: "trusted" as const, originDevice: null,
+        accessCount: 0, lastAccess: null },
+    };
+    writeFileSync(join(overlayRoot, ".memarium", "index.memory.json"),
+      JSON.stringify({ version: 1, entries: overlayEntries }, null, 2) + "\n");
+    mkdirSync(join(overlayRoot, "memory/semantic/p"), { recursive: true });
+    writeFileSync(join(overlayRoot, "memory/semantic/p/victim.md"),
+      `---\nid: semantic/p/victim\ntype: semantic\nstatus: archived\n---\n\n# Archived fact\n\nThe real body of semantic/p/c.\n`);
+    const idxBefore = readFileSync(idxPath(), "utf8");
+    const cMd = readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }))
+      .rejects.toThrow(/newer\/divergent copy exists|resolve there/i);
+
+    expect(readIndexStatus("semantic/p/c")).toBe("archived");            // still archived
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);             // nothing written
+    expect(readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8")).toBe(cMd);
+  });
 });
 
 describe("memoryUnarchiveCmd — round-16 fail-closed guards", () => {

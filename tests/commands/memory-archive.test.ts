@@ -700,4 +700,42 @@ describe("memoryArchiveCmd — round-16 fail-closed guards", () => {
       expect(warnings.join("\n")).toMatch(/skipped 2 id\(s\) in a cross-device conflict/);
     });
   });
+
+  describe("round-21: an overlay row whose `id` disagrees with its key is a CONFLICT", () => {
+    it("skips an id whose overlay row is identical EXCEPT for a different `id`", async () => {
+      // The overlay index is filed by MAP KEY and no loader checks the key
+      // against the row's own `id`, so the row fetched under the local key can
+      // name a DIFFERENT record. Pre-fix `sameMemoryContent` omitted `id`, so
+      // this compared as "an already-synced copy" — and archival then wrote a
+      // .md path derived from `entry.id`, i.e. against a record it never
+      // compared. Discriminating fixture: the overlay tree also holds the .md
+      // the FOREIGN id derives, with the same body, so the body check answers
+      // "equivalent" too and only the id comparison can flip this to a skip.
+      const warnings: string[] = [];
+      vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+      writeLocal({
+        "semantic/p/idmix": expired("idmix"),   // overlay row carries a foreign id → SKIP
+        "semantic/p/idsame": expired("idsame"), // overlay row agrees on id + body → ARCHIVE (control)
+      });
+      const idmixMd = readFileSync(join(repo, "memory/semantic/p/idmix.md"), "utf8");
+      writeOverlayRaw(JSON.stringify({
+        version: 1,
+        entries: {
+          // every compared field matches the local row; only `id` differs
+          "semantic/p/idmix": { ...expired("idmix"), id: "semantic/p/victim" },
+          "semantic/p/idsame": { ...expired("idsame") },
+        },
+      }, null, 2) + "\n");
+      mkdirSync(join(overlayRoot(), "memory/semantic/p"), { recursive: true });
+      writeFileSync(join(overlayRoot(), "memory/semantic/p/victim.md"), md("idmix"));
+      writeFileSync(join(overlayRoot(), "memory/semantic/p/idsame.md"), md("idsame"));
+
+      await memoryArchiveCmd({ cwd: repo, apply: true });
+
+      expect(readIndexStatus("semantic/p/idmix")).toBe("active");     // skipped, not archived
+      expect(readFileSync(join(repo, "memory/semantic/p/idmix.md"), "utf8")).toBe(idmixMd); // .md untouched
+      expect(readIndexStatus("semantic/p/idsame")).toBe("archived");  // equivalent copy still archives
+      expect(warnings.join("\n")).toMatch(/skipped 1 id\(s\) in a cross-device conflict/);
+    });
+  });
 });

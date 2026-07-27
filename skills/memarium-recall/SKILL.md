@@ -91,10 +91,11 @@ Output:
   answers your query weakly, recall surfaces strongly-matching **archived**
   entries here — id, title, `archivedReason`, `trust`. Archival is automatic, so
   this is how a wrongly-archived memory comes back. If a cold hit is clearly
-  on-topic, tell the user and offer the restore
-  (`"$VBP" memory-unarchive <id>` — for a hit with `source: "overlay"` say it
-  must be restored on its `originDevice` instead). Treat any hit whose `trust`
-  isn't `trusted` as unverified — don't state it as fact.
+  on-topic, tell the user and offer the restore — `"$VBP" memory-unarchive <id>`
+  **only** when `source: "local"`; for `source: "overlay"` say it must be
+  restored on its `originDevice`, and for `source: "unknown"` say it must be
+  restored on whichever device archived it (the command is local-only). Treat
+  any hit whose `trust` isn't `trusted` as unverified — don't state it as fact.
 
 ## Step 2 — Read the top hits
 

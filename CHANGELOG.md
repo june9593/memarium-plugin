@@ -19,7 +19,12 @@ Memories now have a lifecycle. A new `status: "archived"` (+ `archivedAt` /
   by **both** `memory-query` (`/memarium-context`) **and** `recall`
   (`/memarium-recall`) resurfaces strongly-matching archived entries
   (project-scoped) with a restore hint when active recall is weak, so a
-  wrongly-archived memory comes back on demand.
+  wrongly-archived memory comes back on demand. The hint is **origin-aware and
+  fail-closed**: the local `memory-unarchive <id>` command is offered only for a
+  hit whose origin resolves to the local index; an overlay hit names its origin
+  device, and an origin that can't be established (`source: "unknown"`) gets a
+  generic "restore it on the device that archived it" — a wrong local command is
+  worse than a vaguer correct one.
 - Recall + primer + the memory-query conflicts section + entity-query all
   exclude archived (single `isArchived` predicate). The R2 valve is the ONLY
   read path that surfaces archived — and it never writes.

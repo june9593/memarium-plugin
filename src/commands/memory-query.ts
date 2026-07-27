@@ -97,9 +97,11 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQu
   // R2 resurrect valve (READ ONLY): if the active recall produced few
   // content-matched hits, surface the top strongly-matching ARCHIVED entries.
   // Shared with `recall` — see src/memory/cold-pass.ts for the gate, the scope/
-  // type filtering and the trust handling. NEVER writes/mutates status.
+  // type filtering and the trust handling. NEVER writes/mutates status. Passes
+  // `view.entries` (the KEYED map) so each hit's origin resolves under the same
+  // key `view.sources` is keyed with, never the row's untrusted `id`.
   const coldStorage: ColdStorageHit[] = runColdPass({
-    entries, scored, query: scoreQuery, sources: view.sources,
+    entries: view.entries, scored, query: scoreQuery, sources: view.sources,
   });
 
   const payload: MemoryQueryResult = {
