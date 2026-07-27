@@ -7675,6 +7675,7 @@ function localWins(localAt, overlayAt) {
   const overlayMs = epochMs(overlayAt);
   if (overlayMs === null) return true;
   if (localMs === null) return false;
+  if (calendarDate(localAt) === calendarDate(overlayAt)) return true;
   return localMs >= overlayMs;
 }
 function resolveMemoryView(repoPath, overlayRoot = aggregatedOverlayPath()) {
@@ -14403,60 +14404,6 @@ var init_finalize = __esm({
   }
 });
 
-// src/memory/render.ts
-function arr(xs) {
-  const a = xs ?? [];
-  return a.length === 0 ? "[]" : `[${a.join(", ")}]`;
-}
-function nullable(v) {
-  return v == null ? "null" : String(v);
-}
-function req(v, fallback) {
-  if (v == null || v === "") return fallback;
-  if (typeof v === "number" && !Number.isFinite(v)) return fallback;
-  return String(v);
-}
-function renderMemoryMarkdown(entry, body) {
-  const fm = [
-    "---",
-    `id: ${entry.id}`,
-    `type: ${entry.type}`,
-    `scope: ${entry.scope}`,
-    `project: ${nullable(entry.project)}`,
-    `title: ${entry.title}`,
-    `summary: ${entry.summary ?? ""}`,
-    `status: ${req(entry.status, "active")}`,
-    `confidence: ${req(entry.confidence, "0.5")}`,
-    `importance: ${req(entry.importance, "0")}`,
-    `createdAt: ${req(entry.createdAt, "")}`,
-    `updatedAt: ${req(entry.updatedAt, "")}`,
-    `validFrom: ${nullable(entry.validFrom)}`,
-    `validTo: ${nullable(entry.validTo)}`,
-    `supersedes: ${nullable(entry.supersedes)}`,
-    `originDevice: ${nullable(entry.originDevice)}`,
-    `archivedAt: ${nullable(entry.archivedAt)}`,
-    `archivedReason: ${nullable(entry.archivedReason)}`,
-    `sourceSessions: ${arr(entry.sourceSessions)}`,
-    `sourceCommits: ${arr(entry.sourceCommits)}`,
-    `sourceFiles: ${arr(entry.sourceFiles)}`,
-    `entities: ${arr(entry.entities)}`,
-    `trust: ${entry.trust ?? "unknown"}`,
-    "---"
-  ].join("\n");
-  const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
-  return `${fm}
-
-# ${entry.title}
-
-${trimmedBody}
-`;
-}
-var init_render = __esm({
-  "src/memory/render.ts"() {
-    "use strict";
-  }
-});
-
 // src/memory/gate.ts
 function isGated(e) {
   if (!e || typeof e !== "object") return false;
@@ -14503,6 +14450,15 @@ function isSafeMemoryId(id) {
   if (!SAFE_MEMORY_ID_RE.test(id)) return false;
   return id.split("/").every(isSafePathSegment);
 }
+function hasControlChars(s) {
+  return CONTROL_CHAR_RE.test(s);
+}
+function isWritableMemoryId(id) {
+  if (typeof id !== "string") return false;
+  if (id.length === 0 || id.length > MAX_MEMORY_ID_LENGTH) return false;
+  if (hasControlChars(id)) return false;
+  return id.split("/").every(isSafePathSegment);
+}
 function canonicalMemoryPath(entry) {
   if (!MEMORY_TYPES.has(entry.type)) {
     throw new Error(`memory path: invalid type ${JSON.stringify(entry.type)} (not a MemoryType)`);
@@ -14511,7 +14467,7 @@ function canonicalMemoryPath(entry) {
   const slug = safeSegment(entry.id.split("/").pop() ?? entry.id, "slug");
   return `memory/${entry.type}/${scopeDir}/${slug}.md`;
 }
-var MEMORY_TYPES, SAFE_MEMORY_ID_RE, MAX_MEMORY_ID_LENGTH;
+var MEMORY_TYPES, SAFE_MEMORY_ID_RE, MAX_MEMORY_ID_LENGTH, CONTROL_CHAR_RE;
 var init_gate = __esm({
   "src/memory/gate.ts"() {
     "use strict";
@@ -14523,6 +14479,70 @@ var init_gate = __esm({
     ]);
     SAFE_MEMORY_ID_RE = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
     MAX_MEMORY_ID_LENGTH = 256;
+    CONTROL_CHAR_RE = /[\u0000-\u001F\u007F-\u009F]/;
+  }
+});
+
+// src/memory/render.ts
+function arr(xs) {
+  const a = xs ?? [];
+  return a.length === 0 ? "[]" : `[${a.join(", ")}]`;
+}
+function nullable(v) {
+  return v == null ? "null" : String(v);
+}
+function req(v, fallback) {
+  if (v == null || v === "") return fallback;
+  if (typeof v === "number" && !Number.isFinite(v)) return fallback;
+  return String(v);
+}
+function identLine(key, value) {
+  if (hasControlChars(value)) {
+    throw new Error(
+      `memory render: refusing to write ${key} containing a control character \u2014 it would forge extra frontmatter lines (${JSON.stringify(value)})`
+    );
+  }
+  return `${key}: ${value}`;
+}
+function renderMemoryMarkdown(entry, body) {
+  const fm = [
+    "---",
+    identLine("id", String(entry.id)),
+    identLine("type", String(entry.type)),
+    identLine("scope", String(entry.scope)),
+    identLine("project", nullable(entry.project)),
+    `title: ${entry.title}`,
+    `summary: ${entry.summary ?? ""}`,
+    identLine("status", req(entry.status, "active")),
+    `confidence: ${req(entry.confidence, "0.5")}`,
+    `importance: ${req(entry.importance, "0")}`,
+    `createdAt: ${req(entry.createdAt, "")}`,
+    `updatedAt: ${req(entry.updatedAt, "")}`,
+    `validFrom: ${nullable(entry.validFrom)}`,
+    `validTo: ${nullable(entry.validTo)}`,
+    `supersedes: ${nullable(entry.supersedes)}`,
+    `originDevice: ${nullable(entry.originDevice)}`,
+    `archivedAt: ${nullable(entry.archivedAt)}`,
+    `archivedReason: ${nullable(entry.archivedReason)}`,
+    `sourceSessions: ${arr(entry.sourceSessions)}`,
+    `sourceCommits: ${arr(entry.sourceCommits)}`,
+    `sourceFiles: ${arr(entry.sourceFiles)}`,
+    `entities: ${arr(entry.entities)}`,
+    `trust: ${entry.trust ?? "unknown"}`,
+    "---"
+  ].join("\n");
+  const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
+  return `${fm}
+
+# ${entry.title}
+
+${trimmedBody}
+`;
+}
+var init_render = __esm({
+  "src/memory/render.ts"() {
+    "use strict";
+    init_gate();
   }
 });
 
@@ -14675,8 +14695,7 @@ function missingRewriteField(entry) {
     if (!Array.isArray(v)) return field;
   }
   if (!isSafePathSegment(e.project ?? "_global")) return "unsafe project segment";
-  const id = e.id;
-  if (!isSafePathSegment(id.split("/").pop() ?? id)) return "unsafe id segment";
+  if (!isWritableMemoryId(e.id)) return "unsafe id";
   let canonical;
   try {
     canonical = canonicalMemoryPath(entry);
