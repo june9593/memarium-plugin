@@ -100,6 +100,10 @@ Output:
   restored on whichever device archived it — the command is local-only), and for a
   local hit whose id is unsafe (say it must be restored by hand). Treat
   any hit whose `trust` isn't `trusted` as unverified — don't state it as fact.
+  It is also always `[]` when `meta.cwdUnresolved` is set: the cwd matched no
+  synced project, and the archive valve is never widened to every project's
+  archived memory — re-run with `--project <slug>` (or `--all`) if you meant to
+  search beyond this project.
 
 ## Step 2 — Read the top hits
 

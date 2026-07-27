@@ -144,3 +144,136 @@ describe("renderMemoryMarkdown — round-32 (SECURITY): frontmatter is LINE-ORIE
     expect(renderMemoryMarkdown(entry({ project: null }), "b")).toContain("project: null");
   });
 });
+
+describe("renderMemoryMarkdown — round-34 (SECURITY): NO frontmatter value can inject a line", () => {
+  // Round-32 hardened only the IDENTIFIER-ish scalars (id/type/scope/status/
+  // project) and deliberately left `title`/`summary` alone as "free prose".
+  // That reasoning was wrong, because the damage is not to the poisoned field —
+  // it is to a DIFFERENT one. A newline in ANY raw value opens a second
+  // `key: value` line, and the pre-fix parser kept the LATER duplicate, so
+  // `title: "x\nid: semantic/p/other"` handed the attacker the parsed `id`
+  // despite the id itself being fully validated. The whole frontmatter block is
+  // one shared line-oriented namespace: every value written into it has to be
+  // structurally incapable of ending its own line.
+  //
+  // Two layers, both asserted here: the serializer NEUTRALIZES control chars in
+  // free-text/other values (never throws — a legitimate authored title must not
+  // hard-fail a write), and the parser keeps the FIRST occurrence of a key.
+
+  /** Frontmatter lines that declare `key` (start of line, `key: `). */
+  function fmLines(md: string, key: string): string[] {
+    const fm = md.match(/^---\n([\s\S]*?)\n---/)![1];
+    return fm.split("\n").filter((l) => l.startsWith(`${key}:`));
+  }
+
+  it("a NEWLINE in `title` cannot forge a second `id:` line, and the parsed id stays the real one", () => {
+    const md = renderMemoryMarkdown(entry({ title: "x\nid: semantic/p/other" }), "body");
+    expect(fmLines(md, "id")).toHaveLength(1);
+    expect(parseMemoryMarkdown(md)?.id).toBe("procedural/code-demo/add-source-adapter");
+  });
+
+  it("a NEWLINE in `summary` cannot forge a second `status:` line (un-archiving by injection)", () => {
+    const md = renderMemoryMarkdown(
+      entry({ status: "archived", summary: "s\nstatus: active" }), "body",
+    );
+    expect(fmLines(md, "status")).toEqual(["status: archived"]);
+    expect(parseMemoryMarkdown(md)?.status).toBe("archived");
+  });
+
+  it("a NEWLINE in a NULLABLE scalar (archivedReason) cannot forge a line either", () => {
+    const md = renderMemoryMarkdown(
+      entry({ status: "archived", archivedAt: "2026-05-01", archivedReason: "stale\nstatus: active" }),
+      "body",
+    );
+    expect(fmLines(md, "status")).toEqual(["status: archived"]);
+    expect(fmLines(md, "archivedReason")).toHaveLength(1);
+    expect(parseMemoryMarkdown(md)?.status).toBe("archived");
+  });
+
+  it("a NEWLINE in an ARRAY ELEMENT cannot forge a line (elements are joined onto one)", () => {
+    const md = renderMemoryMarkdown(
+      entry({ status: "archived", entities: ["a\nstatus: active", "b"] }), "body",
+    );
+    expect(fmLines(md, "status")).toEqual(["status: archived"]);
+    expect(fmLines(md, "entities")).toHaveLength(1);
+    expect(parseMemoryMarkdown(md)?.status).toBe("archived");
+  });
+
+  it("neutralizes the whole control-char class in free text, not just \\n", () => {
+    for (const ch of ["\n", "\r", "\u0000", "\u0007", "\u001f", "\u007f", "\u009f"]) {
+      const md = renderMemoryMarkdown(entry({ title: `a${ch}b`, summary: `c${ch}d` }), "body");
+      const lines = md.match(/^---\n([\s\S]*?)\n---/)![1].split("\n");
+      expect(fmLines(md, "title")).toHaveLength(1);
+      expect(fmLines(md, "summary")).toHaveLength(1);
+      // exactly the 22 keys the renderer emits — no forged extra line
+      expect(lines).toHaveLength(22);
+      // and no line carries any of the class gate.ts hasControlChars detects
+      for (const l of lines) expect(l).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    }
+  });
+
+  it("the IDENTIFIER fields still THROW rather than neutralize (round-32 lock stays)", () => {
+    for (const field of ["id", "type", "scope", "status", "project"] as const) {
+      const poisoned = entry({ [field]: `${String(entry()[field])}\nforged: value` } as Partial<MemoryEntry>);
+      expect(() => renderMemoryMarkdown(poisoned, "body")).toThrow(/control character|refusing/i);
+    }
+  });
+
+  it("a clean entry is byte-identical before and after the fix (no gratuitous format change)", () => {
+    const e = entry();
+    const md = renderMemoryMarkdown(e, "Writer needs zero changes.");
+    // exact expected serialization — a format drift would break every existing .md
+    expect(md).toBe([
+      "---",
+      "id: procedural/code-demo/add-source-adapter",
+      "type: procedural",
+      "scope: project:code-demo",
+      "project: code-demo",
+      "title: Add a source adapter",
+      "summary: extend Tool union, register, write parser",
+      "status: active",
+      "confidence: 0.9",
+      "importance: 4",
+      "createdAt: 2026-06-09",
+      "updatedAt: 2026-06-09",
+      "validFrom: null",
+      "validTo: null",
+      "supersedes: null",
+      "originDevice: mac",
+      "archivedAt: null",
+      "archivedReason: null",
+      "sourceSessions: [abc12345]",
+      "sourceCommits: []",
+      "sourceFiles: [src/sources/base.ts]",
+      "entities: [Tool, SourceAdapter]",
+      "trust: unknown",
+      "---",
+      "",
+      "# Add a source adapter",
+      "",
+      "Writer needs zero changes.",
+      "",
+    ].join("\n"));
+    // and it survives a render → parse → render round trip unchanged
+    const back = parseMemoryMarkdown(md)!;
+    expect(renderMemoryMarkdown({ ...back, path: e.path }, "Writer needs zero changes.")).toBe(md);
+  });
+});
+
+describe("parseMemoryMarkdown — duplicate frontmatter keys: FIRST wins (anti-injection)", () => {
+  it("keeps the FIRST occurrence of a duplicated key, not the later one", () => {
+    // Hand-crafted document with the shape an injection produces: the real,
+    // validated line first, an attacker's line after it.
+    const md = [
+      "---",
+      "id: semantic/p/real", "type: semantic", "scope: project:p", "project: p",
+      "title: t", "summary: s", "status: archived",
+      "id: semantic/p/forged", "status: active", "project: other",
+      "---", "", "# t", "body",
+    ].join("\n");
+    const back = parseMemoryMarkdown(md)!;
+    expect(back.id).toBe("semantic/p/real");
+    expect(back.status).toBe("archived");
+    expect(back.project).toBe("p");
+  });
+});

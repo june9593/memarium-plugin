@@ -119,11 +119,34 @@ export function isSafeMemoryId(id: unknown): id is string {
  *  `key: value` frontmatter scalar. Spaces and ordinary punctuation cannot. */
 const CONTROL_CHAR_RE = /[\u0000-\u001F\u007F-\u009F]/;
 
+/** The SAME character class, global, derived from `CONTROL_CHAR_RE.source` so the
+ *  detector and the neutralizer can never disagree about what a control character
+ *  is. (They cannot be ONE object: a `/g` regex is stateful under `.test()`.) */
+const CONTROL_CHAR_RE_GLOBAL = new RegExp(CONTROL_CHAR_RE.source, "g");
+
 /** True iff `s` carries any ASCII control character. Shared by the rewrite gate
  *  (`isWritableMemoryId`) and the renderer's `identLine` backstop, so the two
  *  layers of the same defense cannot disagree about what a control character is. */
 export function hasControlChars(s: string): boolean {
   return CONTROL_CHAR_RE.test(s);
+}
+
+/**
+ * Make a string SAFE to write as ONE line-oriented `key: value` frontmatter
+ * scalar: every ASCII control character becomes a single space, so the value
+ * cannot end its own line and open another one.
+ *
+ * The NON-THROWING counterpart to the renderer's `identLine` refusal (round-34).
+ * Identifier-ish fields (id/type/scope/status/project) are schema-constrained, so
+ * a control character in them is unambiguous corruption and refusing is right.
+ * Everything else a memory .md carries — free authored prose (`title`/`summary`),
+ * the nullable scalars, the array elements — is legitimate user content, and
+ * hard-failing an entire write over a stray control character in prose would be
+ * worse than this normalization. It is lossless for every real value: these are
+ * ONE-LINE fields by definition.
+ */
+export function neutralizeControlChars(s: string): string {
+  return s.replace(CONTROL_CHAR_RE_GLOBAL, " ");
 }
 
 /**

@@ -279,6 +279,68 @@ describe("recall — R2 cold-storage valve (shared with memory-query)", () => {
     expect(p.meta.nextStep).toMatch(/unsafe to use in a command/);
   });
 
+  // ROUND-34 (SECURITY / scope leak): an UNRESOLVED cwd used to leave
+  // `projectFilter` null, and a null project means WHOLE-STORE to the cold pass
+  // (`inScope` returns true for everything when project === null). So naming a
+  // cwd that maps to no synced project quietly turned the archived-memory valve
+  // into a cross-project search — the exact inverse of the project scoping the
+  // cold pass was given in round 6, and worse than the primary pass leaking,
+  // because each cold hit also renders a restore command for another project's
+  // archive. A caller who named a cwd did not ask for other projects' memory.
+  it("an UNRESOLVABLE cwd surfaces NO cold hits (no whole-store fallback)", async () => {
+    writeLocalIndex({
+      // archived matches in projects the caller never asked about
+      "semantic/code-demo/coldvim": mk({ id: "semantic/code-demo/coldvim", title: "Vim keybindings",
+        summary: "vim editor setup", entities: ["vim"], status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value",
+        path: "memory/semantic/code-demo/coldvim.md" }),
+      "semantic/other/coldvim2": mk({ id: "semantic/other/coldvim2", scope: "project:other",
+        project: "other", title: "Vim in other project", summary: "vim setup elsewhere",
+        entities: ["vim"], status: "archived", archivedAt: "2026-05-01", archivedReason: "stale",
+        path: "memory/semantic/other/coldvim2.md" }),
+    });
+
+    const p = await run({ cwd: "/nowhere/unsynced", q: "vim" });
+    expect(p.meta.cwdUnresolved).toBe(true);
+    expect(p.project).toBeNull();
+    expect(p.coldStorage).toEqual([]);
+    // …and nothing about another project's archive reaches the human hint either
+    expect(errs.join("\n")).not.toMatch(/❄️|coldvim/);
+    // the nextStep must still tell the caller how to widen deliberately
+    expect(p.meta.nextStep).toMatch(/--project|--all/);
+  });
+
+  // The pair to the above: the valve is disarmed by the UNRESOLVED cwd, not by a
+  // null project — an explicit `--all` is a deliberate whole-store request.
+  it("--all still surfaces cold hits across projects (the null project is not the trigger)", async () => {
+    writeLocalIndex({
+      "semantic/other/coldvim2": mk({ id: "semantic/other/coldvim2", scope: "project:other",
+        project: "other", title: "Vim in other project", summary: "vim setup elsewhere",
+        entities: ["vim"], status: "archived", archivedAt: "2026-05-01",
+        archivedReason: "unused-low-value", path: "memory/semantic/other/coldvim2.md" }),
+    });
+    const p = await run({ cwd: "/nowhere/unsynced", all: true, q: "vim" });
+    expect(p.meta.cwdUnresolved).toBeUndefined();
+    expect(p.coldStorage.map((c: { id: string }) => c.id)).toEqual(["semantic/other/coldvim2"]);
+  });
+
+  // Regression lock for the other half: a RESOLVABLE cwd keeps working exactly
+  // as before — cold hits surface, scoped to that project.
+  it("a RESOLVABLE cwd still surfaces its own project's cold hits and only those", async () => {
+    writeLocalIndex({
+      "semantic/code-demo/coldvim": mk({ id: "semantic/code-demo/coldvim", title: "Vim keybindings",
+        summary: "vim editor setup", entities: ["vim"], status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value",
+        path: "memory/semantic/code-demo/coldvim.md" }),
+      "semantic/other/coldvim2": mk({ id: "semantic/other/coldvim2", scope: "project:other",
+        project: "other", title: "Vim in other project", summary: "vim setup elsewhere",
+        entities: ["vim"], status: "archived", archivedAt: "2026-05-01", archivedReason: "stale",
+        path: "memory/semantic/other/coldvim2.md" }),
+    });
+    const p = await run({ cwd: "/work/code-demo", q: "vim" });
+    expect(p.coldStorage.map((c: { id: string }) => c.id)).toEqual(["semantic/code-demo/coldvim"]);
+  });
+
   it("a normal archived id still gets the (now single-QUOTED) command in the payload", async () => {
     writeLocalIndex({
       "semantic/code-demo/coldvim": mk({ id: "semantic/code-demo/coldvim", title: "Vim keybindings",

@@ -1,5 +1,5 @@
 import type { MemoryEntry } from "./types.js";
-import { hasControlChars } from "./gate.js";
+import { hasControlChars, neutralizeControlChars } from "./gate.js";
 
 function arr(xs: string[] | undefined): string {
   const a = xs ?? [];
@@ -46,9 +46,12 @@ function req(v: string | number | null | undefined, fallback: string): string {
  * SCOPE — the IDENTIFIER-ish scalars only: `id`, `type`, `scope`, `status`,
  * `project`. Those are schema-constrained (an id is `<type>/<project|_global>/
  * <kebab-slug>`, a status is one of four literals, a project is a single path
- * segment), so a control character in them is unambiguously corruption. `title`
- * and `summary` are free authored prose: refusing or rewriting them here would
- * change behavior for legitimate content, so they are deliberately left as-is.
+ * segment), so a control character in them is unambiguously corruption.
+ *
+ * EVERY OTHER value goes through `valueLine` instead, which NEUTRALIZES rather
+ * than refuses — see the round-34 note there. Round-32 left those fields raw on
+ * the reasoning that they are free prose; that was wrong, because the damage a
+ * poisoned value does lands on a DIFFERENT field, not its own.
  *
  * Round-33 — CONTROL CHARACTERS ONLY, deliberately. This does NOT reject a SPACE
  * or ordinary punctuation, because neither can forge a frontmatter line, and ids
@@ -67,13 +70,50 @@ function identLine(key: string, value: string): string {
   return `${key}: ${value}`;
 }
 
+/**
+ * Emit ONE frontmatter line for a NON-identifier value, neutralized so it cannot
+ * inject a second line.
+ *
+ * SECURITY (round-34). Round-32 scoped the injection defense to the
+ * identifier-ish fields and left `title` / `summary` (and, implicitly, the
+ * nullable scalars, the numerics, `trust`, and every ARRAY ELEMENT, which are
+ * joined onto ONE line) raw — on the reasoning that they are free authored prose
+ * and refusing them would break legitimate writes. That reasoning missed the
+ * actual attack: frontmatter is a SHARED line-oriented namespace, so the field a
+ * poisoned value forges is never itself. `title: "x\nid: semantic/p/other"`
+ * emits a SECOND `id:` line below the validated one, and the parser then decides
+ * which id the document has. The `id` being perfectly gated bought nothing.
+ *
+ * So the serialization boundary is now structurally incapable of emitting an
+ * injected line for ANY value: the frontmatter block below is built from
+ * `identLine` (refuse) and `valueLine` (neutralize) and NOTHING ELSE — do not
+ * add a raw template literal back into it.
+ *
+ * NEUTRALIZE, not refuse, here: prose and free-form reasons are legitimate user
+ * content, and a stray control character in them must not hard-fail an unattended
+ * digest write. Nothing real is lost — every field this renders is a ONE-LINE
+ * field by definition. Arrays are covered by the same single call because `arr`
+ * has already joined the elements into this one string.
+ *
+ * The parser closes the same hole from the other side (first key wins), so
+ * neither layer is load-bearing alone.
+ */
+function valueLine(key: string, value: string): string {
+  return `${key}: ${neutralizeControlChars(value)}`;
+}
+
 /** Render a memory .md = YAML frontmatter (from the structured entry) + body.
  *  Tolerates missing optional fields: authored entries (memory-write / propose)
  *  routinely omit summary / supersedes / validFrom / validTo / originDevice /
  *  the source arrays. apply.ts normalizes the persisted entry; this renderer is
  *  the serialization boundary and must NEVER emit the literal "undefined".
  *
- *  THROWS on a control character in an identifier scalar — see `identLine`. */
+ *  INJECTION (round-34): the frontmatter block is built ONLY from `identLine`
+ *  (refuses a control character — identifier fields) and `valueLine`
+ *  (neutralizes it — everything else). That is the invariant that makes a
+ *  forged second `key:` line impossible; a raw `` `k: ${v}` `` added back here
+ *  would silently re-open it. THROWS on a control character in an identifier
+ *  scalar — see `identLine`. */
 export function renderMemoryMarkdown(entry: MemoryEntry, body: string): string {
   const fm = [
     "---",
@@ -81,26 +121,31 @@ export function renderMemoryMarkdown(entry: MemoryEntry, body: string): string {
     identLine("type", String(entry.type)),
     identLine("scope", String(entry.scope)),
     identLine("project", nullable(entry.project)),
-    `title: ${entry.title}`,
-    `summary: ${entry.summary ?? ""}`,
+    valueLine("title", String(entry.title ?? "")),
+    valueLine("summary", String(entry.summary ?? "")),
     identLine("status", req(entry.status, "active")),
-    `confidence: ${req(entry.confidence, "0.5")}`,
-    `importance: ${req(entry.importance, "0")}`,
-    `createdAt: ${req(entry.createdAt, "")}`,
-    `updatedAt: ${req(entry.updatedAt, "")}`,
-    `validFrom: ${nullable(entry.validFrom)}`,
-    `validTo: ${nullable(entry.validTo)}`,
-    `supersedes: ${nullable(entry.supersedes)}`,
-    `originDevice: ${nullable(entry.originDevice)}`,
-    `archivedAt: ${nullable(entry.archivedAt)}`,
-    `archivedReason: ${nullable(entry.archivedReason)}`,
-    `sourceSessions: ${arr(entry.sourceSessions)}`,
-    `sourceCommits: ${arr(entry.sourceCommits)}`,
-    `sourceFiles: ${arr(entry.sourceFiles)}`,
-    `entities: ${arr(entry.entities)}`,
-    `trust: ${entry.trust ?? "unknown"}`,
+    valueLine("confidence", req(entry.confidence, "0.5")),
+    valueLine("importance", req(entry.importance, "0")),
+    valueLine("createdAt", req(entry.createdAt, "")),
+    valueLine("updatedAt", req(entry.updatedAt, "")),
+    valueLine("validFrom", nullable(entry.validFrom)),
+    valueLine("validTo", nullable(entry.validTo)),
+    valueLine("supersedes", nullable(entry.supersedes)),
+    valueLine("originDevice", nullable(entry.originDevice)),
+    valueLine("archivedAt", nullable(entry.archivedAt)),
+    valueLine("archivedReason", nullable(entry.archivedReason)),
+    valueLine("sourceSessions", arr(entry.sourceSessions)),
+    valueLine("sourceCommits", arr(entry.sourceCommits)),
+    valueLine("sourceFiles", arr(entry.sourceFiles)),
+    valueLine("entities", arr(entry.entities)),
+    valueLine("trust", entry.trust ?? "unknown"),
     "---",
   ].join("\n");
   const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
-  return `${fm}\n\n# ${entry.title}\n\n${trimmedBody}\n`;
+  // The H1 echoes the title. A newline there cannot forge frontmatter (the block
+  // above is already closed, and the parser only reads the FIRST `---` block),
+  // but the heading is a one-line construct too — keep it consistent with the
+  // `title:` line rather than emitting a broken heading.
+  const heading = neutralizeControlChars(String(entry.title ?? ""));
+  return `${fm}\n\n# ${heading}\n\n${trimmedBody}\n`;
 }

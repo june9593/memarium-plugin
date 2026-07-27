@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderEntityMarkdown } from "../../src/entity/render.js";
+import { parseEntityMarkdown } from "../../src/entity/parse.js";
 import type { EntityPage } from "../../src/entity/types.js";
 
 function page(over: Partial<EntityPage> = {}): EntityPage {
@@ -69,5 +70,41 @@ describe("renderEntityMarkdown", () => {
     expect(idxOf("sourceFiles")).toBeLessThan(idxOf("relatedEntities"));
     expect(idxOf("relatedEntities")).toBeLessThan(idxOf("createdAt"));
     expect(idxOf("createdAt")).toBeLessThan(idxOf("updatedAt"));
+  });
+});
+
+describe("renderEntityMarkdown — round-34 (SECURITY): no value can inject a line", () => {
+  const fmLines = (md: string, key: string) =>
+    md.match(/^---\n([\s\S]*?)\n---/)![1].split("\n").filter((l) => l.startsWith(`${key}:`));
+
+  it("a NEWLINE in the free-text `title` cannot forge a second `id:` line", () => {
+    const md = renderEntityMarkdown(page({ title: "X\nid: entity/other/forged" }), "body");
+    expect(fmLines(md, "id")).toEqual(["id: entity/code-demo/source-adapter"]);
+    expect(parseEntityMarkdown(md)?.id).toBe("entity/code-demo/source-adapter");
+  });
+
+  it("a NEWLINE in a raw scalar (`kind`, the dates) cannot forge a line either", () => {
+    const md = renderEntityMarkdown(page({ kind: "symbol\nproject: other" as never, updatedAt: "2026-06-09\nscope: global" }), "body");
+    expect(fmLines(md, "project")).toEqual(["project: code-demo"]);
+    expect(fmLines(md, "scope")).toEqual(["scope: project:code-demo"]);
+  });
+
+  it("the parser keeps the FIRST occurrence of a duplicated key", () => {
+    const md = [
+      "---", "id: entity/code-demo/real", "kind: symbol", "scope: project:code-demo",
+      "project: code-demo", "title: t", "id: entity/other/forged", "project: other",
+      "---", "", "# t", "body",
+    ].join("\n");
+    const back = parseEntityMarkdown(md)!;
+    expect(back.id).toBe("entity/code-demo/real");
+    expect(back.project).toBe("code-demo");
+  });
+
+  it("a clean page is unchanged (no format drift)", () => {
+    const md = renderEntityMarkdown(page(), "body");
+    expect(md).toContain("id: entity/code-demo/source-adapter");
+    expect(md).toContain("title: SourceAdapter");
+    expect(md).toContain(`aliases: ["source adapter","adapter"]`);
+    expect(md).toContain("\n---\n\n# SourceAdapter\n");
   });
 });

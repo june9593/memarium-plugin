@@ -309,4 +309,27 @@ describe("memoryQueryCmd — R2 cold-storage resurrect valve", () => {
     expect(uLine).toMatch(/untrusted/);
     expect(tLine).not.toMatch(/untrusted/);
   });
+
+  // ROUND-34 (SECURITY / scope leak): `memory-query` has no --all/--project
+  // escape hatch, so a null project means exactly "this cwd is not a synced
+  // project" — and a null project means WHOLE STORE to the cold pass. Running
+  // /memarium-context from an unsynced directory therefore surfaced every OTHER
+  // project's archived memory, each with its own restore command. Fail closed.
+  it("an UNRESOLVABLE cwd surfaces NO cold hits (no whole-store fallback)", async () => {
+    writeIndex({
+      "semantic/code-demo/coldvim": mk({ id: "semantic/code-demo/coldvim", scope: "project:code-demo",
+        project: "code-demo", title: "Vim keybindings", summary: "vim editor setup",
+        path: "memory/semantic/code-demo/coldvim.md", status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value", entities: ["vim"] }),
+      "semantic/other/coldvim2": mk({ id: "semantic/other/coldvim2", scope: "project:other",
+        project: "other", title: "Vim in other project", summary: "vim setup elsewhere",
+        path: "memory/semantic/other/coldvim2.md", status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "stale", entities: ["vim"] }),
+    });
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const result = await memoryQueryCmd({ cwd: "/nowhere/unsynced", q: "vim" });
+    expect(result.project).toBeNull();
+    expect(result.coldStorage).toEqual([]);
+    expect(JSON.parse(stdout.join("")).coldStorage).toEqual([]);
+  });
 });

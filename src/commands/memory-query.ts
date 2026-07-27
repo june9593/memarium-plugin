@@ -100,7 +100,18 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQu
   // type filtering and the trust handling. NEVER writes/mutates status. Passes
   // `view.entries` (the KEYED map) so each hit's origin resolves under the same
   // key `view.sources` is keyed with, never the row's untrusted `id`.
-  const coldStorage: ColdStorageHit[] = runColdPass({
+  //
+  // SCOPE (round-34, SECURITY): SKIPPED when the cwd resolved to NO project.
+  // `memory-query` has no `--all` / `--project` escape hatch, so `project ===
+  // null` here means exactly one thing — this cwd is not a synced project — and
+  // a null project means WHOLE STORE to the cold pass (`inScope` is true for
+  // everything). Running /memarium-context from an unsynced directory therefore
+  // used to surface every OTHER project's archived memory, complete with a
+  // restore command per hit. Fail closed instead; the primary pass agrees about
+  // scope by construction (same `scoreQuery`), and its own results already carry
+  // `meta.project: null` so the skill knows the recall wasn't project-scoped.
+  const cwdUnresolved = project === null;
+  const coldStorage: ColdStorageHit[] = cwdUnresolved ? [] : runColdPass({
     entries: view.entries, scored, query: scoreQuery, sources: view.sources,
   });
 

@@ -73,3 +73,31 @@ describe("renderQaMarkdown", () => {
     expect(parsed!.project).toBeNull();          // actual null
   });
 });
+
+describe("renderQaMarkdown — round-34 (SECURITY): no value can inject a line", () => {
+  const fmLines = (md: string, key: string) =>
+    md.match(/^---\n([\s\S]*?)\n---/)![1].split("\n").filter((l) => l.startsWith(`${key}:`));
+
+  it("the JSON-quoted fields were already safe — a newline stays an escape, not a new line", () => {
+    const md = renderQaMarkdown(entry({ question: "Q\nid: qa/other/forged" }), "body");
+    expect(fmLines(md, "id")).toEqual(["id: qa/code-demo/how-to-build-abc12345"]);
+    expect(parseQaMarkdown(md)?.id).toBe("qa/code-demo/how-to-build-abc12345");
+  });
+
+  it("a NEWLINE in a RAW scalar (`kind`, the dates) cannot forge a line", () => {
+    const md = renderQaMarkdown(entry({ kind: "operational\nscope: global" as never, updatedAt: "2026-06-11\nid: qa/other/forged" }), "body");
+    expect(fmLines(md, "scope")).toEqual(["scope: project:code-demo"]);
+    expect(fmLines(md, "id")).toEqual(["id: qa/code-demo/how-to-build-abc12345"]);
+  });
+
+  it("the parser keeps the FIRST occurrence of a duplicated key", () => {
+    const md = [
+      "---", "id: qa/code-demo/real", "scope: project:code-demo", "kind: operational",
+      "id: qa/other/forged", "scope: global",
+      "---", "", "# q", "body",
+    ].join("\n");
+    const back = parseQaMarkdown(md)!;
+    expect(back.id).toBe("qa/code-demo/real");
+    expect(back.scope).toBe("project:code-demo");
+  });
+});

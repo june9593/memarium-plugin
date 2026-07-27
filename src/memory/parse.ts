@@ -51,11 +51,23 @@ export function parseMemoryMarkdown(md: string): MemoryEntry | null {
   md = md.replace(/\r\n/g, "\n"); // CRLF-safe (Windows checkouts)
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
-  const fm: Record<string, string> = {};
+  // Null-prototype map: frontmatter keys are UNTRUSTED, so a key named
+  // `__proto__` / `constructor` must be an ordinary entry here, not a reach into
+  // Object.prototype (and `key in fm` below must answer about THIS document only).
+  const fm: Record<string, string> = Object.create(null);
   for (const line of m[1].split("\n")) {
     const i = line.indexOf(":");
     if (i === -1) continue;
-    fm[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    const key = line.slice(0, i).trim();
+    // FIRST occurrence wins. This is an ANTI-INJECTION RULE, not a style choice
+    // (round-34): the renderer emits each key exactly once, in a fixed order, so a
+    // DUPLICATE key in a document can only come from a value that broke out of its
+    // own line — and it necessarily appears BELOW the real one. Keeping the later
+    // value handed such a forged line the field (a `title` carrying
+    // `\nid: semantic/p/other` decided the entry's id). Keeping the first means the
+    // real, validated line always wins. Do not "simplify" this to last-wins.
+    if (key in fm) continue;
+    fm[key] = line.slice(i + 1).trim();
   }
   if (!fm.id || !fm.type) return null;
   const scope = fm.scope;

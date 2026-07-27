@@ -65,8 +65,9 @@ export interface RecallPayload {
    *  carries its own vetted `restoreCommand` (null when it can't be restored
    *  here: the archive lives on another device, or its id isn't safe to put in a
    *  command). Consumers must run that string, never build one from `id`.
-   *  Always present; `[]` when nothing cold matched or the primary recall was
-   *  already strong. */
+   *  Always present; `[]` when nothing cold matched, the primary recall was
+   *  already strong, or the supplied cwd resolved to no project (round-34: an
+   *  unresolved cwd must not widen this to every project's archive). */
   coldStorage: ColdStorageHit[];
   /** Only populated when there's no query — a "what's in this project" overview
    *  (the same render the SessionStart primer uses). Omitted for a real query. */
@@ -121,7 +122,22 @@ export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
   // NEVER writes or mutates status/index. Takes `view.entries` (the KEYED map)
   // rather than the value array so each cold hit's origin is resolved under the
   // same key `view.sources` is keyed with — never the row's untrusted `id`.
-  const coldStorage = runColdPass({ entries: view.entries, scored, query: scoreQuery, sources: view.sources });
+  //
+  // SCOPE (round-34, SECURITY): SKIPPED ENTIRELY when the caller named a `cwd`
+  // we could not resolve to a synced project. `projectFilter` stays null in that
+  // case, and a null project means WHOLE STORE to the cold pass (`inScope` is
+  // true for everything) — so an unresolved cwd silently widened the archived
+  // valve to EVERY project, the inverse of the project scoping it was given in
+  // round 6, and it renders a restore command per hit. A null project is only a
+  // legitimate whole-store request when it was ASKED for (`--all`, or no cwd at
+  // all); an unresolved cwd is a failure to scope, not a request to widen — so
+  // fail CLOSED. The primary pass agrees about scope by construction: it is the
+  // same `scoreQuery`, and when the cwd doesn't resolve the payload flags
+  // `meta.cwdUnresolved` and `meta.nextStep` tells the caller to re-run with
+  // `--project <slug>` / `--all`, which then legitimately reaches both passes.
+  const coldStorage = cwdUnresolved
+    ? []
+    : runColdPass({ entries: view.entries, scored, query: scoreQuery, sources: view.sources });
 
   const limit = opts.limit && opts.limit > 0 ? opts.limit : DEFAULT_LIMIT;
   const hits: RecallHit[] = scored.slice(0, limit).map((s) => ({
