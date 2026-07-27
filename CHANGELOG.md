@@ -40,10 +40,15 @@ Memories now have a lifecycle. A new `status: "archived"` (+ `archivedAt` /
   reactivate an archived one — an authored update to an archived id updates its
   content while keeping `status: archived` + both lifecycle fields verbatim
   (restoring is `memory-unarchive`'s job). Superseding an already-archived
-  target likewise leaves it archived, rather than producing a `superseded` row
-  that still carries archival metadata. Both archival commands also refuse to
-  rewrite an index row too incomplete to re-render faithfully (missing
-  `id`/`type`/`scope`/`title`/`project`/`status`/`updatedAt`).
+  target likewise leaves it **archived** rather than producing a `superseded`
+  row that still carries archival metadata — but the machine does record the
+  transition on it, rewriting its `archivedReason` to `superseded-cleanup` (and
+  restamping `archivedAt`). That keeps the two consumers of that field honest:
+  the R2 cold valve stops advertising the entry as restorable, and a later
+  `memory-unarchive` returns it to `superseded` instead of `active` (which would
+  resurrect an obsolete fact next to its live replacement). Both archival
+  commands also refuse to rewrite an index row too incomplete to re-render
+  faithfully (missing `id`/`type`/`scope`/`title`/`project`/`status`/`updatedAt`).
 
 Schema-compatible: old entries parse the new fields as `null`; the npm CI
 aggregator (`merge-books.mjs`) carries `archived` through unchanged.

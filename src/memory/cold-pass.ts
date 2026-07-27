@@ -220,9 +220,12 @@ export function renderColdHints(coldStorage: ColdStorageHit[]): string[] {
  * "memory-unarchive <id> to restore" is a dead end for anything that isn't an
  * ESTABLISHED local archive (memory-unarchive only touches the local index), so
  * it is emitted only when EVERY hit resolved to `local`. All-overlay names the
- * origin device; mixed sets defer to the per-hit stderr hints; anything with an
- * unresolvable origin and nothing local gets the safe generic wording. Returns
- * "" when there's nothing cold — caller falls back to its own no-memory message.
+ * origin device only when every hit agrees on one (a set with any missing device
+ * falls back to the device-agnostic wording rather than attributing the whole set
+ * to the one device it could read); mixed sets defer to the per-hit stderr hints;
+ * anything with an unresolvable origin and nothing local gets the safe generic
+ * wording. Returns "" when there's nothing cold — caller falls back to its own
+ * no-memory message.
  */
 export function renderColdNextStep(coldStorage: ColdStorageHit[]): string {
   if (!coldStorage.length) return "";
@@ -235,9 +238,19 @@ export function renderColdNextStep(coldStorage: ColdStorageHit[]): string {
   }
   const overlay = coldStorage.filter((c) => c.source === "overlay");
   if (overlay.length === coldStorage.length) {
-    const devices = [...new Set(overlay.map((c) => c.originDevice).filter((d): d is string => !!d))];
-    const tail = devices.length === 1
-      ? `archived on device ${devices[0]}; restore it there`
+    // Naming a device here is a claim about the WHOLE set ("archived on device
+    // laptop" covers every hit listed), so it may only be made when EVERY hit
+    // actually supplies that device. Round-25: the distinct list was built by
+    // DROPPING missing origins, so a `{laptop, null}` set collapsed to a single
+    // device and attributed BOTH archives to `laptop` — inventing an origin for
+    // the hit whose device we never knew, and sending the user to look for it on
+    // a device that may not hold it. Treat a missing/blank device as its own
+    // "unknown" answer: one unknown is enough to fall back to the device-agnostic
+    // wording, which is vaguer but true of every hit.
+    const devices = new Set(overlay.map((c) => (c.originDevice ? c.originDevice : null)));
+    const only = devices.size === 1 ? [...devices][0] : null;
+    const tail = only !== null
+      ? `archived on device ${only}; restore it there`
       : "each is archived on another device; restore it there";
     return `${head} — ${tail} (memory-unarchive is local-only).`;
   }

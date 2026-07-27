@@ -345,6 +345,25 @@ export function rollbackMemoryWrites(
   );
 }
 
+/** Set ONE frontmatter scalar in a memory `.md`, without re-rendering the file
+ *  (the body and every other field stay byte-identical). Replaces the existing
+ *  `key: …` line when present, otherwise APPENDS it to the frontmatter block —
+ *  so a field the machine just recorded in the index can't silently go missing
+ *  from the .md, which a later rebuild-from-md would read back as `null`.
+ *
+ *  Scoped to the frontmatter block on purpose: a naive `/^key: .*$/m` replace
+ *  over the whole document would patch a look-alike BODY line whenever the
+ *  frontmatter happened not to carry the field. A document with no frontmatter
+ *  block at all is returned unchanged — there is nothing safe to patch. */
+function setFrontmatterField(md: string, key: string, value: string): string {
+  const m = md.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
+  if (!m) return md;
+  const [whole, open, fm, close] = m;
+  const line = new RegExp(`^${key}: .*$`, "m");
+  const patched = line.test(fm) ? fm.replace(line, `${key}: ${value}`) : `${fm}\n${key}: ${value}`;
+  return `${open}${patched}${close}${md.slice(whole.length)}`;
+}
+
 interface PlannedItem {
   entry: MemoryEntry;
   body: string;
@@ -531,9 +550,9 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
       entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);
     }
 
-    // Supersede-target flip — ARCHIVAL-AWARE (round-20). Same symmetric rule as
-    // the status/lifecycle block above, now applied to the OTHER id this item can
-    // touch: the AUTHORED path may neither SET nor CLEAR archival lifecycle
+    // Supersede-target flip — ARCHIVAL-AWARE (round-20/25). Same symmetric rule
+    // as the status/lifecycle block above, now applied to the OTHER id this item
+    // can touch: the AUTHORED path may neither SET nor CLEAR archival lifecycle
     // state. An unconditional flip broke that in a subtler way — it stamped
     // status:"superseded" onto an ARCHIVED target while LEAVING its non-null
     // archivedAt/archivedReason in place, producing an incoherent row
@@ -542,24 +561,51 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     // "superseded-cleanup") and the cold valve's NON_RESURRECTABLE filter both
     // misread.
     //
-    // DECISION: an archived target is LEFT ARCHIVED — we do not flip it, and we
-    // do not count it in `superseded`. Rationale: archived and superseded both
-    // hide an entry from recall, so the flip buys nothing; the entry's lifecycle
-    // is machine-maintained (memory-archive/memory-unarchive own it, and
-    // memory-unarchive can still restore it to the right pre-archive status);
-    // and clearing the archival fields instead would be the authored path
-    // CLEARING machine state, which is exactly what round-19 forbade. Lint is
-    // satisfied either way: `superseded-conflict` only fires when a supersede
-    // target is still `active`.
+    // An ARCHIVED target is therefore NOT flipped: archived already hides it from
+    // recall, its lifecycle is machine-maintained, and clearing the archival
+    // fields would be the authored path CLEARING machine state (round-19 forbids
+    // that). It is not counted in `superseded` either — that count means "rows
+    // flipped to status:superseded". Lint is satisfied either way:
+    // `superseded-conflict` only fires when a supersede target is still `active`.
+    //
+    // ROUND-25: but leaving it entirely untouched was ALSO wrong. `archivedReason`
+    // is not decoration — it drives two downstream behaviors:
+    //   • the cold valve resurfaces every archive EXCEPT `superseded-cleanup`, so
+    //     a target still reading `unused-low-value` keeps being advertised as
+    //     RESTORABLE even though its replacement is now live; and
+    //   • `memory-unarchive` derives the restored status FROM it —
+    //     `superseded-cleanup` → `superseded`, anything else → `active`.
+    // Together those let an archived-then-superseded entry be restored to ACTIVE
+    // alongside its live replacement: exactly the resurrection the round-8
+    // superseded-cleanup rule exists to prevent. So we RECORD the transition —
+    // reason := "superseded-cleanup" (+ a fresh archivedAt, since the two fields
+    // are one stamp: memory-archive always writes them together, and a new reason
+    // paired with the OLD date describes a transition that never happened) — while
+    // the status stays `archived`. This is the MACHINE recording a lifecycle
+    // transition it just caused, the same category as the flip-to-superseded
+    // below; the authored item's OWN supplied archivedAt/archivedReason are still
+    // ignored/nulled by the block above. Skipped when the reason is ALREADY
+    // `superseded-cleanup`, so re-running a digest is idempotent instead of
+    // restamping archivedAt (which reads as cross-device divergence).
     if (supersede) {
       const target = idx.entries[supersede.targetId];
-      if (target && target.status !== "archived") {
+      const patchMd = (fields: Array<[string, string]>) => {
+        if (!supersede.mdPath || !existsSync(supersede.mdPath)) return;
+        let md = readFileSync(supersede.mdPath, "utf8");
+        for (const [k, v] of fields) md = setFrontmatterField(md, k, v);
+        writeFileSync(supersede.mdPath, md);
+      };
+      if (target && target.status === "archived") {
+        if (target.archivedReason !== "superseded-cleanup") {
+          const at = new Date().toISOString().slice(0, 10); // same plain calendar date memory-archive stamps
+          target.archivedReason = "superseded-cleanup";
+          target.archivedAt = at;
+          patchMd([["archivedReason", "superseded-cleanup"], ["archivedAt", at]]);
+        }
+      } else if (target) {
         target.status = "superseded";
         superseded++;
-        if (supersede.mdPath && existsSync(supersede.mdPath)) {
-          const md = readFileSync(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
-          writeFileSync(supersede.mdPath, md);
-        }
+        patchMd([["status", "superseded"]]);
       }
     }
 

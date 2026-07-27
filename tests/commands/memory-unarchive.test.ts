@@ -644,3 +644,56 @@ describe("memoryUnarchiveCmd — round-23: a row with a NON-FINITE `importance`"
     expect(readIndexStatus("semantic/p/strimp")).toBe("archived");
   });
 });
+
+// Round-25 END-TO-END: the whole reason applyMemoryItems now records
+// `superseded-cleanup` on an ARCHIVED supersede target. Unarchive derives the
+// restored status FROM `archivedReason`, so a target left with its old
+// heuristic reason (e.g. `unused-low-value`) came back ACTIVE — reintroducing an
+// obsolete fact right next to the live replacement that superseded it. Drive the
+// real write path (no hand-built index row) so the two commands are proven to
+// agree on the same field.
+describe("memoryUnarchiveCmd — archived-then-superseded restores to superseded, not active", () => {
+  const entry = (over: Record<string, unknown> = {}) => ({
+    id: "semantic/p/old", type: "semantic", scope: "project:p", project: "p", path: "",
+    title: "Old fact", summary: "s", status: "active", confidence: 0.9, importance: 2,
+    createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+    sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
+    entities: [], originDevice: null, accessCount: 0, lastAccess: null,
+    ...over,
+  }) as unknown as import("../../src/memory/types.js").MemoryEntry;
+
+  it("supersede-over-an-archived-target then unarchive → superseded", async () => {
+    const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+
+    // 1. seed the target and archive it the way memory-archive does — with a
+    //    RESURRECTABLE heuristic reason, the case that used to restore to active.
+    applyMemoryItems(repo, [{ entry: entry(), body: "old body" }]);
+    writeMemoryEntryFile(repo, entry({
+      path: "memory/semantic/p/old.md", status: "archived",
+      archivedAt: "2026-05-01", archivedReason: "unused-low-value",
+    }));
+    const seeded = readIndex();
+    seeded.entries["semantic/p/old"] = {
+      ...seeded.entries["semantic/p/old"],
+      status: "archived", archivedAt: "2026-05-01", archivedReason: "unused-low-value",
+    };
+    writeFileSync(idxPath(), JSON.stringify(seeded, null, 2) + "\n");
+
+    // 2. an authored write supersedes the archived target
+    applyMemoryItems(repo, [{
+      entry: entry({ id: "semantic/p/new", title: "New fact", supersedes: "semantic/p/old" }),
+      body: "new body",
+    }]);
+    expect(readIndexStatus("semantic/p/old")).toBe("archived");
+    expect(readIndexReason("semantic/p/old")).toBe("superseded-cleanup");
+
+    // 3. restoring it must NOT resurrect it alongside its live replacement
+    await memoryUnarchiveCmd({ id: "semantic/p/old", cwd: repo });
+    expect(readIndexStatus("semantic/p/old")).toBe("superseded"); // NOT "active"
+    expect(readIndexReason("semantic/p/old")).toBe(null);
+    expect(readIndexArchivedAt("semantic/p/old")).toBe(null);
+    expect(readMdField("semantic/p/old.md", "status")).toBe("superseded");
+    expect(readIndexStatus("semantic/p/new")).toBe("active"); // replacement stays live
+    expect(out.join("\n")).toMatch(/to superseded/);
+  });
+});

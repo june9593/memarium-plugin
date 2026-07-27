@@ -345,18 +345,23 @@ describe("applyMemoryItems", () => {
     expect(md).toContain("archivedReason: null");
   });
 
-  it("LEAVES an ARCHIVED supersede target archived (never a superseded row carrying archival metadata)", async () => {
+  it("KEEPS an ARCHIVED supersede target archived but records archivedReason:superseded-cleanup", async () => {
     // Round-20: round-19 made the authored path preserve archival lifecycle for
     // the item's OWN id, but the SUPERSEDE-TARGET flip stayed unconditional — so
     // an authored item superseding a DIFFERENT id that happened to be ARCHIVED
     // stamped status:"superseded" over it while LEAVING its non-null
-    // archivedAt/archivedReason in place. That row is incoherent: memory-unarchive's
-    // pre-archive-status logic keys off archivedReason === "superseded-cleanup",
-    // and the cold valve's NON_RESURRECTABLE filter reads the same field. The
-    // authored path may neither SET nor CLEAR archival lifecycle state, so an
-    // archived target is left exactly as memory-archive wrote it (it is already
-    // out of recall — superseded would hide it no better).
+    // archivedAt/archivedReason in place, an incoherent row.
+    //
+    // Round-25: leaving the target COMPLETELY untouched was wrong too. Its
+    // `archivedReason` drives two downstream behaviors — the cold valve keeps
+    // advertising a non-`superseded-cleanup` archive as RESTORABLE, and
+    // memory-unarchive derives the restored status from that same field — so a
+    // stale `unused-low-value` reason lets an obsolete entry come back ACTIVE
+    // next to its live replacement. The target stays ARCHIVED (no flip), but the
+    // MACHINE records the new lifecycle transition: reason → superseded-cleanup,
+    // archivedAt → today.
     const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    const today = new Date().toISOString().slice(0, 10);
     const idxPath = join(repo, ".memarium/index.memory.json");
     const readIdx = () => JSON.parse(readFileSync(idxPath, "utf8"));
     const oldMdPath = join(repo, "memory/semantic/p/old.md");
@@ -387,20 +392,72 @@ describe("applyMemoryItems", () => {
       body: "new body",
     }]);
 
-    // the target stays COHERENT: archived, with its lifecycle fields intact, in BOTH stores
+    // still archived (never flipped) — but the reason now records THIS transition,
+    // in BOTH stores
     const target = readIdx().entries["semantic/p/old"];
     const targetMd = readFileSync(oldMdPath, "utf8");
     expect(target.status).toBe("archived");
-    expect(target.archivedAt).toBe("2026-07-01");
-    expect(target.archivedReason).toBe("unused-low-value");
+    expect(target.archivedReason).toBe("superseded-cleanup");
+    expect(target.archivedAt).toBe(today);
     expect(targetMd).toMatch(/^status: archived$/m);
-    expect(targetMd).toContain("archivedAt: 2026-07-01");
-    expect(targetMd).toContain("archivedReason: unused-low-value");
+    expect(targetMd).toMatch(/^archivedReason: superseded-cleanup$/m);
+    expect(targetMd).toMatch(new RegExp(`^archivedAt: ${today}$`, "m"));
     expect(targetMd).not.toMatch(/^status: superseded$/m);
-    // …and no supersede is reported, because none happened
+    expect(targetMd).not.toContain("unused-low-value");
+    // …and no status flip is reported, because none happened
     expect(r.superseded).toBe(0);
     // the superseding entry itself is written normally
     expect(readIdx().entries["semantic/p/new"].status).toBe("active");
+  });
+
+  it("the recorded superseded-cleanup makes the target NON-RESURRECTABLE by the cold valve", async () => {
+    // The whole point of recording the reason: the R2 cold valve's
+    // NON_RESURRECTABLE_REASONS filter keys off `archivedReason`, so a stale
+    // `unused-low-value` on a now-superseded entry kept advertising it as
+    // restorable. Prove the SAME index row flips from surfaced → excluded across
+    // the supersede.
+    const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    const { runColdPass } = await import("../../src/memory/cold-pass.js");
+    const idxPath = join(repo, ".memarium/index.memory.json");
+    const readIdx = () => JSON.parse(readFileSync(idxPath, "utf8"));
+    const base = mk({
+      id: "semantic/p/vim", type: "semantic", scope: "project:p", project: "p", path: "",
+      title: "Vim keybindings", summary: "vim editor setup",
+    });
+    applyMemoryItems(repo, [{ entry: { ...base }, body: "old body" }]);
+    writeMemoryEntryFile(repo, {
+      ...base, path: "memory/semantic/p/vim.md",
+      status: "archived" as MemoryEntry["status"], archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    });
+    const seeded = readIdx();
+    seeded.entries["semantic/p/vim"] = {
+      ...seeded.entries["semantic/p/vim"],
+      status: "archived", archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    };
+    writeFileSync(idxPath, JSON.stringify(seeded));
+
+    const coldPass = () => {
+      const entries = readIdx().entries as Record<string, MemoryEntry>;
+      return runColdPass({
+        entries, scored: [],
+        query: { project: "p", text: "vim", type: null, now: "2026-07-10" },
+        sources: Object.fromEntries(Object.keys(entries).map((k) => [k, "local" as const])),
+      });
+    };
+
+    // BEFORE: archived as unused-low-value → a resurrectable cold hit
+    expect(coldPass().map((c) => c.id)).toContain("semantic/p/vim");
+
+    applyMemoryItems(repo, [{
+      entry: mk({
+        id: "semantic/p/vim2", type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "Vim keybindings", summary: "vim editor setup", supersedes: "semantic/p/vim",
+      }),
+      body: "new body",
+    }]);
+
+    // AFTER: recorded as superseded-cleanup → the valve must not advertise it
+    expect(coldPass().map((c) => c.id)).not.toContain("semantic/p/vim");
   });
 
   it("regression: superseding a NORMAL ACTIVE target still flips it, archival fields untouched", async () => {

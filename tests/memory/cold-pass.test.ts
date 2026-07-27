@@ -153,3 +153,45 @@ describe("renderColdNextStep — the bare local command requires an ALL-local se
     expect(s).not.toMatch(/^No ACTIVE memory matched.*\(memory-unarchive <id> to restore\)\.$/);
   });
 });
+
+// Round-25: naming a device in the AGGREGATE sentence is a claim about EVERY hit
+// in the set, so it may only be made when every hit actually supplies that device.
+// The distinct-device list was built by DROPPING null origins, so a `{laptop,
+// null}` set collapsed to one device and told the user BOTH archives live on
+// `laptop` — a fabricated origin for the hit whose device we never knew.
+describe("renderColdNextStep — an all-overlay set names a device only when EVERY hit supplies it", () => {
+  const ov = (id: string, originDevice: string | null): ColdStorageHit =>
+    hit({ id, source: "overlay", originDevice });
+
+  it("every hit carries the SAME device → names it (happy path, unchanged)", () => {
+    const s = renderColdNextStep([ov("semantic/p/a", "laptop"), ov("semantic/p/b", "laptop")]);
+    expect(s).toMatch(/archived on device laptop; restore it there/);
+    expect(s).not.toMatch(/memory-unarchive <id> to restore/);
+  });
+
+  it("one hit has NO device → generic wording, and laptop is NOT named", () => {
+    const s = renderColdNextStep([ov("semantic/p/a", "laptop"), ov("semantic/p/b", null)]);
+    expect(s).not.toMatch(/laptop/);
+    expect(s).not.toMatch(/archived on device /);
+    expect(s).toMatch(/each is archived on another device; restore it there/);
+    expect(s).not.toMatch(/memory-unarchive <id> to restore/);
+  });
+
+  it("an EMPTY-string device is no device either → generic wording", () => {
+    const s = renderColdNextStep([ov("semantic/p/a", "laptop"), ov("semantic/p/b", "")]);
+    expect(s).not.toMatch(/archived on device /);
+    expect(s).toMatch(/each is archived on another device; restore it there/);
+  });
+
+  it("NO hit carries a device → generic wording (never `device undefined`)", () => {
+    const s = renderColdNextStep([ov("semantic/p/a", null), ov("semantic/p/b", null)]);
+    expect(s).not.toMatch(/undefined|null/);
+    expect(s).toMatch(/each is archived on another device; restore it there/);
+  });
+
+  it("two DIFFERENT devices → generic wording (regression lock)", () => {
+    const s = renderColdNextStep([ov("semantic/p/a", "laptop"), ov("semantic/p/b", "desktop")]);
+    expect(s).not.toMatch(/archived on device /);
+    expect(s).toMatch(/each is archived on another device; restore it there/);
+  });
+});
