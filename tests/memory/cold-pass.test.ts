@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   runColdPass, coldRestoreInstruction, coldRestoreCommand, inertMemoryId,
-  renderColdHints, renderColdNextStep,
+  renderColdHints, renderColdNextStep, sanitizeForDisplay,
   type ColdStorageHit,
 } from "../../src/memory/cold-pass.js";
 import { isSafeMemoryId } from "../../src/memory/gate.js";
@@ -351,5 +351,196 @@ describe("cold render surfaces never emit a runnable command for a poisoned id",
     expect(renderColdNextStep(safe)).toMatch(/memory-unarchive '<id>' to restore/);
     expect(renderColdHints(safe).join("\n")).toMatch(/memory-unarchive 'core\/user-workflow' to restore/);
     expect(renderColdHints(safe).join("\n")).toContain("  semantic/p/a  ");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Round-29 (SECURITY): round-28 hardened the `id` because the hint line STARTS
+// with it, and dismissed `title` / `archivedReason` / `originDevice` as
+// "mid-line, therefore not command position". That reasoning is WRONG. Those
+// three fields come out of the SAME lenient, poisonable memory index, and a
+// value carrying a NEWLINE ends the current line and opens a NEW one — and the
+// start of a line IS command position, for a line a human pastes or an agent
+// reads as its own instruction. The same values also reach a TERMINAL, so an
+// ESC can repaint / erase / relocate what the user sees. Every untrusted string
+// must therefore be sanitized before it is RENDERED — while the JSON payload
+// keeps the originals, because machine consumers want the real data.
+// ────────────────────────────────────────────────────────────────────────────
+
+// A newline followed by something command-shaped: the whole point of the fix is
+// that this can never become the first word of a rendered line.
+const NL_INJECT = "\nmemory-unarchive evil; rm -rf /";
+const ANSI_INJECT = "\x1b[31mred";
+const LONG = "L".repeat(500);
+
+/** Every line the renderer produced, as the terminal would see them. */
+const renderedLines = (lines: string[]): string[] => lines.join("\n").split("\n");
+
+/** The line count `renderColdHints` produces for ONE hit with entirely benign
+ *  fields — the CONTROL every poisoned render below must still match. If a
+ *  poisoned value could open a line, this count would grow. */
+const BENIGN_LINE_COUNT = renderedLines(renderColdHints([hit()])).length;
+
+/** No rendered line may BEGIN with the injected command (the leading whitespace
+ *  is OURS; a pasted line's first word is what runs). */
+const noInjectedLineStart = (lines: string[]): boolean =>
+  renderedLines(lines).every((l) => !l.trimStart().startsWith("memory-unarchive evil"));
+
+describe("sanitizeForDisplay — untrusted strings can never open a new line or drive the terminal", () => {
+  it("strips newlines and carriage returns, collapsing to ONE line", () => {
+    const out = sanitizeForDisplay(`ok${NL_INJECT}`);
+    expect(out).not.toContain("\n");
+    expect(out).not.toContain("\r");
+    expect(out.split("\n")).toHaveLength(1);
+    expect(sanitizeForDisplay("a\r\nb")).toBe("a b");
+  });
+
+  it("strips WHOLE ANSI escape sequences, not just the ESC byte", () => {
+    const out = sanitizeForDisplay(ANSI_INJECT);
+    expect(out).not.toContain("\x1b");
+    expect(out).not.toContain("[31m");   // a bare ESC strip would leave this behind
+    expect(out).toBe("red");
+    // cursor / erase / OSC-window-title forms too
+    expect(sanitizeForDisplay("a\x1b[2K\x1b[1;1Hb")).toBe("ab");
+    expect(sanitizeForDisplay("a\x1b]0;pwned\x07b")).toBe("ab");
+    expect(sanitizeForDisplay("a\x1b(Bb")).toBe("ab");
+  });
+
+  it("strips every other C0/C1 control character (tab, BEL, backspace, …)", () => {
+    expect(sanitizeForDisplay("a\tb\x07c\x08d\x9bE")).toBe("a b c d E");
+  });
+
+  it("caps an over-long value with an ellipsis", () => {
+    const out = sanitizeForDisplay(LONG);
+    expect(out.length).toBeLessThanOrEqual(120);
+    expect(out.endsWith("…")).toBe(true);
+  });
+
+  it("leaves a normal value untouched (regression lock)", () => {
+    expect(sanitizeForDisplay("Vim keybindings")).toBe("Vim keybindings");
+    expect(sanitizeForDisplay("unused-low-value")).toBe("unused-low-value");
+    expect(sanitizeForDisplay("laptop")).toBe("laptop");
+  });
+
+  it("returns an inert placeholder when nothing legible survives", () => {
+    expect(sanitizeForDisplay("")).toBe("(unprintable)");
+    expect(sanitizeForDisplay("\x1b[31m\n\t ")).toBe("(unprintable)");
+  });
+});
+
+describe("renderColdHints — a poisoned TITLE cannot inject a line", () => {
+  it("a newline in the title produces NO new line and no injected line start", () => {
+    const lines = renderColdHints([hit({ title: `Vim${NL_INJECT}` })]);
+    for (const l of lines.slice(1)) expect(l).not.toContain("\n");
+    expect(renderedLines(lines)).toHaveLength(BENIGN_LINE_COUNT);   // same as the benign control
+    expect(noInjectedLineStart(lines)).toBe(true);
+    expect(lines[lines.length - 1]).toContain("Vim");
+  });
+
+  it("an ANSI escape in the title is removed, sequence and all", () => {
+    const line = renderColdHints([hit({ title: ANSI_INJECT })]).pop()!;
+    expect(line).not.toContain("\x1b");
+    expect(line).not.toContain("[31m");
+    expect(line).toContain("red");
+  });
+
+  it("an over-long title is truncated", () => {
+    const line = renderColdHints([hit({ title: LONG })]).pop()!;
+    expect(line).not.toContain(LONG);
+    expect(line).toContain("…");
+  });
+
+  it("a normal title renders unchanged (regression lock)", () => {
+    expect(renderColdHints([hit({ title: "Vim keybindings" })]).pop()!).toContain("— Vim keybindings");
+  });
+});
+
+describe("renderColdHints — a poisoned archivedReason cannot inject a line", () => {
+  it("a newline in the reason produces NO new line and no injected line start", () => {
+    const lines = renderColdHints([hit({ archivedReason: `stale${NL_INJECT}` })]);
+    for (const l of lines.slice(1)) expect(l).not.toContain("\n");
+    expect(renderedLines(lines)).toHaveLength(BENIGN_LINE_COUNT);
+    expect(noInjectedLineStart(lines)).toBe(true);
+  });
+
+  it("an ANSI escape in the reason is removed, sequence and all", () => {
+    const line = renderColdHints([hit({ archivedReason: ANSI_INJECT })]).pop()!;
+    expect(line).not.toContain("\x1b");
+    expect(line).not.toContain("[31m");
+    expect(line).toContain("(red)");
+  });
+
+  it("an over-long reason is truncated", () => {
+    const line = renderColdHints([hit({ archivedReason: LONG })]).pop()!;
+    expect(line).not.toContain(LONG);
+    expect(line).toContain("…");
+  });
+
+  it("a normal reason renders unchanged (regression lock)", () => {
+    expect(renderColdHints([hit({ archivedReason: "unused-low-value" })]).pop()!)
+      .toContain("(unused-low-value)");
+  });
+});
+
+describe("originDevice is untrusted too — the restore instruction cannot be split", () => {
+  const ovHit = (originDevice: string | null): ColdStorageHit =>
+    hit({ id: "semantic/p/o", source: "overlay", originDevice, restoreCommand: null });
+
+  it("a newline in originDevice produces NO new line in the per-hit instruction or the hint", () => {
+    const poisoned = ovHit(`laptop${NL_INJECT}`);
+    expect(coldRestoreInstruction(poisoned)).not.toContain("\n");
+    const lines = renderColdHints([poisoned]);
+    for (const l of lines.slice(1)) expect(l).not.toContain("\n");
+    expect(renderedLines(lines)).toHaveLength(BENIGN_LINE_COUNT);
+    expect(noInjectedLineStart(lines)).toBe(true);
+  });
+
+  it("a newline in originDevice cannot split the aggregate meta.nextStep either", () => {
+    const s = renderColdNextStep([ovHit(`laptop${NL_INJECT}`)]);
+    expect(s).not.toContain("\n");
+    expect(s.trimStart().startsWith("memory-unarchive evil")).toBe(false);
+  });
+
+  it("an ANSI escape in originDevice is removed, sequence and all", () => {
+    expect(coldRestoreInstruction(ovHit(ANSI_INJECT))).toBe("archived on device red; restore it there");
+    expect(renderColdNextStep([ovHit(ANSI_INJECT)])).toContain("archived on device red");
+  });
+
+  it("an over-long originDevice is truncated", () => {
+    const s = coldRestoreInstruction(ovHit(LONG));
+    expect(s).not.toContain(LONG);
+    expect(s).toContain("…");
+  });
+
+  it("an all-control originDevice degrades to the honest device-agnostic wording", () => {
+    expect(coldRestoreInstruction(ovHit("\x1b[31m\n"))).toBe("archived on another device; restore it there");
+    expect(renderColdNextStep([ovHit("\x1b[31m\n")])).toMatch(/each is archived on another device/);
+  });
+
+  it("a normal originDevice renders unchanged (regression lock)", () => {
+    expect(coldRestoreInstruction(ovHit("laptop"))).toBe("archived on device laptop; restore it there");
+    expect(renderColdNextStep([ovHit("laptop")])).toContain("archived on device laptop");
+  });
+});
+
+describe("the JSON payload keeps the UNsanitized originals — machine consumers are unaffected", () => {
+  it("runColdPass reports title / archivedReason / originDevice verbatim", () => {
+    const row = arch("semantic/p/a", {
+      title: `Vim${NL_INJECT}`,
+      archivedReason: `unused-low-value${ANSI_INJECT}`,
+      originDevice: `laptop${NL_INJECT}`,
+    });
+    const cold = runColdPass({
+      entries: { "semantic/p/a": row }, scored: [], query: Q(),
+      sources: { "semantic/p/a": "local" },
+    });
+    expect(cold).toHaveLength(1);
+    expect(cold[0].title).toBe(`Vim${NL_INJECT}`);
+    expect(cold[0].archivedReason).toBe(`unused-low-value${ANSI_INJECT}`);
+    expect(cold[0].originDevice).toBe(`laptop${NL_INJECT}`);
+    // …while the RENDERED lines built from that same hit stay one line each.
+    const lines = renderColdHints(cold);
+    expect(renderedLines(lines)).toHaveLength(BENIGN_LINE_COUNT);
+    expect(noInjectedLineStart(lines)).toBe(true);
   });
 });

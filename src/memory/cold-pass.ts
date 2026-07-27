@@ -72,15 +72,78 @@ export function coldRestoreCommand(c: Pick<ColdStorageHit, "id" | "source">): st
   return `memory-unarchive '${c.id}'`;
 }
 
+/** Max rendered length of ONE untrusted field in a hint line. Titles/reasons/
+ *  device names are short by construction; a cap keeps a poisoned index row from
+ *  flooding (or scrolling away) the rest of the hint. */
+const MAX_DISPLAY_LENGTH = 120;
+
+/** What a value that sanitizes down to nothing is shown as. Deliberately inert:
+ *  it names no entry, no device and no command. */
+const UNPRINTABLE = "(unprintable)";
+
+// ANSI / terminal escape sequences, stripped WHOLE (in this order) — never just
+// the ESC byte. Dropping only the ESC out of `\x1b[31mrm -rf ~` would leave
+// `[31mrm -rf ~` behind: visible junk that still carries the attacker's text.
+const ESCAPE_SEQUENCES: ReadonlyArray<RegExp> = [
+  /\x1b\][\s\S]*?(?:\x07|\x1b\\|$)/g,      // OSC (window title, hyperlink) … BEL/ST
+  /\x1b[P^_X][\s\S]*?(?:\x1b\\|$)/g,         // DCS / PM / APC / SOS … ST
+  /\x1b\[[0-9;:<=>?]*[ -/]*[@-~]/g,            // CSI — colour, cursor move, erase
+  /\x1b[ -/]*[0-~]/g,                          // any other ESC-introduced sequence
+  /\x1b/g,                                     // a lone trailing ESC
+];
+
+/**
+ * Make an UNTRUSTED index string safe to interpolate into RENDERED
+ * human/agent-facing text.
+ *
+ * Round-29 (SECURITY): round-28 hardened the `id` because the hint line STARTS
+ * with it, and treated `title` / `archivedReason` / `originDevice` as safe
+ * because they land mid-line. That is wrong. A NEWLINE in any of them ends the
+ * current line and opens a NEW one — and the start of a line IS command
+ * position: whatever the attacker wrote after the `\n` becomes the first word of
+ * a line a human may paste into a shell, or that an agent reads as its own
+ * instruction. Exactly the hole round-28 closed for the id, re-opened through a
+ * neighbouring field of the same poisonable row. These values also reach a
+ * TERMINAL, where an ESC can recolour, erase or reposition — hiding the real
+ * hint or forging a different one.
+ *
+ * So: strip whole escape sequences, then every remaining C0/C1 control char
+ * (incl. `\n`, `\r`, `\t`), collapse to a single line, cap the length, and
+ * return an inert placeholder if nothing legible survives.
+ *
+ * NOT for the JSON payload — machine consumers get the real, unmodified values
+ * (`ColdStorageHit` fields). This is strictly about rendered lines.
+ */
+export function sanitizeForDisplay(value: unknown): string {
+  // Match the template-literal behaviour this replaces for non-strings, so a
+  // null `archivedReason` still reads "null" rather than changing shape.
+  let s = typeof value === "string" ? value : String(value);
+  for (const re of ESCAPE_SEQUENCES) s = s.replace(re, "");
+  // Every C0 and C1 control character — newline and carriage return above all
+  // (a new line is a new command position), plus tab/BEL/backspace and the C1
+  // block that carries the 8-bit escape introducers.
+  s = s.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
+  const collapsed = s.replace(/\s+/g, " ").trim();
+  if (collapsed === "") return UNPRINTABLE;
+  return collapsed.length > MAX_DISPLAY_LENGTH
+    ? `${collapsed.slice(0, MAX_DISPLAY_LENGTH - 1)}…`
+    : collapsed;
+}
+
 /** Render an UNSAFE id as clearly INERT display text: every character outside the
  *  safe class becomes `?`, then the remainder is wrapped in single quotes. The
  *  redaction runs BEFORE the quoting, so the id cannot contain a quote to break
  *  out of, and the result can never re-assemble into shell — while still leaving
  *  enough of the id visible to identify which entry is affected. Length-capped so
- *  a poisoned row can't flood the hint. */
+ *  a poisoned row can't flood the hint.
+ *
+ *  Round-29: runs `sanitizeForDisplay` first as well. The allowlist redaction
+ *  already covers control characters, but every untrusted field this module
+ *  renders now goes through the one shared sanitizer, so the two can't drift
+ *  apart if that character class is ever loosened. */
 export function inertMemoryId(id: unknown): string {
-  const raw = typeof id === "string" ? id : String(id);
-  const redacted = raw.slice(0, 120).replace(/[^A-Za-z0-9._/-]/g, "?");
+  const raw = sanitizeForDisplay(id);
+  const redacted = raw.slice(0, MAX_DISPLAY_LENGTH).replace(/[^A-Za-z0-9._/-]/g, "?");
   return `'${redacted}'`;
 }
 
@@ -251,7 +314,14 @@ export function coldRestoreInstruction(c: ColdStorageHit): string {
     return `archived here under an unsafe id — restore manually (id ${inertMemoryId(c.id)})`;
   }
   if (c.source === "overlay") {
-    const dev = c.originDevice ? `device ${c.originDevice}` : "another device";
+    // ROUND-29 (SECURITY): `originDevice` is untrusted index data like every
+    // other field on this row. A device name carrying a NEWLINE would end this
+    // instruction and start a NEW line — and a line start is command position for
+    // whoever pastes or acts on it — so it is sanitized before interpolation. A
+    // device that sanitizes down to nothing degrades to the device-agnostic
+    // wording rather than printing a placeholder as if it were a hostname.
+    const device = c.originDevice ? sanitizeForDisplay(c.originDevice) : "";
+    const dev = device && device !== UNPRINTABLE ? `device ${device}` : "another device";
     return `archived on ${dev}; restore it there`;
   }
   return "origin unknown; restore it on the device that archived it";
@@ -268,6 +338,14 @@ export function coldRestoreInstruction(c: ColdStorageHit): string {
  * Round-28 (SECURITY): the LINE ITSELF starts with the id, which is exactly where
  * a pasted line's first word becomes the command — so an unsafe id is redacted to
  * inert text there too, not just inside the restore instruction.
+ *
+ * Round-29 (SECURITY): the id was not the only untrusted field on the line.
+ * `title` and `archivedReason` come out of the same lenient index, and a NEWLINE
+ * in either ends this line and opens a NEW one — whose start IS command position,
+ * i.e. precisely the hazard round-28 closed for the id, re-entered one field to
+ * the right. (They also reach a terminal, so an ESC could recolour/erase/forge
+ * what the user sees.) Every untrusted string on the line therefore goes through
+ * `sanitizeForDisplay`; the JSON payload still carries the originals.
  */
 export function renderColdHints(coldStorage: ColdStorageHit[]): string[] {
   if (!coldStorage.length) return [];
@@ -277,7 +355,9 @@ export function renderColdHints(coldStorage: ColdStorageHit[]): string[] {
     // (#23) is never read as an established fact — mirrors how the primary recall
     // splits `untrustedSemantic` out of plain "Project facts".
     const flag = c.trust !== "trusted" ? " (untrusted)" : "";
-    lines.push(`  ${displayMemoryId(c.id)}  (${c.archivedReason})  — ${c.title}${flag}  — ${coldRestoreInstruction(c)}`);
+    const reason = sanitizeForDisplay(c.archivedReason);
+    const title = sanitizeForDisplay(c.title);
+    lines.push(`  ${displayMemoryId(c.id)}  (${reason})  — ${title}${flag}  — ${coldRestoreInstruction(c)}`);
   }
   return lines;
 }
@@ -332,8 +412,13 @@ export function renderColdNextStep(coldStorage: ColdStorageHit[]): string {
     // wording, which is vaguer but true of every hit.
     const devices = new Set(overlay.map((c) => (c.originDevice ? c.originDevice : null)));
     const only = devices.size === 1 ? [...devices][0] : null;
-    const tail = only !== null
-      ? `archived on device ${only}; restore it there`
+    // ROUND-29 (SECURITY): the device name is untrusted index data, and this
+    // sentence is rendered for a human/agent — a newline in it would open a NEW
+    // line whose start is command position. Sanitize before interpolating, and
+    // fall back to the device-agnostic wording if nothing legible survives.
+    const device = only !== null ? sanitizeForDisplay(only) : "";
+    const tail = device && device !== UNPRINTABLE
+      ? `archived on device ${device}; restore it there`
       : "each is archived on another device; restore it there";
     return `${head} — ${tail} (memory-unarchive is local-only).`;
   }
