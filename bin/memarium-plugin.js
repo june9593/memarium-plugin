@@ -14703,6 +14703,15 @@ function rollbackMemoryWrites(context, snaps, cause) {
     { cause }
   );
 }
+function setFrontmatterField(md, key, value) {
+  const m = md.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
+  if (!m) return md;
+  const [whole, open, fm, close] = m;
+  const line = new RegExp(`^${key}: .*$`, "m");
+  const patched = line.test(fm) ? fm.replace(line, `${key}: ${value}`) : `${fm}
+${key}: ${value}`;
+  return `${open}${patched}${close}${md.slice(whole.length)}`;
+}
 function applyMemoryItems(repoPath, items) {
   const idx = loadMemoryIndex(repoPath);
   assertNoBlockingLeak(
@@ -14790,13 +14799,23 @@ function applyMemoryItems(repoPath, items) {
     }
     if (supersede) {
       const target = idx.entries[supersede.targetId];
-      if (target && target.status !== "archived") {
+      const patchMd = (fields) => {
+        if (!supersede.mdPath || !existsSync11(supersede.mdPath)) return;
+        let md = readFileSync9(supersede.mdPath, "utf8");
+        for (const [k2, v] of fields) md = setFrontmatterField(md, k2, v);
+        writeFileSync7(supersede.mdPath, md);
+      };
+      if (target && target.status === "archived") {
+        if (target.archivedReason !== "superseded-cleanup") {
+          const at = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+          target.archivedReason = "superseded-cleanup";
+          target.archivedAt = at;
+          patchMd([["archivedReason", "superseded-cleanup"], ["archivedAt", at]]);
+        }
+      } else if (target) {
         target.status = "superseded";
         superseded++;
-        if (supersede.mdPath && existsSync11(supersede.mdPath)) {
-          const md = readFileSync9(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
-          writeFileSync7(supersede.mdPath, md);
-        }
+        patchMd([["status", "superseded"]]);
       }
     }
     mkdirSync8(dirname4(abs), { recursive: true });
@@ -15370,8 +15389,9 @@ function renderColdNextStep(coldStorage) {
   }
   const overlay = coldStorage.filter((c3) => c3.source === "overlay");
   if (overlay.length === coldStorage.length) {
-    const devices = [...new Set(overlay.map((c3) => c3.originDevice).filter((d) => !!d))];
-    const tail = devices.length === 1 ? `archived on device ${devices[0]}; restore it there` : "each is archived on another device; restore it there";
+    const devices = new Set(overlay.map((c3) => c3.originDevice ? c3.originDevice : null));
+    const only = devices.size === 1 ? [...devices][0] : null;
+    const tail = only !== null ? `archived on device ${only}; restore it there` : "each is archived on another device; restore it there";
     return `${head} \u2014 ${tail} (memory-unarchive is local-only).`;
   }
   return `${head} \u2014 restore each on the device that archived it (memory-unarchive is local-only).`;
