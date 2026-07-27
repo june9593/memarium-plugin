@@ -195,6 +195,112 @@ describe("isOverlayConflict — fails CLOSED on an overlay row it cannot compare
   });
 });
 
+describe("isOverlayConflict — updatedAt is ordered CHRONOLOGICALLY, not lexically (round-30)", () => {
+  const blindRoots = { local: "/nonexistent", overlay: "/nonexistent" };
+
+  /** Both trees hold the row's canonical .md with an IDENTICAL body, so every
+   *  comparison the TIE branch can reach answers "equivalent" — the fixture can
+   *  never manufacture a conflict on its own. */
+  function withBodies(fn: (roots: { local: string; overlay: string }) => void) {
+    const root = mkdtempSync(join(tmpdir(), "vbp-ovl-r30-"));
+    try {
+      for (const tree of ["local", "overlay"]) {
+        const p = join(root, tree, "memory/semantic/p");
+        mkdirSync(p, { recursive: true });
+        writeFileSync(join(p, "x.md"), `---\nid: semantic/p/x\n---\n\n# T\n\nSame body on both devices.\n`);
+      }
+      fn({ local: join(root, "local"), overlay: join(root, "overlay") });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("a mixed-form overlay that LEXICALLY sorts older is no longer waved through as 'older'", () => {
+    // THE REVIEWER'S CASE. `2026-05-05T23:00:00-10:00` is 2026-05-06T09:00:00Z —
+    // NINE HOURS NEWER than local `2026-05-06` (00:00:00Z) — yet the raw strings
+    // sort the other way ("2026-05-05T…" < "2026-05-06"). The old code took that
+    // lexical `<` as "strictly older, local authoritative" and returned false
+    // WITHOUT COMPARING ANY STATE, permitting a write over a sibling copy it had
+    // never looked at. Both are the SAME UTC calendar day, so the fixed guard
+    // routes the pair to the TIE branch — where a divergent sibling is caught.
+    const local = entry({ updatedAt: "2026-05-06" });
+    const overlay = entry({ updatedAt: "2026-05-05T23:00:00-10:00", title: "sibling edited this title" });
+    expect(isOverlayConflict(local, overlay, blindRoots)).toBe(true);
+    // …and it is the DIVERGENCE that decides, not an unreadable-body fallback:
+    // with real trees on disk the same divergent sibling still conflicts.
+    withBodies((roots) => {
+      expect(isOverlayConflict(local, overlay, roots)).toBe(true);
+      // Control: the same mixed-form pair with a PROVABLY equivalent sibling
+      // (identical metadata AND identical body) is safe to archive — there is
+      // nothing to clobber. This is the round-7/8 same-day semantics, preserved.
+      expect(isOverlayConflict(local, entry({ updatedAt: "2026-05-05T23:00:00-10:00" }), roots)).toBe(false);
+    });
+  });
+
+  it("the mirror case: an overlay on an EARLIER UTC day is ordered as older (no false conflict)", () => {
+    // `2026-05-06T01:00:00+14:00` is 2026-05-05T11:00:00Z — genuinely OLDER than
+    // local `2026-05-06` — but sorts lexically GREATER, so the old code called it
+    // a strictly-newer remote edit and blocked archival forever. Different UTC
+    // calendar days → chronological order decides → older → local authoritative,
+    // even though the sibling's metadata DIVERGES (no state check is needed).
+    const local = entry({ updatedAt: "2026-05-06" });
+    const overlay = entry({ updatedAt: "2026-05-06T01:00:00+14:00", title: "stale sibling title" });
+    expect(isOverlayConflict(local, overlay, blindRoots)).toBe(false);
+  });
+
+  it("an overlay on a LATER UTC day is a conflict regardless of content (round-4, preserved)", () => {
+    withBodies((roots) => {
+      const local = entry({ updatedAt: "2026-05-06" });
+      // Identical content + identical body, but a strictly later UTC day → the
+      // newer remote edit still wins; ordering short-circuits before the diff.
+      expect(isOverlayConflict(local, entry({ updatedAt: "2026-05-07" }), roots)).toBe(true);
+      expect(isOverlayConflict(local, entry({ updatedAt: "2026-05-06T23:00:00-10:00" }), roots)).toBe(true); // = 05-07T09Z
+    });
+  });
+
+  it("same UTC calendar day at DIFFERENT times stays the TIE branch (divergence decides)", () => {
+    // Full precision must NOT turn a same-day pair into strictly newer/older:
+    // memarium writes `updatedAt` day-granular, so a same-day pair is exactly the
+    // "indistinguishable at the granularity we store" case rounds 7/8 route to the
+    // substantive divergence check. Both directions are asserted.
+    withBodies((roots) => {
+      const local = entry({ updatedAt: "2026-05-06" });
+      // equivalent synced copy → archivable
+      expect(isOverlayConflict(local, entry({ updatedAt: "2026-05-06T10:00:00Z" }), roots)).toBe(false);
+      // divergent same-day sibling edit → conflict
+      expect(isOverlayConflict(local, entry({ updatedAt: "2026-05-06T10:00:00Z", summary: "sibling" }), roots)).toBe(true);
+    });
+  });
+
+  it("an UNPARSEABLE updatedAt on EITHER side is a CONFLICT, never 'older' (fail-closed)", () => {
+    withBodies((roots) => {
+      // overlay unparseable: lexically "2026-05-06" < "not-a-date", so the old
+      // code read the garbage row as strictly NEWER — right answer, wrong reason.
+      expect(isOverlayConflict(entry({ updatedAt: "2026-05-06" }), entry({ updatedAt: "not-a-date" }), roots)).toBe(true);
+      // LOCAL unparseable: the old code compared the overlay's valid date against
+      // the garbage string and got `<` — "strictly older, local wins" — permitting
+      // the write off a local stamp it could not read.
+      expect(isOverlayConflict(entry({ updatedAt: "not-a-date" }), entry({ updatedAt: "2026-05-06" }), roots)).toBe(true);
+      expect(isOverlayConflict(entry({ updatedAt: "garbage" }), entry({ updatedAt: "garbage" }), roots)).toBe(true);
+      // a MISSING local updatedAt is uncomparable too (it used to coerce to "").
+      expect(isOverlayConflict({ ...entry(), updatedAt: undefined } as unknown as MemoryEntry,
+        entry({ updatedAt: "2026-05-06" }), roots)).toBe(true);
+    });
+  });
+
+  it("plain equal `YYYY-MM-DD` pairs behave exactly as before (regression lock)", () => {
+    withBodies((roots) => {
+      // equal day + equivalent copy → archivable; equal day + divergent → conflict.
+      expect(isOverlayConflict(entry({ updatedAt: "2026-05-05" }), entry({ updatedAt: "2026-05-05" }), roots)).toBe(false);
+      expect(isOverlayConflict(entry({ updatedAt: "2026-05-05" }),
+        entry({ updatedAt: "2026-05-05", importance: 4 }), roots)).toBe(true);
+      // strictly older / strictly newer day-only pairs keep their verdicts.
+      expect(isOverlayConflict(entry({ updatedAt: "2026-05-05" }), entry({ updatedAt: "2026-01-01" }), roots)).toBe(false);
+      expect(isOverlayConflict(entry({ updatedAt: "2026-05-05" }), entry({ updatedAt: "2026-06-01" }), roots)).toBe(true);
+    });
+  });
+});
+
 describe("sameMemoryContent — a malformed COLLECTION field is uncomparable, never a throw (round-17)", () => {
   it("a non-array `entities` on either side is NOT equivalent (and does not throw)", () => {
     // Round-17: `sameStringSet` spread its arguments (`[...(b ?? [])]`), so a

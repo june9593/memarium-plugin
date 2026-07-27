@@ -1,7 +1,7 @@
 import type { MemoryEntry } from "./types.js";
 import type { UsageMap } from "./usage-store.js";
 import { nearDuplicatePairs } from "./lint.js";
-import { calendarDate } from "./dates.js";
+import { calendarDate, epochMs } from "./dates.js";
 
 /** Tunable thresholds for the age/importance rules. Overridable per call via
  *  ArchiveOpts; these are the shipped defaults. */
@@ -61,12 +61,13 @@ function importanceOf(e: MemoryEntry): number | null {
  *  `NaN <= x` is FALSE, so the loser fell out as `eb` purely from PAIR ORDERING —
  *  the same defect round-23 fixed one field over, and the same consequence: a
  *  malformed row could get a HEALTHY entry archived. Returning null forces the
- *  caller to make the unrankable case explicit. */
+ *  caller to make the unrankable case explicit.
+ *
+ *  Round-30: the parse itself now lives in `dates.ts` as `epochMs`, because the
+ *  cross-device write guard needed the same primitive and a second copy would be
+ *  the very drift `dates.ts` exists to prevent. */
 function updatedAtMs(e: MemoryEntry): number | null {
-  const v = (e as unknown as Record<string, unknown>).updatedAt;
-  if (typeof v !== "string") return null;
-  const ts = Date.parse(v);
-  return Number.isFinite(ts) ? ts : null;
+  return epochMs((e as unknown as Record<string, unknown>).updatedAt);
 }
 
 /** core and pinned are NEVER archivable; an already-archived entry is skipped so

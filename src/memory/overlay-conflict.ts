@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { canonicalMemoryPath } from "./gate.js";
+import { calendarDate, epochMs } from "./dates.js";
 import type { MemoryEntry } from "./types.js";
 
 /** Tri-state comparison for a memory's string-tag collection (e.g. `entities`).
@@ -160,19 +161,25 @@ export interface ConflictRoots {
  *
  *   - overlay row genuinely ABSENT (undefined/null) → NOT a conflict. This is the
  *     normal local-only path: there is no sibling copy to clobber.
- *   - overlay row PRESENT but UNCOMPARABLE (not a non-null non-array object, no
- *     usable string `updatedAt`, a MALFORMED COLLECTION field, or any field whose
- *     comparison throws) → CONFLICT. Round-16: this used to return false, and a
- *     missing `updatedAt` compared as `""` — i.e. "strictly older, local wins" —
- *     so archive/unarchive would restamp the local copy even though the sibling's
- *     state was never actually compared. That is exactly the clobbering write this
- *     guard exists to prevent.
- *   - overlay strictly NEWER updatedAt → conflict (a newer remote edit; clobber risk).
- *   - overlay strictly OLDER updatedAt → NOT a conflict (local wins).
- *   - EQUAL updatedAt → conflict IFF the copies substantively DIVERGE: any
+ *   - overlay row PRESENT but UNCOMPARABLE (not a non-null non-array object, an
+ *     absent / non-string / UNPARSEABLE `updatedAt` on EITHER side, a MALFORMED
+ *     COLLECTION field, or any field whose comparison throws) → CONFLICT.
+ *     Round-16: this used to return false, and a missing `updatedAt` compared as
+ *     `""` — i.e. "strictly older, local wins" — so archive/unarchive would
+ *     restamp the local copy even though the sibling's state was never actually
+ *     compared. That is exactly the clobbering write this guard exists to prevent.
+ *   - overlay on a strictly LATER calendar day → conflict (a newer remote edit;
+ *     clobber risk).
+ *   - overlay on a strictly EARLIER calendar day → NOT a conflict (local wins).
+ *   - SAME calendar day → conflict IFF the copies substantively DIVERGE: any
  *     metadata field (`sameMemoryContent`) OR the Markdown BODY differs. Reading
  *     either body fails → treated as divergent (safe default). An equivalent
  *     already-synced copy (identical metadata AND body) is NOT a conflict.
+ *
+ *  Round-30: those three orderings are decided CHRONOLOGICALLY (shared
+ *  `epochMs`/`calendarDate`), not by comparing the raw strings — see
+ *  `divergesFromOverlay` for why day granularity picks the branch and the
+ *  instant picks the direction.
  *
  *  Round-17: this function must also NEVER THROW. It runs inside the automatic
  *  `memory-archive --apply` consolidation at the end of a digest — unattended —
@@ -204,15 +211,40 @@ export function isOverlayConflict(
 /** The comparison proper; only ever called with a non-null, non-array object
  *  overlay row. May throw — `isOverlayConflict` converts that into a conflict. */
 function divergesFromOverlay(local: MemoryEntry, ov: MemoryEntry, roots: ConflictRoots): boolean {
-  const ovUpdated = ov.updatedAt;
-  if (typeof ovUpdated !== "string" || ovUpdated === "") return true; // uncomparable → conflict
+  // Round-30: BOTH stamps are read through the shared date helpers, and either
+  // side being unreadable is a conflict — never "older". `epochMs`/`calendarDate`
+  // return null for absent / non-string / unparseable values, which subsumes the
+  // old `typeof !== "string" || === ""` check and closes the LOCAL side too (it
+  // used to coerce a missing local stamp to `""`, and a *garbage* local string
+  // like "not-a-date" sorted ABOVE any real date, so a valid overlay compared
+  // "strictly older" and the write went through off a stamp we could not read).
+  const ovMs = epochMs(ov.updatedAt);
+  const localMs = epochMs(local.updatedAt);
+  if (ovMs === null || localMs === null) return true; // uncomparable → conflict
   // A row whose collection fields aren't arrays is structurally corrupt; no
   // comparison against it can be trusted, so fail closed rather than diff it.
   if (!hasWellFormedCollections(ov) || !hasWellFormedCollections(local)) return true;
-  const localUpdated = typeof local.updatedAt === "string" ? local.updatedAt : "";
-  if (ovUpdated > localUpdated) return true;   // strictly-newer remote edit → clobber risk
-  if (ovUpdated < localUpdated) return false;  // strictly-older → local authoritative
-  // EQUAL updatedAt: a genuine same-day sibling edit blocks; an equivalent synced copy does not.
+  // DAY equality picks the branch; the INSTANT picks the direction.
+  //
+  // Both are needed. Comparing the raw strings (as this did) is not chronological
+  // for valid mixed ISO forms: `2026-05-06T01:00:00+14:00` is 2026-05-05T11:00Z —
+  // genuinely OLDER than `2026-05-06` — yet sorts lexically GREATER, and
+  // `2026-05-05T23:00:00-10:00` is 2026-05-06T09:00Z — genuinely NEWER — yet
+  // sorts lexically SMALLER, so the guard called a newer sibling "older" and
+  // permitted the very clobbering write it exists to prevent.
+  //
+  // But full precision must not be applied INSIDE a day either: memarium writes
+  // `updatedAt` DAY-GRANULAR (`YYYY-MM-DD`), i.e. a stamp denotes a whole day,
+  // not an instant. Two copies stamped the same day are genuinely unordered — the
+  // round-7/8 case — so they must reach the substantive divergence check below,
+  // where an equivalent already-synced copy is archivable and a same-day sibling
+  // EDIT is caught. Ordering them by instant instead would read the day-only side
+  // as 00:00Z and call every same-day timestamped copy a "newer remote edit",
+  // blocking archival for that id forever on a difference that isn't one.
+  const ovDay = calendarDate(ov.updatedAt);
+  const localDay = calendarDate(local.updatedAt);
+  if (ovDay !== localDay) return ovMs > localMs; // newer UTC day → conflict; earlier → local authoritative
+  // SAME calendar day: a genuine same-day sibling edit blocks; an equivalent synced copy does not.
   if (!sameMemoryContent(local, ov)) return true; // metadata diverges → conflict
   // Metadata matches — the last place a sibling edit can hide is the BODY. Each
   // side's body is read from the path its OWN {type, project, id} derives, so

@@ -76,12 +76,13 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   // ties), so the merged view can't distinguish "equivalent synced copy" from
   // "same-day sibling edit" — both resolve to "local". So we load the overlay's
   // OWN index and compare its row against the local row per id:
-  //   - overlay absent, or strictly OLDER than local → local is authoritative → archivable.
-  //   - overlay strictly NEWER than local → a newer remote edit; archiving+restamping
+  //   - overlay absent, or on an EARLIER calendar day than local → local is authoritative → archivable.
+  //   - overlay on a LATER calendar day → a newer remote edit; archiving+restamping
   //     local (day-only updatedAt) could win the next merge and clobber it → skip.
-  //   - overlay EQUAL updatedAt → skip ONLY IF it substantively DIFFERS from local
-  //     (a same-day sibling edit we could clobber, including a body-only edit); an
-  //     equivalent synced copy is archivable normally.
+  //   - overlay on the SAME calendar day → skip ONLY IF it substantively DIFFERS from
+  //     local (a same-day sibling edit we could clobber, including a body-only edit); an
+  //     equivalent synced copy is archivable normally. (Round-30: those orderings are
+  //     chronological, not lexical — see `isOverlayConflict`.)
   //
   // The overlay index is read STRICTLY here. `loadMemoryIndex` intentionally turns
   // an unreadable/corrupt index into an EMPTY one — right for read paths, wrong on
