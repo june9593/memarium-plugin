@@ -832,3 +832,57 @@ describe("missingRewriteField — round-23: `importance` must be a FINITE NUMBER
     }
   });
 });
+
+describe("missingRewriteField — round-27: `status` must be one of the FOUR MemoryEntry statuses", () => {
+  // Round-27: the gate only checked that `status` was a STRING. A
+  // parseable-but-malformed row carrying `status: "blocked"` therefore passed,
+  // reached planArchival, and — because `archivable()` only excludes `pinned`
+  // and `archived` — counted as ARCHIVABLE, so the expired / unused-low-value
+  // rules would automatically flip that corrupt row to `archived`. A corrupt row
+  // must be SKIPPED and COUNTED, never silently mutated.
+  const complete = (over: Partial<MemoryEntry> = {}): MemoryEntry => mk({
+    id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p", title: "T", ...over,
+  });
+
+  it("accepts all FOUR valid statuses (control + regression lock)", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    // archived must stay accepted (memory-unarchive's only actionable input) and
+    // superseded must too (the archive planner's superseded-cleanup rule reads it).
+    for (const status of ["active", "superseded", "pinned", "archived"] as const) {
+      expect(missingRewriteField(complete({ status }))).toBeNull();
+      expect(isRewritableEntry(complete({ status }))).toBe(true);
+    }
+  });
+
+  it("reports an ABSENT status as MISSING", async () => {
+    const { missingRewriteField, describeRewriteDefect, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const unset of [undefined, null]) {
+      const row = { ...complete(), status: unset } as unknown as MemoryEntry;
+      expect(missingRewriteField(row)).toBe("status");
+      expect(describeRewriteDefect(missingRewriteField(row)!)).toBe("missing status");
+      expect(isRewritableEntry(row)).toBe(false);
+    }
+    const deleted = { ...complete() } as Record<string, unknown>;
+    delete deleted.status;
+    expect(missingRewriteField(deleted as unknown as MemoryEntry)).toBe("status");
+  });
+
+  it("reports an UNKNOWN or non-string status as UNSAFE, never as missing", async () => {
+    const { missingRewriteField, describeRewriteDefect, isRewritableEntry } = await import("../../src/memory/apply.js");
+    // "blocked" is THE landmine: a plausible-looking status the planner treated
+    // as archivable. The rest cover casing/whitespace drift and non-strings.
+    for (const bad of ["blocked", "", "ACTIVE", "Archived", " active", "active ", 42, {}, [], true]) {
+      const row = { ...complete(), status: bad } as unknown as MemoryEntry;
+      expect(missingRewriteField(row)).toBe("unsafe status");
+      expect(describeRewriteDefect(missingRewriteField(row)!)).not.toMatch(/missing/);
+      expect(describeRewriteDefect(missingRewriteField(row)!)).toMatch(/unsafe.*status/i);
+      expect(isRewritableEntry(row)).toBe(false);
+    }
+  });
+
+  it("isMemoryStatus recognizes exactly the union — nothing more (shared with memory-unarchive)", async () => {
+    const { isMemoryStatus } = await import("../../src/memory/apply.js");
+    for (const ok of ["active", "superseded", "pinned", "archived"]) expect(isMemoryStatus(ok)).toBe(true);
+    for (const bad of ["blocked", "", undefined, null, 42, {}, []]) expect(isMemoryStatus(bad)).toBe(false);
+  });
+});

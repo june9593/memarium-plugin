@@ -886,3 +886,91 @@ describe("memoryArchiveCmd — round-23: a row with a NON-FINITE `importance`", 
     expect(readIndexStatus("semantic/p/exp")).toBe("archived");
   });
 });
+
+describe("memoryArchiveCmd — round-27: a row whose `status` is not a MemoryEntry status", () => {
+  // Round-27: the shared rewrite gate only asserted `typeof status === "string"`,
+  // so a parseable-but-malformed row reading `status: "blocked"` passed and was
+  // handed to planArchival — whose `archivable()` only excludes `pinned` and
+  // `archived`. The unknown status therefore counted as ARCHIVABLE, and the
+  // expired rule silently FLIPPED that corrupt row to `archived`, mutating a
+  // record the fail-closed policy says must be SKIPPED and COUNTED.
+  const base = {
+    confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+    supersedes: null, entities: [] as string[], trust: "trusted" as const, originDevice: null,
+    accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+  };
+  /** An EXPIRED (therefore rule-1-archivable) semantic row filed under its own id. */
+  const expired = (key: string, over: Record<string, unknown> = {}) => ({
+    id: key, type: "semantic", scope: "project:p", project: "p",
+    title: "a fact", summary: "s", path: "", status: "active",
+    validTo: "2000-01-01", ...base, ...over,
+  });
+  const md = (id: string) =>
+    `---\nid: ${id}\ntype: semantic\nstatus: active\n---\n\n# a fact\n\nThe real body of ${id}.\n`;
+
+  it("skips + counts an unknown / non-string status, never flipping it to archived; the valid entry still archives", async () => {
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    const entries: Record<string, unknown> = {
+      "semantic/p/good": expired("semantic/p/good", { path: "memory/semantic/p/good.md" }),
+      // THE LANDMINE: a plausible-looking but invalid status. Expired ⇒ rule 1
+      // would have archived it, because archivable() only rejects pinned/archived.
+      "semantic/p/blocked": expired("semantic/p/blocked", { status: "blocked", path: "memory/semantic/p/blocked.md" }),
+      // and a status that isn't even a string
+      "semantic/p/numstat": expired("semantic/p/numstat", { status: 42, path: "memory/semantic/p/numstat.md" }),
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    for (const slug of ["good", "blocked", "numstat"]) {
+      writeFileSync(join(repo, `memory/semantic/p/${slug}.md`), md(`semantic/p/${slug}`));
+    }
+    const blockedBefore = JSON.parse(JSON.stringify(entries["semantic/p/blocked"]));
+    const numstatBefore = JSON.parse(JSON.stringify(entries["semantic/p/numstat"]));
+    const blockedMdBefore = readFileSync(join(repo, "memory/semantic/p/blocked.md"), "utf8");
+    const numstatMdBefore = readFileSync(join(repo, "memory/semantic/p/numstat.md"), "utf8");
+
+    // the automatic (unattended) run must not throw
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
+
+    // the malformed rows are untouched on BOTH sides and counted
+    expect(readIndex().entries["semantic/p/blocked"]).toEqual(blockedBefore);
+    expect(readIndex().entries["semantic/p/numstat"]).toEqual(numstatBefore);
+    expect(readIndexStatus("semantic/p/blocked")).toBe("blocked");   // NOT flipped to archived
+    expect(readIndex().entries["semantic/p/numstat"].status).toBe(42);
+    expect(readFileSync(join(repo, "memory/semantic/p/blocked.md"), "utf8")).toBe(blockedMdBefore);
+    expect(readFileSync(join(repo, "memory/semantic/p/numstat.md"), "utf8")).toBe(numstatMdBefore);
+    expect(warnings.join("\n")).toMatch(/skipped 2 malformed index row\(s\)/);
+
+    // the healthy row still archives normally (index + .md both stamped)
+    expect(readIndexStatus("semantic/p/good")).toBe("archived");
+    expect(readMdField("semantic/p/good.md", "status")).toBe("archived");
+  });
+
+  it("all four VALID statuses still pass the gate (regression lock)", async () => {
+    // active/superseded stay archivable; pinned/archived are protected by
+    // archivable() — none of them may be rejected as a malformed row.
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    const entries: Record<string, unknown> = {
+      "semantic/p/act": expired("semantic/p/act", { title: "alpha rule", path: "memory/semantic/p/act.md" }),
+      "semantic/p/sup": expired("semantic/p/sup", { title: "beta convention", status: "superseded", path: "memory/semantic/p/sup.md" }),
+      "semantic/p/pin": expired("semantic/p/pin", { title: "gamma invariant", status: "pinned", path: "memory/semantic/p/pin.md" }),
+      "semantic/p/arc": expired("semantic/p/arc", { title: "delta note", status: "archived", path: "memory/semantic/p/arc.md",
+        archivedAt: "2026-05-01", archivedReason: "expired" }),
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    for (const slug of ["act", "sup", "pin", "arc"]) {
+      writeFileSync(join(repo, `memory/semantic/p/${slug}.md`), md(`semantic/p/${slug}`));
+    }
+
+    await memoryArchiveCmd({ cwd: repo, apply: true });
+
+    expect(warnings.join("\n")).not.toMatch(/malformed index row/); // none rejected by the gate
+    expect(readIndexStatus("semantic/p/act")).toBe("archived");     // expired → archived
+    expect(readIndexStatus("semantic/p/sup")).toBe("archived");     // superseded is archivable too
+    expect(readIndexStatus("semantic/p/pin")).toBe("pinned");       // protected, not skipped-as-malformed
+    expect(readIndexStatus("semantic/p/arc")).toBe("archived");     // idempotent
+  });
+});

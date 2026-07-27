@@ -93,6 +93,24 @@ function readMemoryBody(abs: string, expect: { id: string; type: string }): stri
 /** The 4 MemoryType values, as a runtime set for validating an untrusted index row. */
 const REWRITABLE_TYPES: ReadonlySet<string> = new Set(["core", "semantic", "episodic", "procedural"]);
 
+/** The `MemoryEntry["status"]` union, spelled once as DATA so it can be checked
+ *  at runtime against an untrusted index row. The `satisfies` clause makes the
+ *  key set EXHAUSTIVE in both directions — a 5th status added to `types.ts`
+ *  fails to compile here until it is classified, and a key that is not a real
+ *  status is rejected as an excess property — so this set cannot silently drift
+ *  from the type it mirrors. */
+const MEMORY_STATUSES = {
+  active: true, superseded: true, pinned: true, archived: true,
+} satisfies Record<MemoryEntry["status"], true>;
+const REWRITABLE_STATUSES: ReadonlySet<string> = new Set(Object.keys(MEMORY_STATUSES));
+
+/** True when `v` is one of the four real `MemoryEntry["status"]` values. Shared
+ *  by the rewrite gate below and by `memory-unarchive`, which BRANCHES on status
+ *  before the gate runs and so must recognize a corrupt one on its own. */
+export function isMemoryStatus(v: unknown): v is MemoryEntry["status"] {
+  return typeof v === "string" && REWRITABLE_STATUSES.has(v);
+}
+
 /** The COLLECTION fields `renderMemoryMarkdown` serializes through its `arr()`
  *  helper (`xs ?? []` then `.join(", ")`). `arr` coerces an UNSET value
  *  (undefined/null) to `[]`, so an omitted field renders fine — but a PRESENT
@@ -154,6 +172,15 @@ const REWRITE_COLLECTION_FIELDS = ["sourceSessions", "sourceCommits", "sourceFil
  *  be a FINITE number; absent is reported as missing, present-but-unusable
  *  (a string, NaN, Infinity) as unsafe.
  *
+ *  Round-27: `status` was only checked to be a STRING, not to be one of the four
+ *  `MemoryEntry["status"]` values. So a parseable-but-malformed row carrying
+ *  `status: "blocked"` passed the gate and reached `planArchival`, whose
+ *  `archivable()` only excludes `pinned` and `archived` — meaning the unknown
+ *  status counted as archivable and the expired / unused-low-value rules would
+ *  automatically FLIP that corrupt row to `archived`, mutating a record this
+ *  command's fail-closed policy says must be SKIPPED and COUNTED. The status is
+ *  now validated against the union (see `MEMORY_STATUSES`).
+ *
  *  Returns the name of the FIRST missing/invalid field, or null when the row is
  *  complete — so `memory-unarchive` can name it in its abort message while
  *  `memory-archive` just filters on the boolean. A field that is PRESENT but
@@ -167,7 +194,12 @@ export function missingRewriteField(entry: MemoryEntry): string | null {
   if (!filled(e.scope)) return "scope";
   if (!(e.project === null || typeof e.project === "string")) return "project";
   if (!filled(e.title)) return "title";
-  if (typeof e.status !== "string") return "status";
+  // status: the field BOTH archival commands branch on, so it must be a real
+  // member of the union, not merely a string (see the round-27 note above).
+  // Absent → "missing status"; present-but-not-a-status → "unsafe status", so
+  // memory-unarchive never claims a field is missing when it is malformed.
+  if (e.status === undefined || e.status === null) return "status";
+  if (!isMemoryStatus(e.status)) return "unsafe status";
   if (typeof e.updatedAt !== "string") return "updatedAt";
   // importance: read by the archival plan (near-duplicate ranking + the
   // unused-low-value threshold), so it must be a real, finite number.

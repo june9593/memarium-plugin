@@ -49,9 +49,13 @@ export async function memoryArchiveCmd(opts: MemoryArchiveOptions): Promise<void
   // well-formed rewrite targets — a missing `type` (which would throw in
   // canonicalMemoryPath) or a missing `title`/`scope` (which the renderer would
   // serialize as the literal "undefined", degrading the record this command only
-  // meant to stamp `archived` on). Same predicate memory-unarchive validates
-  // with, so the two write paths can't drift. Report how many rows, across both
-  // filters, were skipped.
+  // meant to stamp `archived` on) — or a `status` that isn't one of the four
+  // MemoryEntry statuses at all (round-27: `planArchival`'s `archivable()` only
+  // excludes `pinned`/`archived`, so a row reading `status: "blocked"` counted
+  // as archivable and would be silently FLIPPED to `archived` by the expired /
+  // unused-low-value rules — mutating a corrupt row this filter must skip).
+  // Same predicate memory-unarchive validates with, so the two write paths can't
+  // drift. Report how many rows, across both filters, were skipped.
   const rawCount = Object.keys(idx.entries ?? {}).length;
   const entries = Object.keys((idx.entries ?? {}) as Record<string, unknown>)
     .filter((key) => validEntryExists(idx.entries, key))

@@ -645,6 +645,76 @@ describe("memoryUnarchiveCmd — round-23: a row with a NON-FINITE `importance`"
   });
 });
 
+describe("memoryUnarchiveCmd — round-27: a row whose `status` is not a MemoryEntry status", () => {
+  // Round-27: `status` is the field this command BRANCHES on, so an unknown one
+  // ("blocked", 42) used to fall straight through the `!== "archived"` test into
+  // the friendly "not archived" no-op — a message that reads like a clean result
+  // while hiding a corrupt row. There is no safe repair, so the command must
+  // ABORT and name the defect as UNSAFE (not missing), writing nothing.
+  const partial = (over: Record<string, unknown>) => ({
+    id: "x", type: "semantic", scope: "project:p", project: "p", title: "T",
+    summary: "s", path: "", status: "archived", archivedAt: "2026-05-01",
+    archivedReason: "expired", confidence: 1, importance: 1,
+    createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+    sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
+    entities: [], trust: "trusted", originDevice: null, accessCount: 0, lastAccess: null,
+    ...over,
+  });
+  const md = (id: string) =>
+    `---\nid: ${id}\ntype: semantic\nstatus: archived\narchivedAt: 2026-05-01\narchivedReason: expired\n---\n\n# Odd row\n\nThe real body of ${id}.\n`;
+
+  it("aborts naming the defect as UNSAFE and writes nothing (unknown string AND non-string)", async () => {
+    seed();
+    const idx = readIndex();
+    const blocked = partial({ id: "semantic/p/blocked", path: "memory/semantic/p/blocked.md", status: "blocked" });
+    const numstat = partial({ id: "semantic/p/numstat", path: "memory/semantic/p/numstat.md", status: 42 });
+    idx.entries["semantic/p/blocked"] = blocked;
+    idx.entries["semantic/p/numstat"] = numstat;
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    const blockedMd = md("semantic/p/blocked"), numstatMd = md("semantic/p/numstat");
+    writeFileSync(join(repo, "memory/semantic/p/blocked.md"), blockedMd);
+    writeFileSync(join(repo, "memory/semantic/p/numstat.md"), numstatMd);
+    const idxBefore = readFileSync(idxPath(), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/blocked", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/blocked.*unsafe status/i);
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/numstat", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/numstat.*unsafe status/i);
+    // the defect is described honestly — the field is present, not missing
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/blocked", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/blocked(?!.*missing)/i);
+    // ...and it is an ABORT, not the friendly no-op
+    expect(out.join("\n")).not.toMatch(/not archived: semantic\/p\/(blocked|numstat)/);
+
+    // all-or-nothing: neither .md nor the index moved
+    expect(readFileSync(join(repo, "memory/semantic/p/blocked.md"), "utf8")).toBe(blockedMd);
+    expect(readFileSync(join(repo, "memory/semantic/p/numstat.md"), "utf8")).toBe(numstatMd);
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+    expect(readIndex().entries["semantic/p/blocked"]).toEqual(blocked);
+    expect(readIndex().entries["semantic/p/numstat"]).toEqual(numstat);
+  });
+
+  it("all four VALID statuses keep their existing behavior (regression lock)", async () => {
+    seed();
+    // archived → restored (the command's whole point; the gate must still accept it)
+    await memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo });
+    expect(readIndexStatus("semantic/p/c")).toBe("active");
+    // active → the documented no-op, NOT an abort
+    await memoryUnarchiveCmd({ id: "semantic/p/act", cwd: repo });
+    expect(out.join("\n")).toMatch(/not archived: semantic\/p\/act/);
+    expect(readIndexStatus("semantic/p/act")).toBe("active");
+    // superseded + pinned rows are also legal statuses → no-op, never an abort
+    const idx = readIndex();
+    idx.entries["semantic/p/sup2"] = partial({ id: "semantic/p/sup2", path: "memory/semantic/p/sup2.md", status: "superseded" });
+    idx.entries["semantic/p/pin2"] = partial({ id: "semantic/p/pin2", path: "memory/semantic/p/pin2.md", status: "pinned" });
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/sup2", cwd: repo })).resolves.toBeUndefined();
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/pin2", cwd: repo })).resolves.toBeUndefined();
+    expect(out.join("\n")).toMatch(/not archived: semantic\/p\/sup2/);
+    expect(out.join("\n")).toMatch(/not archived: semantic\/p\/pin2/);
+  });
+});
+
 // Round-25 END-TO-END: the whole reason applyMemoryItems now records
 // `superseded-cleanup` on an ARCHIVED supersede target. Unarchive derives the
 // restored status FROM `archivedReason`, so a target left with its old

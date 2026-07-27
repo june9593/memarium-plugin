@@ -1,6 +1,6 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadMemoryIndex, loadMemoryIndexStrict, saveMemoryIndex, type MemoryIndexLoad } from "../memory/index-store.js";
-import { writeMemoryEntryFile, missingRewriteField, describeRewriteDefect, snapshotMemoryEntryFile, rollbackMemoryWrites } from "../memory/apply.js";
+import { writeMemoryEntryFile, missingRewriteField, describeRewriteDefect, isMemoryStatus, snapshotMemoryEntryFile, rollbackMemoryWrites } from "../memory/apply.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
 import { isOverlayConflict } from "../memory/overlay-conflict.js";
 import { validEntryExists } from "../memory/lint.js";
@@ -55,6 +55,17 @@ export async function memoryUnarchiveCmd(opts: MemoryUnarchiveOptions): Promise<
     throw new Error(`refusing to unarchive ${opts.id}: index row is corrupt (key/id mismatch)`);
   }
   const e = rows[opts.id] as MemoryEntry;
+  // Round-27: `status` is the field this command BRANCHES on, so a row whose
+  // status is not one of the four MemoryEntry statuses (`"blocked"`, `42`, …)
+  // must not fall through the "not archived" no-op below — that message reads
+  // like a clean result and would hide store corruption behind it. There is no
+  // safe repair (we cannot know which status the row meant), so ABORT here,
+  // before the branch, naming the defect exactly as the shared gate would.
+  // An ABSENT status keeps the documented no-op: a thin row is simply not
+  // archived, and `missingRewriteField` reports it downstream if it ever is.
+  if (e.status !== undefined && e.status !== null && !isMemoryStatus(e.status)) {
+    throw new Error(`refusing to unarchive ${opts.id}: index row is incomplete (${describeRewriteDefect("unsafe status")})`);
+  }
   if (e.status !== "archived") {
     console.log(`not archived: ${opts.id}`);
     return;
