@@ -15051,6 +15051,23 @@ var init_skip_write = __esm({
   }
 });
 
+// src/memory/dates.ts
+function calendarDate(v) {
+  if (typeof v !== "string") return null;
+  const ts = Date.parse(v);
+  if (!isFinite(ts)) return null;
+  try {
+    return new Date(ts).toISOString().slice(0, 10);
+  } catch {
+    return null;
+  }
+}
+var init_dates = __esm({
+  "src/memory/dates.ts"() {
+    "use strict";
+  }
+});
+
 // src/memory/score.ts
 function tokenize(s) {
   return s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1);
@@ -15066,7 +15083,8 @@ function isArchived(e) {
 }
 function isEligible(e, q2) {
   if (e.status === "superseded" || isArchived(e)) return false;
-  if (e.validTo !== null && e.validTo <= q2.now) return false;
+  const validToDate = calendarDate(e.validTo);
+  if (validToDate !== null && validToDate <= (calendarDate(q2.now) ?? q2.now)) return false;
   if (q2.type && e.type !== q2.type) return false;
   if (e.scope === "global" || e.scope === "user") return true;
   if (q2.project && e.scope === `project:${q2.project}`) return true;
@@ -15139,6 +15157,7 @@ var IMPORTANCE_CAP;
 var init_score = __esm({
   "src/memory/score.ts"() {
     "use strict";
+    init_dates();
     IMPORTANCE_CAP = 3;
   }
 });
@@ -15233,7 +15252,11 @@ function num2(v, dflt) {
   return typeof v === "number" && isFinite(v) ? v : dflt;
 }
 function eligible(entries, type, project, now) {
-  return entries.filter((e) => e.status !== "superseded" && !isArchived(e) && e.type === type).filter((e) => e.validTo === null || e.validTo > now).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted").sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
+  const nowDate = calendarDate(now) ?? now;
+  return entries.filter((e) => e.status !== "superseded" && !isArchived(e) && e.type === type).filter((e) => {
+    const v = calendarDate(e.validTo);
+    return v === null || v > nowDate;
+  }).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted").sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
 }
 function section(title, all, max) {
   if (all.length === 0) return "";
@@ -15271,6 +15294,7 @@ var init_primer = __esm({
   "src/memory/primer.ts"() {
     "use strict";
     init_score();
+    init_dates();
     MAX_PER_SECTION = 12;
     TENTATIVE_BELOW = 0.5;
   }
@@ -15863,7 +15887,8 @@ function isKind(s) {
 function isEligibleMemory(m, now, project) {
   if (m.status === "superseded") return false;
   if (isArchived(m)) return false;
-  if (m.validTo !== null && m.validTo <= now) return false;
+  const validToDate = calendarDate(m.validTo);
+  if (validToDate !== null && validToDate <= (calendarDate(now) ?? now)) return false;
   if (m.scope === "global" || m.scope === "user") return true;
   if (project && m.scope === `project:${project}`) return true;
   return project === null;
@@ -15938,6 +15963,7 @@ var init_entity_query = __esm({
     init_score2();
     init_index_store2();
     init_score();
+    init_dates();
   }
 });
 
@@ -16414,15 +16440,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   for (const e of memEntries) {
     try {
       if (e.status === "active" && e.validTo !== null) {
-        const ts = Date.parse(e.validTo);
-        let vDate = null;
-        if (isFinite(ts)) {
-          try {
-            vDate = new Date(ts).toISOString().slice(0, 10);
-          } catch {
-            vDate = null;
-          }
-        }
+        const vDate = calendarDate(e.validTo);
         if (vDate === null) {
           issues.push({
             check: "malformed-date",
@@ -16674,6 +16692,7 @@ var init_lint = __esm({
   "src/memory/lint.ts"() {
     "use strict";
     init_leak_scan();
+    init_dates();
     tokenize4 = (s) => new Set(s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1));
     jaccard = (a, b2) => {
       if (a.size === 0 && b2.size === 0) return 0;
@@ -16934,19 +16953,15 @@ function daysBetween2(now, then) {
   if (!isFinite(a) || !isFinite(b2)) return NaN;
   return (a - b2) / 864e5;
 }
-function calendarDate(v) {
-  if (typeof v !== "string") return null;
-  const ts = Date.parse(v);
-  if (!isFinite(ts)) return null;
-  try {
-    return new Date(ts).toISOString().slice(0, 10);
-  } catch {
-    return null;
-  }
-}
 function importanceOf(e) {
   const v = e.importance;
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+function updatedAtMs(e) {
+  const v = e.updatedAt;
+  if (typeof v !== "string") return null;
+  const ts = Date.parse(v);
+  return Number.isFinite(ts) ? ts : null;
 }
 function archivable(e) {
   return e.type !== "core" && e.status !== "pinned" && e.status !== "archived";
@@ -16989,7 +17004,14 @@ function planArchival(entries, usage, opts) {
     if (!ea || !eb) continue;
     const ia = importanceOf(ea), ib = importanceOf(eb);
     if (ia === null || ib === null) continue;
-    const loser = ia !== ib ? ia < ib ? ea : eb : Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb;
+    let loser;
+    if (ia !== ib) {
+      loser = ia < ib ? ea : eb;
+    } else {
+      const ta = updatedAtMs(ea), tb = updatedAtMs(eb);
+      if (ta === null || tb === null) continue;
+      loser = ta <= tb ? ea : eb;
+    }
     const winner = loser === ea ? eb : ea;
     if (chosen.has(winner.id)) continue;
     if (archivable(loser)) chosen.set(loser.id, `near-duplicate-of:${winner.id}`);
@@ -17001,6 +17023,7 @@ var init_archive = __esm({
   "src/memory/archive.ts"() {
     "use strict";
     init_lint();
+    init_dates();
     ARCHIVE_DEFAULTS = { episodicMaxAgeDays: 90, unusedMinAgeDays: 60, unusedMaxImportance: 2 };
   }
 });
@@ -17210,7 +17233,8 @@ async function memoryUnarchiveCmd(opts) {
   }
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const restoreSuperseded = e.archivedReason === "superseded-cleanup";
-  const pastValidTo = !restoreSuperseded && typeof e.validTo === "string" && e.validTo !== "" && e.validTo <= now;
+  const validToDate = calendarDate(e.validTo);
+  const pastValidTo = !restoreSuperseded && validToDate !== null && validToDate <= now;
   const next = {
     ...e,
     status: restoreSuperseded ? "superseded" : "active",
@@ -17240,6 +17264,7 @@ var init_memory_unarchive = __esm({
     init_source_resolver();
     init_overlay_conflict();
     init_lint();
+    init_dates();
   }
 });
 
