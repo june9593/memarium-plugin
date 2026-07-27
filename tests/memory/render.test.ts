@@ -158,7 +158,9 @@ describe("renderMemoryMarkdown — round-34 (SECURITY): NO frontmatter value can
   //
   // Two layers, both asserted here: the serializer NEUTRALIZES control chars in
   // free-text/other values (never throws — a legitimate authored title must not
-  // hard-fail a write), and the parser keeps the FIRST occurrence of a key.
+  // hard-fail a write), and the parser REFUSES any document that carries a
+  // duplicate key at all (round-35 — see the describe below for why picking an
+  // occurrence was unsound).
 
   /** Frontmatter lines that declare `key` (start of line, `key: `). */
   function fmLines(md: string, key: string): string[] {
@@ -260,10 +262,38 @@ describe("renderMemoryMarkdown — round-34 (SECURITY): NO frontmatter value can
   });
 });
 
-describe("parseMemoryMarkdown — duplicate frontmatter keys: FIRST wins (anti-injection)", () => {
-  it("keeps the FIRST occurrence of a duplicated key, not the later one", () => {
-    // Hand-crafted document with the shape an injection produces: the real,
-    // validated line first, an attacker's line after it.
+describe("parseMemoryMarkdown — a duplicate frontmatter key REJECTS the document (round-35)", () => {
+  // Round-34 made the parser keep the FIRST occurrence and called that an
+  // anti-injection rule. It is not one. The renderer emits the keys in a FIXED
+  // ORDER, so a payload carried by an EARLY field forges its line ABOVE the real
+  // line of any LATER field — and first-wins then keeps the FORGED value. The
+  // round-34 test only passed because its payload targeted `id`, which happens to
+  // be emitted first. POSITION CANNOT TELL forged from legitimate: which
+  // occurrence wins depends on which field carried the payload versus which field
+  // was targeted. The sound rule is that the renderer emits each key EXACTLY
+  // ONCE, so a duplicate is corruption or injection either way — refuse the
+  // document instead of choosing an occurrence.
+
+  /** All frontmatter keys, in order, including duplicates. */
+  function fmKeys(md: string): string[] {
+    const fm = md.match(/^---\n([\s\S]*?)\n---/)![1];
+    return fm.split("\n").map((l) => l.slice(0, l.indexOf(":")).trim()).filter(Boolean);
+  }
+
+  it("rejects a legacy doc where an EARLY field's payload forged a LATER key (first-wins kept the FORGED value)", () => {
+    // The shape a pre-fix `title` carrying "\nstatus: active" actually produces:
+    // the forged status lands ABOVE the renderer's real `status: archived`.
+    const md = [
+      "---",
+      "id: semantic/p/real", "type: semantic", "scope: project:p", "project: p",
+      "title: x", "status: active",
+      "summary: s", "status: archived",
+      "---", "", "# x", "body",
+    ].join("\n");
+    expect(parseMemoryMarkdown(md)).toBeNull();
+  });
+
+  it("rejects the mirror case too — a forged key duplicated AFTER the real one", () => {
     const md = [
       "---",
       "id: semantic/p/real", "type: semantic", "scope: project:p", "project: p",
@@ -271,9 +301,53 @@ describe("parseMemoryMarkdown — duplicate frontmatter keys: FIRST wins (anti-i
       "id: semantic/p/forged", "status: active", "project: other",
       "---", "", "# t", "body",
     ].join("\n");
-    const back = parseMemoryMarkdown(md)!;
-    expect(back.id).toBe("semantic/p/real");
-    expect(back.status).toBe("archived");
-    expect(back.project).toBe("p");
+    expect(parseMemoryMarkdown(md)).toBeNull();
+  });
+
+  it("rejects on the duplicate alone — even when both occurrences carry the SAME value", () => {
+    const md = [
+      "---",
+      "id: semantic/p/real", "type: semantic", "scope: project:p", "project: p",
+      "title: t", "summary: s", "status: active", "status: active",
+      "---", "", "# t", "body",
+    ].join("\n");
+    expect(parseMemoryMarkdown(md)).toBeNull();
+  });
+
+  it("a normal, singly-keyed document still parses and round-trips byte-identically", () => {
+    const e = entry();
+    const md = renderMemoryMarkdown(e, "Regression lock.");
+    expect(new Set(fmKeys(md)).size).toBe(fmKeys(md).length); // no duplicates
+    const back = parseMemoryMarkdown(md);
+    expect(back).not.toBeNull();
+    expect(back!.id).toBe(e.id);
+    expect(back!.status).toBe("active");
+    expect(renderMemoryMarkdown({ ...back!, path: e.path }, "Regression lock.")).toBe(md);
+  });
+
+  it("PAIRING: the round-32/34 serializer means a NEW file can never hit this rejection", () => {
+    // A control character in title / summary / an array element is neutralized at
+    // write time, so the document has NO duplicate key and still parses — the
+    // parser rejection is purely the backstop for LEGACY files.
+    const md = renderMemoryMarkdown(
+      entry({
+        status: "archived",
+        title: "x\nstatus: active",
+        summary: "s\rid: semantic/p/forged",
+        entities: ["a project: other", "b"],
+      }),
+      "body",
+    );
+    const keys = fmKeys(md);
+    expect(new Set(keys).size).toBe(keys.length);
+    const back = parseMemoryMarkdown(md);
+    expect(back).not.toBeNull();
+    // every targeted field kept its REAL value; the payload survives only as
+    // neutralized one-line prose inside the field that carried it
+    expect(back!.status).toBe("archived");
+    expect(back!.id).toBe("procedural/code-demo/add-source-adapter");
+    expect(back!.project).toBe("code-demo");
+    expect(back!.title).toBe("x status: active");
+    expect(back!.summary).toBe("s id: semantic/p/forged");
   });
 });

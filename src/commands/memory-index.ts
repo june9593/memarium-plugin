@@ -7,7 +7,11 @@ import { parseMemoryMarkdown } from "../memory/parse.js";
 import { healUndefinedFrontmatter } from "../_shared/heal-frontmatter.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 
-export interface MemoryIndexReport { indexed: number; healed: number; }
+/** `skipped` = md files under memory/ that did not parse (no frontmatter block, a
+ *  missing id/type, or a DUPLICATE frontmatter key — see the round-35 note in
+ *  `readFrontmatterBlock`). Reported rather than silent so a corrupt/poisoned
+ *  legacy file is visible instead of just vanishing from the index. */
+export interface MemoryIndexReport { indexed: number; healed: number; skipped: number; }
 
 function walkMd(dir: string): string[] {
   const out: string[] = [];
@@ -31,6 +35,7 @@ export async function memoryIndexCmd(): Promise<MemoryIndexReport> {
   const idx: MemoryIndex = emptyMemoryIndex();
   let indexed = 0;
   let healed = 0;
+  let skipped = 0;
   // The heal step now writes md, so refuse to traverse/rewrite through a
   // symlinked ancestor or the memory/ leaf (could rewrite files outside the repo).
   assertNoSymlinkedComponent(cfg.repoPath, memRoot, "memory-index");
@@ -45,12 +50,14 @@ export async function memoryIndexCmd(): Promise<MemoryIndexReport> {
       const fixed = healUndefinedFrontmatter(md, mtimeDate);
       if (fixed !== null) { writeFileSync(abs, fixed); md = fixed; healed++; }
       const entry = parseMemoryMarkdown(md);
-      if (!entry) continue;
+      // Unparseable (incl. a duplicate-key document the parser refuses): skip and
+      // COUNT it. A rebuild must degrade past one bad file, never crash on it.
+      if (!entry) { skipped++; continue; }
       entry.path = relative(cfg.repoPath, abs);
       upsertMemory(idx, entry);
       indexed++;
     }
   }
   saveMemoryIndex(cfg.repoPath, idx);
-  return { indexed, healed };
+  return { indexed, healed, skipped };
 }

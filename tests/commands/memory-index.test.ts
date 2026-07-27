@@ -42,6 +42,27 @@ describe("memoryIndexCmd (rebuild from md)", () => {
     expect(e.sourceFiles).toEqual(["src/writer.ts"]);
     expect(e.validTo).toBeNull();
   });
+  it("skips + counts a legacy duplicate-key .md instead of crashing or indexing the forgery (round-35)", async () => {
+    // The shape a pre-hardening `title` carrying "\nstatus: active" left behind:
+    // a forged `status:` ABOVE the real one. The parser now refuses the whole
+    // document, so the rebuild must degrade past it — the clean entry from
+    // beforeEach still indexes, and the bad file is REPORTED, not silent.
+    const bad = join(repo, "memory/semantic/code-demo/poisoned.md");
+    writeFileSync(bad, [
+      "---",
+      "id: semantic/code-demo/poisoned", "type: semantic", "scope: project:code-demo",
+      "project: code-demo", "title: x", "status: active",
+      "summary: s", "status: archived",
+      "---", "", "# x", "body", "",
+    ].join("\n"));
+    const { memoryIndexCmd } = await import("../../src/commands/memory-index.js");
+    const report = await memoryIndexCmd();
+    expect(report.indexed).toBe(1);
+    expect(report.skipped).toBe(1);
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    expect(idx.entries["semantic/code-demo/spool"]).toBeTruthy();
+    expect(idx.entries["semantic/code-demo/poisoned"]).toBeUndefined();
+  });
 });
 
 describe("memoryIndexCmd — symlink guard (the heal step writes md)", () => {

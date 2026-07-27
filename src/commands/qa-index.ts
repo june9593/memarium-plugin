@@ -7,7 +7,11 @@ import { parseQaMarkdown } from "../qa/parse.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 import { healUndefinedFrontmatter } from "../_shared/heal-frontmatter.js";
 
-export interface QaIndexReport { indexed: number; healed: number; }
+/** `skipped` = md files under memory/qa/ that did not parse (no frontmatter block,
+ *  a missing id/kind, or a DUPLICATE frontmatter key — see the round-35 note in
+ *  `readFrontmatterBlock`). Reported rather than silent so a corrupt/poisoned
+ *  legacy file is visible instead of just vanishing. */
+export interface QaIndexReport { indexed: number; healed: number; skipped: number; }
 
 function walkMd(dir: string): string[] {
   const out: string[] = [];
@@ -31,6 +35,7 @@ export async function qaIndexCmd(): Promise<QaIndexReport> {
   const idx: QaIndex = emptyQaIndex();
   let indexed = 0;
   let healed = 0;
+  let skipped = 0;
 
   // Refuse to index through a symlinked ancestor or the memory/qa leaf itself
   // (could pull in files from outside the repo). Component walk uses lstatSync
@@ -44,7 +49,9 @@ export async function qaIndexCmd(): Promise<QaIndexReport> {
       const fixed = healUndefinedFrontmatter(md, mtimeDate);
       if (fixed !== null) { writeFileSync(abs, fixed); md = fixed; healed++; }
       const entry = parseQaMarkdown(md);
-      if (!entry) continue;
+      // Unparseable (incl. a duplicate-key document the parser refuses): skip and
+      // COUNT it. A rebuild must degrade past one bad file, never crash on it.
+      if (!entry) { skipped++; continue; }
       entry.path = relative(cfg.repoPath, abs);
       upsertQa(idx, entry);
       indexed++;
@@ -52,5 +59,5 @@ export async function qaIndexCmd(): Promise<QaIndexReport> {
   }
 
   saveQaIndex(cfg.repoPath, idx);
-  return { indexed, healed };
+  return { indexed, healed, skipped };
 }

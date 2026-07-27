@@ -95,8 +95,13 @@ function identLine(key: string, value: string): string {
  * field by definition. Arrays are covered by the same single call because `arr`
  * has already joined the elements into this one string.
  *
- * The parser closes the same hole from the other side (first key wins), so
- * neither layer is load-bearing alone.
+ * The parser closes the same hole from the other side — it REFUSES any document
+ * carrying a duplicate frontmatter key (round-35), which is what a forged line in
+ * a legacy .md looks like. Neither layer is load-bearing alone: this one keeps
+ * NEW files clean, that one is the backstop for files written before the fix.
+ * (Round-34 had the parser pick the FIRST occurrence instead; that was unsound —
+ * the keys are emitted in a FIXED ORDER, so a payload in an EARLY field forges
+ * its line ABOVE a LATER field's real one and first-wins keeps the FORGERY.)
  */
 function valueLine(key: string, value: string): string {
   return `${key}: ${neutralizeControlChars(value)}`;

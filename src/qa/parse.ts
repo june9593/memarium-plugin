@@ -1,4 +1,5 @@
 import type { QaEntry, QaKind } from "./types.js";
+import { readFrontmatterBlock } from "../_shared/frontmatter.js";
 
 function parseArr(v: string | undefined): string[] {
   const t = (v ?? "").trim();
@@ -37,25 +38,13 @@ function parseQuoted(v: string): string {
 }
 
 /** Inverse of renderQaMarkdown: parse frontmatter (body ignored) → QaEntry.
- *  `path` is left "" — the caller fills it from the file path. */
+ *  `path` is left "" — the caller fills it from the file path.
+ *  Returns null for an unparseable document — no frontmatter block, a missing
+ *  id/kind, or a DUPLICATE frontmatter key (corruption or injection; see the
+ *  round-35 note in `readFrontmatterBlock`). Callers skip a null. */
 export function parseQaMarkdown(md: string): QaEntry | null {
-  md = md.replace(/\r\n/g, "\n");
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  // Null-prototype map: frontmatter keys are UNTRUSTED, so `__proto__` /
-  // `constructor` must be ordinary entries here, not a reach into Object.prototype.
-  const fm: Record<string, string> = Object.create(null);
-  for (const line of m[1].split("\n")) {
-    const i = line.indexOf(":");
-    if (i === -1) continue;
-    const key = line.slice(0, i).trim();
-    // FIRST occurrence wins — an ANTI-INJECTION rule, not style (round-34). The
-    // renderer emits each key exactly once, so a duplicate can only come from a
-    // value that broke out of its own line, and it always lands BELOW the real
-    // one. Keeping the later value handed the forged line the field.
-    if (key in fm) continue;
-    fm[key] = line.slice(i + 1).trim();
-  }
+  const fm = readFrontmatterBlock(md);
+  if (!fm) return null;
   if (!fm.id || !fm.kind) return null;
   return {
     id: fm.id,
