@@ -264,7 +264,7 @@ describe("memoryQueryCmd — R2 cold-storage resurrect valve", () => {
     const hit = result.coldStorage.find((c) => c.id === "semantic/code-demo/coldvim");
     expect(hit!.source).toBe("local");
     expect(hit!.originDevice).toBe(null);
-    expect(errs.join("\n")).toMatch(/memory-unarchive semantic\/code-demo\/coldvim to restore/);
+    expect(errs.join("\n")).toMatch(/memory-unarchive 'semantic\/code-demo\/coldvim' to restore/);
   });
 
   it("cold hits preserve trust: an UNTRUSTED archived hit carries trust in JSON and is flagged; a TRUSTED one is not", async () => {

@@ -13,13 +13,15 @@
 // index, or the entries it is handed.
 
 import { scoreArchived, type MemoryQuery, type ScoredMemory } from "./score.js";
+import { isSafeMemoryId } from "./gate.js";
 import type { MemorySource } from "./source-resolver.js";
 import type { MemoryEntry, MemoryTrust } from "./types.js";
 
 /** Where a cold hit's archived copy actually lives. `local` and `overlay` are
  *  ESTABLISHED answers; `unknown` means we could not resolve the origin at all
  *  and must not guess — see `resolveColdOrigin`. Only `local` may be advertised
- *  with the local `memory-unarchive` command. */
+ *  with the local `memory-unarchive` command — and even then only when the id
+ *  passes `isSafeMemoryId` (round-28); see `coldRestoreCommand`. */
 export type ColdOrigin = MemorySource | "unknown";
 
 /** One read-only "cold storage" hit — a strongly-matching ARCHIVED entry
@@ -28,7 +30,8 @@ export type ColdOrigin = MemorySource | "unknown";
  *  is a sibling device's archived memory, so it must be restored on
  *  `originDevice` (memory-unarchive only touches the local index); an `unknown`
  *  origin gets the generic instruction — a wrong local command is worse than a
- *  vaguer correct one. */
+ *  vaguer correct one. `id` is UNTRUSTED in every case: read `restoreCommand`
+ *  instead of interpolating it into a command. */
 export interface ColdStorageHit {
   id: string;
   title: string;
@@ -40,6 +43,52 @@ export interface ColdStorageHit {
    *  restored-from-cold UNTRUSTED semantic (issue #23) is never mistaken for an
    *  established fact. Anything other than "trusted" is flagged in the human hint. */
   trust: MemoryTrust;
+  /** The VETTED restore argv for this hit, or `null` when no runnable command may
+   *  be offered — because the archive isn't local (round-21) or because the id is
+   *  not safe to interpolate into a command (round-28). Consumers (the skills read
+   *  this JSON) must use THIS string and never re-assemble one from `id`. */
+  restoreCommand: string | null;
+}
+
+/**
+ * The restore argv for a cold hit, or `null` when we must not render one.
+ *
+ * TWO independent gates, both of which have to pass:
+ *  1. ORIGIN (round-21): `memory-unarchive` reads the LOCAL index, so offering it
+ *     for an overlay/unknown hit is a dead end or a wrong-record hazard.
+ *  2. ID SAFETY (round-28, SECURITY): `c.id` is untrusted data from the lenient
+ *     memory index, and memory content comes from digested sessions — memory
+ *     poisoning is in the threat model. This string is rendered as a command for
+ *     a human to paste or an agent to run, so an id containing `;`, `$( )`, a
+ *     backtick or whitespace is command injection by suggestion. Only the strict
+ *     canonical id shape may be interpolated.
+ *
+ * The id is ALSO single-quoted POSIX-style even when it passes `isSafeMemoryId`,
+ * so a future loosening of that predicate cannot silently re-open the hole.
+ */
+export function coldRestoreCommand(c: Pick<ColdStorageHit, "id" | "source">): string | null {
+  if (c.source !== "local") return null;
+  if (!isSafeMemoryId(c.id)) return null;
+  return `memory-unarchive '${c.id}'`;
+}
+
+/** Render an UNSAFE id as clearly INERT display text: every character outside the
+ *  safe class becomes `?`, then the remainder is wrapped in single quotes. The
+ *  redaction runs BEFORE the quoting, so the id cannot contain a quote to break
+ *  out of, and the result can never re-assemble into shell — while still leaving
+ *  enough of the id visible to identify which entry is affected. Length-capped so
+ *  a poisoned row can't flood the hint. */
+export function inertMemoryId(id: unknown): string {
+  const raw = typeof id === "string" ? id : String(id);
+  const redacted = raw.slice(0, 120).replace(/[^A-Za-z0-9._/-]/g, "?");
+  return `'${redacted}'`;
+}
+
+/** How an id is DISPLAYED in a hint line. A safe id prints verbatim; an unsafe one
+ *  is redacted — the hint line begins with the id, which is exactly the position a
+ *  pasted line's first word occupies, so a raw `;`/backtick there is executable. */
+function displayMemoryId(id: string): string {
+  return isSafeMemoryId(id) ? id : inertMemoryId(id);
 }
 
 // A real CONTENT hit (vs scope/importance/recency baseline) — same markers
@@ -161,20 +210,26 @@ export function runColdPass({ entries, scored, query, sources }: ColdPassInput):
     .filter((s) => !query.type || s.entry.type === query.type)
     .filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR)
     .slice(0, COLD_TOP_K)
-    .map((s) => ({
-      id: s.entry.id, title: s.entry.title, score: s.score, archivedReason: s.entry.archivedReason,
+    .map((s) => {
       // Origin decides which restore hint is honest: a `local` cold hit lives
       // in THIS device's index (memory-unarchive works); an `overlay` hit is
       // a sibling device's archived memory that memory-unarchive (local-only)
       // can't touch, so we point the user at its origin device instead; an
       // `unknown` origin gets the generic instruction rather than a guess.
-      source: originOf(s.entry),
-      originDevice: s.entry.originDevice ?? null,
-      // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
-      // surfaced indistinguishably from a trusted fact. Same rule the primary
-      // pass uses: anything not "trusted" is untrusted for surfacing.
-      trust: s.entry.trust ?? "unknown",
-    }));
+      const source = originOf(s.entry);
+      return {
+        id: s.entry.id, title: s.entry.title, score: s.score, archivedReason: s.entry.archivedReason,
+        source,
+        originDevice: s.entry.originDevice ?? null,
+        // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
+        // surfaced indistinguishably from a trusted fact. Same rule the primary
+        // pass uses: anything not "trusted" is untrusted for surfacing.
+        trust: s.entry.trust ?? "unknown",
+        // The one vetted command for this hit (null unless local AND safely
+        // shaped) — so a JSON consumer never has to build one from the raw id.
+        restoreCommand: coldRestoreCommand({ id: s.entry.id, source }),
+      };
+    });
 }
 
 /** Where a single cold hit can actually be restored — the ONE place that decides
@@ -183,9 +238,18 @@ export function runColdPass({ entries, scored, query, sources }: ColdPassInput):
  *  device's archive) would always come back "not archived", and advertising it
  *  for an `unknown` origin is a guess that can name the wrong record entirely.
  *  Only an ESTABLISHED local origin gets the local command. Every surface that
- *  tells a user how to restore a cold hit must go through here. */
+ *  tells a user how to restore a cold hit must go through here.
+ *
+ *  Round-28 (SECURITY): a local origin is necessary but NOT sufficient — the id
+ *  must also be safe to interpolate (see `coldRestoreCommand`). A local hit with
+ *  a poisoned id DEGRADES to a clearly non-executable sentence that names the
+ *  entry via a redacted, inert id: no command text, nothing to paste and run. */
 export function coldRestoreInstruction(c: ColdStorageHit): string {
-  if (c.source === "local") return `memory-unarchive ${c.id} to restore`;
+  if (c.source === "local") {
+    const cmd = coldRestoreCommand(c);
+    if (cmd) return `${cmd} to restore`;
+    return `archived here under an unsafe id — restore manually (id ${inertMemoryId(c.id)})`;
+  }
   if (c.source === "overlay") {
     const dev = c.originDevice ? `device ${c.originDevice}` : "another device";
     return `archived on ${dev}; restore it there`;
@@ -200,6 +264,10 @@ export function coldRestoreInstruction(c: ColdStorageHit): string {
  * live on another device and must be restored there (memory-unarchive is
  * local-only, so advertising it for an overlay hit would always report "not
  * archived"). Returns [] when there's nothing cold — caller emits nothing.
+ *
+ * Round-28 (SECURITY): the LINE ITSELF starts with the id, which is exactly where
+ * a pasted line's first word becomes the command — so an unsafe id is redacted to
+ * inert text there too, not just inside the restore instruction.
  */
 export function renderColdHints(coldStorage: ColdStorageHit[]): string[] {
   if (!coldStorage.length) return [];
@@ -209,7 +277,7 @@ export function renderColdHints(coldStorage: ColdStorageHit[]): string[] {
     // (#23) is never read as an established fact — mirrors how the primary recall
     // splits `untrustedSemantic` out of plain "Project facts".
     const flag = c.trust !== "trusted" ? " (untrusted)" : "";
-    lines.push(`  ${c.id}  (${c.archivedReason})  — ${c.title}${flag}  — ${coldRestoreInstruction(c)}`);
+    lines.push(`  ${displayMemoryId(c.id)}  (${c.archivedReason})  — ${c.title}${flag}  — ${coldRestoreInstruction(c)}`);
   }
   return lines;
 }
@@ -231,10 +299,25 @@ export function renderColdNextStep(coldStorage: ColdStorageHit[]): string {
   if (!coldStorage.length) return "";
   const head = "No ACTIVE memory matched, but archived entries did — see coldStorage";
   const local = coldStorage.filter((c) => c.source === "local");
-  // Only an ALL-local set may advertise the bare local command.
-  if (local.length === coldStorage.length) return `${head} (memory-unarchive <id> to restore).`;
+
+  // ROUND-28 (SECURITY): this sentence is MACHINE-READ — it tells an agent to run
+  // `memory-unarchive <id>`, and the agent fills `<id>` in from `coldStorage[].id`,
+  // which is untrusted data out of the lenient memory index. Advertising the
+  // command form at all is therefore only safe when EVERY local hit's id is safe
+  // to interpolate; one poisoned id would be enough for the agent to assemble a
+  // command carrying `;` / `$( )` / a backtick. So a single unsafe local id
+  // disarms the aggregate sentence for the WHOLE set (the per-hit stderr hints
+  // still name each hit's own — already-vetted — restore path). Fail closed: a
+  // vaguer instruction beats a runnable one we can't vouch for.
+  if (local.length > 0 && !local.every((c) => isSafeMemoryId(c.id))) {
+    return `${head} — restore each hit from its own cold-storage hint. At least one archived id is unsafe to use in a command, so restore that one by hand.`;
+  }
+
+  // Only an ALL-local set may advertise the bare local command. The `<id>`
+  // placeholder is shown single-quoted so the substituted id stays quoted too.
+  if (local.length === coldStorage.length) return `${head} (memory-unarchive '<id>' to restore).`;
   if (local.length > 0) {
-    return `${head}; each hit carries its own restore path (local hits: memory-unarchive <id>; the rest: restore on their origin device).`;
+    return `${head}; each hit carries its own restore path (local hits: memory-unarchive '<id>'; the rest: restore on their origin device).`;
   }
   const overlay = coldStorage.filter((c) => c.source === "overlay");
   if (overlay.length === coldStorage.length) {

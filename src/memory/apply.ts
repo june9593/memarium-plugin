@@ -3,6 +3,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "./index-store.js";
 import { renderMemoryMarkdown } from "./render.js";
 import { canonicalMemoryPath, isSafePathSegment, supersedesId } from "./gate.js";
+import { calendarDate } from "./dates.js";
 import { assertNoBlockingLeak } from "./leak-scan.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 import type { MemoryEntry } from "./types.js";
@@ -576,6 +577,31 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
         entry.status = "archived";
         entry.archivedAt = prior.archivedAt ?? null;
         entry.archivedReason = prior.archivedReason ?? null;
+        // ROUND-28: preserving the lifecycle FIELDS isn't enough — `updatedAt`
+        // decides whether the preserved archive SURVIVES cross-device merging.
+        // Both resolvers pick between two copies of an id by `updatedAt`, latest
+        // wins (`resolveMemoryView` on the plugin read side, `merge-books.mjs` in
+        // the npm CI aggregator). The very write this branch exists for is
+        // typically an OLD one — a proposal queued BEFORE the entry was archived
+        // and approved after — so accepting its authored `updatedAt` persists an
+        // archived row DATED EARLIER than a sibling device's still-ACTIVE copy.
+        // That sibling then wins the merge and the entry is effectively
+        // UN-ARCHIVED everywhere: precisely the silent reactivation round-19 set
+        // out to stop, just taking the scenic route through the aggregator.
+        //
+        // So the persisted timestamp may never REGRESS: keep the LATER of
+        // (authored, stored). Compared through the shared `calendarDate` helper
+        // (never lexically — an ISO timestamp sorts above the same day's plain
+        // date), and FAIL CLOSED: an authored value we cannot parse is not
+        // evidence of anything newer, so it must not be able to move the stored
+        // one backwards. Mutating `entry.updatedAt` covers BOTH stores — the
+        // index row (upsertMemory) and the rendered .md (renderMemoryMarkdown).
+        const priorUpdated = typeof prior.updatedAt === "string" ? prior.updatedAt : null;
+        const priorDay = calendarDate(priorUpdated);
+        const authoredDay = calendarDate(entry.updatedAt);
+        if (priorUpdated !== null && priorDay !== null && (authoredDay === null || authoredDay < priorDay)) {
+          entry.updatedAt = priorUpdated;
+        }
       } else {
         if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
           entry.status = "active";

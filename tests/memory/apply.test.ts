@@ -317,6 +317,112 @@ describe("applyMemoryItems", () => {
     expect(written).toContain("archivedReason: unused-low-value");
   });
 
+  // Round-28: preserving status/archivedAt/archivedReason on an authored update
+  // to an ARCHIVED id is only HALF the guarantee — the round-19 branch still
+  // accepted the AUTHORED `updatedAt`. A proposal queued BEFORE the archive
+  // carries an older date, so approving it later persists an archived row whose
+  // `updatedAt` is OLDER than a sibling device's still-ACTIVE copy. Cross-device
+  // resolution is latest-wins (resolveMemoryView + the npm CI aggregator
+  // merge-books.mjs), so the ACTIVE overlay copy WINS the merge and the entry is
+  // effectively UN-ARCHIVED everywhere — exactly what round-19 exists to prevent.
+  describe("round-28: preserving an archived state never lets updatedAt REGRESS", () => {
+    const ID = "semantic/p/cold";
+    const MD = "memory/semantic/p/cold.md";
+    const idxPath = () => join(repo, ".memarium/index.memory.json");
+    const readIdx = () => JSON.parse(readFileSync(idxPath(), "utf8"));
+    const readMd = () => readFileSync(join(repo, MD), "utf8");
+
+    /** Seed the id, then archive it the way memory-archive does (metadata-only
+     *  .md rewrite + the matching index row), stamping `storedUpdatedAt`. */
+    async function seedArchived(storedUpdatedAt: string) {
+      const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+      const base = mk({
+        id: ID, type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "Old title", summary: "old summary", createdAt: "2026-01-01", updatedAt: "2026-01-01",
+      });
+      applyMemoryItems(repo, [{ entry: { ...base }, body: "original body" }]);
+      writeMemoryEntryFile(repo, {
+        ...base, path: MD, status: "archived" as MemoryEntry["status"],
+        archivedAt: "2026-07-01", archivedReason: "unused-low-value", updatedAt: storedUpdatedAt,
+      });
+      const seeded = readIdx();
+      seeded.entries[ID] = {
+        ...seeded.entries[ID], status: "archived", archivedAt: "2026-07-01",
+        archivedReason: "unused-low-value", updatedAt: storedUpdatedAt,
+      };
+      writeFileSync(idxPath(), JSON.stringify(seeded));
+      return applyMemoryItems;
+    }
+
+    /** The plain AUTHORED shape memory-write / an approved proposal produces. */
+    const authored = (updatedAt: unknown): MemoryEntry => {
+      const e = mk({
+        id: ID, type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "New title", summary: "new summary",
+        updatedAt: updatedAt as MemoryEntry["updatedAt"],
+      });
+      delete (e as unknown as Record<string, unknown>).status;
+      return e;
+    };
+
+    it("an OLDER authored updatedAt keeps the EXISTING (newer) one — index AND .md", async () => {
+      const applyMemoryItems = await seedArchived("2026-07-10");
+      applyMemoryItems(repo, [{ entry: authored("2026-06-01"), body: "updated body" }]);
+
+      const row = readIdx().entries[ID];
+      const md = readMd();
+      // updatedAt did NOT regress…
+      expect(row.updatedAt).toBe("2026-07-10");
+      expect(md).toMatch(/^updatedAt: 2026-07-10$/m);
+      expect(md).not.toMatch(/^updatedAt: 2026-06-01$/m);
+      // …the archival lifecycle is still preserved verbatim (round-19 holds)…
+      expect(row.status).toBe("archived");
+      expect(row.archivedAt).toBe("2026-07-01");
+      expect(row.archivedReason).toBe("unused-low-value");
+      expect(md).toMatch(/^status: archived$/m);
+      expect(md).toMatch(/^archivedReason: unused-low-value$/m);
+      // …and the CONTENT update still lands.
+      expect(row.title).toBe("New title");
+      expect(md).toContain("updated body");
+    });
+
+    it("a NEWER authored updatedAt is accepted (the guard only blocks regression)", async () => {
+      const applyMemoryItems = await seedArchived("2026-07-10");
+      applyMemoryItems(repo, [{ entry: authored("2026-08-02"), body: "updated body" }]);
+
+      expect(readIdx().entries[ID].updatedAt).toBe("2026-08-02");
+      expect(readMd()).toMatch(/^updatedAt: 2026-08-02$/m);
+      expect(readIdx().entries[ID].status).toBe("archived");
+    });
+
+    it("an UNPARSEABLE authored updatedAt cannot regress the stored value", async () => {
+      // "2026-13-45" passes the YYYY-MM-DD backfill regex but Date.parse → NaN,
+      // so it is a date we cannot COMPARE. Fail closed: keep what's stored.
+      const applyMemoryItems = await seedArchived("2026-07-10");
+      applyMemoryItems(repo, [{ entry: authored("2026-13-45"), body: "updated body" }]);
+
+      expect(readIdx().entries[ID].updatedAt).toBe("2026-07-10");
+      expect(readMd()).toMatch(/^updatedAt: 2026-07-10$/m);
+      expect(readMd()).not.toContain("2026-13-45");
+    });
+
+    it("the NON-archived path is unaffected — an authored updatedAt still wins (regression lock)", async () => {
+      const { applyMemoryItems } = await import("../../src/memory/apply.js");
+      const id = "semantic/p/livedate";
+      const at = (over: Partial<MemoryEntry>) =>
+        mk({ id, type: "semantic", scope: "project:p", project: "p", path: "", ...over });
+
+      applyMemoryItems(repo, [{ entry: at({ title: "v1", updatedAt: "2026-07-10" }), body: "b1" }]);
+      applyMemoryItems(repo, [{ entry: at({ title: "v2", updatedAt: "2026-06-01" }), body: "b2" }]);
+
+      const row = readIdx().entries[id];
+      expect(row.status).toBe("active");
+      expect(row.updatedAt).toBe("2026-06-01"); // no clamp outside the archived branch
+      expect(readFileSync(join(repo, "memory/semantic/p/livedate.md"), "utf8"))
+        .toMatch(/^updatedAt: 2026-06-01$/m);
+    });
+  });
+
   it("still nulls archival fields + normalizes status when the EXISTING row is NOT archived (round-15 holds; no forged archive)", async () => {
     const { applyMemoryItems } = await import("../../src/memory/apply.js");
     const readIdx = () => JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));

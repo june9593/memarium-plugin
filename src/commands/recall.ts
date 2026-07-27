@@ -62,9 +62,11 @@ export interface RecallPayload {
   /** R2 cold-storage valve (READ ONLY): strongly-matching ARCHIVED entries,
    *  surfaced only when the live/active recall answers the query weakly. This is
    *  what makes automatic archival reversible on the recall path — each hit
-   *  names how to restore it (`memory-unarchive <id>`, or on its origin device
-   *  when it came from the overlay). Always present; `[]` when nothing cold
-   *  matched or the primary recall was already strong. */
+   *  carries its own vetted `restoreCommand` (null when it can't be restored
+   *  here: the archive lives on another device, or its id isn't safe to put in a
+   *  command). Consumers must run that string, never build one from `id`.
+   *  Always present; `[]` when nothing cold matched or the primary recall was
+   *  already strong. */
   coldStorage: ColdStorageHit[];
   /** Only populated when there's no query — a "what's in this project" overview
    *  (the same render the SessionStart primer uses). Omitted for a real query. */

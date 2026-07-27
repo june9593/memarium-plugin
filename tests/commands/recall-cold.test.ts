@@ -113,7 +113,7 @@ describe("recall — R2 cold-storage valve (shared with memory-query)", () => {
 
     // (c) human restore hint (stderr — stdout stays clean JSON), untrusted flagged
     const lines = errs.join("\n").split("\n");
-    expect(lines.some((l) => /memory-unarchive semantic\/code-demo\/coldvim to restore/.test(l))).toBe(true);
+    expect(lines.some((l) => /memory-unarchive 'semantic\/code-demo\/coldvim' to restore/.test(l))).toBe(true);
     expect(lines.find((l) => l.includes("uvim"))).toMatch(/untrusted/);
     expect(lines.find((l) => l.includes("coldvim "))).not.toMatch(/untrusted/);
 
@@ -198,7 +198,7 @@ describe("recall — R2 cold-storage valve (shared with memory-query)", () => {
     // command (which would fail for an overlay-only archive).
     expect(p.meta.nextStep).toMatch(/device laptop/);
     expect(p.meta.nextStep).toMatch(/restore it there/);
-    expect(p.meta.nextStep).not.toMatch(/memory-unarchive <id> to restore/);
+    expect(p.meta.nextStep).not.toMatch(/memory-unarchive '<id>' to restore/);
     expect(p.meta.nextStep).not.toMatch(/memory-unarchive semantic\/code-demo\/ovim/);
   });
 
@@ -214,7 +214,7 @@ describe("recall — R2 cold-storage valve (shared with memory-query)", () => {
     const p = await run({ cwd: "/work/code-demo", q: "vim" });
     expect(p.entries).toEqual([]);
     expect(p.coldStorage[0].source).toBe("local");
-    expect(p.meta.nextStep).toMatch(/memory-unarchive <id> to restore/);
+    expect(p.meta.nextStep).toMatch(/memory-unarchive '<id>' to restore/);
     expect(p.meta.nextStep).not.toMatch(/restore it there/);
   });
 
@@ -243,6 +243,50 @@ describe("recall — R2 cold-storage valve (shared with memory-query)", () => {
     // neither the per-hit stderr hint nor meta.nextStep may advertise the local
     // restore command for an archive that does not live in the local index.
     expect(errs.join("\n")).not.toMatch(/memory-unarchive semantic\/code-demo\/ovim/);
-    expect(p.meta.nextStep).not.toMatch(/memory-unarchive <id> to restore/);
+    expect(p.meta.nextStep).not.toMatch(/memory-unarchive '<id>' to restore/);
+  });
+
+  // Round-28 (SECURITY): a cold hit's `id` comes from the LENIENT memory index,
+  // and memory content originates from digested sessions — memory POISONING is in
+  // this project's threat model. The cold hint renders that id into something
+  // that LOOKS like a runnable command and is meant to be copy-pasted (or acted
+  // on by an agent), so a poisoned id would smuggle shell into it. End-to-end:
+  // neither the stderr hint nor `meta.nextStep` may hand back anything runnable.
+  it("a POISONED archived id produces NO runnable memory-unarchive anywhere (hint, nextStep, payload)", async () => {
+    const evil = "semantic/code-demo/coldvim; rm -rf ~";
+    writeLocalIndex({
+      [evil]: mk({ id: evil, title: "Vim keybindings", summary: "vim editor setup",
+        entities: ["vim"], status: "archived", archivedAt: "2026-05-01",
+        archivedReason: "unused-low-value", path: "memory/semantic/code-demo/coldvim.md" }),
+    });
+
+    const p = await run({ cwd: "/work/code-demo", q: "vim" });
+    expect(p.coldStorage).toHaveLength(1);
+    expect(p.coldStorage[0].source).toBe("local"); // it IS local — the id is the problem
+
+    // (a) the machine payload carries NO command for it…
+    expect(p.coldStorage[0].restoreCommand).toBe(null);
+    // (b) …the stderr hint neither names the command nor echoes the raw id
+    //     (its `;` must never reach an executable-looking position)…
+    const hintLine = errs.join("\n").split("\n").find((l) => l.includes("coldvim"))!;
+    expect(hintLine).not.toMatch(/memory-unarchive/);
+    expect(hintLine).not.toContain(evil);
+    expect(hintLine).not.toContain(";");
+    expect(hintLine).toMatch(/unsafe id — restore manually/);
+    // (c) …and nextStep is disarmed too.
+    expect(p.meta.nextStep).not.toMatch(/memory-unarchive/);
+    expect(p.meta.nextStep).not.toContain(";");
+    expect(p.meta.nextStep).toMatch(/unsafe to use in a command/);
+  });
+
+  it("a normal archived id still gets the (now single-QUOTED) command in the payload", async () => {
+    writeLocalIndex({
+      "semantic/code-demo/coldvim": mk({ id: "semantic/code-demo/coldvim", title: "Vim keybindings",
+        summary: "vim editor setup", entities: ["vim"], status: "archived",
+        archivedAt: "2026-05-01", archivedReason: "unused-low-value",
+        path: "memory/semantic/code-demo/coldvim.md" }),
+    });
+    const p = await run({ cwd: "/work/code-demo", q: "vim" });
+    expect(p.coldStorage[0].restoreCommand).toBe("memory-unarchive 'semantic/code-demo/coldvim'");
   });
 });
