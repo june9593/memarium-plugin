@@ -28,6 +28,49 @@ it("archives an expired entry", () => {
   expect(p.archive[0]).toEqual({ id: "semantic/p/exp", reason: "expired" });
 });
 
+// Round-20: Rule 2 compared `validTo <= now` LEXICALLY, so an ISO TIMESTAMP on
+// the SAME calendar day sorted GREATER than the plain `now` date
+// ("2026-07-24T00:00:00Z" > "2026-07-24") and escaped archival — while
+// memory-lint (Date.parse → toISOString().slice(0,10), then `<= now`) called the
+// exact same entry expired. Both sides now normalize to a plain YYYY-MM-DD date.
+describe("expired: calendar-date comparison (matches memory-lint)", () => {
+  it("archives a same-day ISO TIMESTAMP validTo (was lexically 'in the future')", () => {
+    const p = planArchival([e({ id: "semantic/p/exp", validTo: `${NOW}T00:00:00Z` })], {}, opts);
+    expect(p.archive).toEqual([{ id: "semantic/p/exp", reason: "expired" }]);
+  });
+
+  it("archives a same-day PLAIN DATE validTo (unchanged)", () => {
+    const p = planArchival([e({ id: "semantic/p/exp", validTo: NOW })], {}, opts);
+    expect(p.archive).toEqual([{ id: "semantic/p/exp", reason: "expired" }]);
+  });
+
+  it("archives a later-in-the-day timestamp too (whole day is expired)", () => {
+    const p = planArchival([e({ id: "semantic/p/exp", validTo: `${NOW}T23:59:59Z` })], {}, opts);
+    expect(p.archive).toEqual([{ id: "semantic/p/exp", reason: "expired" }]);
+  });
+
+  it("does NOT archive a FUTURE validTo (plain date or timestamp)", () => {
+    const later = e({ id: "semantic/p/future", validTo: "2026-07-25", updatedAt: daysAgo(1), importance: 3 });
+    expect(planArchival([later], {}, opts).archive).toEqual([]);
+    expect(planArchival([e({ ...later, validTo: "2026-07-25T00:00:00Z" })], {}, opts).archive).toEqual([]);
+  });
+
+  it("does NOT archive (and does not throw) on a garbage validTo", () => {
+    const bad = e({ id: "semantic/p/bad", validTo: "not-a-date", updatedAt: daysAgo(1), importance: 3 });
+    let p!: ReturnType<typeof planArchival>;
+    expect(() => { p = planArchival([bad], {}, opts); }).not.toThrow();
+    expect(p.archive).toEqual([]);
+    // …and an empty string is equally inert
+    expect(planArchival([e({ ...bad, validTo: "" })], {}, opts).archive).toEqual([]);
+  });
+
+  it("tolerates an ISO-timestamp `now` (both sides normalized)", () => {
+    const tsOpts = { ...opts, now: `${NOW}T12:00:00Z` };
+    expect(planArchival([e({ id: "semantic/p/exp", validTo: NOW })], {}, tsOpts).archive[0].reason).toBe("expired");
+    expect(planArchival([e({ id: "semantic/p/f", validTo: "2026-07-25", updatedAt: daysAgo(1), importance: 3 })], {}, tsOpts).archive).toEqual([]);
+  });
+});
+
 it("archives a superseded entry (cleanup)", () => {
   const p = planArchival([e({ id: "semantic/p/old", status: "superseded" })], {}, opts);
   expect(p.archive[0].reason).toBe("superseded-cleanup");

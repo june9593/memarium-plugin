@@ -185,3 +185,59 @@ describe("ranking tolerates malformed collection fields (read path never throws)
       .toEqual(baseline);
   });
 });
+
+// Round-20: round-19's leniency stopped malformed rows from THROWING, but it
+// still RANKED a row whose `id` the lenient index reader let through as
+// missing/empty. Such a row can never be acted on — `memory-unarchive <id>`
+// needs an id, and every recall surface cites one — so in the cold path it
+// would consume one of the three COLD_TOP_K slots, hide a valid archived match,
+// and render a restore hint naming `undefined`. Id-less rows are now dropped
+// from the ranked candidates on BOTH paths (an id-less hit is equally useless
+// in primary recall). Still no throw.
+describe("ranking drops rows with no usable id (round-20)", () => {
+  const corrupt = (over: Partial<MemoryEntry>, bad: Record<string, unknown>): MemoryEntry => {
+    const row = e(over);
+    Object.assign(row as unknown as Record<string, unknown>, bad);
+    return row;
+  };
+  const arch = (id: string) => e({ id, title: "vim keybindings", status: "archived" });
+
+  it("scoreArchived EXCLUDES an id-less archived row and never throws", () => {
+    const rows = [
+      corrupt({ title: "vim keybindings", status: "archived" }, { id: undefined }),
+      corrupt({ title: "vim keybindings", status: "archived" }, { id: "" }),
+      corrupt({ title: "vim keybindings", status: "archived" }, { id: 7 }),
+      arch("semantic/p/good"),
+    ];
+    let cold: ReturnType<typeof scoreArchived> = [];
+    expect(() => { cold = scoreArchived(rows, Q({ text: "vim" })); }).not.toThrow();
+    expect(cold.map((x) => x.entry.id)).toEqual(["semantic/p/good"]);
+  });
+
+  it("an id-less archived row cannot consume a cold-storage slot (valid matches still surface)", async () => {
+    const { runColdPass, COLD_TOP_K } = await import("../../src/memory/cold-pass.js");
+    // The malformed row scores identically to the valid ones; with the sort's
+    // String(id ?? "") tiebreak, "" sorts FIRST — so pre-fix it took slot 1 and
+    // pushed the third valid match out of the top-K window.
+    const entries = [
+      corrupt({ title: "vim keybindings", status: "archived" }, { id: undefined }),
+      arch("semantic/p/a"), arch("semantic/p/b"), arch("semantic/p/c"),
+    ];
+    const q = Q({ text: "vim" });
+    const cold = runColdPass({ entries, scored: [], query: q, sources: {} });
+    expect(cold.length).toBe(COLD_TOP_K);
+    expect(cold.map((c) => c.id)).toEqual(["semantic/p/a", "semantic/p/b", "semantic/p/c"]);
+    for (const c of cold) expect(typeof c.id === "string" && c.id.length > 0).toBe(true);
+  });
+
+  it("scoreMemories drops an id-less ACTIVE row too, leaving healthy ranking untouched", () => {
+    const a = e({ id: "a", title: "auth crash", sourceFiles: ["src/auth.ts"] });
+    const b = e({ id: "b", title: "auth thing", entities: ["AuthTokenView"] });
+    const q = Q({ text: "auth crash", files: ["src/auth.ts"] });
+    const baseline = scoreMemories([a, b], q).map((x) => [x.entry.id, x.score, x.whyRecalled]);
+    const idless = corrupt({ title: "auth crash" }, { id: "" });
+    let mixed: ReturnType<typeof scoreMemories> = [];
+    expect(() => { mixed = scoreMemories([a, b, idless], q); }).not.toThrow();
+    expect(mixed.map((x) => [x.entry.id, x.score, x.whyRecalled])).toEqual(baseline);
+  });
+});

@@ -89,6 +89,18 @@ function rankMemories(list: MemoryEntry[], q: MemoryQuery): ScoredMemory[] {
   const out: ScoredMemory[] = [];
 
   for (const e of list) {
+    // Round-20: DROP rows with no usable `id` before ranking them. The lenient
+    // index reader can hand us a row whose `id` key is missing, empty, or not a
+    // string; round-19 stopped such a row from THROWING in the sort tiebreak, but
+    // it still RANKED it. A row without an id can never be ACTED on — cold
+    // results are restored by `memory-unarchive <id>`, and every recall surface
+    // cites the id — so in the cold path it would consume one of the three
+    // COLD_TOP_K slots, hide a valid archived match, and render a restore hint
+    // naming `undefined`. The same holds on the primary path (an id-less hit is
+    // uncitable and unfollowable there too), so the filter lives here, in the
+    // shared body. This is a filter, not a throw: the no-throw guarantee stands.
+    if (typeof e.id !== "string" || e.id === "") continue;
+
     let score = 0;
     const why: string[] = [];
 

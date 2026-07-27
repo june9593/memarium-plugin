@@ -28,6 +28,27 @@ function daysBetween(now: string, then: string): number {
   return (a - b) / 864e5;
 }
 
+/** Normalize a date-ish value to a plain `YYYY-MM-DD` CALENDAR date, or null when
+ *  it isn't a parseable string. Mirrors `memory-lint`'s expired check exactly
+ *  (`Date.parse` → `toISOString().slice(0,10)`) so the archival planner and the
+ *  linter agree on what "expired" means.
+ *
+ *  Round-20: Rule 2 used to compare `validTo <= now` LEXICALLY, which reads an
+ *  ISO TIMESTAMP as GREATER than the same day's plain date
+ *  ("2026-07-24T00:00:00Z" > "2026-07-24"). A same-day-timestamp entry therefore
+ *  escaped archival while lint flagged the very same row as expired — and,
+ *  symmetrically, `validTo: ""` compared LESS than any date and got archived as
+ *  "expired". Normalizing BOTH sides fixes both directions. Returning null for an
+ *  unparseable value preserves the module's NaN/garbage-date safety: an entry
+ *  whose validTo we cannot read is never archived (lint reports it as
+ *  `malformed-date` instead). */
+function calendarDate(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const ts = Date.parse(v);
+  if (!isFinite(ts)) return null;
+  try { return new Date(ts).toISOString().slice(0, 10); } catch { return null; }
+}
+
 /** core and pinned are NEVER archivable; an already-archived entry is skipped so
  *  the plan never re-plans it. */
 function archivable(e: MemoryEntry): boolean {
@@ -47,6 +68,10 @@ function archivable(e: MemoryEntry): boolean {
 export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: ArchiveOpts): ArchivePlan {
   const chosen = new Map<string, string>(); // id -> reason (first rule wins)
   const pick = (id: string, reason: string) => { if (!chosen.has(id)) chosen.set(id, reason); };
+  // `now` as a plain calendar date, so Rule 2 compares like-for-like even when a
+  // caller passes a full ISO timestamp. Falls back to the raw string when it
+  // isn't parseable (the rest of the module already assumes a usable `now`).
+  const nowDate = calendarDate(opts.now) ?? opts.now;
 
   // Per-entry rules FIRST — so the near-duplicate pass below can see whether each
   // pair's WINNER is independently archivable before deciding the loser's fate.
@@ -54,8 +79,12 @@ export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: Arch
     if (!archivable(e)) continue;
     // Rule 1: leftover superseded record — the replacement is already live.
     if (e.status === "superseded") { pick(e.id, "superseded-cleanup"); continue; }
-    // Rule 2: past its validTo.
-    if (e.validTo !== null && e.validTo <= opts.now) { pick(e.id, "expired"); continue; }
+    // Rule 2: past its validTo. Compared as CALENDAR DATES (not raw strings) so
+    // a same-day ISO timestamp counts as expired — the same semantics
+    // memory-lint's `expired` check applies. An unparseable/absent validTo
+    // yields null and never archives.
+    const validToDate = calendarDate(e.validTo);
+    if (validToDate !== null && validToDate <= nowDate) { pick(e.id, "expired"); continue; }
     // Rule 3: episodic older than the max age.
     if (e.type === "episodic" && daysBetween(opts.now, e.updatedAt) > opts.episodicMaxAgeDays) {
       pick(e.id, `stale-episodic:>${opts.episodicMaxAgeDays}d`); continue;

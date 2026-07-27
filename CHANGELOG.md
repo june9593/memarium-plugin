@@ -28,11 +28,17 @@ Memories now have a lifecycle. A new `status: "archived"` (+ `archivedAt` /
   reversibility, and R2.
 - `archivedAt` / `archivedReason` are **machine-maintained**: only
   `memory-archive` sets them and only `memory-unarchive` clears them. Authored
-  writes (`memory-write` / `memory-propose` → `memory-approve`) always persist
-  them as `null`, so an `active` entry can never carry archival metadata. Both
-  archival commands also refuse to rewrite an index row too incomplete to
-  re-render faithfully (missing `id`/`type`/`scope`/`title`/`project`/`status`/
-  `updatedAt`).
+  writes (`memory-write` / `memory-propose` → `memory-approve`) can therefore
+  neither **set** nor **clear** the archival lifecycle: they can't introduce
+  `archivedAt`/`archivedReason` on a non-archived entry (both are forced to
+  `null`, so an `active` entry never carries archival metadata), and they can't
+  reactivate an archived one — an authored update to an archived id updates its
+  content while keeping `status: archived` + both lifecycle fields verbatim
+  (restoring is `memory-unarchive`'s job). Superseding an already-archived
+  target likewise leaves it archived, rather than producing a `superseded` row
+  that still carries archival metadata. Both archival commands also refuse to
+  rewrite an index row too incomplete to re-render faithfully (missing
+  `id`/`type`/`scope`/`title`/`project`/`status`/`updatedAt`).
 
 Schema-compatible: old entries parse the new fields as `null`; the npm CI
 aggregator (`merge-books.mjs`) carries `archived` through unchanged.

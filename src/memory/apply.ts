@@ -475,12 +475,35 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
       entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);
     }
 
-    if (supersede && idx.entries[supersede.targetId]) {
-      idx.entries[supersede.targetId].status = "superseded";
-      superseded++;
-      if (supersede.mdPath && existsSync(supersede.mdPath)) {
-        const md = readFileSync(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
-        writeFileSync(supersede.mdPath, md);
+    // Supersede-target flip — ARCHIVAL-AWARE (round-20). Same symmetric rule as
+    // the status/lifecycle block above, now applied to the OTHER id this item can
+    // touch: the AUTHORED path may neither SET nor CLEAR archival lifecycle
+    // state. An unconditional flip broke that in a subtler way — it stamped
+    // status:"superseded" onto an ARCHIVED target while LEAVING its non-null
+    // archivedAt/archivedReason in place, producing an incoherent row
+    // (superseded, yet carrying archival metadata) that `memory-unarchive`
+    // (whose pre-archive-status logic keys off archivedReason ===
+    // "superseded-cleanup") and the cold valve's NON_RESURRECTABLE filter both
+    // misread.
+    //
+    // DECISION: an archived target is LEFT ARCHIVED — we do not flip it, and we
+    // do not count it in `superseded`. Rationale: archived and superseded both
+    // hide an entry from recall, so the flip buys nothing; the entry's lifecycle
+    // is machine-maintained (memory-archive/memory-unarchive own it, and
+    // memory-unarchive can still restore it to the right pre-archive status);
+    // and clearing the archival fields instead would be the authored path
+    // CLEARING machine state, which is exactly what round-19 forbade. Lint is
+    // satisfied either way: `superseded-conflict` only fires when a supersede
+    // target is still `active`.
+    if (supersede) {
+      const target = idx.entries[supersede.targetId];
+      if (target && target.status !== "archived") {
+        target.status = "superseded";
+        superseded++;
+        if (supersede.mdPath && existsSync(supersede.mdPath)) {
+          const md = readFileSync(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
+          writeFileSync(supersede.mdPath, md);
+        }
       }
     }
 

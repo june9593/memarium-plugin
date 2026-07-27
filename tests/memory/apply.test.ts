@@ -344,6 +344,89 @@ describe("applyMemoryItems", () => {
     expect(md).toContain("archivedAt: null");
     expect(md).toContain("archivedReason: null");
   });
+
+  it("LEAVES an ARCHIVED supersede target archived (never a superseded row carrying archival metadata)", async () => {
+    // Round-20: round-19 made the authored path preserve archival lifecycle for
+    // the item's OWN id, but the SUPERSEDE-TARGET flip stayed unconditional — so
+    // an authored item superseding a DIFFERENT id that happened to be ARCHIVED
+    // stamped status:"superseded" over it while LEAVING its non-null
+    // archivedAt/archivedReason in place. That row is incoherent: memory-unarchive's
+    // pre-archive-status logic keys off archivedReason === "superseded-cleanup",
+    // and the cold valve's NON_RESURRECTABLE filter reads the same field. The
+    // authored path may neither SET nor CLEAR archival lifecycle state, so an
+    // archived target is left exactly as memory-archive wrote it (it is already
+    // out of recall — superseded would hide it no better).
+    const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    const idxPath = join(repo, ".memarium/index.memory.json");
+    const readIdx = () => JSON.parse(readFileSync(idxPath, "utf8"));
+    const oldMdPath = join(repo, "memory/semantic/p/old.md");
+    const base = mk({
+      id: "semantic/p/old", type: "semantic", scope: "project:p", project: "p", path: "",
+      title: "Old fact",
+    });
+
+    // seed the target, then archive it the way memory-archive does (md + index row)
+    applyMemoryItems(repo, [{ entry: { ...base }, body: "old body" }]);
+    writeMemoryEntryFile(repo, {
+      ...base, path: "memory/semantic/p/old.md",
+      status: "archived" as MemoryEntry["status"], archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    });
+    const seeded = readIdx();
+    seeded.entries["semantic/p/old"] = {
+      ...seeded.entries["semantic/p/old"],
+      status: "archived", archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    };
+    writeFileSync(idxPath, JSON.stringify(seeded));
+
+    // an authored write that supersedes the ARCHIVED target
+    const r = applyMemoryItems(repo, [{
+      entry: mk({
+        id: "semantic/p/new", type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "New fact", supersedes: "semantic/p/old",
+      }),
+      body: "new body",
+    }]);
+
+    // the target stays COHERENT: archived, with its lifecycle fields intact, in BOTH stores
+    const target = readIdx().entries["semantic/p/old"];
+    const targetMd = readFileSync(oldMdPath, "utf8");
+    expect(target.status).toBe("archived");
+    expect(target.archivedAt).toBe("2026-07-01");
+    expect(target.archivedReason).toBe("unused-low-value");
+    expect(targetMd).toMatch(/^status: archived$/m);
+    expect(targetMd).toContain("archivedAt: 2026-07-01");
+    expect(targetMd).toContain("archivedReason: unused-low-value");
+    expect(targetMd).not.toMatch(/^status: superseded$/m);
+    // …and no supersede is reported, because none happened
+    expect(r.superseded).toBe(0);
+    // the superseding entry itself is written normally
+    expect(readIdx().entries["semantic/p/new"].status).toBe("active");
+  });
+
+  it("regression: superseding a NORMAL ACTIVE target still flips it, archival fields untouched", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const readIdx = () => JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    applyMemoryItems(repo, [{
+      entry: mk({ id: "semantic/p/old", type: "semantic", scope: "project:p", project: "p", path: "", title: "old" }),
+      body: "old body",
+    }]);
+    const r = applyMemoryItems(repo, [{
+      entry: mk({
+        id: "semantic/p/new", type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "new", supersedes: "semantic/p/old",
+      }),
+      body: "new body",
+    }]);
+    const target = readIdx().entries["semantic/p/old"];
+    const md = readFileSync(join(repo, "memory/semantic/p/old.md"), "utf8");
+    expect(target.status).toBe("superseded");
+    expect(target.archivedAt).toBe(null);
+    expect(target.archivedReason).toBe(null);
+    expect(md).toMatch(/^status: superseded$/m);
+    expect(md).toContain("archivedAt: null");
+    expect(md).toContain("archivedReason: null");
+    expect(r.superseded).toBe(1);
+  });
 });
 
 describe("writeMemoryEntryFile (metadata-only rewriter)", () => {
