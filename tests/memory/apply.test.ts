@@ -410,6 +410,77 @@ describe("applyMemoryItems", () => {
     expect(readIdx().entries["semantic/p/new"].status).toBe("active");
   });
 
+  it("ADVANCES the target's updatedAt with the recorded transition, so latest-wins propagates it cross-device (and stays idempotent)", async () => {
+    // Round-26: recording `superseded-cleanup` is only half the fix. Cross-device
+    // resolution (resolveMemoryView, and the npm CI aggregator merge-books.mjs)
+    // picks between two copies of an id by `updatedAt` — LATEST WINS. Stamping the
+    // new reason WITHOUT advancing updatedAt leaves this copy losing to a sibling
+    // device's older-reason copy, which keeps advertising the obsolete entry as
+    // restorable (and restorable to ACTIVE) there. So the transition must move
+    // updatedAt to the same "now" as the archivedAt stamp — in BOTH stores, the way
+    // memory-archive / memory-unarchive already stamp updatedAt on a status change.
+    const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    const today = new Date().toISOString().slice(0, 10);
+    const idxPath = join(repo, ".memarium/index.memory.json");
+    const readIdx = () => JSON.parse(readFileSync(idxPath, "utf8"));
+    const oldMdPath = join(repo, "memory/semantic/p/old.md");
+    const base = mk({
+      id: "semantic/p/old", type: "semantic", scope: "project:p", project: "p", path: "",
+      title: "Old fact", createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    });
+
+    // seed + archive the target the way memory-archive does, with a STALE updatedAt
+    applyMemoryItems(repo, [{ entry: { ...base }, body: "old body" }]);
+    writeMemoryEntryFile(repo, {
+      ...base, path: "memory/semantic/p/old.md",
+      status: "archived" as MemoryEntry["status"], archivedAt: "2026-07-01",
+      archivedReason: "unused-low-value", updatedAt: "2026-01-01",
+    });
+    const seeded = readIdx();
+    seeded.entries["semantic/p/old"] = {
+      ...seeded.entries["semantic/p/old"],
+      status: "archived", archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+      updatedAt: "2026-01-01",
+    };
+    writeFileSync(idxPath, JSON.stringify(seeded));
+    expect(readIdx().entries["semantic/p/old"].updatedAt).toBe("2026-01-01");
+
+    const superseder = () => ({
+      entry: mk({
+        id: "semantic/p/new", type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "New fact", supersedes: "semantic/p/old",
+      }),
+      body: "new body",
+    });
+    applyMemoryItems(repo, [superseder()]);
+
+    // the transition stamp and updatedAt move TOGETHER, in the index AND the .md
+    const target = readIdx().entries["semantic/p/old"];
+    expect(target.archivedReason).toBe("superseded-cleanup");
+    expect(target.archivedAt).toBe(today);
+    expect(target.updatedAt).toBe(today);
+    const md = readFileSync(oldMdPath, "utf8");
+    expect(md).toMatch(new RegExp(`^updatedAt: ${today}$`, "m"));
+    expect(md).toMatch(new RegExp(`^archivedAt: ${today}$`, "m"));
+    expect(md).not.toMatch(/^updatedAt: 2026-01-01$/m);
+
+    // IDEMPOTENCE: a re-run (digest re-applies the same item) must NOT restamp.
+    // Park a sentinel updatedAt on both stores so a second stamp would be visible
+    // even though "now" hasn't changed, then apply the identical item again.
+    const parked = readIdx();
+    parked.entries["semantic/p/old"].updatedAt = "2030-12-31";
+    writeFileSync(idxPath, JSON.stringify(parked));
+    writeFileSync(oldMdPath, md.replace(/^updatedAt: .*$/m, "updatedAt: 2030-12-31"));
+
+    applyMemoryItems(repo, [superseder()]);
+
+    const after = readIdx().entries["semantic/p/old"];
+    expect(after.updatedAt).toBe("2030-12-31");           // untouched — no churn
+    expect(after.archivedAt).toBe(today);                 // stamp unchanged too
+    expect(after.archivedReason).toBe("superseded-cleanup");
+    expect(readFileSync(oldMdPath, "utf8")).toMatch(/^updatedAt: 2030-12-31$/m);
+  });
+
   it("the recorded superseded-cleanup makes the target NON-RESURRECTABLE by the cold valve", async () => {
     // The whole point of recording the reason: the R2 cold valve's
     // NON_RESURRECTABLE_REASONS filter keys off `archivedReason`, so a stale

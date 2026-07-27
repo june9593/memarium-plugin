@@ -371,7 +371,10 @@ interface PlannedItem {
   abs: string;
   // The id this supersedes (live OR an earlier same-batch item), plus the md to
   // flip to status:superseded (null when that path isn't safely under memory/).
-  supersede: { targetId: string; mdPath: string | null } | null;
+  // `target` is the plan-time row, kept ONLY so the pre-write snapshot can derive
+  // its canonical .md through the same guard; the write phase deliberately reads
+  // the LIVE `idx.entries[targetId]` instead.
+  supersede: { targetId: string; mdPath: string | null; target: MemoryEntry } | null;
 }
 
 /** Gate-agnostic write primitive. Validates EVERYTHING up front — each new
@@ -425,7 +428,7 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
     }
     assertNoSymlinkedComponent(repoPath, abs, "memory apply");
 
-    let supersede: { targetId: string; mdPath: string | null } | null = null;
+    let supersede: { targetId: string; mdPath: string | null; target: MemoryEntry } | null = null;
     const sup = supersedesId(entry);
     if (sup && willExist[sup]) {
       const target = willExist[sup];
@@ -435,186 +438,255 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
         assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
         mdPath = tabs;
       }
-      supersede = { targetId: sup, mdPath };
+      supersede = { targetId: sup, mdPath, target };
     }
 
     planned.push({ entry, body, canonical, abs, supersede });
     willExist[entry.id] = entry; // visible to later items in this batch
   }
 
+  // Round-26: capture the ORIGINAL bytes of every .md this call will touch, BEFORE
+  // the first write — the same snapshot+rollback discipline round-17 gave
+  // memory-archive / memory-unarchive, now extended to the shared apply sink.
+  //
+  // Why it became necessary here: applyMemoryItems persists to TWO stores and all
+  // its .md writes land BEFORE the single saveMemoryIndex, so a failure in a later
+  // write (or in the save) left the files ahead of the index. Round-18's ATOMIC
+  // index save means the index on disk is still the intact PRE-run one, so undoing
+  // the .md side is exactly what restores the pair. That divergence used to be
+  // merely a content-drift annoyance, but round-25 made it LIFECYCLE-critical: an
+  // item superseding an ARCHIVED target now patches that target's .md with
+  // `archivedReason: superseded-cleanup` (+ archivedAt/updatedAt), and a stranded
+  // patch permanently disagrees with an index that still says `unused-low-value` —
+  // which is precisely the field memory-unarchive and the cold valve read.
+  //
+  // Snapshots go through `snapshotMemoryEntryFile`, so each one can only ever name
+  // a file the writer could legitimately touch (same containment + symlink guard).
+  // Deduped by absolute path: an id can appear as both an entry write and another
+  // item's supersede target, and every capture happens before any write, so the
+  // first capture is the true pre-run state and a second would only inflate the
+  // rolled-back count. A target whose mdPath is null is never patched → never
+  // snapshotted.
+  const snapshots: MemoryFileSnapshot[] = [];
+  const snapped = new Set<string>();
+  const capture = (e: MemoryEntry): void => {
+    const s = snapshotMemoryEntryFile(repoPath, e);
+    if (snapped.has(s.abs)) return;
+    snapped.add(s.abs);
+    snapshots.push(s);
+  };
+  for (const p of planned) {
+    capture(p.entry);
+    if (p.supersede && p.supersede.mdPath) capture(p.supersede.target);
+  }
+
   // Write phase (every path validated above; no canonical-path computation here).
   let written = 0, superseded = 0;
   const paths: string[] = [];
-  for (const { entry, body, canonical, abs, supersede } of planned) {
-    entry.path = canonical;
-    // Normalize runtime-optional usage fields. Authored entries (from
-    // memory-write / propose JSON) routinely omit accessCount / lastAccess, so
-    // without this the LIVE index stores `accessCount: undefined` while a
-    // memory-index rebuild heals it to 0 — a divergence that poisons the scorer
-    // (Math.min(undefined,5)=NaN). Write the same defaults parse.ts produces.
-    if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
-    if (entry.lastAccess === undefined) entry.lastAccess = null;
-    // createdAt/updatedAt: authored entries (memory-write / propose JSON) often
-    // omit them, and the renderer serialized `undefined` as the literal string
-    // "undefined" — which breaks every temporal consumer (sort, lint staleness,
-    // supersession). Default to a real YYYY-MM-DD date (the entry's validFrom if
-    // it set one, else today), matching the format used everywhere else. Only
-    // fill when missing/invalid, so an author-set timestamp is preserved.
-    const isDate = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
-    const fallbackDate = isDate(entry.validFrom) ? entry.validFrom.slice(0, 10) : new Date().toISOString().slice(0, 10);
-    if (!isDate(entry.createdAt)) entry.createdAt = fallbackDate;
-    if (!isDate(entry.updatedAt)) entry.updatedAt = fallbackDate;
-    // trust: a new entry that didn't set it (or set garbage) defaults to "unknown"
-    // — never auto-promote to trusted (#23 decision #3). unknown stays out of the primer.
-    if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
-    // The LIVE index row this write updates, if any. Read BEFORE any
-    // normalization: the archival rules just below key off the EXISTING status,
-    // and the continuation upsert further down unions its provenance arrays.
-    const prior = idx.entries[entry.id];
+  try {
+    for (const { entry, body, canonical, abs, supersede } of planned) {
+      entry.path = canonical;
+      // Normalize runtime-optional usage fields. Authored entries (from
+      // memory-write / propose JSON) routinely omit accessCount / lastAccess, so
+      // without this the LIVE index stores `accessCount: undefined` while a
+      // memory-index rebuild heals it to 0 — a divergence that poisons the scorer
+      // (Math.min(undefined,5)=NaN). Write the same defaults parse.ts produces.
+      if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
+      if (entry.lastAccess === undefined) entry.lastAccess = null;
+      // createdAt/updatedAt: authored entries (memory-write / propose JSON) often
+      // omit them, and the renderer serialized `undefined` as the literal string
+      // "undefined" — which breaks every temporal consumer (sort, lint staleness,
+      // supersession). Default to a real YYYY-MM-DD date (the entry's validFrom if
+      // it set one, else today), matching the format used everywhere else. Only
+      // fill when missing/invalid, so an author-set timestamp is preserved.
+      const isDate = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+      const fallbackDate = isDate(entry.validFrom) ? entry.validFrom.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      if (!isDate(entry.createdAt)) entry.createdAt = fallbackDate;
+      if (!isDate(entry.updatedAt)) entry.updatedAt = fallbackDate;
+      // trust: a new entry that didn't set it (or set garbage) defaults to "unknown"
+      // — never auto-promote to trusted (#23 decision #3). unknown stays out of the primer.
+      if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
+      // The LIVE index row this write updates, if any. Read BEFORE any
+      // normalization: the archival rules just below key off the EXISTING status,
+      // and the continuation upsert further down unions its provenance arrays.
+      const prior = idx.entries[entry.id];
 
-    // Status + archival lifecycle. `archivedAt` / `archivedReason` are
-    // MACHINE-MAINTAINED: only `memory-archive` sets them and only
-    // `memory-unarchive` clears them (both write through writeMemoryEntryFile,
-    // which deliberately bypasses this normalization). The AUTHORED path
-    // (memory-write, and memory-propose → memory-approve) may therefore neither
-    // SET nor CLEAR archival lifecycle state. The rule is SYMMETRIC:
-    //
-    //  • existing row NOT archived (or brand new) → the status allowlist coerces
-    //    anything outside {active,superseded,pinned} back to "active" (authored
-    //    entries routinely omit status; never let it reach the renderer as
-    //    undefined → the literal "undefined" string, #54), and BOTH lifecycle
-    //    fields are forced to null. Otherwise a payload could smuggle
-    //    archivedAt/archivedReason onto an ACTIVE entry — e.g. a bogus
-    //    `superseded-cleanup` reason that memory-unarchive's restore logic and
-    //    the cold valve's NON_RESURRECTABLE filter would later misread. (This
-    //    also covers the plain undefined → null normalization that keeps a live
-    //    write equal to a rebuild-from-md.)
-    //
-    //  • existing row IS archived → PRESERVE status:"archived" plus the existing
-    //    archivedAt/archivedReason verbatim, and update only the entry's CONTENT.
-    //    Round-19: the clears used to run unconditionally, so an authored write
-    //    (or a proposal queued before the archive and approved after it) that
-    //    touched an id archived in the meantime got status-normalized to "active"
-    //    and SILENTLY REACTIVATED — restoring an archived memory without any of
-    //    the checks that make restoring safe. Restoring is `memory-unarchive`'s
-    //    job, deliberately: only it applies the cross-device overlay conflict
-    //    guard, the row-completeness gate, and the pre-archive status logic that
-    //    puts a `superseded-cleanup` archive back to `superseded` rather than
-    //    `active`.
-    if (prior && prior.status === "archived") {
-      entry.status = "archived";
-      entry.archivedAt = prior.archivedAt ?? null;
-      entry.archivedReason = prior.archivedReason ?? null;
-    } else {
-      if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
-        entry.status = "active";
-      }
-      entry.archivedAt = null;
-      entry.archivedReason = null;
-    }
-    // Optional nullable fields: normalize undefined → null so the persisted md and
-    // the live index agree (the renderer emits `null`, and a rebuild would too). #54.
-    if (entry.supersedes === undefined) entry.supersedes = null;
-    if (entry.validFrom === undefined) entry.validFrom = null;
-    if (entry.validTo === undefined) entry.validTo = null;
-    if (entry.originDevice === undefined) entry.originDevice = null;
-    if (entry.project === undefined) entry.project = null;
-    // Numeric fields: match the render/parse defaults so the LIVE index equals a
-    // rebuild (an omitted key would otherwise be dropped from the live JSON, and
-    // the scorer would read it as its own default — drift). confidence→0.5 (the
-    // scorer's neutral default), importance→0. #54/#55.
-    if (typeof entry.confidence !== "number" || !isFinite(entry.confidence)) entry.confidence = 0.5;
-    if (typeof entry.importance !== "number" || !isFinite(entry.importance)) entry.importance = 0;
-    // Provenance arrays + summary are de-facto required but routinely omitted in
-    // authored JSON (#37). Default them so render() never hits undefined.length and
-    // the persisted md/index stay consistent (no live-vs-rebuild drift).
-    if (typeof entry.summary !== "string") entry.summary = "";
-    if (!Array.isArray(entry.sourceSessions)) entry.sourceSessions = [];
-    if (!Array.isArray(entry.sourceCommits)) entry.sourceCommits = [];
-    if (!Array.isArray(entry.sourceFiles)) entry.sourceFiles = [];
-    if (!Array.isArray(entry.entities)) entry.entities = [];
-
-    // Continuation upsert: if this id already exists, UNION the provenance arrays
-    // with the prior entry so an agent re-writing a thread with only its NEW
-    // sessions can't erase the old receipt — which would make those raw sessions
-    // "pending" again and re-digest forever. (A supersede targets a DIFFERENT id;
-    // this is the plain create/update-of-same-id path.) `prior` was captured at
-    // the top of this iteration, before any normalization.
-    if (prior) {
-      // Tolerate a malformed prior entry (a prior sourceSessions:{} would make the
-      // spread throw and break memory-write → the digest). Non-array prev → [].
-      const uni = (next: string[], prev: unknown) =>
-        Array.from(new Set([...(Array.isArray(prev) ? prev : []), ...next]));
-      entry.sourceSessions = uni(entry.sourceSessions, prior.sourceSessions);
-      entry.sourceFiles = uni(entry.sourceFiles, prior.sourceFiles);
-      entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);
-    }
-
-    // Supersede-target flip — ARCHIVAL-AWARE (round-20/25). Same symmetric rule
-    // as the status/lifecycle block above, now applied to the OTHER id this item
-    // can touch: the AUTHORED path may neither SET nor CLEAR archival lifecycle
-    // state. An unconditional flip broke that in a subtler way — it stamped
-    // status:"superseded" onto an ARCHIVED target while LEAVING its non-null
-    // archivedAt/archivedReason in place, producing an incoherent row
-    // (superseded, yet carrying archival metadata) that `memory-unarchive`
-    // (whose pre-archive-status logic keys off archivedReason ===
-    // "superseded-cleanup") and the cold valve's NON_RESURRECTABLE filter both
-    // misread.
-    //
-    // An ARCHIVED target is therefore NOT flipped: archived already hides it from
-    // recall, its lifecycle is machine-maintained, and clearing the archival
-    // fields would be the authored path CLEARING machine state (round-19 forbids
-    // that). It is not counted in `superseded` either — that count means "rows
-    // flipped to status:superseded". Lint is satisfied either way:
-    // `superseded-conflict` only fires when a supersede target is still `active`.
-    //
-    // ROUND-25: but leaving it entirely untouched was ALSO wrong. `archivedReason`
-    // is not decoration — it drives two downstream behaviors:
-    //   • the cold valve resurfaces every archive EXCEPT `superseded-cleanup`, so
-    //     a target still reading `unused-low-value` keeps being advertised as
-    //     RESTORABLE even though its replacement is now live; and
-    //   • `memory-unarchive` derives the restored status FROM it —
-    //     `superseded-cleanup` → `superseded`, anything else → `active`.
-    // Together those let an archived-then-superseded entry be restored to ACTIVE
-    // alongside its live replacement: exactly the resurrection the round-8
-    // superseded-cleanup rule exists to prevent. So we RECORD the transition —
-    // reason := "superseded-cleanup" (+ a fresh archivedAt, since the two fields
-    // are one stamp: memory-archive always writes them together, and a new reason
-    // paired with the OLD date describes a transition that never happened) — while
-    // the status stays `archived`. This is the MACHINE recording a lifecycle
-    // transition it just caused, the same category as the flip-to-superseded
-    // below; the authored item's OWN supplied archivedAt/archivedReason are still
-    // ignored/nulled by the block above. Skipped when the reason is ALREADY
-    // `superseded-cleanup`, so re-running a digest is idempotent instead of
-    // restamping archivedAt (which reads as cross-device divergence).
-    if (supersede) {
-      const target = idx.entries[supersede.targetId];
-      const patchMd = (fields: Array<[string, string]>) => {
-        if (!supersede.mdPath || !existsSync(supersede.mdPath)) return;
-        let md = readFileSync(supersede.mdPath, "utf8");
-        for (const [k, v] of fields) md = setFrontmatterField(md, k, v);
-        writeFileSync(supersede.mdPath, md);
-      };
-      if (target && target.status === "archived") {
-        if (target.archivedReason !== "superseded-cleanup") {
-          const at = new Date().toISOString().slice(0, 10); // same plain calendar date memory-archive stamps
-          target.archivedReason = "superseded-cleanup";
-          target.archivedAt = at;
-          patchMd([["archivedReason", "superseded-cleanup"], ["archivedAt", at]]);
+      // Status + archival lifecycle. `archivedAt` / `archivedReason` are
+      // MACHINE-MAINTAINED: only `memory-archive` sets them and only
+      // `memory-unarchive` clears them (both write through writeMemoryEntryFile,
+      // which deliberately bypasses this normalization). The AUTHORED path
+      // (memory-write, and memory-propose → memory-approve) may therefore neither
+      // SET nor CLEAR archival lifecycle state. The rule is SYMMETRIC:
+      //
+      //  • existing row NOT archived (or brand new) → the status allowlist coerces
+      //    anything outside {active,superseded,pinned} back to "active" (authored
+      //    entries routinely omit status; never let it reach the renderer as
+      //    undefined → the literal "undefined" string, #54), and BOTH lifecycle
+      //    fields are forced to null. Otherwise a payload could smuggle
+      //    archivedAt/archivedReason onto an ACTIVE entry — e.g. a bogus
+      //    `superseded-cleanup` reason that memory-unarchive's restore logic and
+      //    the cold valve's NON_RESURRECTABLE filter would later misread. (This
+      //    also covers the plain undefined → null normalization that keeps a live
+      //    write equal to a rebuild-from-md.)
+      //
+      //  • existing row IS archived → PRESERVE status:"archived" plus the existing
+      //    archivedAt/archivedReason verbatim, and update only the entry's CONTENT.
+      //    Round-19: the clears used to run unconditionally, so an authored write
+      //    (or a proposal queued before the archive and approved after it) that
+      //    touched an id archived in the meantime got status-normalized to "active"
+      //    and SILENTLY REACTIVATED — restoring an archived memory without any of
+      //    the checks that make restoring safe. Restoring is `memory-unarchive`'s
+      //    job, deliberately: only it applies the cross-device overlay conflict
+      //    guard, the row-completeness gate, and the pre-archive status logic that
+      //    puts a `superseded-cleanup` archive back to `superseded` rather than
+      //    `active`.
+      if (prior && prior.status === "archived") {
+        entry.status = "archived";
+        entry.archivedAt = prior.archivedAt ?? null;
+        entry.archivedReason = prior.archivedReason ?? null;
+      } else {
+        if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
+          entry.status = "active";
         }
-      } else if (target) {
-        target.status = "superseded";
-        superseded++;
-        patchMd([["status", "superseded"]]);
+        entry.archivedAt = null;
+        entry.archivedReason = null;
       }
-    }
+      // Optional nullable fields: normalize undefined → null so the persisted md and
+      // the live index agree (the renderer emits `null`, and a rebuild would too). #54.
+      if (entry.supersedes === undefined) entry.supersedes = null;
+      if (entry.validFrom === undefined) entry.validFrom = null;
+      if (entry.validTo === undefined) entry.validTo = null;
+      if (entry.originDevice === undefined) entry.originDevice = null;
+      if (entry.project === undefined) entry.project = null;
+      // Numeric fields: match the render/parse defaults so the LIVE index equals a
+      // rebuild (an omitted key would otherwise be dropped from the live JSON, and
+      // the scorer would read it as its own default — drift). confidence→0.5 (the
+      // scorer's neutral default), importance→0. #54/#55.
+      if (typeof entry.confidence !== "number" || !isFinite(entry.confidence)) entry.confidence = 0.5;
+      if (typeof entry.importance !== "number" || !isFinite(entry.importance)) entry.importance = 0;
+      // Provenance arrays + summary are de-facto required but routinely omitted in
+      // authored JSON (#37). Default them so render() never hits undefined.length and
+      // the persisted md/index stay consistent (no live-vs-rebuild drift).
+      if (typeof entry.summary !== "string") entry.summary = "";
+      if (!Array.isArray(entry.sourceSessions)) entry.sourceSessions = [];
+      if (!Array.isArray(entry.sourceCommits)) entry.sourceCommits = [];
+      if (!Array.isArray(entry.sourceFiles)) entry.sourceFiles = [];
+      if (!Array.isArray(entry.entities)) entry.entities = [];
 
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, renderMemoryMarkdown(entry, body));
-    upsertMemory(idx, entry);
-    written++;
-    paths.push(canonical);
+      // Continuation upsert: if this id already exists, UNION the provenance arrays
+      // with the prior entry so an agent re-writing a thread with only its NEW
+      // sessions can't erase the old receipt — which would make those raw sessions
+      // "pending" again and re-digest forever. (A supersede targets a DIFFERENT id;
+      // this is the plain create/update-of-same-id path.) `prior` was captured at
+      // the top of this iteration, before any normalization.
+      if (prior) {
+        // Tolerate a malformed prior entry (a prior sourceSessions:{} would make the
+        // spread throw and break memory-write → the digest). Non-array prev → [].
+        const uni = (next: string[], prev: unknown) =>
+          Array.from(new Set([...(Array.isArray(prev) ? prev : []), ...next]));
+        entry.sourceSessions = uni(entry.sourceSessions, prior.sourceSessions);
+        entry.sourceFiles = uni(entry.sourceFiles, prior.sourceFiles);
+        entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);
+      }
+
+      // Supersede-target flip — ARCHIVAL-AWARE (round-20/25). Same symmetric rule
+      // as the status/lifecycle block above, now applied to the OTHER id this item
+      // can touch: the AUTHORED path may neither SET nor CLEAR archival lifecycle
+      // state. An unconditional flip broke that in a subtler way — it stamped
+      // status:"superseded" onto an ARCHIVED target while LEAVING its non-null
+      // archivedAt/archivedReason in place, producing an incoherent row
+      // (superseded, yet carrying archival metadata) that `memory-unarchive`
+      // (whose pre-archive-status logic keys off archivedReason ===
+      // "superseded-cleanup") and the cold valve's NON_RESURRECTABLE filter both
+      // misread.
+      //
+      // An ARCHIVED target is therefore NOT flipped: archived already hides it from
+      // recall, its lifecycle is machine-maintained, and clearing the archival
+      // fields would be the authored path CLEARING machine state (round-19 forbids
+      // that). It is not counted in `superseded` either — that count means "rows
+      // flipped to status:superseded". Lint is satisfied either way:
+      // `superseded-conflict` only fires when a supersede target is still `active`.
+      //
+      // ROUND-25: but leaving it entirely untouched was ALSO wrong. `archivedReason`
+      // is not decoration — it drives two downstream behaviors:
+      //   • the cold valve resurfaces every archive EXCEPT `superseded-cleanup`, so
+      //     a target still reading `unused-low-value` keeps being advertised as
+      //     RESTORABLE even though its replacement is now live; and
+      //   • `memory-unarchive` derives the restored status FROM it —
+      //     `superseded-cleanup` → `superseded`, anything else → `active`.
+      // Together those let an archived-then-superseded entry be restored to ACTIVE
+      // alongside its live replacement: exactly the resurrection the round-8
+      // superseded-cleanup rule exists to prevent. So we RECORD the transition —
+      // reason := "superseded-cleanup" (+ a fresh archivedAt, since the two fields
+      // are one stamp: memory-archive always writes them together, and a new reason
+      // paired with the OLD date describes a transition that never happened) — while
+      // the status stays `archived`. This is the MACHINE recording a lifecycle
+      // transition it just caused, the same category as the flip-to-superseded
+      // below; the authored item's OWN supplied archivedAt/archivedReason are still
+      // ignored/nulled by the block above. Skipped when the reason is ALREADY
+      // `superseded-cleanup`, so re-running a digest is idempotent instead of
+      // restamping archivedAt (which reads as cross-device divergence).
+      //
+      // ROUND-26: the transition must also ADVANCE the target's `updatedAt`.
+      // Cross-device resolution picks between two copies of an id by `updatedAt` —
+      // latest wins, in BOTH `resolveMemoryView` (plugin read side) and the npm CI
+      // aggregator `merge-books.mjs`. Recording the new reason while leaving
+      // `updatedAt` at its old value means a sibling device's copy — still carrying
+      // the OLD reason but a later timestamp — WINS the merge, so the obsolete entry
+      // stays advertised as restorable (and restorable to `active`) everywhere else:
+      // the round-25 fix would hold only on the device that made the write. Stamping
+      // it is also what the other lifecycle writers already do — `memory-archive`
+      // and `memory-unarchive` both set `updatedAt: now` whenever they change status
+      // — so this keeps the machine-maintained lifecycle consistent across all three
+      // writers. It stays inside the idempotence guard, so a re-run never churns
+      // `updatedAt` (which would itself read as cross-device divergence).
+      if (supersede) {
+        const target = idx.entries[supersede.targetId];
+        const patchMd = (fields: Array<[string, string]>) => {
+          if (!supersede.mdPath || !existsSync(supersede.mdPath)) return;
+          let md = readFileSync(supersede.mdPath, "utf8");
+          for (const [k, v] of fields) md = setFrontmatterField(md, k, v);
+          writeFileSync(supersede.mdPath, md);
+        };
+        if (target && target.status === "archived") {
+          if (target.archivedReason !== "superseded-cleanup") {
+            const at = new Date().toISOString().slice(0, 10); // same plain calendar date memory-archive stamps
+            target.archivedReason = "superseded-cleanup";
+            target.archivedAt = at;
+            target.updatedAt = at; // make the transition WIN latest-wins resolution
+            patchMd([
+              ["archivedReason", "superseded-cleanup"],
+              ["archivedAt", at],
+              ["updatedAt", at],
+            ]);
+          }
+        } else if (target) {
+          target.status = "superseded";
+          superseded++;
+          patchMd([["status", "superseded"]]);
+        }
+      }
+
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, renderMemoryMarkdown(entry, body));
+      upsertMemory(idx, entry);
+      written++;
+      paths.push(canonical);
+    }
+  } catch (err) {
+    // A write (or a supersede-target patch) blew up mid-batch: every .md already
+    // touched by this call is ahead of an index that was never saved. Put them all
+    // back and rethrow with context — a rollback that itself failed is surfaced as
+    // a PARTIAL ROLLBACK rather than swallowed.
+    rollbackMemoryWrites("applyMemoryItems: a .md write failed mid-batch", snapshots, err);
   }
-  saveMemoryIndex(repoPath, idx);
+  try {
+    saveMemoryIndex(repoPath, idx);
+  } catch (err) {
+    // The .md side has fully landed and the index has not. The save is ATOMIC
+    // (round-18), so the intact PRE-run index is still on disk — undoing the .md
+    // writes therefore returns BOTH stores to exactly their pre-run state.
+    rollbackMemoryWrites("applyMemoryItems: index save failed", snapshots, err);
+  }
   return { written, superseded, paths };
 }
