@@ -1016,24 +1016,24 @@ describe("memoryArchiveCmd — round-32 (SECURITY): an id that FORGES frontmatte
     return outp;
   }
 
-  it("SKIPS + COUNTS a newline-bearing and a metacharacter-bearing id; the healthy row still archives; nothing throws", async () => {
+  it("SKIPS + COUNTS a newline-bearing and a traversing id; the healthy row still archives; nothing throws", async () => {
     const warnings: string[] = [];
     vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
     // THE PAYLOAD: the final segment ("safe") is innocuous, so the OLD slug-only
     // check accepted it — while `id: semantic/p` + `forged: value/safe` would be
     // written as TWO frontmatter lines.
     const FORGED_ID = "semantic/p\nforged: value/safe";
-    const SPACED_ID = "semantic/p q/safe";
+    const TRAVERSAL_ID = "semantic/p/..";
     const entries: Record<string, unknown> = {
       "semantic/p/good": expired("semantic/p/good", { path: "memory/semantic/p/good.md" }),
       [FORGED_ID]: expired(FORGED_ID),
-      [SPACED_ID]: expired(SPACED_ID),
+      [TRAVERSAL_ID]: expired(TRAVERSAL_ID),
     };
     writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
     mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
     writeFileSync(join(repo, "memory/semantic/p/good.md"), md("semantic/p/good"));
     const forgedBefore = JSON.parse(JSON.stringify(entries[FORGED_ID]));
-    const spacedBefore = JSON.parse(JSON.stringify(entries[SPACED_ID]));
+    const traversalBefore = JSON.parse(JSON.stringify(entries[TRAVERSAL_ID]));
 
     await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
 
@@ -1042,7 +1042,7 @@ describe("memoryArchiveCmd — round-32 (SECURITY): an id that FORGES frontmatte
     expect(readMdField("semantic/p/good.md", "status")).toBe("archived");
     // the poisoned rows are untouched in the index and counted in the warning
     expect(readIndex().entries[FORGED_ID]).toEqual(forgedBefore);
-    expect(readIndex().entries[SPACED_ID]).toEqual(spacedBefore);
+    expect(readIndex().entries[TRAVERSAL_ID]).toEqual(traversalBefore);
     expect(warnings.join("\n")).toMatch(/skipped 2 malformed index row\(s\)/);
     // NO forged frontmatter key anywhere on disk, and no extra .md was created
     const written = allWrittenMd();
@@ -1055,7 +1055,7 @@ describe("memoryArchiveCmd — round-32 (SECURITY): an id that FORGES frontmatte
     }
     // the poisoned rows' would-be canonical target was never written
     expect(existsSync(join(repo, "memory/semantic/p/safe.md"))).toBe(false);
-    expect(existsSync(join(repo, "memory/semantic/p q"))).toBe(false);
+    expect(existsSync(join(repo, "memory/semantic/p/...md"))).toBe(false);
   });
 
   it("normal ids are unaffected (regression lock)", async () => {
@@ -1072,5 +1072,38 @@ describe("memoryArchiveCmd — round-32 (SECURITY): an id that FORGES frontmatte
 
     expect(readIndexStatus("semantic/my.proj-1/a.b-c")).toBe("archived");
     expect(readMdField("semantic/my.proj-1/a.b-c.md", "status")).toBe("archived");
+  });
+
+  // ── Round-33 ──────────────────────────────────────────────────────────────
+  // Round-32 fixed the injection above by reusing the SHELL-safety predicate
+  // (`isSafeMemoryId`), which rejects ALL WHITESPACE. That was too strict for a
+  // WRITE: `projectSlugFromPath` does not sanitize, so a checkout at
+  // `~/code/my project` produces the project slug `code-my project` and ids like
+  // `semantic/code-my project/some-slug`. EVERY memory in such a project was then
+  // counted as a malformed index row and silently skipped — a real regression for
+  // any macOS user with a space in a directory name. A space cannot forge a
+  // frontmatter line, so it must archive normally.
+  it("a SPACE in the project slug archives normally — NOT counted as malformed", async () => {
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    const SPACED_ID = "semantic/code-my project/some-slug";
+    const entries: Record<string, unknown> = {
+      [SPACED_ID]: expired(SPACED_ID, {
+        project: "code-my project", scope: "project:code-my project",
+        path: "memory/semantic/code-my project/some-slug.md",
+      }),
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/code-my project"), { recursive: true });
+    writeFileSync(join(repo, "memory/semantic/code-my project/some-slug.md"), md(SPACED_ID));
+
+    await memoryArchiveCmd({ cwd: repo, apply: true });
+
+    expect(warnings.join("\n")).not.toMatch(/malformed index row/);
+    expect(readIndexStatus(SPACED_ID)).toBe("archived");
+    expect(readMdField("semantic/code-my project/some-slug.md", "status")).toBe("archived");
+    // the id round-trips as ONE clean frontmatter line — no forged key
+    const doc = readFileSync(join(repo, "memory/semantic/code-my project/some-slug.md"), "utf8");
+    expect(doc.match(/^id: .*$/gm)).toEqual([`id: ${SPACED_ID}`]);
   });
 });

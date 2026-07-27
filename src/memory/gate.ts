@@ -99,6 +99,11 @@ const MAX_MEMORY_ID_LENGTH = 256;
  *
  * NOT a schema check: `parse`/`lint` decide what a WELL-FORMED entry is. This
  * answers the narrower question "may this string be interpolated into a command?"
+ *
+ * NOT THE WRITE GATE either — that is `isWritableMemoryId` below, and the two
+ * are DELIBERATELY DIFFERENT. Do not "unify" them (round-32 did, and it broke
+ * every project whose directory name contains a SPACE); the paired note on
+ * `isWritableMemoryId` explains why one predicate cannot serve both.
  */
 export function isSafeMemoryId(id: unknown): id is string {
   if (typeof id !== "string") return false;
@@ -106,6 +111,59 @@ export function isSafeMemoryId(id: unknown): id is string {
   if (!SAFE_MEMORY_ID_RE.test(id)) return false;
   // Reuse the path-segment rule so a "safe id" can also never traverse (`.`/`..`)
   // — ids are turned into file paths elsewhere, and the two must not disagree.
+  return id.split("/").every(isSafePathSegment);
+}
+
+/** ASCII control characters: the C0 range (NUL, TAB, LF, CR, …), DEL, and the
+ *  C1 range. These — and ONLY these — can break a value out of a LINE-ORIENTED
+ *  `key: value` frontmatter scalar. Spaces and ordinary punctuation cannot. */
+const CONTROL_CHAR_RE = /[\u0000-\u001F\u007F-\u009F]/;
+
+/** True iff `s` carries any ASCII control character. Shared by the rewrite gate
+ *  (`isWritableMemoryId`) and the renderer's `identLine` backstop, so the two
+ *  layers of the same defense cannot disagree about what a control character is. */
+export function hasControlChars(s: string): boolean {
+  return CONTROL_CHAR_RE.test(s);
+}
+
+/**
+ * True iff `id` is safe to WRITE: to serialize into a memory `.md` and to derive
+ * that file's path from. This is the predicate the archival rewrite gate
+ * (`missingRewriteField`, apply.ts) uses.
+ *
+ * DELIBERATELY WEAKER THAN `isSafeMemoryId`, BECAUSE THE THREAT MODEL IS
+ * DIFFERENT. Round-32 made the rewrite gate call `isSafeMemoryId` "so the two
+ * notions of a safe id cannot drift" — that was wrong, and it is the mistake
+ * this pairing exists to prevent a second time:
+ *
+ *   - `isSafeMemoryId` guards RENDERING A SHELL COMMAND (round-28: the cold
+ *     restore hint `memory-unarchive <id>`, copy-pasted by humans, run by
+ *     agents). It must reject shell metacharacters AND ALL WHITESPACE, because
+ *     an unquoted space splits an argv.
+ *   - THIS guards a WRITE. The dangers here are (a) FRONTMATTER INJECTION —
+ *     frontmatter is line-oriented `key: value` text, so a NEWLINE in the id
+ *     forges EXTRA FIELDS in the written .md (a forged `status: active` silently
+ *     un-archives an entry) — and (b) PATH ABUSE, since the id's slug becomes a
+ *     filename under `memory/`. A SPACE can do neither.
+ *
+ * And spaces are REAL, not hypothetical: `projectSlugFromPath` does not sanitize
+ * (it returns `` `${parent}-${last}` ``), so a checkout at `~/code/my project`
+ * yields the project slug `code-my project` and ids like
+ * `semantic/code-my project/some-slug`. Gating the WRITE path on the shell
+ * predicate made EVERY memory in such a project a "malformed index row" —
+ * silently skipped by `memory-archive` and refused by `memory-unarchive`.
+ *
+ * So: reject ASCII control characters anywhere (the injection vector), require
+ * every `/`-separated segment to be a safe path segment (non-empty, not `.`,
+ * no `..`, no separator, no NUL — the same rule `canonicalMemoryPath` enforces
+ * on the slug, so this gate and that derivation cannot disagree), cap the length
+ * so a derived filename stays writable — and allow everything else, spaces and
+ * ordinary punctuation included.
+ */
+export function isWritableMemoryId(id: unknown): id is string {
+  if (typeof id !== "string") return false;
+  if (id.length === 0 || id.length > MAX_MEMORY_ID_LENGTH) return false;
+  if (hasControlChars(id)) return false;
   return id.split("/").every(isSafePathSegment);
 }
 

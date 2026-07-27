@@ -1,4 +1,5 @@
 import type { MemoryEntry } from "./types.js";
+import { hasControlChars } from "./gate.js";
 
 function arr(xs: string[] | undefined): string {
   const a = xs ?? [];
@@ -20,9 +21,6 @@ function req(v: string | number | null | undefined, fallback: string): string {
   return String(v);
 }
 
-/** ASCII control characters, including `\n` and `\r`. */
-const CONTROL_CHAR_RE = /[\u0000-\u001F\u007F]/;
-
 /**
  * Emit ONE frontmatter line, refusing a value that would break out of it.
  *
@@ -35,13 +33,15 @@ const CONTROL_CHAR_RE = /[\u0000-\u001F\u007F]/;
  * project's threat model, and the metadata-only rewriters run UNATTENDED from
  * digest consolidation.
  *
- * The archival rewrite gate (`missingRewriteField`, via `isSafeMemoryId`) already
- * rejects such a row before it can reach a writer. This is the defense-in-depth
- * backstop at the serialization boundary EVERY caller shares — notably
- * `applyMemoryItems` (memory-write / memory-approve), which derives the .md path
- * from the id's SLUG and never validated the id as a whole. Refusing (throwing)
- * rather than escaping keeps the document format unchanged for every legitimate
- * entry, and both write paths already roll back cleanly on a throw.
+ * The archival rewrite gate (`missingRewriteField`, via `isWritableMemoryId`)
+ * already rejects such a row before it can reach a writer, on exactly the same
+ * character class (both call the shared `hasControlChars`, so the gate and this
+ * backstop cannot disagree about what a control character is). This is the
+ * defense-in-depth backstop at the serialization boundary EVERY caller shares —
+ * notably `applyMemoryItems` (memory-write / memory-approve), which derives the
+ * .md path from the id's SLUG and never validated the id as a whole. Refusing
+ * (throwing) rather than escaping keeps the document format unchanged for every
+ * legitimate entry, and both write paths already roll back cleanly on a throw.
  *
  * SCOPE — the IDENTIFIER-ish scalars only: `id`, `type`, `scope`, `status`,
  * `project`. Those are schema-constrained (an id is `<type>/<project|_global>/
@@ -49,9 +49,16 @@ const CONTROL_CHAR_RE = /[\u0000-\u001F\u007F]/;
  * segment), so a control character in them is unambiguously corruption. `title`
  * and `summary` are free authored prose: refusing or rewriting them here would
  * change behavior for legitimate content, so they are deliberately left as-is.
+ *
+ * Round-33 — CONTROL CHARACTERS ONLY, deliberately. This does NOT reject a SPACE
+ * or ordinary punctuation, because neither can forge a frontmatter line, and ids
+ * legitimately contain spaces: `projectSlugFromPath` does not sanitize, so a
+ * checkout at `~/code/my project` produces ids like
+ * `semantic/code-my project/some-slug`. The stricter shell-safety predicate
+ * (`isSafeMemoryId`) guards a DIFFERENT surface — see the paired note in gate.ts.
  */
 function identLine(key: string, value: string): string {
-  if (CONTROL_CHAR_RE.test(value)) {
+  if (hasControlChars(value)) {
     throw new Error(
       `memory render: refusing to write ${key} containing a control character — ` +
       `it would forge extra frontmatter lines (${JSON.stringify(value)})`,

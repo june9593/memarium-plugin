@@ -799,10 +799,37 @@ describe("memoryUnarchiveCmd — round-32 (SECURITY): an id that FORGES frontmat
     expect(existsSync(join(repo, "memory/semantic/p/safe.md"))).toBe(false); // no .md forged
   });
 
-  it("ABORTS on a whitespace/metacharacter id too", async () => {
-    const SPACED_ID = "semantic/p q/safe";
-    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries: { [SPACED_ID]: archived(SPACED_ID) } }, null, 2) + "\n");
-    await expect(memoryUnarchiveCmd({ id: SPACED_ID, cwd: repo })).rejects.toThrow(/unsafe id/);
+  it("ABORTS on a traversing id too", async () => {
+    const TRAVERSAL_ID = "semantic/p/..";
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries: { [TRAVERSAL_ID]: archived(TRAVERSAL_ID) } }, null, 2) + "\n");
+    await expect(memoryUnarchiveCmd({ id: TRAVERSAL_ID, cwd: repo })).rejects.toThrow(/unsafe id/);
+  });
+
+  // Round-33: the round-32 fix gated this command on the SHELL-safety predicate
+  // (`isSafeMemoryId`), which rejects ALL whitespace — so a memory from a project
+  // whose directory name contains a SPACE (`~/code/my project` →
+  // `semantic/code-my project/…`, since `projectSlugFromPath` does not sanitize)
+  // could never be restored at all. A space cannot forge a frontmatter line, so
+  // the write gate must accept it and the restore must go through.
+  it("RESTORES an id whose project slug contains a SPACE", async () => {
+    const SPACED_ID = "semantic/code-my project/some-slug";
+    const row = {
+      ...archived(SPACED_ID), project: "code-my project", scope: "project:code-my project",
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries: { [SPACED_ID]: row } }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/code-my project"), { recursive: true });
+    writeFileSync(
+      join(repo, "memory/semantic/code-my project/some-slug.md"),
+      `---\nid: ${SPACED_ID}\ntype: semantic\nstatus: archived\n---\n\n# a fact\n\nThe real body.\n`,
+    );
+
+    await memoryUnarchiveCmd({ id: SPACED_ID, cwd: repo });
+
+    expect(readIndexStatus(SPACED_ID)).toBe("active");
+    const doc = readFileSync(join(repo, "memory/semantic/code-my project/some-slug.md"), "utf8");
+    expect(doc.match(/^id: .*$/gm)).toEqual([`id: ${SPACED_ID}`]);
+    expect(doc).toMatch(/^status: active$/m);
+    expect(doc).toContain("The real body."); // body preserved through the rewrite
   });
 
   it("a normal archived id still restores (regression lock)", async () => {

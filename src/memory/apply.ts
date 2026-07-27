@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join, resolve, sep } from "node:path";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "./index-store.js";
 import { renderMemoryMarkdown } from "./render.js";
-import { canonicalMemoryPath, isSafeMemoryId, isSafePathSegment, supersedesId } from "./gate.js";
+import { canonicalMemoryPath, isWritableMemoryId, isSafePathSegment, supersedesId } from "./gate.js";
 import { calendarDate } from "./dates.js";
 import { assertNoBlockingLeak } from "./leak-scan.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
@@ -226,12 +226,20 @@ export function missingRewriteField(entry: MemoryEntry): string | null {
   // digested from sessions, so a poisoned id is squarely in this project's threat
   // model — and this path runs unattended from digest consolidation.
   //
-  // Reuse `isSafeMemoryId` (round-28's allowlist: `[A-Za-z0-9._-]` segments
-  // joined by `/`, no whitespace, no shell metacharacters, no traversal,
-  // length-capped) rather than write a second predicate, so the RENDER/hint-side
-  // and WRITE-side notions of a safe id cannot drift apart. It subsumes the old
-  // per-slug `isSafePathSegment` check (it applies that rule to EVERY segment).
-  if (!isSafeMemoryId(e.id)) return "unsafe id";
+  // Round-33: the predicate is `isWritableMemoryId` — the WRITE-side one — NOT
+  // `isSafeMemoryId`. Round-32 reused the latter "so the two notions of a safe id
+  // cannot drift", but they are not the same notion: `isSafeMemoryId` guards
+  // rendering a copy-pasteable SHELL COMMAND, so it must reject all whitespace,
+  // while this gate only has to stop FRONTMATTER INJECTION (ASCII control
+  // characters) and PATH ABUSE (traversing / empty segments). A SPACE does
+  // neither — and spaces are real: `projectSlugFromPath` doesn't sanitize, so a
+  // checkout at `~/code/my project` yields ids like
+  // `semantic/code-my project/some-slug`, and the over-strict gate made EVERY
+  // memory in such a project a "malformed index row" (skipped by memory-archive,
+  // refused by memory-unarchive). See the paired notes on both predicates in
+  // gate.ts before touching either. It still subsumes the old per-slug
+  // `isSafePathSegment` check (it applies that rule to EVERY segment).
+  if (!isWritableMemoryId(e.id)) return "unsafe id";
   let canonical: string;
   try {
     canonical = canonicalMemoryPath(entry);

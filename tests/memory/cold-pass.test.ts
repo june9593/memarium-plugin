@@ -544,3 +544,46 @@ describe("the JSON payload keeps the UNsanitized originals — machine consumers
     expect(noInjectedLineStart(lines)).toBe(true);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// Round-33: the RENDER path must stay strict even though the WRITE path was
+// loosened. `missingRewriteField` now uses `isWritableMemoryId` (control chars +
+// path abuse only), so an id whose project slug contains a SPACE — what a
+// checkout at `~/code/my project` actually produces, since `projectSlugFromPath`
+// does not sanitize — is archivable and restorable. It is still NOT safe to
+// interpolate into a copy-pasteable command, because an unquoted space splits an
+// argv. This is the behavior that JUSTIFIES the two predicates differing, so it
+// is asserted explicitly: if someone "unifies" them onto the write predicate,
+// these fail.
+// ────────────────────────────────────────────────────────────────────────────
+describe("round-33 — a WRITABLE id is not automatically a SHELL-SAFE id", () => {
+  const SPACED_ID = "semantic/code-my project/some-slug";
+
+  it("the space-bearing id is writable but NOT shell-safe", async () => {
+    const { isWritableMemoryId } = await import("../../src/memory/gate.js");
+    expect(isWritableMemoryId(SPACED_ID)).toBe(true);
+    expect(isSafeMemoryId(SPACED_ID)).toBe(false);
+  });
+
+  it("no runnable restore command is offered for it — it degrades to the inert form", () => {
+    const poisoned = hit({ id: SPACED_ID, source: "local", restoreCommand: null });
+    expect(coldRestoreCommand({ id: SPACED_ID, source: "local" })).toBe(null);
+
+    const instruction = coldRestoreInstruction(poisoned);
+    const rendered = renderColdHints([poisoned]);
+    const line = rendered[rendered.length - 1];
+
+    // nothing names the command, and the raw (space-bearing) id never appears
+    expect(instruction).not.toMatch(/memory-unarchive/);
+    expect(line).not.toMatch(/memory-unarchive/);
+    expect(line).not.toContain(SPACED_ID);
+    // …it is shown INERT instead: quoted, with the space redacted
+    expect(inertMemoryId(SPACED_ID)).toBe("'semantic/code-my?project/some-slug'");
+  });
+
+  it("one space-bearing local id disarms the aggregate next-step sentence", () => {
+    const s = renderColdNextStep([hit({ id: SPACED_ID, source: "local", restoreCommand: null })]);
+    expect(s).not.toMatch(/memory-unarchive/);
+    expect(s).toMatch(/unsafe to use in a command/);
+  });
+});

