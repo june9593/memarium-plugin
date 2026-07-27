@@ -540,3 +540,48 @@ describe("memoryUnarchiveCmd — round-22: a row whose CANONICAL PATH cannot be 
     expect(readMdField("semantic/p/ok.md", "status")).toBe("active");
   });
 });
+
+describe("memoryUnarchiveCmd — round-23: a row with a NON-FINITE `importance`", () => {
+  // Same shared gate as memory-archive: a row whose `importance` is absent or
+  // non-numeric is not a faithful rewrite target (the renderer would silently
+  // invent `importance: 0` in the .md while the index row keeps no usable value),
+  // and it is the ingredient planArchival ranks near-duplicates by. There is no
+  // safe repair, so ABORT this one id and change nothing.
+  it("aborts naming the defect and writes nothing (absent AND non-numeric)", async () => {
+    seed();
+    const idx = readIndex();
+    const partial = (over: Record<string, unknown>) => ({
+      id: "x", type: "semantic", scope: "project:p", project: "p", title: "T",
+      summary: "s", path: "", status: "archived", archivedAt: "2026-05-01",
+      archivedReason: "expired", confidence: 1, importance: 1,
+      createdAt: "2026-01-01", updatedAt: "2026-01-01", validFrom: null, validTo: null,
+      sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
+      entities: [], trust: "trusted", originDevice: null, accessCount: 0, lastAccess: null,
+      ...over,
+    });
+    const noImp = partial({ id: "semantic/p/noimp", path: "memory/semantic/p/noimp.md" }) as Record<string, unknown>;
+    delete noImp.importance;
+    const strImp = partial({ id: "semantic/p/strimp", path: "memory/semantic/p/strimp.md", importance: "5" });
+    idx.entries["semantic/p/noimp"] = noImp;
+    idx.entries["semantic/p/strimp"] = strImp;
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    const md = (id: string) =>
+      `---\nid: ${id}\ntype: semantic\nstatus: archived\narchivedAt: 2026-05-01\narchivedReason: expired\n---\n\n# Partial row\n\nThe real body of ${id}.\n`;
+    const noImpMd = md("semantic/p/noimp"), strImpMd = md("semantic/p/strimp");
+    writeFileSync(join(repo, "memory/semantic/p/noimp.md"), noImpMd);
+    writeFileSync(join(repo, "memory/semantic/p/strimp.md"), strImpMd);
+    const idxBefore = readFileSync(idxPath(), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/noimp", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/noimp.*incomplete.*missing importance/i);
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/strimp", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/strimp.*incomplete.*unsafe importance/i);
+
+    // all-or-nothing: neither .md nor the index moved
+    expect(readFileSync(join(repo, "memory/semantic/p/noimp.md"), "utf8")).toBe(noImpMd);
+    expect(readFileSync(join(repo, "memory/semantic/p/strimp.md"), "utf8")).toBe(strImpMd);
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+    expect(readIndexStatus("semantic/p/noimp")).toBe("archived");
+    expect(readIndexStatus("semantic/p/strimp")).toBe("archived");
+  });
+});

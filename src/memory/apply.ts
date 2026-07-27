@@ -116,9 +116,10 @@ const REWRITE_COLLECTION_FIELDS = ["sourceSessions", "sourceCommits", "sourceFil
  *  automatic digest consolidation.)
  *
  *  So the required set is the union of what the archival PLAN reads
- *  (`status` / `type` / `updatedAt`), what the canonical-path derivation needs
- *  (`id` / `type` / `project`) and what a FAITHFUL re-render needs on top of
- *  those (`title` / `scope`, plus the COLLECTION fields the renderer joins).
+ *  (`status` / `type` / `updatedAt` / `importance`), what the canonical-path
+ *  derivation needs (`id` / `type` / `project`) and what a FAITHFUL re-render
+ *  needs on top of those (`title` / `scope`, plus the COLLECTION fields the
+ *  renderer joins).
  *  Requiring title/scope is a strict improvement for archive too: such a row was
  *  never archivable without corrupting itself, and it is already reported in
  *  archive's "skipped malformed index row(s)" count.
@@ -141,6 +142,18 @@ const REWRITE_COLLECTION_FIELDS = ["sourceSessions", "sourceCommits", "sourceFil
  *  also derives the path (pure string work, no I/O) and rejects the row when the
  *  derivation fails or yields anything that isn't a plain path under `memory/`.
  *
+ *  Round-23: `importance` was NOT in the required set even though the PLAN reads
+ *  it — planArchival's near-duplicate pass RANKS a pair by it. With `undefined`
+ *  on one side, `undefined !== 5` is TRUE while `undefined < 5` is FALSE, so the
+ *  loser came out as the HEALTHY, higher-importance entry and IT got archived
+ *  while the malformed row stayed hot — a single corrupt row demoting a good
+ *  record, the same victim-clobbering class as the earlier key/id bug. It matters
+ *  on the rewrite side too: `req(undefined, "0")` silently invents
+ *  `importance: 0` in the .md while the index row keeps no usable value, a quiet
+ *  divergence on a command that only meant to stamp a status. So importance must
+ *  be a FINITE number; absent is reported as missing, present-but-unusable
+ *  (a string, NaN, Infinity) as unsafe.
+ *
  *  Returns the name of the FIRST missing/invalid field, or null when the row is
  *  complete — so `memory-unarchive` can name it in its abort message while
  *  `memory-archive` just filters on the boolean. A field that is PRESENT but
@@ -156,6 +169,10 @@ export function missingRewriteField(entry: MemoryEntry): string | null {
   if (!filled(e.title)) return "title";
   if (typeof e.status !== "string") return "status";
   if (typeof e.updatedAt !== "string") return "updatedAt";
+  // importance: read by the archival plan (near-duplicate ranking + the
+  // unused-low-value threshold), so it must be a real, finite number.
+  if (e.importance === undefined || e.importance === null) return "importance";
+  if (typeof e.importance !== "number" || !Number.isFinite(e.importance)) return "unsafe importance";
   for (const field of REWRITE_COLLECTION_FIELDS) {
     const v = e[field];
     if (v === undefined || v === null) continue; // unset → the renderer emits []

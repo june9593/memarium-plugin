@@ -831,3 +831,58 @@ describe("memoryArchiveCmd — round-22: a row whose CANONICAL PATH cannot be de
     expect(readMdField("semantic/my.proj-1/a.b-c.md", "status")).toBe("archived");
   });
 });
+
+describe("memoryArchiveCmd — round-23: a row with a NON-FINITE `importance`", () => {
+  // Round-23: the rewrite gate accepted a row whose `importance` was missing or
+  // non-numeric, but planArchival's near-duplicate pass RANKS a pair by it:
+  // `undefined !== 5` is true while `undefined < 5` is false, so the HEALTHY,
+  // higher-importance entry came out as the LOSER and was ARCHIVED while the
+  // malformed row stayed hot. Such a row must be SKIPPED + COUNTED before
+  // planning, exactly like every other malformed-row class.
+  const NEAR_DUP = { title: "declare list params as array", summary: "type array not string" };
+
+  it("skips + counts the malformed near-duplicate rows and leaves the HEALTHY entry active", async () => {
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    seed();
+    const idx = readIndex();
+    const base = {
+      type: "semantic", scope: "project:p", project: "p", status: "active", validTo: null,
+      confidence: 1, createdAt: "2026-01-01", updatedAt: "2026-06-01", validFrom: null,
+      sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [], supersedes: null,
+      entities: [], trust: "trusted", originDevice: null, accessCount: 3,
+      lastAccess: "2026-06-01", archivedAt: null, archivedReason: null, ...NEAR_DUP,
+    };
+    // The healthy record the bug demoted: importance 5 keeps it out of every
+    // per-entry rule, so ONLY the near-duplicate pass could ever archive it.
+    const healthy = { id: "semantic/p/healthy", path: "memory/semantic/p/healthy.md", importance: 5, ...base };
+    idx.entries["semantic/p/healthy"] = healthy;
+    // Two malformed near-duplicates of it: importance ABSENT, and importance NON-NUMERIC.
+    const noImp = { id: "semantic/p/noimp", path: "memory/semantic/p/noimp.md", ...base } as Record<string, unknown>;
+    const strImp = { id: "semantic/p/strimp", path: "memory/semantic/p/strimp.md", importance: "5", ...base };
+    idx.entries["semantic/p/noimp"] = noImp;
+    idx.entries["semantic/p/strimp"] = strImp;
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    const md = (id: string) =>
+      `---\nid: ${id}\ntype: semantic\nstatus: active\n---\n\n# declare list params as array\n\nThe real body of ${id}.\n`;
+    for (const id of ["healthy", "noimp", "strimp"]) {
+      writeFileSync(join(repo, `memory/semantic/p/${id}.md`), md(`semantic/p/${id}`));
+    }
+    const healthyMdBefore = readFileSync(join(repo, "memory/semantic/p/healthy.md"), "utf8");
+
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
+
+    // THE LANDMINE: the healthy, higher-importance entry is untouched on both sides
+    expect(readIndexStatus("semantic/p/healthy")).toBe("active");
+    expect(readIndex().entries["semantic/p/healthy"]).toEqual(healthy);
+    expect(readFileSync(join(repo, "memory/semantic/p/healthy.md"), "utf8")).toBe(healthyMdBefore);
+    // the malformed rows are skipped, counted, and never stamped
+    expect(warnings.join("\n")).toMatch(/skipped 2 malformed index row\(s\)/);
+    expect(readIndexStatus("semantic/p/noimp")).toBe("active");
+    expect(readIndexStatus("semantic/p/strimp")).toBe("active");
+    expect(readIndex().entries["semantic/p/noimp"]).toEqual(noImp);
+    expect(readIndex().entries["semantic/p/strimp"]).toEqual(strImp);
+    // and the genuinely archivable entry still archives (the run is not derailed)
+    expect(readIndexStatus("semantic/p/exp")).toBe("archived");
+  });
+});

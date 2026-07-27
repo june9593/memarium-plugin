@@ -49,6 +49,30 @@ function calendarDate(v: unknown): string | null {
   try { return new Date(ts).toISOString().slice(0, 10); } catch { return null; }
 }
 
+/** An entry's importance, or null when it is absent / non-numeric / non-finite.
+ *
+ *  Round-23: `planArchival` is a PURE exported function and can be called with
+ *  UNFILTERED entries (unit tests do; `memory-archive` only filters because
+ *  `isRewritableEntry` runs first). It ranked near-duplicate pairs with a raw
+ *  `!==` / `<` on `importance`, so with `ea.importance === undefined` and
+ *  `eb.importance === 5`: `undefined !== 5` is TRUE, then `undefined < 5` is
+ *  FALSE — the loser came out as `eb`, the HEALTHY higher-importance entry, and
+ *  IT got archived while the malformed row stayed hot. Reading it through this
+ *  helper makes the unusable case EXPLICIT so callers must decide, rather than
+ *  falling into JS's silent undefined-comparison semantics.
+ *
+ *  Deliberately null (skip the decision) rather than a coerced sentinel like
+ *  -Infinity: the rest of this module already refuses to archive off a value it
+ *  cannot read (`daysBetween` returns NaN, `calendarDate` returns null, and both
+ *  make their rules fall false). Archiving is a mutation, so an unreadable
+ *  importance must produce NO archival decision at all — that keeps the
+ *  invariant "a malformed row can never cause a healthy entry to be archived"
+ *  true by construction, without relying on sentinel-ordering reasoning. */
+function importanceOf(e: MemoryEntry): number | null {
+  const v = (e as unknown as Record<string, unknown>).importance;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
 /** core and pinned are NEVER archivable; an already-archived entry is skipped so
  *  the plan never re-plans it. */
 function archivable(e: MemoryEntry): boolean {
@@ -96,10 +120,13 @@ export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: Arch
     }
     // Rule 5: never recalled, old, low-importance, and a semantic/procedural
     // fact. The device-local usage sidecar (if present) overrides the entry's
-    // own accessCount for the "never used" test.
+    // own accessCount for the "never used" test. An UNREADABLE importance never
+    // satisfies the threshold (round-23): raw `null <= 2` is TRUE and `"1" <= 2`
+    // coerces to true, which archived a row off a value we could not actually read.
     const count = usage[e.id]?.count ?? e.accessCount ?? 0;
+    const imp = importanceOf(e);
     if ((e.type === "semantic" || e.type === "procedural") && count === 0 &&
-        e.importance <= opts.unusedMaxImportance &&
+        imp !== null && imp <= opts.unusedMaxImportance &&
         daysBetween(opts.now, e.updatedAt) > opts.unusedMinAgeDays) {
       pick(e.id, "unused-low-value"); continue;
     }
@@ -117,8 +144,15 @@ export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: Arch
   for (const [a, b] of nearDuplicatePairs(entries, 0.8, new Set(["active", "pinned"]))) {
     const ea = byId.get(a), eb = byId.get(b);
     if (!ea || !eb) continue;
-    const loser = ea.importance !== eb.importance
-      ? (ea.importance < eb.importance ? ea : eb)
+    // Round-23: the pair is ranked by importance, so BOTH sides must actually
+    // have a readable one. If either doesn't, the pair is UNRANKABLE — skip it
+    // and archive neither. Comparing a missing importance directly is what let a
+    // malformed row make the healthy, higher-importance entry the "loser".
+    // Skipping is pair-LOCAL: each row's own per-entry rule above still stands.
+    const ia = importanceOf(ea), ib = importanceOf(eb);
+    if (ia === null || ib === null) continue;
+    const loser = ia !== ib
+      ? (ia < ib ? ea : eb)
       : (Date.parse(ea.updatedAt) <= Date.parse(eb.updatedAt) ? ea : eb);
     const winner = loser === ea ? eb : ea;
     // If the winner is already being archived by a per-entry rule, do NOT add the

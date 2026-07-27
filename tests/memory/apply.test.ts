@@ -655,3 +655,52 @@ describe("missingRewriteField — round-22: the row's CANONICAL PATH must be der
     expect(describeRewriteDefect(missingRewriteField(complete({ project: "../x" }))!)).toMatch(/unsafe.*project/i);
   });
 });
+
+describe("missingRewriteField — round-23: `importance` must be a FINITE NUMBER", () => {
+  // Round-23: the gate accepted a row whose `importance` was ABSENT or NON-NUMERIC,
+  // but importance is part of what the archival PLAN reads: planArchival's
+  // near-duplicate pass ranks a pair by it, and Rule 5 thresholds on it. With
+  // `undefined` on one side, `undefined !== 5` is true and `undefined < 5` is
+  // FALSE — so the HEALTHY, higher-importance entry was selected as the LOSER and
+  // archived while the malformed row stayed hot. Same victim-clobbering class as
+  // the key/id bug: a single corrupt row demoting a good record.
+  //
+  // It matters on the rewrite side too: `req(undefined, "0")` silently invents
+  // `importance: 0` in the .md while the index row keeps no importance at all —
+  // a quiet index/.md divergence on a command that only meant to stamp a status.
+  const complete = (over: Partial<MemoryEntry> = {}): MemoryEntry => mk({
+    id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p", title: "T", ...over,
+  });
+
+  it("accepts any finite importance, including 0 and a float (control)", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const importance of [0, 1, 5, 2.5, -1]) {
+      expect(missingRewriteField(complete({ importance }))).toBeNull();
+      expect(isRewritableEntry(complete({ importance }))).toBe(true);
+    }
+  });
+
+  it("reports an ABSENT importance as MISSING", async () => {
+    const { missingRewriteField, describeRewriteDefect, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const unset of [undefined, null]) {
+      const row = { ...complete(), importance: unset } as unknown as MemoryEntry;
+      expect(missingRewriteField(row)).toBe("importance");
+      expect(describeRewriteDefect(missingRewriteField(row)!)).toBe("missing importance");
+      expect(isRewritableEntry(row)).toBe(false);
+    }
+    const deleted = { ...complete() } as Record<string, unknown>;
+    delete deleted.importance;
+    expect(missingRewriteField(deleted as unknown as MemoryEntry)).toBe("importance");
+  });
+
+  it("reports a PRESENT-but-unusable importance as UNSAFE, never as missing", async () => {
+    const { missingRewriteField, describeRewriteDefect, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const bad of ["5", "", NaN, Infinity, -Infinity, {}, [], true]) {
+      const row = { ...complete(), importance: bad } as unknown as MemoryEntry;
+      expect(missingRewriteField(row)).toBe("unsafe importance");
+      expect(describeRewriteDefect(missingRewriteField(row)!)).not.toMatch(/missing/);
+      expect(describeRewriteDefect(missingRewriteField(row)!)).toMatch(/unsafe.*importance/i);
+      expect(isRewritableEntry(row)).toBe(false);
+    }
+  });
+});
