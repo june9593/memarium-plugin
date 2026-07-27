@@ -14770,12 +14770,15 @@ function applyMemoryItems(repoPath, items) {
       entry.sourceFiles = uni(entry.sourceFiles, prior.sourceFiles);
       entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);
     }
-    if (supersede && idx.entries[supersede.targetId]) {
-      idx.entries[supersede.targetId].status = "superseded";
-      superseded++;
-      if (supersede.mdPath && existsSync11(supersede.mdPath)) {
-        const md = readFileSync9(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
-        writeFileSync7(supersede.mdPath, md);
+    if (supersede) {
+      const target = idx.entries[supersede.targetId];
+      if (target && target.status !== "archived") {
+        target.status = "superseded";
+        superseded++;
+        if (supersede.mdPath && existsSync11(supersede.mdPath)) {
+          const md = readFileSync9(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
+          writeFileSync7(supersede.mdPath, md);
+        }
       }
     }
     mkdirSync8(dirname4(abs), { recursive: true });
@@ -15061,6 +15064,7 @@ function rankMemories(list, q2) {
   const qTokens = new Set(tokenize(q2.text));
   const out = [];
   for (const e of list) {
+    if (typeof e.id !== "string" || e.id === "") continue;
     let score = 0;
     const why = [];
     if (qTokens.size > 0) {
@@ -16892,6 +16896,16 @@ function daysBetween2(now, then) {
   if (!isFinite(a) || !isFinite(b2)) return NaN;
   return (a - b2) / 864e5;
 }
+function calendarDate(v) {
+  if (typeof v !== "string") return null;
+  const ts = Date.parse(v);
+  if (!isFinite(ts)) return null;
+  try {
+    return new Date(ts).toISOString().slice(0, 10);
+  } catch {
+    return null;
+  }
+}
 function archivable(e) {
   return e.type !== "core" && e.status !== "pinned" && e.status !== "archived";
 }
@@ -16900,13 +16914,15 @@ function planArchival(entries, usage, opts) {
   const pick2 = (id, reason) => {
     if (!chosen.has(id)) chosen.set(id, reason);
   };
+  const nowDate = calendarDate(opts.now) ?? opts.now;
   for (const e of entries) {
     if (!archivable(e)) continue;
     if (e.status === "superseded") {
       pick2(e.id, "superseded-cleanup");
       continue;
     }
-    if (e.validTo !== null && e.validTo <= opts.now) {
+    const validToDate = calendarDate(e.validTo);
+    if (validToDate !== null && validToDate <= nowDate) {
       pick2(e.id, "expired");
       continue;
     }
