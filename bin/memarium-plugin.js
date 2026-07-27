@@ -14467,6 +14467,12 @@ function safeSegment(seg, label) {
   }
   return seg;
 }
+function isSafeMemoryId(id) {
+  if (typeof id !== "string") return false;
+  if (id.length === 0 || id.length > MAX_MEMORY_ID_LENGTH) return false;
+  if (!SAFE_MEMORY_ID_RE.test(id)) return false;
+  return id.split("/").every(isSafePathSegment);
+}
 function canonicalMemoryPath(entry) {
   if (!MEMORY_TYPES.has(entry.type)) {
     throw new Error(`memory path: invalid type ${JSON.stringify(entry.type)} (not a MemoryType)`);
@@ -14475,7 +14481,7 @@ function canonicalMemoryPath(entry) {
   const slug = safeSegment(entry.id.split("/").pop() ?? entry.id, "slug");
   return `memory/${entry.type}/${scopeDir}/${slug}.md`;
 }
-var MEMORY_TYPES;
+var MEMORY_TYPES, SAFE_MEMORY_ID_RE, MAX_MEMORY_ID_LENGTH;
 var init_gate = __esm({
   "src/memory/gate.ts"() {
     "use strict";
@@ -14485,6 +14491,25 @@ var init_gate = __esm({
       "episodic",
       "procedural"
     ]);
+    SAFE_MEMORY_ID_RE = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
+    MAX_MEMORY_ID_LENGTH = 256;
+  }
+});
+
+// src/memory/dates.ts
+function calendarDate(v) {
+  if (typeof v !== "string") return null;
+  const ts = Date.parse(v);
+  if (!isFinite(ts)) return null;
+  try {
+    return new Date(ts).toISOString().slice(0, 10);
+  } catch {
+    return null;
+  }
+}
+var init_dates = __esm({
+  "src/memory/dates.ts"() {
+    "use strict";
   }
 });
 
@@ -14789,6 +14814,12 @@ function applyMemoryItems(repoPath, items) {
         entry.status = "archived";
         entry.archivedAt = prior.archivedAt ?? null;
         entry.archivedReason = prior.archivedReason ?? null;
+        const priorUpdated = typeof prior.updatedAt === "string" ? prior.updatedAt : null;
+        const priorDay = calendarDate(priorUpdated);
+        const authoredDay = calendarDate(entry.updatedAt);
+        if (priorUpdated !== null && priorDay !== null && (authoredDay === null || authoredDay < priorDay)) {
+          entry.updatedAt = priorUpdated;
+        }
       } else {
         if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
           entry.status = "active";
@@ -14863,6 +14894,7 @@ var init_apply = __esm({
     init_index_store2();
     init_render();
     init_gate();
+    init_dates();
     init_leak_scan();
     init_path_guard();
     REWRITABLE_TYPES = /* @__PURE__ */ new Set(["core", "semantic", "episodic", "procedural"]);
@@ -15106,23 +15138,6 @@ var init_skip_write = __esm({
   }
 });
 
-// src/memory/dates.ts
-function calendarDate(v) {
-  if (typeof v !== "string") return null;
-  const ts = Date.parse(v);
-  if (!isFinite(ts)) return null;
-  try {
-    return new Date(ts).toISOString().slice(0, 10);
-  } catch {
-    return null;
-  }
-}
-var init_dates = __esm({
-  "src/memory/dates.ts"() {
-    "use strict";
-  }
-});
-
 // src/memory/score.ts
 function tokenize(s) {
   return s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1);
@@ -15356,6 +15371,19 @@ var init_primer = __esm({
 });
 
 // src/memory/cold-pass.ts
+function coldRestoreCommand(c3) {
+  if (c3.source !== "local") return null;
+  if (!isSafeMemoryId(c3.id)) return null;
+  return `memory-unarchive '${c3.id}'`;
+}
+function inertMemoryId(id) {
+  const raw = typeof id === "string" ? id : String(id);
+  const redacted = raw.slice(0, 120).replace(/[^A-Za-z0-9._/-]/g, "?");
+  return `'${redacted}'`;
+}
+function displayMemoryId(id) {
+  return isSafeMemoryId(id) ? id : inertMemoryId(id);
+}
 function inScope(e, project) {
   if (e.scope === "global" || e.scope === "user") return true;
   if (project && e.scope === `project:${project}`) return true;
@@ -15379,26 +15407,31 @@ function runColdPass({ entries, scored, query, sources }) {
   const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
   if (strongPrimary >= COLD_FLOOR) return [];
   const originOf = resolveColdOrigin(entries, sources);
-  return scoreArchived(Object.values(entries), query).filter((s) => isResurrectable(s.entry)).filter((s) => inScope(s.entry, query.project)).filter((s) => !query.type || s.entry.type === query.type).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => ({
-    id: s.entry.id,
-    title: s.entry.title,
-    score: s.score,
-    archivedReason: s.entry.archivedReason,
-    // Origin decides which restore hint is honest: a `local` cold hit lives
-    // in THIS device's index (memory-unarchive works); an `overlay` hit is
-    // a sibling device's archived memory that memory-unarchive (local-only)
-    // can't touch, so we point the user at its origin device instead; an
-    // `unknown` origin gets the generic instruction rather than a guess.
-    source: originOf(s.entry),
-    originDevice: s.entry.originDevice ?? null,
-    // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
-    // surfaced indistinguishably from a trusted fact. Same rule the primary
-    // pass uses: anything not "trusted" is untrusted for surfacing.
-    trust: s.entry.trust ?? "unknown"
-  }));
+  return scoreArchived(Object.values(entries), query).filter((s) => isResurrectable(s.entry)).filter((s) => inScope(s.entry, query.project)).filter((s) => !query.type || s.entry.type === query.type).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => {
+    const source = originOf(s.entry);
+    return {
+      id: s.entry.id,
+      title: s.entry.title,
+      score: s.score,
+      archivedReason: s.entry.archivedReason,
+      source,
+      originDevice: s.entry.originDevice ?? null,
+      // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
+      // surfaced indistinguishably from a trusted fact. Same rule the primary
+      // pass uses: anything not "trusted" is untrusted for surfacing.
+      trust: s.entry.trust ?? "unknown",
+      // The one vetted command for this hit (null unless local AND safely
+      // shaped) — so a JSON consumer never has to build one from the raw id.
+      restoreCommand: coldRestoreCommand({ id: s.entry.id, source })
+    };
+  });
 }
 function coldRestoreInstruction(c3) {
-  if (c3.source === "local") return `memory-unarchive ${c3.id} to restore`;
+  if (c3.source === "local") {
+    const cmd = coldRestoreCommand(c3);
+    if (cmd) return `${cmd} to restore`;
+    return `archived here under an unsafe id \u2014 restore manually (id ${inertMemoryId(c3.id)})`;
+  }
   if (c3.source === "overlay") {
     const dev = c3.originDevice ? `device ${c3.originDevice}` : "another device";
     return `archived on ${dev}; restore it there`;
@@ -15411,7 +15444,7 @@ function renderColdHints(coldStorage) {
 \u2744\uFE0F ${coldStorage.length} archived also matched:`];
   for (const c3 of coldStorage) {
     const flag = c3.trust !== "trusted" ? " (untrusted)" : "";
-    lines.push(`  ${c3.id}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 ${coldRestoreInstruction(c3)}`);
+    lines.push(`  ${displayMemoryId(c3.id)}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 ${coldRestoreInstruction(c3)}`);
   }
   return lines;
 }
@@ -15419,9 +15452,12 @@ function renderColdNextStep(coldStorage) {
   if (!coldStorage.length) return "";
   const head = "No ACTIVE memory matched, but archived entries did \u2014 see coldStorage";
   const local = coldStorage.filter((c3) => c3.source === "local");
-  if (local.length === coldStorage.length) return `${head} (memory-unarchive <id> to restore).`;
+  if (local.length > 0 && !local.every((c3) => isSafeMemoryId(c3.id))) {
+    return `${head} \u2014 restore each hit from its own cold-storage hint. At least one archived id is unsafe to use in a command, so restore that one by hand.`;
+  }
+  if (local.length === coldStorage.length) return `${head} (memory-unarchive '<id>' to restore).`;
   if (local.length > 0) {
-    return `${head}; each hit carries its own restore path (local hits: memory-unarchive <id>; the rest: restore on their origin device).`;
+    return `${head}; each hit carries its own restore path (local hits: memory-unarchive '<id>'; the rest: restore on their origin device).`;
   }
   const overlay = coldStorage.filter((c3) => c3.source === "overlay");
   if (overlay.length === coldStorage.length) {
@@ -15437,6 +15473,7 @@ var init_cold_pass = __esm({
   "src/memory/cold-pass.ts"() {
     "use strict";
     init_score();
+    init_gate();
     CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
     isContentHitReason = (whyRecalled) => CONTENT_HIT_MARKERS.some((m) => whyRecalled.includes(m));
     isContentHit = (s) => isContentHitReason(s.whyRecalled);
