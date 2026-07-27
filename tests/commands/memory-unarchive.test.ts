@@ -481,3 +481,62 @@ describe("memoryUnarchiveCmd — round-16 fail-closed guards", () => {
     });
   });
 });
+
+describe("memoryUnarchiveCmd — round-22: a row whose CANONICAL PATH cannot be derived", () => {
+  // The shared rewrite gate checked that `id`/`project` were NON-EMPTY STRINGS,
+  // not that the path DERIVED from them is valid. For unarchive there is no safe
+  // repair (we can't invent the real project or slug), so ABORT this one id with
+  // a message that names the offending ingredient — and, unlike the "missing
+  // <field>" cases, does NOT claim the field is absent when it is merely unsafe.
+  const base = {
+    confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    validFrom: null, validTo: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+    supersedes: null, entities: [] as string[], trust: "trusted" as const, originDevice: null,
+    accessCount: 0, lastAccess: null, archivedAt: "2026-05-01", archivedReason: "expired",
+  };
+  const archived = (key: string, over: Record<string, unknown> = {}) => ({
+    id: key, type: "semantic", scope: "project:p", project: "p",
+    title: "a fact", summary: "s", path: "", status: "archived", ...base, ...over,
+  });
+  const md = (id: string) =>
+    `---\nid: ${id}\ntype: semantic\nstatus: archived\narchivedAt: 2026-05-01\narchivedReason: expired\n---\n\n# a fact\n\nThe real body of ${id}.\n`;
+
+  function writeStore(entries: Record<string, unknown>) {
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+  }
+
+  it("aborts (writes nothing) for an unsafe `project`, naming it as unsafe rather than missing", async () => {
+    writeStore({ "semantic/p/badproj": archived("semantic/p/badproj", { project: "../x" }) });
+    const idxBefore = readFileSync(idxPath(), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/badproj", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/badproj.*unsafe.*project/i);
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/badproj", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/badproj(?!.*missing)/i);
+
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore); // index byte-identical
+    expect(readIndexStatus("semantic/p/badproj")).toBe("archived");
+  });
+
+  it("aborts (writes nothing) for an `id` whose slug segment is `..`", async () => {
+    writeStore({ "semantic/p/..": archived("semantic/p/..") });
+    const idxBefore = readFileSync(idxPath(), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/..", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/\.\..*unsafe.*id/i);
+
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+    expect(readIndexStatus("semantic/p/..")).toBe("archived");
+  });
+
+  it("still restores a well-formed archived row (regression lock)", async () => {
+    writeStore({ "semantic/p/ok": archived("semantic/p/ok", { path: "memory/semantic/p/ok.md" }) });
+    writeFileSync(join(repo, "memory/semantic/p/ok.md"), md("semantic/p/ok"));
+
+    await memoryUnarchiveCmd({ id: "semantic/p/ok", cwd: repo });
+
+    expect(readIndexStatus("semantic/p/ok")).toBe("active");
+    expect(readMdField("semantic/p/ok.md", "status")).toBe("active");
+  });
+});

@@ -1,6 +1,6 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadMemoryIndex, loadMemoryIndexStrict, saveMemoryIndex, type MemoryIndexLoad } from "../memory/index-store.js";
-import { writeMemoryEntryFile, missingRewriteField, snapshotMemoryEntryFile, rollbackMemoryWrites } from "../memory/apply.js";
+import { writeMemoryEntryFile, missingRewriteField, describeRewriteDefect, snapshotMemoryEntryFile, rollbackMemoryWrites } from "../memory/apply.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
 import { isOverlayConflict } from "../memory/overlay-conflict.js";
 import { validEntryExists } from "../memory/lint.js";
@@ -66,9 +66,18 @@ export async function memoryUnarchiveCmd(opts: MemoryUnarchiveOptions): Promise<
   // entry as a DEGRADED record. There is no safe repair (we can't invent a title),
   // so ABORT and change nothing. Same shared predicate memory-archive filters on,
   // so both write paths into the rewriter demand the same completeness.
+  // Round-22: the same gate also rejects a row whose CANONICAL PATH cannot be
+  // derived (`project: "../x"`, or an `id` whose slug segment is ".."). Such a
+  // row used to reach writeMemoryEntryFile and surface canonicalMemoryPath's raw
+  // "memory path: unsafe … segment" throw, which named neither the command nor
+  // the id. There is no safe repair (we can't invent the real project or slug),
+  // so ABORT and change nothing — but describe the defect honestly:
+  // `describeRewriteDefect` renders an ABSENT field as "missing title" and a
+  // PRESENT-but-unusable one as "unsafe project segment", so we never claim a
+  // field is missing when it is merely malformed.
   const missing = missingRewriteField(e);
   if (missing) {
-    throw new Error(`refusing to unarchive ${opts.id}: index row is incomplete (missing ${missing})`);
+    throw new Error(`refusing to unarchive ${opts.id}: index row is incomplete (${describeRewriteDefect(missing)})`);
   }
   // Cross-device clobber guard (mirrors memory-archive's): restoring a stale
   // LOCAL archived row → active and stamping today's (day-only) updatedAt could

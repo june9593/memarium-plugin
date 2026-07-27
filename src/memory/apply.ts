@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join, resolve, sep } from "node:path";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "./index-store.js";
 import { renderMemoryMarkdown } from "./render.js";
-import { canonicalMemoryPath, supersedesId } from "./gate.js";
+import { canonicalMemoryPath, isSafePathSegment, supersedesId } from "./gate.js";
 import { assertNoBlockingLeak } from "./leak-scan.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 import type { MemoryEntry } from "./types.js";
@@ -131,9 +131,21 @@ const REWRITE_COLLECTION_FIELDS = ["sourceSessions", "sourceCommits", "sourceFil
  *  genuinely unset — `arr()` maps undefined/null to `[]`, so an omitted field
  *  renders faithfully and must not be rejected.
  *
+ *  Round-22: even a row whose every scalar is a non-empty string and whose every
+ *  collection is an array can still be UN-REWRITABLE, because those fields are
+ *  only INGREDIENTS for the canonical path the rewriter derives from them. A row
+ *  with `project: "../x"`, or an `id` whose slug segment is `..`, passed every
+ *  check above, was PLANNED by `memory-archive`, and then threw out of
+ *  `canonicalMemoryPath` inside `assertMemoryBodyRecoverable`'s whole-plan
+ *  preflight — aborting the entire UNATTENDED digest consolidation. So the gate
+ *  also derives the path (pure string work, no I/O) and rejects the row when the
+ *  derivation fails or yields anything that isn't a plain path under `memory/`.
+ *
  *  Returns the name of the FIRST missing/invalid field, or null when the row is
  *  complete — so `memory-unarchive` can name it in its abort message while
- *  `memory-archive` just filters on the boolean. */
+ *  `memory-archive` just filters on the boolean. A field that is PRESENT but
+ *  unusable is reported as `"unsafe <field>"` so callers don't describe it as
+ *  missing; run the result through `describeRewriteDefect` to render it. */
 export function missingRewriteField(entry: MemoryEntry): string | null {
   const e = entry as unknown as Record<string, unknown>;
   const filled = (v: unknown): boolean => typeof v === "string" && v.length > 0;
@@ -149,7 +161,34 @@ export function missingRewriteField(entry: MemoryEntry): string | null {
     if (v === undefined || v === null) continue; // unset → the renderer emits []
     if (!Array.isArray(v)) return field;
   }
+  // Canonical-path derivability (see the round-22 note above). Mirrors
+  // canonicalMemoryPath's own segment rules so we can NAME the bad ingredient
+  // instead of surfacing its raw throw.
+  if (!isSafePathSegment((e.project as string | null) ?? "_global")) return "unsafe project segment";
+  const id = e.id as string;
+  if (!isSafePathSegment(id.split("/").pop() ?? id)) return "unsafe id segment";
+  let canonical: string;
+  try {
+    canonical = canonicalMemoryPath(entry);
+  } catch {
+    return "unsafe canonical path"; // derivation rejected something the checks above didn't model
+  }
+  // Belt and braces: whatever came back must be a plain path under memory/ with
+  // no empty or traversing segment, so `assertWritableMemoryTarget` can't throw
+  // on a row this predicate just approved.
+  const segs = canonical.split("/");
+  if (segs.length < 2 || segs[0] !== "memory" || segs.some((s) => s === "" || s === "." || s === "..")) {
+    return "unsafe canonical path";
+  }
   return null;
+}
+
+/** Render `missingRewriteField`'s result as a human clause. A plain field name
+ *  means the field is ABSENT ("missing title"); an `"unsafe …"` marker means the
+ *  field is present but unusable, and must NOT be described as missing. Keeps
+ *  that convention in one place instead of leaking it into every caller. */
+export function describeRewriteDefect(defect: string): string {
+  return defect.startsWith("unsafe ") ? defect : `missing ${defect}`;
 }
 
 /** Boolean form of `missingRewriteField` — a row this rejects must never be fed

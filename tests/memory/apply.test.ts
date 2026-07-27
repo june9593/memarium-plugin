@@ -599,3 +599,59 @@ describe("missingRewriteField — COLLECTION fields the renderer joins", () => {
     }
   });
 });
+
+describe("missingRewriteField — round-22: the row's CANONICAL PATH must be derivable", () => {
+  // Round-22: every scalar can be a non-empty string and every collection an
+  // array, and the row can STILL be un-rewritable — those fields are only
+  // INGREDIENTS for the canonical path the rewriter derives from them. A row with
+  // `project: "../x"`, or an `id` whose slug segment is "..", passed the whole
+  // gate, got PLANNED by memory-archive, and then threw out of
+  // `canonicalMemoryPath` inside `assertMemoryBodyRecoverable`'s whole-plan
+  // preflight — aborting the entire UNATTENDED digest consolidation. Same class
+  // as round-16: a corrupt row must be SKIPPED and COUNTED, never allowed to
+  // crash the run.
+  const complete = (over: Partial<MemoryEntry> = {}): MemoryEntry => mk({
+    id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p", title: "T", ...over,
+  });
+
+  it("accepts a well-formed row and a null project (control)", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    expect(missingRewriteField(complete())).toBeNull();
+    expect(missingRewriteField(complete({ id: "core/g/rule", type: "core", project: null, scope: "global" }))).toBeNull();
+    expect(isRewritableEntry(complete())).toBe(true);
+  });
+
+  it("rejects a traversing / unsafe `project`, and that row really would throw in canonicalMemoryPath", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    const { canonicalMemoryPath } = await import("../../src/memory/gate.js");
+    for (const project of ["../x", "..", ".", "a/b", "a\\b", ""]) {
+      const row = complete({ project });
+      expect(missingRewriteField(row)).toMatch(/project/);
+      expect(isRewritableEntry(row)).toBe(false);
+      // proof the gate is load-bearing: the derivation genuinely throws on this row
+      expect(() => canonicalMemoryPath(row)).toThrow(/memory path/i);
+    }
+  });
+
+  it("rejects an `id` whose SLUG segment is unsafe, and that row really would throw in canonicalMemoryPath", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    const { canonicalMemoryPath } = await import("../../src/memory/gate.js");
+    for (const id of ["semantic/p/..", "..", ".", "semantic/p/a..b", "semantic/p/"]) {
+      const row = complete({ id });
+      expect(missingRewriteField(row)).toMatch(/id/);
+      expect(isRewritableEntry(row)).toBe(false);
+      expect(() => canonicalMemoryPath(row)).toThrow(/memory path/i);
+    }
+  });
+
+  it("the reported defect reads as a phrase memory-unarchive can print", async () => {
+    const { missingRewriteField, describeRewriteDefect } = await import("../../src/memory/apply.js");
+    // a genuinely ABSENT field keeps the original "missing <field>" wording
+    const noTitle = { ...complete() } as Record<string, unknown>;
+    delete noTitle.title;
+    expect(describeRewriteDefect(missingRewriteField(noTitle as unknown as MemoryEntry)!)).toBe("missing title");
+    // a PRESENT-but-unsafe ingredient must not be described as "missing"
+    expect(describeRewriteDefect(missingRewriteField(complete({ project: "../x" }))!)).not.toMatch(/missing/);
+    expect(describeRewriteDefect(missingRewriteField(complete({ project: "../x" }))!)).toMatch(/unsafe.*project/i);
+  });
+});

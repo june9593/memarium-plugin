@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { memoryArchiveCmd } from "../../src/commands/memory-archive.js";
@@ -112,10 +112,18 @@ describe("memoryArchiveCmd", () => {
   });
 
   it("--apply preflights the WHOLE plan: one invalid target aborts before ANY .md is rewritten", async () => {
-    // Two expired entries land in the plan: one perfectly valid, one whose project
-    // is an unsafe path segment ("..") so its canonical-path derivation throws.
-    // With an order-aware whole-plan preflight, the throw must happen BEFORE the
-    // first write — so the valid entry's .md and the index stay untouched.
+    // Two expired entries land in the plan: one perfectly valid, one whose
+    // canonical path runs through a SYMLINKED directory component, so
+    // assertWritableMemoryTarget throws. With an order-aware whole-plan preflight,
+    // the throw must happen BEFORE the first write — so the valid entry's .md and
+    // the index stay untouched.
+    //
+    // Round-22 note: this used to use a row with `project: ".."`. That row-SHAPE
+    // defect is now caught by the rewrite gate and SKIPPED (a corrupt index row
+    // must not crash the unattended digest run — see the round-22 describe below),
+    // so it no longer reaches the preflight. A symlinked component is a
+    // FILESYSTEM condition no row-shape predicate can see, so it still exercises
+    // the all-or-nothing discipline this test exists to lock.
     const base = {
       confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
       validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
@@ -126,7 +134,7 @@ describe("memoryArchiveCmd", () => {
       "semantic/p/good": { id: "semantic/p/good", type: "semantic", scope: "project:p", project: "p",
         title: "Good expired", summary: "s", path: "memory/semantic/p/good.md", status: "active",
         validTo: "2000-01-01", ...base },
-      "semantic/bad": { id: "semantic/bad", type: "semantic", scope: "project:..", project: "..",
+      "semantic/sym/bad": { id: "semantic/sym/bad", type: "semantic", scope: "project:sym", project: "sym",
         title: "Bad path", summary: "s", path: "", status: "active",
         validTo: "2000-01-01", ...base },
     };
@@ -134,6 +142,12 @@ describe("memoryArchiveCmd", () => {
     mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
     const goodMd = "---\nid: semantic/p/good\ntype: semantic\nstatus: active\n---\n\n# Good expired\n\nThe real body.\n";
     writeFileSync(join(repo, "memory/semantic/p/good.md"), goodMd);
+    // memory/semantic/sym is a SYMLINK to a directory elsewhere in the sandbox
+    const elsewhere = join(home, "elsewhere");
+    mkdirSync(elsewhere, { recursive: true });
+    writeFileSync(join(elsewhere, "bad.md"),
+      "---\nid: semantic/sym/bad\ntype: semantic\nstatus: active\n---\n\n# Bad path\n\nbody\n");
+    symlinkSync(elsewhere, join(repo, "memory/semantic/sym"));
     const idxBefore = readFileSync(idxPath(), "utf8");
 
     await expect(memoryArchiveCmd({ cwd: repo, apply: true })).rejects.toThrow(/unsafe|symlink|outside memory/i);
@@ -737,5 +751,83 @@ describe("memoryArchiveCmd — round-16 fail-closed guards", () => {
       expect(readIndexStatus("semantic/p/idsame")).toBe("archived");  // equivalent copy still archives
       expect(warnings.join("\n")).toMatch(/skipped 1 id\(s\) in a cross-device conflict/);
     });
+  });
+});
+
+describe("memoryArchiveCmd — round-22: a row whose CANONICAL PATH cannot be derived", () => {
+  // Round-22: the row-shape gate checked that `id` and `project` were NON-EMPTY
+  // STRINGS — not that the path DERIVED from them is valid. A row with
+  // `project: "../x"`, or an `id` whose slug segment is "..", passed the gate,
+  // got PLANNED, and then threw out of `canonicalMemoryPath` inside
+  // `assertMemoryBodyRecoverable`'s whole-plan preflight — aborting the entire
+  // AUTOMATIC digest consolidation (no human in the loop). Same class as
+  // round-16: such a row must be SKIPPED and COUNTED, never allowed to crash the
+  // run.
+  const base = {
+    confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+    supersedes: null, entities: [] as string[], trust: "trusted" as const, originDevice: null,
+    accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+  };
+  /** An expired (therefore archivable) semantic row. `key` is BOTH the index key
+   *  and the row's `id`, so `validEntryExists` waves it through and only the
+   *  canonical-path derivation can reject it. */
+  const expired = (key: string, over: Record<string, unknown> = {}) => ({
+    id: key, type: "semantic", scope: "project:p", project: "p",
+    title: "a fact", summary: "s", path: "", status: "active",
+    validTo: "2000-01-01", ...base, ...over,
+  });
+  const md = (id: string) =>
+    `---\nid: ${id}\ntype: semantic\nstatus: active\n---\n\n# a fact\n\nThe real body of ${id}.\n`;
+
+  it("skips (and counts) rows with an unsafe project / slug — the automatic run never throws, the healthy row still archives", async () => {
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    const entries: Record<string, unknown> = {
+      "semantic/p/good": expired("semantic/p/good", { path: "memory/semantic/p/good.md" }),
+      // traversing project: canonicalMemoryPath throws on the project segment
+      "semantic/p/badproj": expired("semantic/p/badproj", { project: "../x" }),
+      // id whose FINAL segment is "..": canonicalMemoryPath throws on the slug
+      "semantic/p/..": expired("semantic/p/.."),
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    writeFileSync(join(repo, "memory/semantic/p/good.md"), md("semantic/p/good"));
+    const badProjBefore = JSON.parse(JSON.stringify(entries["semantic/p/badproj"]));
+    const badSlugBefore = JSON.parse(JSON.stringify(entries["semantic/p/.."]));
+    const goodMdBefore = readFileSync(join(repo, "memory/semantic/p/good.md"), "utf8");
+
+    // THE LANDMINE: pre-fix this rejected with "memory path: unsafe project segment",
+    // aborting the whole unattended consolidation run.
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
+
+    // the healthy row still archives normally (index + .md both stamped)
+    expect(readIndexStatus("semantic/p/good")).toBe("archived");
+    expect(readMdField("semantic/p/good.md", "status")).toBe("archived");
+    expect(readFileSync(join(repo, "memory/semantic/p/good.md"), "utf8")).not.toBe(goodMdBefore);
+    // the malformed rows are untouched and counted
+    expect(readIndex().entries["semantic/p/badproj"]).toEqual(badProjBefore);
+    expect(readIndex().entries["semantic/p/.."]).toEqual(badSlugBefore);
+    expect(warnings.join("\n")).toMatch(/skipped 2 malformed index row\(s\)/);
+    // no stray file escaped memory/semantic/p/
+    expect(existsSync(join(repo, "memory/semantic/x.md"))).toBe(false);
+  });
+
+  it("a legal project/slug with unusual-but-safe characters is unaffected (regression lock)", async () => {
+    // The gate must reject only genuinely UNDERIVABLE rows — a dotted or
+    // dashed-but-safe segment is still a normal, archivable memory.
+    const entries: Record<string, unknown> = {
+      "semantic/my.proj-1/a.b-c": expired("semantic/my.proj-1/a.b-c", {
+        project: "my.proj-1", path: "memory/semantic/my.proj-1/a.b-c.md",
+      }),
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/my.proj-1"), { recursive: true });
+    writeFileSync(join(repo, "memory/semantic/my.proj-1/a.b-c.md"), md("semantic/my.proj-1/a.b-c"));
+
+    await memoryArchiveCmd({ cwd: repo, apply: true });
+
+    expect(readIndexStatus("semantic/my.proj-1/a.b-c")).toBe("archived");
+    expect(readMdField("semantic/my.proj-1/a.b-c.md", "status")).toBe("archived");
   });
 });
