@@ -14630,7 +14630,23 @@ function missingRewriteField(entry) {
     if (v === void 0 || v === null) continue;
     if (!Array.isArray(v)) return field;
   }
+  if (!isSafePathSegment(e.project ?? "_global")) return "unsafe project segment";
+  const id = e.id;
+  if (!isSafePathSegment(id.split("/").pop() ?? id)) return "unsafe id segment";
+  let canonical;
+  try {
+    canonical = canonicalMemoryPath(entry);
+  } catch {
+    return "unsafe canonical path";
+  }
+  const segs = canonical.split("/");
+  if (segs.length < 2 || segs[0] !== "memory" || segs.some((s) => s === "" || s === "." || s === "..")) {
+    return "unsafe canonical path";
+  }
   return null;
+}
+function describeRewriteDefect(defect) {
+  return defect.startsWith("unsafe ") ? defect : `missing ${defect}`;
 }
 function assertWritableMemoryTarget(repoPath, entry) {
   const memRoot = resolve2(join14(repoPath, "memory"));
@@ -17168,7 +17184,7 @@ async function memoryUnarchiveCmd(opts) {
   }
   const missing = missingRewriteField(e);
   if (missing) {
-    throw new Error(`refusing to unarchive ${opts.id}: index row is incomplete (missing ${missing})`);
+    throw new Error(`refusing to unarchive ${opts.id}: index row is incomplete (${describeRewriteDefect(missing)})`);
   }
   const view = resolveMemoryView(cfg.repoPath);
   const overlayLoad = view.roots.overlay ? loadMemoryIndexStrict(view.roots.overlay) : { kind: "absent" };
