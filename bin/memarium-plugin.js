@@ -15376,9 +15376,17 @@ function coldRestoreCommand(c3) {
   if (!isSafeMemoryId(c3.id)) return null;
   return `memory-unarchive '${c3.id}'`;
 }
+function sanitizeForDisplay(value) {
+  let s = typeof value === "string" ? value : String(value);
+  for (const re of ESCAPE_SEQUENCES) s = s.replace(re, "");
+  s = s.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
+  const collapsed = s.replace(/\s+/g, " ").trim();
+  if (collapsed === "") return UNPRINTABLE;
+  return collapsed.length > MAX_DISPLAY_LENGTH ? `${collapsed.slice(0, MAX_DISPLAY_LENGTH - 1)}\u2026` : collapsed;
+}
 function inertMemoryId(id) {
-  const raw = typeof id === "string" ? id : String(id);
-  const redacted = raw.slice(0, 120).replace(/[^A-Za-z0-9._/-]/g, "?");
+  const raw = sanitizeForDisplay(id);
+  const redacted = raw.slice(0, MAX_DISPLAY_LENGTH).replace(/[^A-Za-z0-9._/-]/g, "?");
   return `'${redacted}'`;
 }
 function displayMemoryId(id) {
@@ -15433,7 +15441,8 @@ function coldRestoreInstruction(c3) {
     return `archived here under an unsafe id \u2014 restore manually (id ${inertMemoryId(c3.id)})`;
   }
   if (c3.source === "overlay") {
-    const dev = c3.originDevice ? `device ${c3.originDevice}` : "another device";
+    const device = c3.originDevice ? sanitizeForDisplay(c3.originDevice) : "";
+    const dev = device && device !== UNPRINTABLE ? `device ${device}` : "another device";
     return `archived on ${dev}; restore it there`;
   }
   return "origin unknown; restore it on the device that archived it";
@@ -15444,7 +15453,9 @@ function renderColdHints(coldStorage) {
 \u2744\uFE0F ${coldStorage.length} archived also matched:`];
   for (const c3 of coldStorage) {
     const flag = c3.trust !== "trusted" ? " (untrusted)" : "";
-    lines.push(`  ${displayMemoryId(c3.id)}  (${c3.archivedReason})  \u2014 ${c3.title}${flag}  \u2014 ${coldRestoreInstruction(c3)}`);
+    const reason = sanitizeForDisplay(c3.archivedReason);
+    const title = sanitizeForDisplay(c3.title);
+    lines.push(`  ${displayMemoryId(c3.id)}  (${reason})  \u2014 ${title}${flag}  \u2014 ${coldRestoreInstruction(c3)}`);
   }
   return lines;
 }
@@ -15463,17 +15474,32 @@ function renderColdNextStep(coldStorage) {
   if (overlay.length === coldStorage.length) {
     const devices = new Set(overlay.map((c3) => c3.originDevice ? c3.originDevice : null));
     const only = devices.size === 1 ? [...devices][0] : null;
-    const tail = only !== null ? `archived on device ${only}; restore it there` : "each is archived on another device; restore it there";
+    const device = only !== null ? sanitizeForDisplay(only) : "";
+    const tail = device && device !== UNPRINTABLE ? `archived on device ${device}; restore it there` : "each is archived on another device; restore it there";
     return `${head} \u2014 ${tail} (memory-unarchive is local-only).`;
   }
   return `${head} \u2014 restore each on the device that archived it (memory-unarchive is local-only).`;
 }
-var CONTENT_HIT_MARKERS, isContentHitReason, isContentHit, COLD_FLOOR, COLD_TOP_K, COLD_SCORE_FLOOR, NON_RESURRECTABLE_REASONS, isResurrectable;
+var MAX_DISPLAY_LENGTH, UNPRINTABLE, ESCAPE_SEQUENCES, CONTENT_HIT_MARKERS, isContentHitReason, isContentHit, COLD_FLOOR, COLD_TOP_K, COLD_SCORE_FLOOR, NON_RESURRECTABLE_REASONS, isResurrectable;
 var init_cold_pass = __esm({
   "src/memory/cold-pass.ts"() {
     "use strict";
     init_score();
     init_gate();
+    MAX_DISPLAY_LENGTH = 120;
+    UNPRINTABLE = "(unprintable)";
+    ESCAPE_SEQUENCES = [
+      /\x1b\][\s\S]*?(?:\x07|\x1b\\|$)/g,
+      // OSC (window title, hyperlink) … BEL/ST
+      /\x1b[P^_X][\s\S]*?(?:\x1b\\|$)/g,
+      // DCS / PM / APC / SOS … ST
+      /\x1b\[[0-9;:<=>?]*[ -/]*[@-~]/g,
+      // CSI — colour, cursor move, erase
+      /\x1b[ -/]*[0-~]/g,
+      // any other ESC-introduced sequence
+      /\x1b/g
+      // a lone trailing ESC
+    ];
     CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
     isContentHitReason = (whyRecalled) => CONTENT_HIT_MARKERS.some((m) => whyRecalled.includes(m));
     isContentHit = (s) => isContentHitReason(s.whyRecalled);
