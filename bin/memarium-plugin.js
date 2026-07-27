@@ -7626,6 +7626,28 @@ var init_index_store4 = __esm({
   }
 });
 
+// src/memory/dates.ts
+function calendarDate(v) {
+  if (typeof v !== "string") return null;
+  const ts = Date.parse(v);
+  if (!isFinite(ts)) return null;
+  try {
+    return new Date(ts).toISOString().slice(0, 10);
+  } catch {
+    return null;
+  }
+}
+function epochMs(v) {
+  if (typeof v !== "string") return null;
+  const ts = Date.parse(v);
+  return Number.isFinite(ts) ? ts : null;
+}
+var init_dates = __esm({
+  "src/memory/dates.ts"() {
+    "use strict";
+  }
+});
+
 // src/memory/source-resolver.ts
 import { existsSync as existsSync8 } from "node:fs";
 import { join as join10 } from "node:path";
@@ -7641,12 +7663,19 @@ function mergeIndexById(local, overlay) {
   }
   for (const [id, e] of Object.entries(local)) {
     const ex = entries[id];
-    if (!ex || (e.updatedAt ?? "") >= (ex.updatedAt ?? "")) {
+    if (!ex || localWins(e.updatedAt, ex.updatedAt)) {
       entries[id] = e;
       sources[id] = "local";
     }
   }
   return { entries, sources };
+}
+function localWins(localAt, overlayAt) {
+  const localMs = epochMs(localAt);
+  const overlayMs = epochMs(overlayAt);
+  if (overlayMs === null) return true;
+  if (localMs === null) return false;
+  return localMs >= overlayMs;
 }
 function resolveMemoryView(repoPath, overlayRoot = aggregatedOverlayPath()) {
   const local = loadMemoryIndex(repoPath).entries;
@@ -7674,6 +7703,7 @@ var init_source_resolver = __esm({
   "src/memory/source-resolver.ts"() {
     "use strict";
     init_memarium_home();
+    init_dates();
     init_index_store2();
   }
 });
@@ -14493,28 +14523,6 @@ var init_gate = __esm({
     ]);
     SAFE_MEMORY_ID_RE = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
     MAX_MEMORY_ID_LENGTH = 256;
-  }
-});
-
-// src/memory/dates.ts
-function calendarDate(v) {
-  if (typeof v !== "string") return null;
-  const ts = Date.parse(v);
-  if (!isFinite(ts)) return null;
-  try {
-    return new Date(ts).toISOString().slice(0, 10);
-  } catch {
-    return null;
-  }
-}
-function epochMs(v) {
-  if (typeof v !== "string") return null;
-  const ts = Date.parse(v);
-  return Number.isFinite(ts) ? ts : null;
-}
-var init_dates = __esm({
-  "src/memory/dates.ts"() {
-    "use strict";
   }
 });
 
