@@ -14507,6 +14507,11 @@ function calendarDate(v) {
     return null;
   }
 }
+function epochMs(v) {
+  if (typeof v !== "string") return null;
+  const ts = Date.parse(v);
+  return Number.isFinite(ts) ? ts : null;
+}
 var init_dates = __esm({
   "src/memory/dates.ts"() {
     "use strict";
@@ -17077,10 +17082,7 @@ function importanceOf(e) {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 function updatedAtMs(e) {
-  const v = e.updatedAt;
-  if (typeof v !== "string") return null;
-  const ts = Date.parse(v);
-  return Number.isFinite(ts) ? ts : null;
+  return epochMs(e.updatedAt);
 }
 function archivable(e) {
   return e.type !== "core" && e.status !== "pinned" && e.status !== "archived";
@@ -17203,12 +17205,13 @@ function isOverlayConflict(local, overlay, roots) {
   }
 }
 function divergesFromOverlay(local, ov, roots) {
-  const ovUpdated = ov.updatedAt;
-  if (typeof ovUpdated !== "string" || ovUpdated === "") return true;
+  const ovMs = epochMs(ov.updatedAt);
+  const localMs = epochMs(local.updatedAt);
+  if (ovMs === null || localMs === null) return true;
   if (!hasWellFormedCollections(ov) || !hasWellFormedCollections(local)) return true;
-  const localUpdated = typeof local.updatedAt === "string" ? local.updatedAt : "";
-  if (ovUpdated > localUpdated) return true;
-  if (ovUpdated < localUpdated) return false;
+  const ovDay = calendarDate(ov.updatedAt);
+  const localDay = calendarDate(local.updatedAt);
+  if (ovDay !== localDay) return ovMs > localMs;
   if (!sameMemoryContent(local, ov)) return true;
   const localRel = canonicalRel(local);
   const overlayRel = canonicalRel(ov);
@@ -17223,6 +17226,7 @@ var init_overlay_conflict = __esm({
   "src/memory/overlay-conflict.ts"() {
     "use strict";
     init_gate();
+    init_dates();
     COLLECTION_FIELDS = ["entities", "sourceSessions", "sourceCommits", "sourceFiles"];
   }
 });
