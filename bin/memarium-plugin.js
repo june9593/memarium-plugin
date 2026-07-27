@@ -605,9 +605,9 @@ var require_help = __commonJS({
           "g"
         );
         const lines = columnText.match(regex) || [];
-        return leadingStr + lines.map((line, i2) => {
-          if (line === "\n") return "";
-          return (i2 > 0 ? indentString : "") + line.trimEnd();
+        return leadingStr + lines.map((line3, i2) => {
+          if (line3 === "\n") return "";
+          return (i2 > 0 ? indentString : "") + line3.trimEnd();
         }).join("\n");
       }
     };
@@ -7791,8 +7791,8 @@ function extractUserTexts(md) {
   const lines = md.split("\n");
   let inUser = false;
   let buf = [];
-  for (const line of lines) {
-    if (/^## User\b/.test(line)) {
+  for (const line3 of lines) {
+    if (/^## User\b/.test(line3)) {
       if (buf.length > 0) {
         out.push(buf.join("\n").trim());
         buf = [];
@@ -7800,7 +7800,7 @@ function extractUserTexts(md) {
       inUser = true;
       continue;
     }
-    if (/^## /.test(line)) {
+    if (/^## /.test(line3)) {
       if (inUser && buf.length > 0) {
         out.push(buf.join("\n").trim());
         buf = [];
@@ -7808,7 +7808,7 @@ function extractUserTexts(md) {
       inUser = false;
       continue;
     }
-    if (inUser) buf.push(line);
+    if (inUser) buf.push(line3);
   }
   if (inUser && buf.length > 0) out.push(buf.join("\n").trim());
   return out.filter((s) => s.length > 0);
@@ -9137,8 +9137,8 @@ function isArrayLike(input) {
   return filterHasLength(input);
 }
 function toLinesWithContent(input = "", trimmed2 = true, separator = "\n") {
-  return input.split(separator).reduce((output, line) => {
-    const lineContent = trimmed2 ? line.trim() : line;
+  return input.split(separator).reduce((output, line3) => {
+    const lineContent = trimmed2 ? line3.trim() : line3;
     if (lineContent) {
       output.push(lineContent);
     }
@@ -9146,7 +9146,7 @@ function toLinesWithContent(input = "", trimmed2 = true, separator = "\n") {
   }, []);
 }
 function forEachLineWithContent(input, callback) {
-  return toLinesWithContent(input, true).map((line) => callback(line));
+  return toLinesWithContent(input, true).map((line3) => callback(line3));
 }
 function folderExists(path) {
   return (0, import_file_exists.exists)(path, import_file_exists.FOLDER);
@@ -9308,13 +9308,13 @@ function callTaskParser(parser4, streams) {
 function parseStringResponse(result, parsers12, texts, trim = true) {
   asArray(texts).forEach((text) => {
     for (let lines = toLinesWithContent(text, trim), i2 = 0, max = lines.length; i2 < max; i2++) {
-      const line = (offset = 0) => {
+      const line3 = (offset = 0) => {
         if (i2 + offset >= max) {
           return;
         }
         return lines[i2 + offset];
       };
-      parsers12.some(({ parse }) => parse(line, result));
+      parsers12.some(({ parse }) => parse(line3, result));
     }
   });
   return result;
@@ -9360,8 +9360,8 @@ function isNotRepoMessage(error) {
 function cleanSummaryParser(dryRun, text) {
   const summary = new CleanResponse(dryRun);
   const regexp = dryRun ? dryRunRemovalRegexp : removalRegexp;
-  toLinesWithContent(text).forEach((line) => {
-    const removed = line.replace(regexp, "");
+  toLinesWithContent(text).forEach((line3) => {
+    const removed = line3.replace(regexp, "");
     summary.paths.push(removed);
     (isFolderRegexp.test(removed) ? summary.folders : summary.files).push(removed);
   });
@@ -9503,9 +9503,9 @@ function* configParser(text, requestedKey = null) {
     let value = lines[i2++];
     let key = requestedKey;
     if (value.includes("\n")) {
-      const line = splitOn(value, "\n");
-      key = line[0];
-      value = line[1];
+      const line3 = splitOn(value, "\n");
+      key = line3[0];
+      value = line3[1];
     }
     yield { file, key, value };
   }
@@ -9597,10 +9597,10 @@ function parseGrep(grep) {
   const paths = /* @__PURE__ */ new Set();
   const results = {};
   forEachLineWithContent(grep, (input) => {
-    const [path, line, preview] = input.split(NULL);
+    const [path, line3, preview] = input.split(NULL);
     paths.add(path);
     (results[path] = results[path] || []).push({
-      line: asNumber(line),
+      line: asNumber(line3),
       path,
       preview
     });
@@ -9952,9 +9952,9 @@ function getDiffParser(format = "") {
 }
 function lineBuilder(tokens, fields) {
   return fields.reduce(
-    (line, field, index) => {
-      line[field] = tokens[index] || "";
-      return line;
+    (line3, field, index) => {
+      line3[field] = tokens[index] || "";
+      return line3;
     },
     /* @__PURE__ */ Object.create({ diff: null })
   );
@@ -10186,8 +10186,8 @@ function show_default() {
     }
   };
 }
-function renamedFile(line) {
-  const [to, from] = line.split(NULL);
+function renamedFile(line3) {
+  const [to, from] = line3.split(NULL);
   return {
     from: from || to,
     to
@@ -10496,7 +10496,7 @@ function parseGetRemotesVerbose(text) {
   return Object.values(remotes);
 }
 function forEach(text, handler) {
-  forEachLineWithContent(text, (line) => handler(line.split(/\s+/)));
+  forEachLineWithContent(text, (line3) => handler(line3.split(/\s+/)));
 }
 function addRemoteTask(remoteName, remoteRepo, customArgs) {
   return straightThroughStringTask(["remote", "add", ...customArgs, remoteName, remoteRepo]);
@@ -11054,9 +11054,9 @@ var init_esm = __esm({
           constructor(regExp, useMatches) {
             this.matches = [];
             this.useMatches = useMatchesDefault;
-            this.parse = (line, target) => {
+            this.parse = (line3, target) => {
               this.resetMatches();
-              if (!this._regExp.every((reg, index) => this.addMatch(reg, index, line(index)))) {
+              if (!this._regExp.every((reg, index) => this.addMatch(reg, index, line3(index)))) {
                 return false;
               }
               return this.useMatches(target, this.prepareMatches()) !== false;
@@ -11072,8 +11072,8 @@ var init_esm = __esm({
           prepareMatches() {
             return this.matches;
           }
-          addMatch(reg, index, line) {
-            const matched = line && reg.exec(line);
+          addMatch(reg, index, line3) {
+            const matched = line3 && reg.exec(line3);
             if (matched) {
               this.pushMatch(index, matched);
             }
@@ -11084,8 +11084,8 @@ var init_esm = __esm({
           }
         };
         RemoteLineParser = class extends LineParser {
-          addMatch(reg, index, line) {
-            return /^remote:\s/.test(String(line)) && super.addMatch(reg, index, line);
+          addMatch(reg, index, line3) {
+            return /^remote:\s/.test(String(line3)) && super.addMatch(reg, index, line3);
           }
           pushMatch(index, matched) {
             if (index > 0 || matched.length > 1) {
@@ -12454,25 +12454,25 @@ var init_esm = __esm({
           ),
           [
             "##",
-            (result, line) => {
+            (result, line3) => {
               const aheadReg = /ahead (\d+)/;
               const behindReg = /behind (\d+)/;
               const currentReg = /^(.+?(?=(?:\.{3}|\s|$)))/;
               const trackingReg = /\.{3}(\S*)/;
               const onEmptyBranchReg = /\son\s(\S+?)(?=\.{3}|$)/;
-              let regexResult = aheadReg.exec(line);
+              let regexResult = aheadReg.exec(line3);
               result.ahead = regexResult && +regexResult[1] || 0;
-              regexResult = behindReg.exec(line);
+              regexResult = behindReg.exec(line3);
               result.behind = regexResult && +regexResult[1] || 0;
-              regexResult = currentReg.exec(line);
+              regexResult = currentReg.exec(line3);
               result.current = filterType(regexResult?.[1], filterString, null);
-              regexResult = trackingReg.exec(line);
+              regexResult = trackingReg.exec(line3);
               result.tracking = filterType(regexResult?.[1], filterString, null);
-              regexResult = onEmptyBranchReg.exec(line);
+              regexResult = onEmptyBranchReg.exec(line3);
               if (regexResult) {
                 result.current = filterType(regexResult?.[1], filterString, result.current);
               }
-              result.detached = /\(no branch\)/.test(line);
+              result.detached = /\(no branch\)/.test(line3);
             }
           ]
         ]);
@@ -12480,14 +12480,14 @@ var init_esm = __esm({
           const lines = text.split(NULL);
           const status = new StatusSummary();
           for (let i2 = 0, l = lines.length; i2 < l; ) {
-            let line = lines[i2++].trim();
-            if (!line) {
+            let line3 = lines[i2++].trim();
+            if (!line3) {
               continue;
             }
-            if (line.charAt(0) === "R") {
-              line += NULL + (lines[i2++] || "");
+            if (line3.charAt(0) === "R") {
+              line3 += NULL + (lines[i2++] || "");
             }
-            splitLine(status, line);
+            splitLine(status, line3);
           }
           return status;
         };
@@ -14453,6 +14453,9 @@ function isSafeMemoryId(id) {
 function hasControlChars(s) {
   return CONTROL_CHAR_RE.test(s);
 }
+function neutralizeControlChars(s) {
+  return s.replace(CONTROL_CHAR_RE_GLOBAL, " ");
+}
 function isWritableMemoryId(id) {
   if (typeof id !== "string") return false;
   if (id.length === 0 || id.length > MAX_MEMORY_ID_LENGTH) return false;
@@ -14467,7 +14470,7 @@ function canonicalMemoryPath(entry) {
   const slug = safeSegment(entry.id.split("/").pop() ?? entry.id, "slug");
   return `memory/${entry.type}/${scopeDir}/${slug}.md`;
 }
-var MEMORY_TYPES, SAFE_MEMORY_ID_RE, MAX_MEMORY_ID_LENGTH, CONTROL_CHAR_RE;
+var MEMORY_TYPES, SAFE_MEMORY_ID_RE, MAX_MEMORY_ID_LENGTH, CONTROL_CHAR_RE, CONTROL_CHAR_RE_GLOBAL;
 var init_gate = __esm({
   "src/memory/gate.ts"() {
     "use strict";
@@ -14480,6 +14483,7 @@ var init_gate = __esm({
     SAFE_MEMORY_ID_RE = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
     MAX_MEMORY_ID_LENGTH = 256;
     CONTROL_CHAR_RE = /[\u0000-\u001F\u007F-\u009F]/;
+    CONTROL_CHAR_RE_GLOBAL = new RegExp(CONTROL_CHAR_RE.source, "g");
   }
 });
 
@@ -14504,6 +14508,9 @@ function identLine(key, value) {
   }
   return `${key}: ${value}`;
 }
+function valueLine(key, value) {
+  return `${key}: ${neutralizeControlChars(value)}`;
+}
 function renderMemoryMarkdown(entry, body) {
   const fm = [
     "---",
@@ -14511,30 +14518,31 @@ function renderMemoryMarkdown(entry, body) {
     identLine("type", String(entry.type)),
     identLine("scope", String(entry.scope)),
     identLine("project", nullable(entry.project)),
-    `title: ${entry.title}`,
-    `summary: ${entry.summary ?? ""}`,
+    valueLine("title", String(entry.title ?? "")),
+    valueLine("summary", String(entry.summary ?? "")),
     identLine("status", req(entry.status, "active")),
-    `confidence: ${req(entry.confidence, "0.5")}`,
-    `importance: ${req(entry.importance, "0")}`,
-    `createdAt: ${req(entry.createdAt, "")}`,
-    `updatedAt: ${req(entry.updatedAt, "")}`,
-    `validFrom: ${nullable(entry.validFrom)}`,
-    `validTo: ${nullable(entry.validTo)}`,
-    `supersedes: ${nullable(entry.supersedes)}`,
-    `originDevice: ${nullable(entry.originDevice)}`,
-    `archivedAt: ${nullable(entry.archivedAt)}`,
-    `archivedReason: ${nullable(entry.archivedReason)}`,
-    `sourceSessions: ${arr(entry.sourceSessions)}`,
-    `sourceCommits: ${arr(entry.sourceCommits)}`,
-    `sourceFiles: ${arr(entry.sourceFiles)}`,
-    `entities: ${arr(entry.entities)}`,
-    `trust: ${entry.trust ?? "unknown"}`,
+    valueLine("confidence", req(entry.confidence, "0.5")),
+    valueLine("importance", req(entry.importance, "0")),
+    valueLine("createdAt", req(entry.createdAt, "")),
+    valueLine("updatedAt", req(entry.updatedAt, "")),
+    valueLine("validFrom", nullable(entry.validFrom)),
+    valueLine("validTo", nullable(entry.validTo)),
+    valueLine("supersedes", nullable(entry.supersedes)),
+    valueLine("originDevice", nullable(entry.originDevice)),
+    valueLine("archivedAt", nullable(entry.archivedAt)),
+    valueLine("archivedReason", nullable(entry.archivedReason)),
+    valueLine("sourceSessions", arr(entry.sourceSessions)),
+    valueLine("sourceCommits", arr(entry.sourceCommits)),
+    valueLine("sourceFiles", arr(entry.sourceFiles)),
+    valueLine("entities", arr(entry.entities)),
+    valueLine("trust", entry.trust ?? "unknown"),
     "---"
   ].join("\n");
   const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
+  const heading = neutralizeControlChars(String(entry.title ?? ""));
   return `${fm}
 
-# ${entry.title}
+# ${heading}
 
 ${trimmedBody}
 `;
@@ -14768,8 +14776,8 @@ function setFrontmatterField(md, key, value) {
   const m = md.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
   if (!m) return md;
   const [whole, open, fm, close] = m;
-  const line = new RegExp(`^${key}: .*$`, "m");
-  const patched = line.test(fm) ? fm.replace(line, `${key}: ${value}`) : `${fm}
+  const line3 = new RegExp(`^${key}: .*$`, "m");
+  const patched = line3.test(fm) ? fm.replace(line3, `${key}: ${value}`) : `${fm}
 ${key}: ${value}`;
   return `${open}${patched}${close}${md.slice(whole.length)}`;
 }
@@ -15007,11 +15015,13 @@ function parseMemoryMarkdown(md) {
   md = md.replace(/\r\n/g, "\n");
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
-  const fm = {};
-  for (const line of m[1].split("\n")) {
-    const i2 = line.indexOf(":");
+  const fm = /* @__PURE__ */ Object.create(null);
+  for (const line3 of m[1].split("\n")) {
+    const i2 = line3.indexOf(":");
     if (i2 === -1) continue;
-    fm[line.slice(0, i2).trim()] = line.slice(i2 + 1).trim();
+    const key = line3.slice(0, i2).trim();
+    if (key in fm) continue;
+    fm[key] = line3.slice(i2 + 1).trim();
   }
   if (!fm.id || !fm.type) return null;
   const scope = fm.scope;
@@ -15580,7 +15590,8 @@ async function memoryQueryCmd(opts) {
   }));
   const semanticAll = byType("semantic");
   const isTrusted = (s) => (s.entry.trust ?? "unknown") === "trusted";
-  const coldStorage = runColdPass({
+  const cwdUnresolved = project === null;
+  const coldStorage = cwdUnresolved ? [] : runColdPass({
     entries: view.entries,
     scored,
     query: scoreQuery,
@@ -15599,7 +15610,7 @@ async function memoryQueryCmd(opts) {
     meta: { total: scored.length, project }
   };
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
-  for (const line of renderColdHints(coldStorage)) console.error(line);
+  for (const line3 of renderColdHints(coldStorage)) console.error(line3);
   if ((opts.q ?? "").trim() !== "") {
     try {
       const bumpIds = scored.filter((s) => Number.isFinite(s.score) && isContentHit(s)).slice(0, BUMP_TOP_N).map((s) => s.entry.id);
@@ -15757,27 +15768,30 @@ function nullable2(v) {
 function req2(v, fallback) {
   return v == null || v === "" ? fallback : String(v);
 }
+function line(key, value) {
+  return `${key}: ${neutralizeControlChars(value)}`;
+}
 function renderEntityMarkdown(entry, body) {
   const fm = [
     "---",
-    `id: ${entry.id}`,
-    `kind: ${entry.kind}`,
-    `scope: ${entry.scope}`,
-    `project: ${nullable2(entry.project)}`,
-    `title: ${entry.title}`,
-    `aliases: ${arr2(entry.aliases)}`,
-    `sourceMemoryIds: ${arr2(entry.sourceMemoryIds)}`,
-    `sourceSessions: ${arr2(entry.sourceSessions)}`,
-    `sourceFiles: ${arr2(entry.sourceFiles)}`,
-    `relatedEntities: ${arr2(entry.relatedEntities)}`,
-    `createdAt: ${req2(entry.createdAt, "")}`,
-    `updatedAt: ${req2(entry.updatedAt, "")}`,
+    line("id", String(entry.id)),
+    line("kind", String(entry.kind)),
+    line("scope", String(entry.scope)),
+    line("project", nullable2(entry.project)),
+    line("title", String(entry.title ?? "")),
+    line("aliases", arr2(entry.aliases)),
+    line("sourceMemoryIds", arr2(entry.sourceMemoryIds)),
+    line("sourceSessions", arr2(entry.sourceSessions)),
+    line("sourceFiles", arr2(entry.sourceFiles)),
+    line("relatedEntities", arr2(entry.relatedEntities)),
+    line("createdAt", req2(entry.createdAt, "")),
+    line("updatedAt", req2(entry.updatedAt, "")),
     "---"
   ].join("\n");
   const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
   return `${fm}
 
-# ${entry.title}
+# ${neutralizeControlChars(String(entry.title ?? ""))}
 
 ${trimmedBody}
 `;
@@ -15785,6 +15799,7 @@ ${trimmedBody}
 var init_render2 = __esm({
   "src/entity/render.ts"() {
     "use strict";
+    init_gate();
   }
 });
 
@@ -15875,11 +15890,13 @@ function parseEntityMarkdown(md) {
   md = md.replace(/\r\n/g, "\n");
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
-  const fm = {};
-  for (const line of m[1].split("\n")) {
-    const i2 = line.indexOf(":");
+  const fm = /* @__PURE__ */ Object.create(null);
+  for (const line3 of m[1].split("\n")) {
+    const i2 = line3.indexOf(":");
     if (i2 === -1) continue;
-    fm[line.slice(0, i2).trim()] = line.slice(i2 + 1).trim();
+    const key = line3.slice(0, i2).trim();
+    if (key in fm) continue;
+    fm[key] = line3.slice(i2 + 1).trim();
   }
   if (!fm.id || !fm.kind) return null;
   return {
@@ -16125,28 +16142,31 @@ function arr3(xs) {
 function req3(v, fallback) {
   return v == null || v === "" ? fallback : String(v);
 }
+function line2(key, value) {
+  return `${key}: ${neutralizeControlChars(value)}`;
+}
 function renderQaMarkdown(entry, body) {
   const fm = [
     "---",
-    `id: ${entry.id}`,
-    `scope: ${entry.scope}`,
-    `project: ${entry.project == null ? "null" : JSON.stringify(entry.project)}`,
-    `question: ${JSON.stringify(entry.question)}`,
-    `answerSummary: ${JSON.stringify(entry.answerSummary)}`,
-    `kind: ${entry.kind}`,
-    `tags: ${arr3(entry.tags)}`,
-    `sources: ${arr3(entry.sources)}`,
-    `sourceMemoryIds: ${arr3(entry.sourceMemoryIds)}`,
-    `sourceSessions: ${arr3(entry.sourceSessions)}`,
-    `relatedEntities: ${arr3(entry.relatedEntities)}`,
-    `createdAt: ${req3(entry.createdAt, "")}`,
-    `updatedAt: ${req3(entry.updatedAt, "")}`,
+    line2("id", String(entry.id)),
+    line2("scope", String(entry.scope)),
+    line2("project", entry.project == null ? "null" : JSON.stringify(entry.project)),
+    line2("question", JSON.stringify(entry.question ?? "")),
+    line2("answerSummary", JSON.stringify(entry.answerSummary ?? "")),
+    line2("kind", String(entry.kind)),
+    line2("tags", arr3(entry.tags)),
+    line2("sources", arr3(entry.sources)),
+    line2("sourceMemoryIds", arr3(entry.sourceMemoryIds)),
+    line2("sourceSessions", arr3(entry.sourceSessions)),
+    line2("relatedEntities", arr3(entry.relatedEntities)),
+    line2("createdAt", req3(entry.createdAt, "")),
+    line2("updatedAt", req3(entry.updatedAt, "")),
     "---"
   ].join("\n");
   const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
   return `${fm}
 
-# ${entry.question}
+# ${neutralizeControlChars(String(entry.question ?? ""))}
 
 ${trimmedBody}
 `;
@@ -16154,6 +16174,7 @@ ${trimmedBody}
 var init_render3 = __esm({
   "src/qa/render.ts"() {
     "use strict";
+    init_gate();
   }
 });
 
@@ -16335,11 +16356,13 @@ function parseQaMarkdown(md) {
   md = md.replace(/\r\n/g, "\n");
   const m = md.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
-  const fm = {};
-  for (const line of m[1].split("\n")) {
-    const i2 = line.indexOf(":");
+  const fm = /* @__PURE__ */ Object.create(null);
+  for (const line3 of m[1].split("\n")) {
+    const i2 = line3.indexOf(":");
     if (i2 === -1) continue;
-    fm[line.slice(0, i2).trim()] = line.slice(i2 + 1).trim();
+    const key = line3.slice(0, i2).trim();
+    if (key in fm) continue;
+    fm[key] = line3.slice(i2 + 1).trim();
   }
   if (!fm.id || !fm.kind) return null;
   return {
@@ -17727,7 +17750,7 @@ function buildRecallPayload(opts = {}) {
   const query = (opts.q ?? "").trim();
   const scoreQuery = { project: projectFilter, text: query, type: null, now };
   const scored = scoreMemories(entries, scoreQuery);
-  const coldStorage = runColdPass({ entries: view.entries, scored, query: scoreQuery, sources: view.sources });
+  const coldStorage = cwdUnresolved ? [] : runColdPass({ entries: view.entries, scored, query: scoreQuery, sources: view.sources });
   const limit = opts.limit && opts.limit > 0 ? opts.limit : DEFAULT_LIMIT;
   const hits = scored.slice(0, limit).map((s) => ({
     id: s.entry.id,
@@ -17764,7 +17787,7 @@ function buildRecallPayload(opts = {}) {
 async function recallCmd(opts) {
   const payload = buildRecallPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
-  for (const line of renderColdHints(payload.coldStorage)) console.error(line);
+  for (const line3 of renderColdHints(payload.coldStorage)) console.error(line3);
   if (payload.query !== "") {
     try {
       const bumpIds = payload.entries.filter((h2) => Number.isFinite(h2.score) && isContentHitReason(h2.whyRecalled)).slice(0, BUMP_TOP_N2).map((h2) => h2.id);
@@ -17994,10 +18017,10 @@ function parseClaudeJsonl(sourcePath, content) {
   let cwd = "";
   let startedAt = "";
   let endedAt = "";
-  for (const line of lines) {
+  for (const line3 of lines) {
     let obj;
     try {
-      obj = JSON.parse(line);
+      obj = JSON.parse(line3);
     } catch {
       continue;
     }
@@ -18200,8 +18223,8 @@ function parseCopilotChatSessionsJsonl(sourcePath, content, workspacePath) {
   let sessionId = fileBase;
   const turns = [];
   const lines = content.split("\n");
-  for (const line of lines) {
-    const s = line.trim();
+  for (const line3 of lines) {
+    const s = line3.trim();
     if (!s) continue;
     let obj;
     try {
@@ -18329,8 +18352,8 @@ function parseCopilotTranscript(sourcePath, content, workspacePath) {
   let startedAt = "";
   let endedAt = "";
   const lines = content.split("\n");
-  for (const line of lines) {
-    const s = line.trim();
+  for (const line3 of lines) {
+    const s = line3.trim();
     if (!s) continue;
     let obj;
     try {
@@ -18482,11 +18505,11 @@ function extractManifest(messages, messageLineOffsets) {
   let assistant_turns = 0;
   for (let i2 = 0; i2 < messages.length; i2++) {
     const m = messages[i2];
-    const line = messageLineOffsets[i2] ?? 0;
+    const line3 = messageLineOffsets[i2] ?? 0;
     if (m.role === "user") user_turns++;
     else if (m.role === "assistant") assistant_turns++;
     if (m.role === "user" && m.text && DECISION_RE.test(m.text) && candidate_decisions.length < DECISIONS_CAP) {
-      candidate_decisions.push({ line, preview: previewOf(m.text, 100) });
+      candidate_decisions.push({ line: line3, preview: previewOf(m.text, 100) });
     }
     for (const b2 of m.contentBlocks ?? []) {
       if (b2.type !== "tool_use") continue;
@@ -18502,10 +18525,10 @@ function extractManifest(messages, messageLineOffsets) {
         const cmd = readBashCommand(b2);
         if (cmd) {
           const c3 = parseCommit(cmd);
-          if (c3) commits.push({ ...c3, line });
+          if (c3) commits.push({ ...c3, line: line3 });
           else {
             const t2 = parseTag(cmd);
-            if (t2) commits.push({ ...t2, line });
+            if (t2) commits.push({ ...t2, line: line3 });
           }
         }
       }
