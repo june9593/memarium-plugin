@@ -14511,6 +14511,26 @@ function identLine(key, value) {
 function valueLine(key, value) {
   return `${key}: ${neutralizeControlChars(value)}`;
 }
+function normalizeMemoryEntryForWrite(entry) {
+  const e = entry;
+  for (const k2 of MEMORY_IDENT_FIELDS) {
+    const v = e[k2];
+    if (typeof v === "string" && hasControlChars(v)) {
+      throw new Error(
+        `memory write: refusing to persist ${k2} containing a control character \u2014 it would forge extra frontmatter lines (${JSON.stringify(v)})`
+      );
+    }
+  }
+  for (const k2 of MEMORY_VALUE_FIELDS) {
+    const v = e[k2];
+    if (typeof v === "string") e[k2] = neutralizeControlChars(v);
+  }
+  for (const k2 of MEMORY_ARRAY_FIELDS) {
+    const v = e[k2];
+    if (Array.isArray(v)) e[k2] = v.map((x2) => typeof x2 === "string" ? neutralizeControlChars(x2) : x2);
+  }
+  return entry;
+}
 function renderMemoryMarkdown(entry, body) {
   const fm = [
     "---",
@@ -14547,10 +14567,26 @@ function renderMemoryMarkdown(entry, body) {
 ${trimmedBody}
 `;
 }
+var MEMORY_IDENT_FIELDS, MEMORY_VALUE_FIELDS, MEMORY_ARRAY_FIELDS;
 var init_render = __esm({
   "src/memory/render.ts"() {
     "use strict";
     init_gate();
+    MEMORY_IDENT_FIELDS = ["id", "type", "scope", "status", "project"];
+    MEMORY_VALUE_FIELDS = [
+      "title",
+      "summary",
+      "createdAt",
+      "updatedAt",
+      "validFrom",
+      "validTo",
+      "supersedes",
+      "originDevice",
+      "archivedAt",
+      "archivedReason",
+      "trust"
+    ];
+    MEMORY_ARRAY_FIELDS = ["sourceSessions", "sourceCommits", "sourceFiles", "entities"];
   }
 });
 
@@ -14730,6 +14766,7 @@ function assertWritableMemoryTarget(repoPath, entry) {
   return canonical;
 }
 function writeMemoryEntryFile(repoPath, entry) {
+  normalizeMemoryEntryForWrite(entry);
   const canonical = assertWritableMemoryTarget(repoPath, entry);
   const abs = resolve2(join14(repoPath, canonical));
   const body = readMemoryBody(abs, { id: entry.id, type: entry.type });
@@ -14799,6 +14836,7 @@ function applyMemoryItems(repoPath, items) {
   const willExist = { ...idx.entries };
   const planned = [];
   for (const { entry, body } of items) {
+    normalizeMemoryEntryForWrite(entry);
     const canonical = canonicalMemoryPath(entry);
     if (entry.path && normalizeRel(entry.path) !== canonical) {
       throw new Error(
@@ -14912,6 +14950,7 @@ function applyMemoryItems(repoPath, items) {
         }
       }
       mkdirSync8(dirname4(abs), { recursive: true });
+      normalizeMemoryEntryForWrite(entry);
       writeFileSync7(abs, renderMemoryMarkdown(entry, body));
       upsertMemory(idx, entry);
       written++;
@@ -14984,8 +15023,18 @@ var init_memory_write = __esm({
 
 // src/_shared/frontmatter.ts
 function readFrontmatterBlock(md) {
-  const m = md.replace(/\r\n/g, "\n").match(/^---\n([\s\S]*?)\n---/);
+  const text = md.replace(/\r\n/g, "\n");
+  const m = text.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
+  const lines = text.split("\n");
+  const close = 1 + m[1].split("\n").length;
+  const headingIdx = lines.findIndex((l) => H1_LINE.test(l));
+  if (headingIdx !== -1) {
+    let delimiters = 0;
+    for (let i2 = 1; i2 < headingIdx; i2++) if (lines[i2] === "---") delimiters++;
+    if (delimiters !== 1) return null;
+    if (lines[close] !== "---" || lines[close + 1] !== "" || headingIdx !== close + 2) return null;
+  }
   const fm = /* @__PURE__ */ Object.create(null);
   for (const line3 of m[1].split("\n")) {
     const i2 = line3.indexOf(":");
@@ -14996,9 +15045,11 @@ function readFrontmatterBlock(md) {
   }
   return fm;
 }
+var H1_LINE;
 var init_frontmatter = __esm({
   "src/_shared/frontmatter.ts"() {
     "use strict";
+    H1_LINE = /^#(?: |$)/;
   }
 });
 
@@ -15787,6 +15838,14 @@ function req2(v, fallback) {
 function line(key, value) {
   return `${key}: ${neutralizeControlChars(value)}`;
 }
+function normalizeEntityPageForWrite(entry) {
+  const e = entry;
+  for (const k2 of ENTITY_SCALAR_FIELDS) {
+    const v = e[k2];
+    if (typeof v === "string") e[k2] = neutralizeControlChars(v);
+  }
+  return entry;
+}
 function renderEntityMarkdown(entry, body) {
   const fm = [
     "---",
@@ -15812,10 +15871,12 @@ function renderEntityMarkdown(entry, body) {
 ${trimmedBody}
 `;
 }
+var ENTITY_SCALAR_FIELDS;
 var init_render2 = __esm({
   "src/entity/render.ts"() {
     "use strict";
     init_gate();
+    ENTITY_SCALAR_FIELDS = ["id", "kind", "scope", "project", "title", "createdAt", "updatedAt"];
   }
 });
 
@@ -15849,6 +15910,7 @@ async function entityWriteCmd(opts) {
     for (const k2 of ["aliases", "sourceMemoryIds", "sourceSessions", "sourceFiles", "relatedEntities"]) {
       if (!Array.isArray(entry[k2])) entry[k2] = [];
     }
+    normalizeEntityPageForWrite(entry);
     if (!entry.path) entry.path = entityPath(entry);
     const entRoot = resolve4(join17(cfg.repoPath, "memory", "entities"));
     mkdirSync10(entRoot, { recursive: true });
@@ -16157,6 +16219,14 @@ function req3(v, fallback) {
 function line2(key, value) {
   return `${key}: ${neutralizeControlChars(value)}`;
 }
+function normalizeQaEntryForWrite(entry) {
+  const e = entry;
+  for (const k2 of QA_SCALAR_FIELDS) {
+    const v = e[k2];
+    if (typeof v === "string") e[k2] = neutralizeControlChars(v);
+  }
+  return entry;
+}
 function renderQaMarkdown(entry, body) {
   const fm = [
     "---",
@@ -16183,10 +16253,12 @@ function renderQaMarkdown(entry, body) {
 ${trimmedBody}
 `;
 }
+var QA_SCALAR_FIELDS;
 var init_render3 = __esm({
   "src/qa/render.ts"() {
     "use strict";
     init_gate();
+    QA_SCALAR_FIELDS = ["id", "scope", "kind", "createdAt", "updatedAt"];
   }
 });
 
@@ -16277,6 +16349,7 @@ async function qaWriteCmd(opts) {
     }
     entry.id = qaId(entry.scope, entry.project, entry.question);
     entry.path = qaPath(entry);
+    normalizeQaEntryForWrite(entry);
     const qaRoot = resolve6(join20(cfg.repoPath, "memory", "qa"));
     const abs = resolve6(join20(cfg.repoPath, entry.path));
     assertNoSymlinkedComponent(cfg.repoPath, dirname6(abs), "qa-write");
@@ -16596,7 +16669,7 @@ function nearDuplicatePairs(entries, threshold = 0.8, candidateStatuses = /* @__
   for (const e of candidates) {
     const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
     const arr4 = buckets.get(key) ?? [];
-    arr4.push({ e, tokens: tokenize4(`${e.title} ${e.summary}`) });
+    arr4.push({ e, tokens: tokenize4(`${textOf(e.title)} ${textOf(e.summary)}`) });
     buckets.set(key, arr4);
   }
   const pairs = [];
@@ -16869,13 +16942,14 @@ ${e.summary}`)) {
     suggestions
   };
 }
-var tokenize4, jaccard, daysBetween;
+var tokenize4, textOf, jaccard, daysBetween;
 var init_lint = __esm({
   "src/memory/lint.ts"() {
     "use strict";
     init_leak_scan();
     init_dates();
     tokenize4 = (s) => new Set(s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1));
+    textOf = (v) => typeof v === "string" ? v : "";
     jaccard = (a, b2) => {
       if (a.size === 0 && b2.size === 0) return 0;
       let inter = 0;
