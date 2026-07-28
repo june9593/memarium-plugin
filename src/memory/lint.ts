@@ -96,6 +96,28 @@ const jaccard = (a: Set<string>, b: Set<string>): number => {
 const daysBetween = (a: string, b: string): number =>
   (Date.parse(a) - Date.parse(b)) / 86400000;
 
+/** One near-duplicate pair, WITH the score that produced it. */
+export interface NearDuplicatePair {
+  /** lexicographically first id of the pair */
+  a: string;
+  /** lexicographically second id */
+  b: string;
+  /** The Jaccard overlap that CAUSED this pair — the single source of truth for
+   *  "how similar are these two".
+   *
+   *  ROUND-39: lint's `duplicate-like` finding used to RECOMPUTE this for its
+   *  detail string, tokenizing `` `${e.title} ${e.summary}` `` directly. That is
+   *  the very template-literal COERCION round-36 removed from the matcher: the
+   *  matcher type-guards both fields and treats a non-string as EMPTY, the detail
+   *  did not. So for any pair involving a malformed row the REPORTED overlap was
+   *  not the overlap the decision was made on — it could report a plausible 0.50
+   *  for a pair the matcher had scored 1.00 on the guarded (string-only) text, or
+   *  a healthy-looking number for text the matcher saw as empty. Returning the
+   *  decision's own score deletes the second implementation outright, so the two
+   *  cannot drift again. */
+  similarity: number;
+}
+
 /** Near-duplicate pairs by Jaccard over title+summary content tokens ≥ threshold.
  *  Pure + shared by lint (the `duplicate-like` check) and the archival engine.
  *  `candidateStatuses` selects which statuses count as duplicate candidates —
@@ -104,14 +126,14 @@ const daysBetween = (a: string, b: string): number =>
  *  active dup then gets archived); pinned is never a loser because archive.ts's
  *  archivable() guard rejects it. Only compares within the same type/scope/project
  *  bucket (so a semantic and a procedural memory are never reported as duplicates).
- *  Each returned pair is lexicographically sorted ([idA, idB] with idA < idB);
- *  order across pairs follows bucket/insertion order. Malformed pairs are skipped
- *  defensively. */
+ *  Each returned pair is lexicographically sorted (`a` < `b`) and carries its own
+ *  `similarity`; order across pairs follows bucket/insertion order. Malformed
+ *  pairs are skipped defensively. */
 export function nearDuplicatePairs(
   entries: MemoryEntry[],
   threshold = 0.8,
   candidateStatuses: ReadonlySet<MemoryEntry["status"]> = new Set(["active"]),
-): [string, string][] {
+): NearDuplicatePair[] {
   const candidates = entries.filter((e) => candidateStatuses.has(e.status));
   const buckets = new Map<string, { e: MemoryEntry; tokens: Set<string> }[]>();
   for (const e of candidates) {
@@ -134,14 +156,15 @@ export function nearDuplicatePairs(
     arr.push({ e, tokens: tokenize(`${textOf(e.title)} ${textOf(e.summary)}`) });
     buckets.set(key, arr);
   }
-  const pairs: [string, string][] = [];
+  const pairs: NearDuplicatePair[] = [];
   for (const group of buckets.values()) {
     for (let i = 0; i < group.length; i++) {
       for (let j = i + 1; j < group.length; j++) {
         try {
-          if (jaccard(group[i].tokens, group[j].tokens) >= threshold) {
-            const pair = [group[i].e.id, group[j].e.id].slice().sort() as [string, string];
-            pairs.push(pair);
+          const similarity = jaccard(group[i].tokens, group[j].tokens);
+          if (similarity >= threshold) {
+            const [a, b] = [group[i].e.id, group[j].e.id].slice().sort() as [string, string];
+            pairs.push({ a, b, similarity });
           }
         } catch { /* defensive: skip malformed pair */ }
       }
@@ -238,12 +261,12 @@ export function lintMemory(
 
   const dupThreshold = opts.dupThreshold ?? 0.6;
   const active = memEntries.filter((e) => e.status === "active");
-  const tokensById = new Map(active.map((e) => [e.id, tokenize(`${e.title} ${e.summary}`)] as const));
-  for (const [id0, id1] of nearDuplicatePairs(active, dupThreshold)) {
-    const ta = tokensById.get(id0), tb = tokensById.get(id1);
-    const sim = ta && tb ? jaccard(ta, tb) : NaN;
+  // Round-39: the reported overlap is the matcher's OWN score, not a second
+  // computation over raw (uncoerced, unguarded) title/summary — see
+  // `NearDuplicatePair.similarity`.
+  for (const { a: id0, b: id1, similarity } of nearDuplicatePairs(active, dupThreshold)) {
     issues.push({ check: "duplicate-like", severity: "info", layer: "memory",
-      id: id0, detail: `near-duplicate of ${id1} (overlap ${sim.toFixed(2)})`, refs: [id0, id1] });
+      id: id0, detail: `near-duplicate of ${id1} (overlap ${similarity.toFixed(2)})`, refs: [id0, id1] });
   }
 
   const entEntries = safeValues<EntityPage>(entityIdx.entries)

@@ -138,7 +138,7 @@ export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: Arch
   // rejects it as a loser), so an active dup of a pinned memory is archived while
   // the pinned one stays hot.
   const byId = new Map(entries.map((e) => [e.id, e]));
-  for (const [a, b] of nearDuplicatePairs(entries, 0.8, new Set(["active", "pinned"]))) {
+  for (const { a, b } of nearDuplicatePairs(entries, 0.8, new Set(["active", "pinned"]))) {
     const ea = byId.get(a), eb = byId.get(b);
     if (!ea || !eb) continue;
     // Round-23: the pair is ranked by importance, so BOTH sides must actually

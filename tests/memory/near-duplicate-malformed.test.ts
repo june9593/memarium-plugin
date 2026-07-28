@@ -26,7 +26,7 @@ describe("nearDuplicatePairs — malformed title/summary (round-36)", () => {
     const healthy = row("semantic/_global/a", "cache", "type array not string");
     const malformed = row("semantic/_global/b", "cache", ["type", "array", "not", "string"]);
 
-    let pairs: [string, string][] = [];
+    let pairs: ReturnType<typeof nearDuplicatePairs> = [];
     expect(() => { pairs = nearDuplicatePairs([healthy, malformed], 0.8); }).not.toThrow();
     // Pre-fix this returned the pair (jaccard 1.0 — identical coerced tokens).
     expect(pairs).toEqual([]);
@@ -35,6 +35,8 @@ describe("nearDuplicatePairs — malformed title/summary (round-36)", () => {
   it("still pairs two genuinely near-duplicate rows (regression lock)", () => {
     const a = row("semantic/_global/a", "cache warmup", "warm the cache on boot");
     const b = row("semantic/_global/b", "cache warmup", "warm the cache on boot");
-    expect(nearDuplicatePairs([a, b], 0.8)).toEqual([["semantic/_global/a", "semantic/_global/b"]]);
+    // Round-39: pairs now carry the similarity that produced them.
+    expect(nearDuplicatePairs([a, b], 0.8))
+      .toEqual([{ a: "semantic/_global/a", b: "semantic/_global/b", similarity: 1 }]);
   });
 });

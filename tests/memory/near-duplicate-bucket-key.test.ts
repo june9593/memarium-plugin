@@ -44,13 +44,16 @@ describe("nearDuplicatePairs — bucket key ambiguity (round-38)", () => {
   it("still pairs two genuinely same-bucket duplicates (regression lock)", () => {
     const x = row("semantic/b c/x", "project:a", "b c");
     const y = row("semantic/b c/y", "project:a", "b c");
-    expect(nearDuplicatePairs([x, y], 0.8)).toEqual([["semantic/b c/x", "semantic/b c/y"]]);
+    // Round-39: pairs now carry the similarity that produced them.
+    expect(nearDuplicatePairs([x, y], 0.8))
+      .toEqual([{ a: "semantic/b c/x", b: "semantic/b c/y", similarity: 1 }]);
   });
 
   it("null project still buckets with an explicit _global project (semantics unchanged)", () => {
     const g1 = { ...row("semantic/_global/g1", "global", null) };
     const g2 = { ...row("semantic/_global/g2", "global", "_global") };
-    expect(nearDuplicatePairs([g1, g2], 0.8)).toEqual([["semantic/_global/g1", "semantic/_global/g2"]]);
+    expect(nearDuplicatePairs([g1, g2], 0.8))
+      .toEqual([{ a: "semantic/_global/g1", b: "semantic/_global/g2", similarity: 1 }]);
   });
 
   it("different types never bucket together (semantics unchanged)", () => {

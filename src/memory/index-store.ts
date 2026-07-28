@@ -1,5 +1,6 @@
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { writeFileAtomicSync } from "../_shared/atomic-write.js";
 import { REPO_DATA_DIR } from "../_shared/repo-data-dir.js";
 import { emptyMemoryIndex, memoryKey, type MemoryEntry, type MemoryIndex } from "./types.js";
 
@@ -60,33 +61,18 @@ export function loadMemoryIndex(repoRoot: string): MemoryIndex {
  *  commands wedge. Worse, the archival commands roll their `.md` rewrites back
  *  when this function throws (see `rollbackMemoryWrites`): that rollback is only
  *  meaningful if the index it leaves in place is the intact PRE-run one, which
- *  is exactly what the rename buys. Same idiom as `usage-store`'s `saveUsage`.
+ *  is exactly what the rename buys.
  *
- *  The temp file is pid-suffixed (two writers can't share, and corrupt, one temp)
- *  and removed best-effort on failure so a failed save leaves no litter in the
- *  synced data dir. */
+ *  The write itself is delegated to `_shared/atomic-write`, which `usage-store`'s
+ *  `saveUsage` now shares (both had drifting copies of the idiom). Round-39: the
+ *  temp file is created EXCLUSIVELY and under a UNIQUE name — `"w"` follows a
+ *  pre-planted SYMLINK and truncates its target, and a deterministic
+ *  `<file>.tmp-<pid>` name is shared by every writer in the process. See that
+ *  module for the full rationale. */
 export function saveMemoryIndex(repoRoot: string, idx: MemoryIndex): void {
   const p = join(repoRoot, MEMORY_INDEX_REL);
-  const dir = dirname(p);
-  mkdirSync(dir, { recursive: true });
-  // Sibling of the target → same filesystem, which is what makes rename atomic
-  // (a cross-device rename would fail with EXDEV instead).
-  const tmp = join(dir, `index.memory.json.tmp-${process.pid}`);
-  try {
-    const fd = openSync(tmp, "w");
-    try {
-      writeFileSync(fd, JSON.stringify(idx, null, 2) + "\n");
-      // Flush BEFORE publishing: with delayed allocation an ENOSPC can surface
-      // only at fsync/close time, and the rename must never publish a short file.
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-    renameSync(tmp, p);
-  } catch (err) {
-    try { rmSync(tmp, { force: true }); } catch { /* best effort — never mask `err` */ }
-    throw err;
-  }
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileAtomicSync(p, JSON.stringify(idx, null, 2) + "\n");
 }
 
 export function upsertMemory(idx: MemoryIndex, entry: MemoryEntry): void {
