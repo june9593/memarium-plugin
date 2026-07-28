@@ -74,6 +74,18 @@ function inScope(scope: unknown, cwdProject: string | null): boolean {
 const tokenize = (s: string): Set<string> =>
   new Set(s.toLowerCase().split(/[^a-z0-9_]+/).filter((t) => t.length > 1));
 
+/** Round-36: `title` / `summary` are UNTRUSTED index values and are NOT
+ *  guaranteed to be strings — an index row can carry `summary: ["type","array",
+ *  "not","string"]` (hand-edited JSON, a merge from another device, a legacy
+ *  writer). Interpolating that into a template COERCES it — `String(["a","b"])`
+ *  is `"a,b"` — so a malformed row tokenized exactly like healthy prose and could
+ *  pair as a near-duplicate, which the archival pass then acts on by ARCHIVING
+ *  the losing side. The `try` around the comparison never fired: coercion does
+ *  not throw. So validate the type instead of relying on it: a non-string
+ *  contributes NOTHING to the token set (and a row with neither field a string
+ *  ends up with an empty set, which `jaccard` scores 0 against everything). */
+const textOf = (v: unknown): string => (typeof v === "string" ? v : "");
+
 const jaccard = (a: Set<string>, b: Set<string>): number => {
   if (a.size === 0 && b.size === 0) return 0;
   let inter = 0;
@@ -105,7 +117,7 @@ export function nearDuplicatePairs(
   for (const e of candidates) {
     const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
     const arr = buckets.get(key) ?? [];
-    arr.push({ e, tokens: tokenize(`${e.title} ${e.summary}`) });
+    arr.push({ e, tokens: tokenize(`${textOf(e.title)} ${textOf(e.summary)}`) });
     buckets.set(key, arr);
   }
   const pairs: [string, string][] = [];

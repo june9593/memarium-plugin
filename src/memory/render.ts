@@ -107,6 +107,66 @@ function valueLine(key: string, value: string): string {
   return `${key}: ${neutralizeControlChars(value)}`;
 }
 
+/**
+ * Normalize an entry AT THE WRITE BOUNDARY, so the INDEX row and the rendered
+ * `.md` carry the SAME bytes.
+ *
+ * SECURITY (round-36) — the architectural half of the round-32/34 fix. Those
+ * rounds hardened the SERIALIZER: `identLine` refuses a control character,
+ * `valueLine` neutralizes it. That stops the injection, but it made the two
+ * stores DISAGREE, because every write sink persists the ORIGINAL entry object to
+ * the index and only the RENDERER saw the normalized value. `title: "a\nb"`
+ * therefore rendered (and parsed back) as `a b` while `index.memory.json` kept
+ * `a\nb` — so the live index and a rebuild-from-md disagree, recall and lint
+ * score a value the file does not contain, and cross-device resolution compares
+ * two different strings for the same field.
+ *
+ * The fix is to normalize ONCE, HERE, and hand the SAME object to both stores.
+ * The renderer's own refuse/neutralize stays as a defense-in-depth backstop for
+ * any caller that skips this (it must never be the ONLY place normalization
+ * happens again).
+ *
+ * Mutates in place and returns the entry: the write sinks already mutate the
+ * entry they persist (`entry.path`, the lifecycle/`updatedAt` normalization in
+ * apply.ts), and mutating is what guarantees the index and the renderer cannot
+ * be handed different objects.
+ *
+ * The field split MIRRORS the renderer exactly:
+ *   • identifier scalars → THROW (same class as `identLine`, established in
+ *     rounds 31/32: schema-constrained, so a control character is corruption);
+ *   • every other one-line scalar, and every ARRAY ELEMENT (they are joined onto
+ *     ONE line by `arr()`) → NEUTRALIZE, same as `valueLine`.
+ * Numerics are not strings and cannot forge a line.
+ */
+const MEMORY_IDENT_FIELDS = ["id", "type", "scope", "status", "project"] as const;
+const MEMORY_VALUE_FIELDS = [
+  "title", "summary", "createdAt", "updatedAt", "validFrom", "validTo",
+  "supersedes", "originDevice", "archivedAt", "archivedReason", "trust",
+] as const;
+const MEMORY_ARRAY_FIELDS = ["sourceSessions", "sourceCommits", "sourceFiles", "entities"] as const;
+
+export function normalizeMemoryEntryForWrite(entry: MemoryEntry): MemoryEntry {
+  const e = entry as unknown as Record<string, unknown>;
+  for (const k of MEMORY_IDENT_FIELDS) {
+    const v = e[k];
+    if (typeof v === "string" && hasControlChars(v)) {
+      throw new Error(
+        `memory write: refusing to persist ${k} containing a control character — ` +
+        `it would forge extra frontmatter lines (${JSON.stringify(v)})`,
+      );
+    }
+  }
+  for (const k of MEMORY_VALUE_FIELDS) {
+    const v = e[k];
+    if (typeof v === "string") e[k] = neutralizeControlChars(v);
+  }
+  for (const k of MEMORY_ARRAY_FIELDS) {
+    const v = e[k];
+    if (Array.isArray(v)) e[k] = v.map((x) => (typeof x === "string" ? neutralizeControlChars(x) : x));
+  }
+  return entry;
+}
+
 /** Render a memory .md = YAML frontmatter (from the structured entry) + body.
  *  Tolerates missing optional fields: authored entries (memory-write / propose)
  *  routinely omit summary / supersedes / validFrom / validTo / originDevice /

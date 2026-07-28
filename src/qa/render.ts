@@ -25,6 +25,36 @@ function line(key: string, value: string): string {
   return `${key}: ${neutralizeControlChars(value)}`;
 }
 
+/**
+ * Normalize an entry AT THE WRITE BOUNDARY, so the INDEX row and the rendered
+ * `.md` carry the SAME bytes. See the long note on
+ * `normalizeMemoryEntryForWrite` — same round-36 flaw, same fix.
+ *
+ * Only the RAW scalars are listed. `question` / `answerSummary` / `project` and
+ * every array are JSON-encoded by the renderer, so a control character survives
+ * as a `\n` ESCAPE and round-trips EXACTLY — normalizing those would introduce
+ * the very disagreement this function exists to remove. (`question` is separately
+ * collapsed to one line by `normalizeSingleLine` in qa-write, before the id is
+ * derived from it.)
+ *
+ * The field that actually diverged is `updatedAt`: qa-write only checks its
+ * `YYYY-MM-DD` PREFIX, so `"2026-06-11\nid: forged"` passed the date check,
+ * rendered as `2026-06-11 id: forged`, and stayed newline-bearing in the index.
+ * `id` doubles as the INDEX KEY (`qaKey`) and the filename slug, so it is
+ * normalized here too even though `qaId` already derives it from a
+ * single-lined question.
+ */
+const QA_SCALAR_FIELDS = ["id", "scope", "kind", "createdAt", "updatedAt"] as const;
+
+export function normalizeQaEntryForWrite(entry: QaEntry): QaEntry {
+  const e = entry as unknown as Record<string, unknown>;
+  for (const k of QA_SCALAR_FIELDS) {
+    const v = e[k];
+    if (typeof v === "string") e[k] = neutralizeControlChars(v);
+  }
+  return entry;
+}
+
 /** Render a qa page .md = YAML frontmatter (from the structured entry) + verbatim body.
  *  `question` / `answerSummary` MUST already be single-line (see qa/id.ts).
  *  The frontmatter block is built from `line()` and nothing else — do not add a

@@ -2,7 +2,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFile
 import { dirname, join, resolve, sep } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadQaIndex, saveQaIndex, upsertQa } from "../qa/index-store.js";
-import { renderQaMarkdown } from "../qa/render.js";
+import { renderQaMarkdown, normalizeQaEntryForWrite } from "../qa/render.js";
 import { normalizeSingleLine, qaId } from "../qa/id.js";
 import type { QaEntry } from "../qa/types.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
@@ -87,6 +87,13 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
     // regardless of the payload.
     entry.id = qaId(entry.scope, entry.project, entry.question);
     entry.path = qaPath(entry);
+
+    // Round-36: normalize at the WRITE BOUNDARY. Runs AFTER the date backfill
+    // (which only prefix-checks `YYYY-MM-DD`, so `"2026-06-11\nid: forged"` gets
+    // through it) and after id/path derivation from the already-single-lined
+    // question — so the index KEY, the stored `id`, the file name and every
+    // rendered frontmatter line hold the same bytes.
+    normalizeQaEntryForWrite(entry);
 
     const qaRoot = resolve(join(cfg.repoPath, "memory", "qa"));
     const abs = resolve(join(cfg.repoPath, entry.path));

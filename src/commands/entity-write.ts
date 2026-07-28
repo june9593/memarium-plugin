@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join, resolve, sep } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadEntityIndex, saveEntityIndex, upsertEntity } from "../entity/index-store.js";
-import { renderEntityMarkdown } from "../entity/render.js";
+import { renderEntityMarkdown, normalizeEntityPageForWrite } from "../entity/render.js";
 import type { EntityPage } from "../entity/types.js";
 
 export interface EntityWriteOptions { inputPath?: string; }
@@ -41,6 +41,12 @@ export async function entityWriteCmd(opts: EntityWriteOptions): Promise<EntityWr
     for (const k of ["aliases", "sourceMemoryIds", "sourceSessions", "sourceFiles", "relatedEntities"] as const) {
       if (!Array.isArray(entry[k])) entry[k] = [];
     }
+
+    // Round-36: normalize at the WRITE BOUNDARY — BEFORE `entityPath` derives the
+    // filename slug from `id` and before `upsertEntity` keys the index by it, so
+    // the index KEY, the stored `id`, the file name and the rendered frontmatter
+    // cannot disagree. The renderer's own neutralize stays as a backstop.
+    normalizeEntityPageForWrite(entry);
 
     if (!entry.path) entry.path = entityPath(entry);
 

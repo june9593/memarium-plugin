@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "./index-store.js";
-import { renderMemoryMarkdown } from "./render.js";
+import { renderMemoryMarkdown, normalizeMemoryEntryForWrite } from "./render.js";
 import { canonicalMemoryPath, isWritableMemoryId, isSafePathSegment, supersedesId } from "./gate.js";
 import { calendarDate } from "./dates.js";
 import { assertNoBlockingLeak } from "./leak-scan.js";
@@ -300,6 +300,10 @@ export function assertWritableMemoryTarget(repoPath: string, entry: MemoryEntry)
  *  status, but it would silently un-archive a caller-set status:"archived". The
  *  caller owns the entry's fields here; we only persist them faithfully. */
 export function writeMemoryEntryFile(repoPath: string, entry: MemoryEntry): void {
+  // Round-36: normalize BEFORE the canonical path is derived and before the
+  // renderer runs, so the caller's entry — which it also persists to the index —
+  // holds exactly the values that land in the .md.
+  normalizeMemoryEntryForWrite(entry);
   const canonical = assertWritableMemoryTarget(repoPath, entry);
   const abs = resolve(join(repoPath, canonical));
   const body = readMemoryBody(abs, { id: entry.id, type: entry.type }); // strict: throws on a missing/corrupt/foreign .md
@@ -472,6 +476,11 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
   const willExist: Record<string, MemoryEntry> = { ...idx.entries };
   const planned: PlannedItem[] = [];
   for (const { entry, body } of items) {
+    // Round-36: normalize at the WRITE BOUNDARY, before the canonical path is
+    // derived from {type,project,id} — so the path, the index row and the .md all
+    // agree, and an identifier carrying a control character fails HERE, in
+    // preflight, before any file is touched.
+    normalizeMemoryEntryForWrite(entry);
     const canonical = canonicalMemoryPath(entry);
     if (entry.path && normalizeRel(entry.path) !== canonical) {
       throw new Error(
@@ -749,6 +758,12 @@ export function applyMemoryItems(repoPath: string, items: MemoryApplyItem[]): Me
       }
 
       mkdirSync(dirname(abs), { recursive: true });
+      // Round-36, second pass: idempotent, and necessary because the lifecycle
+      // block above can copy values IN from the live index row (`prior.updatedAt`,
+      // `prior.archivedAt`, `prior.archivedReason`) — a legacy row written before
+      // this normalization existed would otherwise re-enter the entry raw, after
+      // the preflight pass already ran. The SAME object then goes to both stores.
+      normalizeMemoryEntryForWrite(entry);
       writeFileSync(abs, renderMemoryMarkdown(entry, body));
       upsertMemory(idx, entry);
       written++;

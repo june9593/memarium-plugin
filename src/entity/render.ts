@@ -34,6 +34,36 @@ function line(key: string, value: string): string {
   return `${key}: ${neutralizeControlChars(value)}`;
 }
 
+/**
+ * Normalize a page AT THE WRITE BOUNDARY, so the INDEX row and the rendered
+ * `.md` carry the SAME bytes. See the long note on
+ * `normalizeMemoryEntryForWrite` — same round-36 flaw, same fix.
+ *
+ * Entity-specific points:
+ *   • `id` DOUBLES AS THE INDEX KEY (`entityKey`) and as the .md filename slug
+ *     (`entity-write`'s `entityPath`), so normalizing it here — BEFORE the path
+ *     is derived and before `upsertEntity` — is what keeps the key, the stored
+ *     `id`, the file name and the rendered `id:` line all in agreement. Leaving
+ *     it raw stored a newline-bearing key while the file said `a b`, so a
+ *     rebuild produced a DIFFERENT key and the entry silently forked in two.
+ *   • Entity ids are NOT refused (unlike memory's): this serializer has always
+ *     neutralized every field, and rounds 31/32 established the throw only for
+ *     the memory identifier scalars. Neutralizing keeps that contract.
+ *   • The ARRAY fields are deliberately untouched — they are JSON-encoded, so a
+ *     control character survives as a `\n` ESCAPE and round-trips EXACTLY.
+ *     Neutralizing them would be the lossy half of this bug in reverse.
+ */
+const ENTITY_SCALAR_FIELDS = ["id", "kind", "scope", "project", "title", "createdAt", "updatedAt"] as const;
+
+export function normalizeEntityPageForWrite(entry: EntityPage): EntityPage {
+  const e = entry as unknown as Record<string, unknown>;
+  for (const k of ENTITY_SCALAR_FIELDS) {
+    const v = e[k];
+    if (typeof v === "string") e[k] = neutralizeControlChars(v);
+  }
+  return entry;
+}
+
 /** Render an entity page .md = YAML frontmatter (from the structured entry) + body.
  *  The frontmatter block is built from `line()` and nothing else — do not add a
  *  raw template literal back into it (round-34). */
