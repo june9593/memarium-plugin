@@ -101,8 +101,13 @@ describe("entityWriteCmd", () => {
     expect(existsSync(mdPath)).toBe(true);
   });
 
-  it("throws on path traversal attempt", async () => {
-    const entry = makeEntry({ path: "../../escape.md" });
+  // Round-38: `path` is always DERIVED, so traversal can no longer be injected
+  // through the payload's `path` (see the "ignores a caller-supplied path" test
+  // below). The remaining caller-controlled path component is `project`, which
+  // `entityPath` uses verbatim as the scope DIRECTORY — so that is the vector
+  // this guard has to catch, and the one this test now exercises.
+  it("throws on path traversal attempt (via project)", async () => {
+    const entry = makeEntry({ project: "../../..", path: "" });
     const input = join(fakeHome, "evil.json");
     writeFileSync(input, JSON.stringify([{ entry, body: "bad" }]));
 
@@ -110,7 +115,25 @@ describe("entityWriteCmd", () => {
     await expect(entityWriteCmd({ inputPath: input }))
       .rejects.toThrow("entity-write: refusing to write outside memory/entities/");
 
+    // `memory/entities/../../../spool-writer.md` resolves to the repo's PARENT
+    // directory — that is the file the guard has to prevent.
+    expect(existsSync(join(repo, "..", "spool-writer.md"))).toBe(false);
+  });
+
+  it("ignores a caller-supplied path — no escape, index keeps the canonical path", async () => {
+    const entry = makeEntry({ path: "../../escape.md" });
+    const input = join(fakeHome, "supplied-path.json");
+    writeFileSync(input, JSON.stringify([{ entry, body: "supplied path is inert" }]));
+
+    const { entityWriteCmd } = await import("../../src/commands/entity-write.js");
+    const report = await entityWriteCmd({ inputPath: input });
+
+    expect(report.paths[0]).toBe("memory/entities/code-demo/spool-writer.md");
     expect(existsSync(join(repo, "../../escape.md"))).toBe(false);
+    expect(existsSync(join(repo, "memory/entities/code-demo/spool-writer.md"))).toBe(true);
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.entity.json"), "utf8"));
+    expect(idx.entries["entity/code-demo/spool-writer"].path)
+      .toBe("memory/entities/code-demo/spool-writer.md");
   });
 
   it("throws when --input JSON not found", async () => {
@@ -137,8 +160,9 @@ describe("entityWriteCmd", () => {
       return;
     }
 
-    // Entry path points through the symlinked subdir
-    const entry = makeEntry({ path: "memory/entities/evil-link/injected.md", project: "code-demo" });
+    // Round-38: the path is derived, so the symlinked dir is reached through the
+    // scope directory (`project`), not through a payload `path`.
+    const entry = makeEntry({ project: "evil-link", id: "entity/code-demo/injected", path: "" });
     const input = join(fakeHome, "symlink-attack.json");
     writeFileSync(input, JSON.stringify([{ entry, body: "injected content" }]));
 

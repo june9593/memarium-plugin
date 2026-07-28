@@ -86,14 +86,23 @@ export async function qaWriteCmd(opts: QaWriteOptions): Promise<QaWriteReport> {
     // This keeps the deterministic-slug + upsert-dedup contract stable
     // regardless of the payload.
     entry.id = qaId(entry.scope, entry.project, entry.question);
-    entry.path = qaPath(entry);
 
     // Round-36: normalize at the WRITE BOUNDARY. Runs AFTER the date backfill
     // (which only prefix-checks `YYYY-MM-DD`, so `"2026-06-11\nid: forged"` gets
-    // through it) and after id/path derivation from the already-single-lined
+    // through it) and after id derivation from the already-single-lined
     // question — so the index KEY, the stored `id`, the file name and every
     // rendered frontmatter line hold the same bytes.
     normalizeQaEntryForWrite(entry);
+
+    // Round-38: the path is derived from the POST-normalization `id`/`project`,
+    // NOT before. Normalization can rewrite either of them, and the path encodes
+    // BOTH (scope directory + id slug) — deriving first would persist a filename
+    // built from bytes the index no longer holds, so a `qa-index` rebuild (which
+    // reads the file it actually finds) would disagree with the live index. Today
+    // `qaId`'s slug and the validated project slug are already control-character
+    // free, so nothing changes; the ORDER is what keeps that true if either
+    // derivation ever loosens. Same fix as entity-write's, same round.
+    entry.path = qaPath(entry);
 
     const qaRoot = resolve(join(cfg.repoPath, "memory", "qa"));
     const abs = resolve(join(cfg.repoPath, entry.path));

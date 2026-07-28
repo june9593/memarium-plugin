@@ -115,7 +115,21 @@ export function nearDuplicatePairs(
   const candidates = entries.filter((e) => candidateStatuses.has(e.status));
   const buckets = new Map<string, { e: MemoryEntry; tokens: Set<string> }[]>();
   for (const e of candidates) {
-    const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
+    // ROUND-38 — the bucket key is STRUCTURAL (JSON-encoded tuple), never a
+    // delimiter-joined string. A space-joined `${type} ${scope} ${project}` is
+    // AMBIGUOUS because scope/project may legitimately CONTAIN SPACES
+    // (`projectSlugFromPath` does not sanitize, so a checkout at
+    // `~/code/my project` yields project `code-my project` — see the same note in
+    // render.ts / gate.ts / apply.ts). `("project:a", "b c")` and
+    // `("project:a b", "c")` then joined to the SAME key, so entries from
+    // DIFFERENT projects were compared as near-duplicates — and this function
+    // feeds `planArchival`, which ARCHIVES the losing side of a pair. A collision
+    // could therefore archive a memory because of an unrelated project's entry.
+    // `JSON.stringify` quotes and escapes each component, so no combination of
+    // values can collide. Bucketing SEMANTICS are unchanged: same type + same
+    // scope + same project bucket together, `_global` still standing in for a
+    // null/absent project.
+    const key = JSON.stringify([e.type, e.scope, e.project ?? "_global"]);
     const arr = buckets.get(key) ?? [];
     arr.push({ e, tokens: tokenize(`${textOf(e.title)} ${textOf(e.summary)}`) });
     buckets.set(key, arr);

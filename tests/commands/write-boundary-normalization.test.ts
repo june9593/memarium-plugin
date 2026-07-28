@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -184,5 +184,107 @@ describe("write-boundary normalization: DEL/C1 in ARRAY elements (round-37)", ()
     expect(fromIndex.tags).toEqual(["t x"]);
     expect(fromIndex.sources).toEqual(fromFile!.sources);  // DEL too
     expect(fromIndex.sources).toEqual(["s y"]);
+  });
+});
+
+/**
+ * ROUND-38 — round 36 moved normalization to the write boundary so the index KEY
+ * and the `.md` agree, but `entity-write` only derived `path` when the payload
+ * did NOT supply one. A caller-supplied `path` therefore still reflected the
+ * PRE-normalization `id`/`project`: the index mapped a normalized id
+ * (`entity/_global/wid get`) to a stale, newline-bearing filename, so an
+ * `entity-index` rebuild — which derives the path from the file it actually
+ * finds — disagreed with the live index, and the indexed path pointed at a file
+ * that is not where the entry says it lives.
+ *
+ * The fix DERIVES the path from the post-normalization entry, always.
+ */
+describe("write-boundary normalization: path derived POST-normalization (round-38)", () => {
+  let home: string, repo: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "vbp-r38-"));
+    vi.stubEnv("HOME", home); vi.resetModules();
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(home, ".memarium"), { recursive: true });
+    writeFileSync(join(home, ".memarium/config.json"), JSON.stringify({
+      repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli" }));
+  });
+  afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
+
+  it("ENTITY: a control-character id plus a supplied path still indexes the CANONICAL path", async () => {
+    const { entityWriteCmd } = await import("../../src/commands/entity-write.js");
+    const { loadEntityIndex } = await import("../../src/entity/index-store.js");
+
+    const input = join(home, "ent.json");
+    // The payload's `path` is the PRE-normalization one (it carries the newline),
+    // which is exactly what a caller that derived it itself would send.
+    writeFileSync(input, JSON.stringify([{
+      entry: { id: "entity/_global/wid\nget", kind: "tool", scope: "global", project: null,
+        title: "Widget", path: "memory/entities/_global/wid\nget.md",
+        createdAt: "2026-07-01", updatedAt: "2026-07-01" },
+      body: "b",
+    }]));
+    const report = await entityWriteCmd({ inputPath: input });
+
+    const idx = loadEntityIndex(repo);
+    const keys = Object.keys(idx.entries);
+    expect(keys).toHaveLength(1);
+    const fromIndex = idx.entries[keys[0]];
+
+    // Canonical path, derived from the NORMALIZED id — pre-fix this was the
+    // supplied, newline-bearing path instead.
+    expect(fromIndex.id).toBe("entity/_global/wid get");
+    expect(fromIndex.path).toBe("memory/entities/_global/wid get.md");
+    expect(report.paths[0]).toBe("memory/entities/_global/wid get.md");
+    // ...and the file really is there (pre-fix it sat at `wid\nget.md`).
+    expect(existsSync(join(repo, fromIndex.path))).toBe(true);
+    expect(existsSync(join(repo, "memory/entities/_global/wid\nget.md"))).toBe(false);
+  });
+
+  it("ENTITY: a normal write with no supplied path is unchanged (regression lock)", async () => {
+    const { entityWriteCmd } = await import("../../src/commands/entity-write.js");
+    const { loadEntityIndex } = await import("../../src/entity/index-store.js");
+
+    const input = join(home, "ent-normal.json");
+    writeFileSync(input, JSON.stringify([{
+      entry: { id: "entity/code-demo/widget", kind: "tool", scope: "project:code-demo",
+        project: "code-demo", title: "Widget", createdAt: "2026-07-01", updatedAt: "2026-07-01" },
+      body: "b",
+    }]));
+    const report = await entityWriteCmd({ inputPath: input });
+
+    expect(report.paths[0]).toBe("memory/entities/code-demo/widget.md");
+    expect(loadEntityIndex(repo).entries["entity/code-demo/widget"].path)
+      .toBe("memory/entities/code-demo/widget.md");
+    expect(existsSync(join(repo, "memory/entities/code-demo/widget.md"))).toBe(true);
+  });
+
+  it("QA: the indexed path is derived from the STORED id/project, and the file is there", async () => {
+    // qa-write always overwrote a supplied path, so the entity defect never
+    // reproduced here — but it derived the path BEFORE normalization. This locks
+    // the ordering invariant: path == canonical(stored id, stored project).
+    const { qaWriteCmd } = await import("../../src/commands/qa-write.js");
+    const { loadQaIndex } = await import("../../src/qa/index-store.js");
+
+    const input = join(home, "qa.json");
+    writeFileSync(input, JSON.stringify([{
+      entry: { id: "ignored", scope: "project:code-demo", project: null, question: "how do I sync?",
+        answerSummary: "run sync", kind: "howto", path: "memory/qa/_global/bogus.md",
+        createdAt: "2026-07-01", updatedAt: "2026-06-11\nid: forged" },
+      body: "b",
+    }]));
+    const report = await qaWriteCmd({ inputPath: input });
+
+    const idx = loadQaIndex(repo);
+    const keys = Object.keys(idx.entries);
+    expect(keys).toHaveLength(1);
+    const fromIndex = idx.entries[keys[0]];
+
+    const scopeDir = fromIndex.project ?? "_global";
+    const slug = fromIndex.id.split("/").pop();
+    expect(fromIndex.path).toBe(`memory/qa/${scopeDir}/${slug}.md`);
+    expect(report.paths[0]).toBe(fromIndex.path);
+    expect(existsSync(join(repo, fromIndex.path))).toBe(true);
   });
 });
