@@ -26,9 +26,10 @@ function req(v: string | null | undefined, fallback: string): string {
  * value — it produces EXTRA FIELDS. Entity titles/ids come out of digested
  * sessions (memory poisoning is in this project's threat model), so a `title`
  * carrying `\nid: entity/other/x` would forge the page's identity. The array
- * fields here are already JSON-quoted (control characters survive as `\n`
- * ESCAPES, which cannot break the line), but they go through the same emitter so
- * the block is provably built from ONE safe primitive.
+ * fields here are JSON-quoted, which escapes C0 (so a NEWLINE survives as a `\n`
+ * ESCAPE and cannot break the line) but NOT DEL/C1 — those arrive raw and are
+ * neutralized here, which is why `normalizeEntityPageForWrite` normalizes array
+ * elements too (round-37). Everything goes through this ONE safe primitive.
  */
 function line(key: string, value: string): string {
   return `${key}: ${neutralizeControlChars(value)}`;
@@ -49,17 +50,31 @@ function line(key: string, value: string): string {
  *   • Entity ids are NOT refused (unlike memory's): this serializer has always
  *     neutralized every field, and rounds 31/32 established the throw only for
  *     the memory identifier scalars. Neutralizing keeps that contract.
- *   • The ARRAY fields are deliberately untouched — they are JSON-encoded, so a
- *     control character survives as a `\n` ESCAPE and round-trips EXACTLY.
- *     Neutralizing them would be the lossy half of this bug in reverse.
+ *   • The ARRAY ELEMENTS are normalized HERE TOO (round-37). Round-36 left them
+ *     out, on the reasoning that they are "JSON-encoded, so a control character
+ *     survives as a `\n` ESCAPE and round-trips EXACTLY". That is TRUE ONLY FOR
+ *     C0: `JSON.stringify` escapes `U+0000`–`U+001F` (plus `"` and `\`) and emits
+ *     DEL (`U+007F`) and the C1 range (`U+0080`–`U+009F`) RAW. Those raw
+ *     characters then hit `line()`, which replaces them with spaces — so the
+ *     rendered page said `a b` while the index kept `a<DEL>b`: exactly the
+ *     index-vs-`.md` disagreement round 36 existed to close, still open for one
+ *     end of the control-character range. Normalizing at the write boundary
+ *     closes it for the WHOLE range; a C0 character is now neutralized rather
+ *     than escaped, which is the same one-line-field trade-off the memory
+ *     renderer has always made for its arrays.
  */
 const ENTITY_SCALAR_FIELDS = ["id", "kind", "scope", "project", "title", "createdAt", "updatedAt"] as const;
+const ENTITY_ARRAY_FIELDS = ["aliases", "sourceMemoryIds", "sourceSessions", "sourceFiles", "relatedEntities"] as const;
 
 export function normalizeEntityPageForWrite(entry: EntityPage): EntityPage {
   const e = entry as unknown as Record<string, unknown>;
   for (const k of ENTITY_SCALAR_FIELDS) {
     const v = e[k];
     if (typeof v === "string") e[k] = neutralizeControlChars(v);
+  }
+  for (const k of ENTITY_ARRAY_FIELDS) {
+    const v = e[k];
+    if (Array.isArray(v)) e[k] = v.map((x) => (typeof x === "string" ? neutralizeControlChars(x) : x));
   }
   return entry;
 }

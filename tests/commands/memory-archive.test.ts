@@ -1107,3 +1107,58 @@ describe("memoryArchiveCmd — round-32 (SECURITY): an id that FORGES frontmatte
     expect(doc.match(/^id: .*$/gm)).toEqual([`id: ${SPACED_ID}`]);
   });
 });
+
+describe("memoryArchiveCmd — round-37: the gate must type EVERY value the renderer serializes", () => {
+  // The rewrite gate proved each COLLECTION is an array but never typed its
+  // ELEMENTS, and it never looked at several scalars the renderer emits
+  // (`summary` above all). So an expired row carrying `entities: [{...}]` or
+  // `summary: {…}` passed, got PLANNED, and reached the AUTOMATIC rewrite —
+  // where `arr()`'s `.join(", ")` and `String(summary)` wrote "[object Object]"
+  // into the .md, REPLACING content the command only meant to stamp a status
+  // onto. Both must be SKIPPED + COUNTED, the healthy row must still archive,
+  // and the unattended run must not throw.
+  const base = {
+    confidence: 1, importance: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    validFrom: null, sourceSessions: ["s1"], sourceCommits: [], sourceFiles: [],
+    supersedes: null, entities: [] as unknown[], trust: "trusted" as const, originDevice: null,
+    accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null,
+  };
+  const expired = (slug: string, over: Record<string, unknown> = {}) => ({
+    id: `semantic/p/${slug}`, type: "semantic", scope: "project:p", project: "p",
+    title: `${slug} fact`, summary: "s", path: `memory/semantic/p/${slug}.md`, status: "active",
+    validTo: "2000-01-01", ...base, ...over,
+  });
+  const md = (slug: string) =>
+    `---\nid: semantic/p/${slug}\ntype: semantic\nstatus: active\n---\n\n# ${slug} fact\n\nThe real body of semantic/p/${slug}.\n`;
+
+  it("skips + counts a row with a NON-STRING collection ELEMENT and one with a non-string `summary`", async () => {
+    const warnings: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => { warnings.push(a.map(String).join(" ")); });
+    const entries: Record<string, unknown> = {
+      "semantic/p/good": expired("good"),
+      // container IS an array (round-16 satisfied) — the ELEMENT is not a string
+      "semantic/p/badel": expired("badel", { entities: [{ name: "x" }] }),
+      "semantic/p/badsess": expired("badsess", { sourceSessions: ["ok", 42] }),
+      "semantic/p/badsum": expired("badsum", { summary: { text: "s" } }),
+    };
+    writeFileSync(idxPath(), JSON.stringify({ version: 1, entries }, null, 2) + "\n");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    for (const slug of ["good", "badel", "badsess", "badsum"]) {
+      writeFileSync(join(repo, `memory/semantic/p/${slug}.md`), md(slug));
+    }
+    const before = Object.fromEntries(["badel", "badsess", "badsum"].map((s) =>
+      [s, readFileSync(join(repo, `memory/semantic/p/${s}.md`), "utf8")]));
+
+    // the unattended run completes — no throw out of digest consolidation
+    await expect(memoryArchiveCmd({ cwd: repo, apply: true })).resolves.toBeUndefined();
+
+    expect(readIndexStatus("semantic/p/good")).toBe("archived");   // healthy row still archives
+    for (const slug of ["badel", "badsess", "badsum"]) {
+      expect(readIndexStatus(`semantic/p/${slug}`)).toBe("active"); // skipped, never stamped
+      expect(readFileSync(join(repo, `memory/semantic/p/${slug}.md`), "utf8")).toBe(before[slug]);
+    }
+    // and nothing was serialized as "[object Object]" anywhere under memory/
+    expect(readFileSync(join(repo, "memory/semantic/p/badel.md"), "utf8")).not.toContain("[object Object]");
+    expect(warnings.join("\n")).toMatch(/skipped 3 malformed index row\(s\)/);
+  });
+});

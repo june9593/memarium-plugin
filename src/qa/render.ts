@@ -17,9 +17,11 @@ function req(v: string | null | undefined, fallback: string): string {
  * SECURITY (round-34, same class of bug as the memory renderer's): a NEWLINE in a
  * RAW scalar forges EXTRA FIELDS rather than a weird value. `question` /
  * `answerSummary` / `project` / the arrays were already JSON-quoted here (a
- * control character survives as a `\n` ESCAPE, which cannot break the line) —
- * that is exactly the precedent this fix generalizes; `id` / `scope` / `kind` /
- * the dates were still raw. Everything now goes through one safe emitter.
+ * NEWLINE survives as a `\n` ESCAPE, which cannot break the line) — that is
+ * exactly the precedent this fix generalizes; `id` / `scope` / `kind` / the dates
+ * were still raw. Everything now goes through one safe emitter. (JSON quoting
+ * escapes C0 ONLY; DEL/C1 arrive here raw and are neutralized — see the round-37
+ * note on `normalizeQaEntryForWrite`.)
  */
 function line(key: string, value: string): string {
   return `${key}: ${neutralizeControlChars(value)}`;
@@ -30,27 +32,40 @@ function line(key: string, value: string): string {
  * `.md` carry the SAME bytes. See the long note on
  * `normalizeMemoryEntryForWrite` — same round-36 flaw, same fix.
  *
- * Only the RAW scalars are listed. `question` / `answerSummary` / `project` and
- * every array are JSON-encoded by the renderer, so a control character survives
- * as a `\n` ESCAPE and round-trips EXACTLY — normalizing those would introduce
- * the very disagreement this function exists to remove. (`question` is separately
- * collapsed to one line by `normalizeSingleLine` in qa-write, before the id is
- * derived from it.)
- *
- * The field that actually diverged is `updatedAt`: qa-write only checks its
+ * The field that first exposed it is `updatedAt`: qa-write only checks its
  * `YYYY-MM-DD` PREFIX, so `"2026-06-11\nid: forged"` passed the date check,
  * rendered as `2026-06-11 id: forged`, and stayed newline-bearing in the index.
  * `id` doubles as the INDEX KEY (`qaKey`) and the filename slug, so it is
  * normalized here too even though `qaId` already derives it from a
  * single-lined question.
+ *
+ * ROUND-37 — the JSON-ENCODED fields (`question`, `answerSummary`, `project` and
+ * every array) are normalized here as well. Round-36 deliberately excluded them,
+ * reasoning that "a control character survives as a `\n` ESCAPE and round-trips
+ * EXACTLY"; that holds for C0 ONLY. `JSON.stringify` escapes `U+0000`–`U+001F`
+ * (plus `"` and `\`) and emits DEL (`U+007F`) and C1 (`U+0080`–`U+009F`) RAW —
+ * and `line()` then replaces those with spaces, so the page said `a b` while the
+ * index kept the raw value: the very index-vs-`.md` disagreement round 36 was
+ * written to close, left open for one end of the control-character range.
+ * Normalizing here closes it for the WHOLE range. (`question` /
+ * `answerSummary` are additionally collapsed to one line by `normalizeSingleLine`
+ * in qa-write, which neutralizes control characters BEFORE `qaId` hashes the
+ * question — so the derived id is stable for the same neutralized text.)
  */
-const QA_SCALAR_FIELDS = ["id", "scope", "kind", "createdAt", "updatedAt"] as const;
+const QA_SCALAR_FIELDS = [
+  "id", "scope", "kind", "createdAt", "updatedAt", "question", "answerSummary", "project",
+] as const;
+const QA_ARRAY_FIELDS = ["tags", "sources", "sourceMemoryIds", "sourceSessions", "relatedEntities"] as const;
 
 export function normalizeQaEntryForWrite(entry: QaEntry): QaEntry {
   const e = entry as unknown as Record<string, unknown>;
   for (const k of QA_SCALAR_FIELDS) {
     const v = e[k];
     if (typeof v === "string") e[k] = neutralizeControlChars(v);
+  }
+  for (const k of QA_ARRAY_FIELDS) {
+    const v = e[k];
+    if (Array.isArray(v)) e[k] = v.map((x) => (typeof x === "string" ? neutralizeControlChars(x) : x));
   }
   return entry;
 }

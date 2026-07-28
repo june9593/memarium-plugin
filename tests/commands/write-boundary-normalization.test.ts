@@ -104,3 +104,85 @@ describe("write-boundary normalization: index and .md must agree (round-36)", ()
     expect(fromIndex.id).toEqual(fromFile!.id);
   });
 });
+
+/**
+ * ROUND-37 — round 36 left the entity/qa ARRAY fields unnormalized, arguing they
+ * are "JSON-encoded and already round-trip". That is TRUE ONLY FOR C0:
+ * `JSON.stringify` escapes U+0000-U+001F (plus the quote and the backslash) and
+ * emits DEL (U+007F) and the C1 range (U+0080-U+009F) RAW — so those reached
+ * `line()`, which replaced them with spaces, and the INDEX kept the raw value
+ * while the rendered page held a space. Exactly the disagreement round 36 was
+ * written to close, still open for one end of the control-character range.
+ *
+ * Pre-fix each `toEqual` below compared a DEL/C1-bearing index value against a
+ * space-bearing rendered one and FAILED.
+ */
+describe("write-boundary normalization: DEL/C1 in ARRAY elements (round-37)", () => {
+  // Built from char codes rather than written literally: a raw control character
+  // in a source file is invisible and gets mangled by editors/patches.
+  const DEL = String.fromCharCode(0x7f);   // U+007F
+  const C1 = String.fromCharCode(0x85);    // U+0085 (NEL), in the C1 range
+
+  let home: string, repo: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "vbp-r37-"));
+    vi.stubEnv("HOME", home); vi.resetModules();
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+    mkdirSync(join(home, ".memarium"), { recursive: true });
+    writeFileSync(join(home, ".memarium/config.json"), JSON.stringify({
+      repoPath: repo, repoUrl: "", deviceBranch: "test", runner: "claude-cli" }));
+  });
+  afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
+
+  it("ENTITY: a DEL/C1 in an array element is stored identically in the index and the rendered page", async () => {
+    const { entityWriteCmd } = await import("../../src/commands/entity-write.js");
+    const { loadEntityIndex } = await import("../../src/entity/index-store.js");
+    const { parseEntityMarkdown } = await import("../../src/entity/parse.js");
+
+    const input = join(home, "ent.json");
+    writeFileSync(input, JSON.stringify([{
+      entry: { id: "entity/_global/widget", kind: "tool", scope: "global", project: null,
+        title: "Widget", aliases: [`a${DEL}b`], relatedEntities: [`r${C1}s`],
+        createdAt: "2026-07-01", updatedAt: "2026-07-01" },
+      body: "b",
+    }]));
+    const report = await entityWriteCmd({ inputPath: input });
+
+    const fromFile = parseEntityMarkdown(readFileSync(join(repo, report.paths[0]), "utf8"));
+    const fromIndex = loadEntityIndex(repo).entries["entity/_global/widget"];
+
+    expect(fromFile).not.toBeNull();
+    expect(fromIndex.aliases).toEqual(fromFile!.aliases);                 // pre-fix: DEL vs space
+    expect(fromIndex.aliases).toEqual(["a b"]);
+    expect(fromIndex.relatedEntities).toEqual(fromFile!.relatedEntities); // C1 too
+    expect(fromIndex.relatedEntities).toEqual(["r s"]);
+  });
+
+  it("QA: a DEL/C1 in an array element is stored identically in the index and the rendered page", async () => {
+    const { qaWriteCmd } = await import("../../src/commands/qa-write.js");
+    const { loadQaIndex } = await import("../../src/qa/index-store.js");
+    const { parseQaMarkdown } = await import("../../src/qa/parse.js");
+
+    const input = join(home, "qa.json");
+    writeFileSync(input, JSON.stringify([{
+      entry: { id: "ignored", scope: "global", project: null, question: "how?",
+        answerSummary: "so", kind: "howto", tags: [`t${C1}x`], sources: [`s${DEL}y`],
+        createdAt: "2026-07-01", updatedAt: "2026-07-01" },
+      body: "b",
+    }]));
+    const report = await qaWriteCmd({ inputPath: input });
+
+    const fromFile = parseQaMarkdown(readFileSync(join(repo, report.paths[0]), "utf8"));
+    const idx = loadQaIndex(repo);
+    const keys = Object.keys(idx.entries);
+    expect(keys).toHaveLength(1);
+    const fromIndex = idx.entries[keys[0]];
+
+    expect(fromFile).not.toBeNull();
+    expect(fromIndex.tags).toEqual(fromFile!.tags);        // pre-fix: C1 vs space
+    expect(fromIndex.tags).toEqual(["t x"]);
+    expect(fromIndex.sources).toEqual(fromFile!.sources);  // DEL too
+    expect(fromIndex.sources).toEqual(["s y"]);
+  });
+});

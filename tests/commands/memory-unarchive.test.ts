@@ -838,3 +838,40 @@ describe("memoryUnarchiveCmd — round-32 (SECURITY): an id that FORGES frontmat
     expect(readIndexStatus("semantic/p/c")).toBe("active");
   });
 });
+
+describe("memoryUnarchiveCmd — round-37: a serialized ELEMENT/SCALAR of the wrong type aborts", () => {
+  // Mirror of the archive-side round-37 test. The shared gate now types every
+  // value `renderMemoryMarkdown` serializes, so a row whose `entities` ARRAY
+  // holds a non-string element (the container check alone passed it) — or whose
+  // `summary` is not a string — must ABORT the restore and name the defect,
+  // rather than persist "[object Object]" into the entry it was restoring.
+  it("aborts (writes nothing) for a non-string collection element, naming it as unsafe", async () => {
+    seed();
+    const idx = readIndex();
+    idx.entries["semantic/p/c"].entities = ["ok", { name: "x" }];
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    const idxBefore = readFileSync(idxPath(), "utf8");
+    const mdBefore = readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/c.*incomplete.*unsafe entities/i);
+
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+    expect(readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8")).toBe(mdBefore);
+  });
+
+  it("aborts (writes nothing) for a non-string `summary`, naming it as unsafe", async () => {
+    seed();
+    const idx = readIndex();
+    idx.entries["semantic/p/c"].summary = { text: "s" };
+    writeFileSync(idxPath(), JSON.stringify(idx, null, 2) + "\n");
+    const idxBefore = readFileSync(idxPath(), "utf8");
+    const mdBefore = readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8");
+
+    await expect(memoryUnarchiveCmd({ id: "semantic/p/c", cwd: repo }))
+      .rejects.toThrow(/refusing to unarchive semantic\/p\/c.*incomplete.*unsafe summary/i);
+
+    expect(readFileSync(idxPath(), "utf8")).toBe(idxBefore);
+    expect(readFileSync(join(repo, "memory/semantic/p/c.md"), "utf8")).toBe(mdBefore);
+  });
+});

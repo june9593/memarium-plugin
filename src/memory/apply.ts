@@ -2,11 +2,11 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join, resolve, sep } from "node:path";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "./index-store.js";
 import { renderMemoryMarkdown, normalizeMemoryEntryForWrite } from "./render.js";
-import { canonicalMemoryPath, isWritableMemoryId, isSafePathSegment, supersedesId } from "./gate.js";
+import { canonicalMemoryPath, isWritableMemoryId, isSafePathSegment, supersedesId, hasControlChars } from "./gate.js";
 import { calendarDate } from "./dates.js";
 import { assertNoBlockingLeak } from "./leak-scan.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
-import type { MemoryEntry } from "./types.js";
+import type { MemoryEntry, MemoryTrust } from "./types.js";
 
 export interface MemoryApplyItem { entry: MemoryEntry; body: string; }
 export interface MemoryApplyReport { written: number; superseded: number; paths: string[]; }
@@ -112,6 +112,17 @@ export function isMemoryStatus(v: unknown): v is MemoryEntry["status"] {
   return typeof v === "string" && REWRITABLE_STATUSES.has(v);
 }
 
+/** The `MemoryEntry["trust"]` union, spelled once as DATA (same `satisfies`
+ *  discipline as `MEMORY_STATUSES`) so an untrusted index row can be checked
+ *  against it at runtime. `trust` is OPTIONAL on the type, and the renderer maps
+ *  an unset value to "unknown" — but a PRESENT non-string value reaches
+ *  `valueLine` → `neutralizeControlChars(v)` → `v.replace is not a function`,
+ *  i.e. a THROW out of the unattended rewrite. Validated below. */
+const MEMORY_TRUSTS = {
+  trusted: true, untrusted: true, unknown: true,
+} satisfies Record<MemoryTrust, true>;
+const REWRITABLE_TRUSTS: ReadonlySet<string> = new Set(Object.keys(MEMORY_TRUSTS));
+
 /** The COLLECTION fields `renderMemoryMarkdown` serializes through its `arr()`
  *  helper (`xs ?? []` then `.join(", ")`). `arr` coerces an UNSET value
  *  (undefined/null) to `[]`, so an omitted field renders fine — but a PRESENT
@@ -119,6 +130,18 @@ export function isMemoryStatus(v: unknown): v is MemoryEntry["status"] {
  *  "a.join is not a function"), or, for a value whose `.length` happens to be 0
  *  (`""`), silently renders `[]` and drops content. Validated below. */
 const REWRITE_COLLECTION_FIELDS = ["sourceSessions", "sourceCommits", "sourceFiles", "entities"] as const;
+
+/** The NULLABLE string scalars the renderer serializes through `nullable()`
+ *  (`v == null ? "null" : String(v)`). Unset is FINE — it renders the YAML
+ *  literal `null`, which is exactly what the parser reads back — but a PRESENT
+ *  non-string is stringified: an object becomes the literal "[object Object]"
+ *  and a number becomes a string the index does not hold. `validTo` is the
+ *  sharpest of these (the archival expiry rule and memory-unarchive's
+ *  past-validTo clearing both read it), but every one of them is machine
+ *  lifecycle state that must survive a metadata-only rewrite verbatim. */
+const REWRITE_NULLABLE_STRING_FIELDS = [
+  "validFrom", "validTo", "supersedes", "originDevice", "archivedAt", "archivedReason",
+] as const;
 
 /** Row-shape gate for the METADATA-ONLY REWRITE path (`writeMemoryEntryFile`),
  *  shared by BOTH write paths that use it: `memory-archive --apply` and
@@ -182,6 +205,28 @@ const REWRITE_COLLECTION_FIELDS = ["sourceSessions", "sourceCommits", "sourceFil
  *  command's fail-closed policy says must be SKIPPED and COUNTED. The status is
  *  now validated against the union (see `MEMORY_STATUSES`).
  *
+ *  Round-37: the gate still did not cover EVERYTHING `renderMemoryMarkdown`
+ *  SERIALIZES, which is the actual contract ("this row can be re-rendered
+ *  faithfully"). Two holes, both reachable by an expired row that archives
+ *  UNATTENDED:
+ *    • COLLECTION ELEMENTS were never typed. Round-16 checked the CONTAINER is an
+ *      array and stopped there, so `entities: [{}]` or `sourceSessions: [null]`
+ *      passed, and `arr()`'s `.join(", ")` then wrote "[object Object]" / "" into
+ *      the .md — the rewrite silently REPLACING provenance the command only meant
+ *      to stamp a status onto (and `parseArr`'s `.filter(Boolean)` drops the empty
+ *      one, so the round-trip loses the element entirely).
+ *    • The remaining SERIALIZED SCALARS — `summary`, `confidence`, `createdAt`,
+ *      `trust`, and the six nullable strings — were unvalidated. A non-string
+ *      `summary` is stringified into the document (an object → "[object Object]");
+ *      a non-string `trust` is worse still: `valueLine` calls
+ *      `neutralizeControlChars(v)`, so it THROWS `v.replace is not a function`
+ *      mid-batch. And `scope`/`project` were checked for emptiness/path-safety but
+ *      not for CONTROL CHARACTERS, which `normalizeMemoryEntryForWrite` refuses by
+ *      THROWING — again aborting the whole unattended consolidation instead of
+ *      skipping one row.
+ *  The rule of thumb for anything added to `renderMemoryMarkdown` later: if the
+ *  renderer emits it, this gate must type it.
+ *
  *  Returns the name of the FIRST missing/invalid field, or null when the row is
  *  complete — so `memory-unarchive` can name it in its abort message while
  *  `memory-archive` just filters on the boolean. A field that is PRESENT but
@@ -193,15 +238,44 @@ export function missingRewriteField(entry: MemoryEntry): string | null {
   if (!filled(e.id)) return "id";
   if (!filled(e.type) || !REWRITABLE_TYPES.has(e.type as string)) return "type";
   if (!filled(e.scope)) return "scope";
+  // scope/project are IDENTIFIER scalars: the renderer emits them through
+  // `identLine`, and `normalizeMemoryEntryForWrite` REFUSES a control character in
+  // either. A row carrying one must therefore be skipped HERE, or that refusal
+  // becomes a throw out of the unattended batch. (`type`/`status` are checked
+  // against their unions above/below, and no union member holds one.)
+  if (hasControlChars(e.scope as string)) return "unsafe scope";
   if (!(e.project === null || typeof e.project === "string")) return "project";
+  if (typeof e.project === "string" && hasControlChars(e.project)) return "unsafe project";
   if (!filled(e.title)) return "title";
+  // summary: a rendered scalar (`String(entry.summary ?? "")`), so a non-string
+  // is stringified into the document. parse and applyMemoryItems both guarantee a
+  // real string, so an absent one is a malformed row, not a normal shape.
+  if (e.summary === undefined || e.summary === null) return "summary";
+  if (typeof e.summary !== "string") return "unsafe summary";
   // status: the field BOTH archival commands branch on, so it must be a real
   // member of the union, not merely a string (see the round-27 note above).
   // Absent → "missing status"; present-but-not-a-status → "unsafe status", so
   // memory-unarchive never claims a field is missing when it is malformed.
   if (e.status === undefined || e.status === null) return "status";
   if (!isMemoryStatus(e.status)) return "unsafe status";
+  // confidence: rendered numeric, and read by the scorer. Same rule as importance
+  // — `req(v, "0.5")` would silently invent 0.5 in the .md while the index row
+  // kept an unusable value.
+  if (e.confidence === undefined || e.confidence === null) return "confidence";
+  if (typeof e.confidence !== "number" || !Number.isFinite(e.confidence)) return "unsafe confidence";
+  if (typeof e.createdAt !== "string") return "createdAt";
   if (typeof e.updatedAt !== "string") return "updatedAt";
+  // trust: OPTIONAL on the type — unset renders as "unknown", which is exactly
+  // what the parser reads back — but a present value must be a real MemoryTrust.
+  // A non-string throws inside `valueLine`; an unknown string renders a value the
+  // parser coerces back to "unknown", so the .md and the index would disagree.
+  if (e.trust !== undefined && e.trust !== null &&
+      !(typeof e.trust === "string" && REWRITABLE_TRUSTS.has(e.trust))) return "unsafe trust";
+  for (const field of REWRITE_NULLABLE_STRING_FIELDS) {
+    const v = e[field];
+    if (v === undefined || v === null) continue; // unset → the renderer emits the YAML literal `null`
+    if (typeof v !== "string") return `unsafe ${field}`;
+  }
   // importance: read by the archival plan (near-duplicate ranking + the
   // unused-low-value threshold), so it must be a real, finite number.
   if (e.importance === undefined || e.importance === null) return "importance";
@@ -210,6 +284,10 @@ export function missingRewriteField(entry: MemoryEntry): string | null {
     const v = e[field];
     if (v === undefined || v === null) continue; // unset → the renderer emits []
     if (!Array.isArray(v)) return field;
+    // ELEMENTS too (round-37): `arr()` joins them into one line, so a non-string
+    // element is stringified — lossy ("[object Object]") or outright dropped by
+    // the parser's `.filter(Boolean)` ("" from null/undefined).
+    if (v.some((x) => typeof x !== "string")) return `unsafe ${field}`;
   }
   // Canonical-path derivability (see the round-22 note above). Mirrors
   // canonicalMemoryPath's own segment rules so we can NAME the bad ingredient
