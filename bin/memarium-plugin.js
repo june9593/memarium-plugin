@@ -14726,17 +14726,31 @@ function missingRewriteField(entry) {
   if (!filled(e.id)) return "id";
   if (!filled(e.type) || !REWRITABLE_TYPES.has(e.type)) return "type";
   if (!filled(e.scope)) return "scope";
+  if (hasControlChars(e.scope)) return "unsafe scope";
   if (!(e.project === null || typeof e.project === "string")) return "project";
+  if (typeof e.project === "string" && hasControlChars(e.project)) return "unsafe project";
   if (!filled(e.title)) return "title";
+  if (e.summary === void 0 || e.summary === null) return "summary";
+  if (typeof e.summary !== "string") return "unsafe summary";
   if (e.status === void 0 || e.status === null) return "status";
   if (!isMemoryStatus(e.status)) return "unsafe status";
+  if (e.confidence === void 0 || e.confidence === null) return "confidence";
+  if (typeof e.confidence !== "number" || !Number.isFinite(e.confidence)) return "unsafe confidence";
+  if (typeof e.createdAt !== "string") return "createdAt";
   if (typeof e.updatedAt !== "string") return "updatedAt";
+  if (e.trust !== void 0 && e.trust !== null && !(typeof e.trust === "string" && REWRITABLE_TRUSTS.has(e.trust))) return "unsafe trust";
+  for (const field of REWRITE_NULLABLE_STRING_FIELDS) {
+    const v = e[field];
+    if (v === void 0 || v === null) continue;
+    if (typeof v !== "string") return `unsafe ${field}`;
+  }
   if (e.importance === void 0 || e.importance === null) return "importance";
   if (typeof e.importance !== "number" || !Number.isFinite(e.importance)) return "unsafe importance";
   for (const field of REWRITE_COLLECTION_FIELDS) {
     const v = e[field];
     if (v === void 0 || v === null) continue;
     if (!Array.isArray(v)) return field;
+    if (v.some((x2) => typeof x2 !== "string")) return `unsafe ${field}`;
   }
   if (!isSafePathSegment(e.project ?? "_global")) return "unsafe project segment";
   if (!isWritableMemoryId(e.id)) return "unsafe id";
@@ -14966,7 +14980,7 @@ function applyMemoryItems(repoPath, items) {
   }
   return { written, superseded, paths };
 }
-var REWRITABLE_TYPES, MEMORY_STATUSES, REWRITABLE_STATUSES, REWRITE_COLLECTION_FIELDS, isRewritableEntry;
+var REWRITABLE_TYPES, MEMORY_STATUSES, REWRITABLE_STATUSES, MEMORY_TRUSTS, REWRITABLE_TRUSTS, REWRITE_COLLECTION_FIELDS, REWRITE_NULLABLE_STRING_FIELDS, isRewritableEntry;
 var init_apply = __esm({
   "src/memory/apply.ts"() {
     "use strict";
@@ -14984,7 +14998,21 @@ var init_apply = __esm({
       archived: true
     };
     REWRITABLE_STATUSES = new Set(Object.keys(MEMORY_STATUSES));
+    MEMORY_TRUSTS = {
+      trusted: true,
+      untrusted: true,
+      unknown: true
+    };
+    REWRITABLE_TRUSTS = new Set(Object.keys(MEMORY_TRUSTS));
     REWRITE_COLLECTION_FIELDS = ["sourceSessions", "sourceCommits", "sourceFiles", "entities"];
+    REWRITE_NULLABLE_STRING_FIELDS = [
+      "validFrom",
+      "validTo",
+      "supersedes",
+      "originDevice",
+      "archivedAt",
+      "archivedReason"
+    ];
     isRewritableEntry = (entry) => missingRewriteField(entry) === null;
   }
 });
@@ -15150,7 +15178,12 @@ __export(memory_index_exports, {
   memoryIndexCmd: () => memoryIndexCmd
 });
 import { existsSync as existsSync13, readFileSync as readFileSync11, readdirSync as readdirSync2, writeFileSync as writeFileSync8, statSync } from "node:fs";
-import { join as join15, relative as relative2 } from "node:path";
+import { join as join15, relative as relative2, sep as sep3 } from "node:path";
+function isDerivedMemoryPath(memRoot, abs) {
+  const rel = relative2(memRoot, abs);
+  if (rel.startsWith("..")) return false;
+  return DERIVED_MEMORY_SUBTREES.has(rel.split(sep3)[0]);
+}
 function walkMd(dir) {
   const out = [];
   const stack = [dir];
@@ -15180,7 +15213,7 @@ async function memoryIndexCmd() {
   assertNoSymlinkedComponent(cfg.repoPath, memRoot, "memory-index");
   if (existsSync13(memRoot)) {
     for (const abs of walkMd(memRoot)) {
-      if (abs.includes(`${join15("memory", "_primer")}/`)) continue;
+      if (isDerivedMemoryPath(memRoot, abs)) continue;
       let md = readFileSync11(abs, "utf8");
       const mtimeDate = new Date(statSync(abs).mtimeMs).toISOString().slice(0, 10);
       const fixed = healUndefinedFrontmatter(md, mtimeDate);
@@ -15202,6 +15235,7 @@ async function memoryIndexCmd() {
   saveMemoryIndex(cfg.repoPath, idx);
   return { indexed, healed, skipped };
 }
+var DERIVED_MEMORY_SUBTREES;
 var init_memory_index = __esm({
   "src/commands/memory-index.ts"() {
     "use strict";
@@ -15211,6 +15245,7 @@ var init_memory_index = __esm({
     init_parse();
     init_heal_frontmatter();
     init_path_guard();
+    DERIVED_MEMORY_SUBTREES = /* @__PURE__ */ new Set(["_primer", "entities", "qa"]);
   }
 });
 
@@ -15844,6 +15879,10 @@ function normalizeEntityPageForWrite(entry) {
     const v = e[k2];
     if (typeof v === "string") e[k2] = neutralizeControlChars(v);
   }
+  for (const k2 of ENTITY_ARRAY_FIELDS) {
+    const v = e[k2];
+    if (Array.isArray(v)) e[k2] = v.map((x2) => typeof x2 === "string" ? neutralizeControlChars(x2) : x2);
+  }
   return entry;
 }
 function renderEntityMarkdown(entry, body) {
@@ -15871,12 +15910,13 @@ function renderEntityMarkdown(entry, body) {
 ${trimmedBody}
 `;
 }
-var ENTITY_SCALAR_FIELDS;
+var ENTITY_SCALAR_FIELDS, ENTITY_ARRAY_FIELDS;
 var init_render2 = __esm({
   "src/entity/render.ts"() {
     "use strict";
     init_gate();
     ENTITY_SCALAR_FIELDS = ["id", "kind", "scope", "project", "title", "createdAt", "updatedAt"];
+    ENTITY_ARRAY_FIELDS = ["aliases", "sourceMemoryIds", "sourceSessions", "sourceFiles", "relatedEntities"];
   }
 });
 
@@ -15886,7 +15926,7 @@ __export(entity_write_exports, {
   entityWriteCmd: () => entityWriteCmd
 });
 import { existsSync as existsSync16, mkdirSync as mkdirSync10, readFileSync as readFileSync15, realpathSync, writeFileSync as writeFileSync10 } from "node:fs";
-import { dirname as dirname5, join as join17, resolve as resolve4, sep as sep3 } from "node:path";
+import { dirname as dirname5, join as join17, resolve as resolve4, sep as sep4 } from "node:path";
 function entityPath(e) {
   const scopeDir = e.project ?? "_global";
   const slug = e.id.split("/").pop() ?? e.id;
@@ -15916,13 +15956,13 @@ async function entityWriteCmd(opts) {
     mkdirSync10(entRoot, { recursive: true });
     const memRoot = entRoot;
     const abs = resolve4(join17(cfg.repoPath, entry.path));
-    if (abs !== memRoot && !abs.startsWith(memRoot + sep3)) {
+    if (abs !== memRoot && !abs.startsWith(memRoot + sep4)) {
       throw new Error(`entity-write: refusing to write outside memory/entities/: ${entry.path}`);
     }
     mkdirSync10(dirname5(abs), { recursive: true });
     const realParent = realpathSync(dirname5(abs));
     const realRoot = realpathSync(entRoot);
-    if (realParent !== realRoot && !realParent.startsWith(realRoot + sep3)) {
+    if (realParent !== realRoot && !realParent.startsWith(realRoot + sep4)) {
       throw new Error(`entity-write: refusing to write outside memory/entities/ (symlink guard): ${entry.path}`);
     }
     const resolvedBody = body;
@@ -16121,7 +16161,7 @@ __export(entity_query_exports, {
   entityQueryCmd: () => entityQueryCmd
 });
 import { existsSync as existsSync18, readFileSync as readFileSync17, realpathSync as realpathSync2 } from "node:fs";
-import { join as join19, resolve as resolve5, sep as sep4 } from "node:path";
+import { join as join19, resolve as resolve5, sep as sep5 } from "node:path";
 function isKind(s) {
   const ok = ["file", "symbol", "api", "concept", "person"];
   return s && ok.includes(s) ? s : null;
@@ -16181,12 +16221,12 @@ async function entityQueryCmd(opts) {
       return titleMatch || aliasMatch || slugMatch;
     }).map((e) => {
       const abs = resolve5(join19(cfg.repoPath, e.path));
-      const inRoot = abs === entRoot || abs.startsWith(entRoot + sep4);
+      const inRoot = abs === entRoot || abs.startsWith(entRoot + sep5);
       let body = "";
       if (inRoot && existsSync18(abs)) {
         const realRoot = existsSync18(entRoot) ? realpathSync2(entRoot) : entRoot;
         const real = realpathSync2(abs);
-        if (real === realRoot || real.startsWith(realRoot + sep4)) {
+        if (real === realRoot || real.startsWith(realRoot + sep5)) {
           body = readFileSync17(abs, "utf8");
         }
       }
@@ -16225,6 +16265,10 @@ function normalizeQaEntryForWrite(entry) {
     const v = e[k2];
     if (typeof v === "string") e[k2] = neutralizeControlChars(v);
   }
+  for (const k2 of QA_ARRAY_FIELDS) {
+    const v = e[k2];
+    if (Array.isArray(v)) e[k2] = v.map((x2) => typeof x2 === "string" ? neutralizeControlChars(x2) : x2);
+  }
   return entry;
 }
 function renderQaMarkdown(entry, body) {
@@ -16253,19 +16297,29 @@ function renderQaMarkdown(entry, body) {
 ${trimmedBody}
 `;
 }
-var QA_SCALAR_FIELDS;
+var QA_SCALAR_FIELDS, QA_ARRAY_FIELDS;
 var init_render3 = __esm({
   "src/qa/render.ts"() {
     "use strict";
     init_gate();
-    QA_SCALAR_FIELDS = ["id", "scope", "kind", "createdAt", "updatedAt"];
+    QA_SCALAR_FIELDS = [
+      "id",
+      "scope",
+      "kind",
+      "createdAt",
+      "updatedAt",
+      "question",
+      "answerSummary",
+      "project"
+    ];
+    QA_ARRAY_FIELDS = ["tags", "sources", "sourceMemoryIds", "sourceSessions", "relatedEntities"];
   }
 });
 
 // src/qa/id.ts
 import { createHash as createHash2 } from "node:crypto";
 function normalizeSingleLine(s) {
-  return s.replace(/\s+/g, " ").trim();
+  return neutralizeControlChars(s).replace(/\s+/g, " ").trim();
 }
 function shortHash(canonical) {
   return createHash2("sha256").update(canonical).digest("hex").slice(0, 8);
@@ -16285,6 +16339,7 @@ var UNSAFE2;
 var init_id = __esm({
   "src/qa/id.ts"() {
     "use strict";
+    init_gate();
     UNSAFE2 = /[\\/:*?"'<>|\s.,;!()[\]{}@#$%^&+=`~]+/g;
   }
 });
@@ -16295,9 +16350,9 @@ __export(qa_write_exports, {
   qaWriteCmd: () => qaWriteCmd
 });
 import { existsSync as existsSync19, lstatSync as lstatSync2, mkdirSync as mkdirSync11, readFileSync as readFileSync18, realpathSync as realpathSync3, writeFileSync as writeFileSync12 } from "node:fs";
-import { dirname as dirname6, join as join20, resolve as resolve6, sep as sep5 } from "node:path";
+import { dirname as dirname6, join as join20, resolve as resolve6, sep as sep6 } from "node:path";
 function isUnder(child, parent) {
-  return child === parent || child.startsWith(parent + sep5);
+  return child === parent || child.startsWith(parent + sep6);
 }
 function isSafeProjectSlug(p2) {
   if (!/^[A-Za-z0-9._-]+$/.test(p2)) return false;
@@ -16353,7 +16408,7 @@ async function qaWriteCmd(opts) {
     const qaRoot = resolve6(join20(cfg.repoPath, "memory", "qa"));
     const abs = resolve6(join20(cfg.repoPath, entry.path));
     assertNoSymlinkedComponent(cfg.repoPath, dirname6(abs), "qa-write");
-    if (abs !== qaRoot && !abs.startsWith(qaRoot + sep5)) {
+    if (abs !== qaRoot && !abs.startsWith(qaRoot + sep6)) {
       throw new Error(`qa-write: refusing to write outside memory/qa/: ${entry.path}`);
     }
     mkdirSync11(qaRoot, { recursive: true });
