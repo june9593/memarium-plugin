@@ -15951,7 +15951,7 @@ async function entityWriteCmd(opts) {
       if (!Array.isArray(entry[k2])) entry[k2] = [];
     }
     normalizeEntityPageForWrite(entry);
-    if (!entry.path) entry.path = entityPath(entry);
+    entry.path = entityPath(entry);
     const entRoot = resolve4(join17(cfg.repoPath, "memory", "entities"));
     mkdirSync10(entRoot, { recursive: true });
     const memRoot = entRoot;
@@ -16403,8 +16403,8 @@ async function qaWriteCmd(opts) {
       entry.project = null;
     }
     entry.id = qaId(entry.scope, entry.project, entry.question);
-    entry.path = qaPath(entry);
     normalizeQaEntryForWrite(entry);
+    entry.path = qaPath(entry);
     const qaRoot = resolve6(join20(cfg.repoPath, "memory", "qa"));
     const abs = resolve6(join20(cfg.repoPath, entry.path));
     assertNoSymlinkedComponent(cfg.repoPath, dirname6(abs), "qa-write");
@@ -16722,7 +16722,7 @@ function nearDuplicatePairs(entries, threshold = 0.8, candidateStatuses = /* @__
   const candidates = entries.filter((e) => candidateStatuses.has(e.status));
   const buckets = /* @__PURE__ */ new Map();
   for (const e of candidates) {
-    const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
+    const key = JSON.stringify([e.type, e.scope, e.project ?? "_global"]);
     const arr4 = buckets.get(key) ?? [];
     arr4.push({ e, tokens: tokenize4(`${textOf(e.title)} ${textOf(e.summary)}`) });
     buckets.set(key, arr4);
