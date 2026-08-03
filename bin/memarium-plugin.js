@@ -7301,19 +7301,28 @@ var init_index_store = __esm({
 
 // src/_shared/atomic-write.ts
 import { randomBytes } from "node:crypto";
-import { closeSync, fsyncSync, openSync, renameSync as renameSync2, rmSync, writeFileSync as writeFileSync3 } from "node:fs";
+import { closeSync, fchmodSync, fsyncSync, openSync, renameSync as renameSync2, rmSync, statSync, writeFileSync as writeFileSync3 } from "node:fs";
 import { basename, dirname, join as join6 } from "node:path";
 function tempSiblingPath(target) {
   seq = (seq + 1) % 16777216;
   const uniq = `${process.pid}-${seq.toString(36)}-${randomBytes(4).toString("hex")}`;
   return join6(dirname(target), `${basename(target)}.tmp-${uniq}`);
 }
+function modeToPreserve(target) {
+  try {
+    return statSync(target).mode & 4095;
+  } catch {
+    return NEW_FILE_MODE;
+  }
+}
 function writeFileAtomicSync(target, data) {
+  const mode = modeToPreserve(target);
   const tmp = tempSiblingPath(target);
   const fd = openSync(tmp, "wx");
   try {
     try {
       writeFileSync3(fd, data);
+      fchmodSync(fd, mode);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
@@ -7327,11 +7336,12 @@ function writeFileAtomicSync(target, data) {
     throw err;
   }
 }
-var seq;
+var seq, NEW_FILE_MODE;
 var init_atomic_write = __esm({
   "src/_shared/atomic-write.ts"() {
     "use strict";
     seq = 0;
+    NEW_FILE_MODE = 384;
   }
 });
 
@@ -15197,7 +15207,7 @@ var memory_index_exports = {};
 __export(memory_index_exports, {
   memoryIndexCmd: () => memoryIndexCmd
 });
-import { existsSync as existsSync13, readFileSync as readFileSync11, readdirSync as readdirSync2, writeFileSync as writeFileSync8, statSync } from "node:fs";
+import { existsSync as existsSync13, readFileSync as readFileSync11, readdirSync as readdirSync2, writeFileSync as writeFileSync8, statSync as statSync2 } from "node:fs";
 import { join as join16, relative as relative2, sep as sep3 } from "node:path";
 function isDerivedMemoryPath(memRoot, abs) {
   const rel = relative2(memRoot, abs);
@@ -15235,7 +15245,7 @@ async function memoryIndexCmd() {
     for (const abs of walkMd(memRoot)) {
       if (isDerivedMemoryPath(memRoot, abs)) continue;
       let md = readFileSync11(abs, "utf8");
-      const mtimeDate = new Date(statSync(abs).mtimeMs).toISOString().slice(0, 10);
+      const mtimeDate = new Date(statSync2(abs).mtimeMs).toISOString().slice(0, 10);
       const fixed = healUndefinedFrontmatter(md, mtimeDate);
       if (fixed !== null) {
         writeFileSync8(abs, fixed);
@@ -16055,7 +16065,7 @@ var entity_index_exports = {};
 __export(entity_index_exports, {
   entityIndexCmd: () => entityIndexCmd
 });
-import { existsSync as existsSync17, readFileSync as readFileSync16, readdirSync as readdirSync3, writeFileSync as writeFileSync10, statSync as statSync2 } from "node:fs";
+import { existsSync as existsSync17, readFileSync as readFileSync16, readdirSync as readdirSync3, writeFileSync as writeFileSync10, statSync as statSync3 } from "node:fs";
 import { join as join19, relative as relative3 } from "node:path";
 function walkMd2(dir) {
   const out = [];
@@ -16087,7 +16097,7 @@ async function entityIndexCmd() {
   if (existsSync17(entitiesRoot)) {
     for (const abs of walkMd2(entitiesRoot)) {
       let md = readFileSync16(abs, "utf8");
-      const mtimeDate = new Date(statSync2(abs).mtimeMs).toISOString().slice(0, 10);
+      const mtimeDate = new Date(statSync3(abs).mtimeMs).toISOString().slice(0, 10);
       const fixed = healUndefinedFrontmatter(md, mtimeDate);
       if (fixed !== null) {
         writeFileSync10(abs, fixed);
@@ -16543,7 +16553,7 @@ var qa_index_exports = {};
 __export(qa_index_exports, {
   qaIndexCmd: () => qaIndexCmd
 });
-import { existsSync as existsSync20, readFileSync as readFileSync19, readdirSync as readdirSync4, writeFileSync as writeFileSync12, statSync as statSync3 } from "node:fs";
+import { existsSync as existsSync20, readFileSync as readFileSync19, readdirSync as readdirSync4, writeFileSync as writeFileSync12, statSync as statSync4 } from "node:fs";
 import { join as join22, relative as relative4 } from "node:path";
 function walkMd3(dir) {
   const out = [];
@@ -16575,7 +16585,7 @@ async function qaIndexCmd() {
   if (existsSync20(qaRoot)) {
     for (const abs of walkMd3(qaRoot)) {
       let md = readFileSync19(abs, "utf8");
-      const mtimeDate = new Date(statSync3(abs).mtimeMs).toISOString().slice(0, 10);
+      const mtimeDate = new Date(statSync4(abs).mtimeMs).toISOString().slice(0, 10);
       const fixed = healUndefinedFrontmatter(md, mtimeDate);
       if (fixed !== null) {
         writeFileSync12(abs, fixed);
@@ -18153,7 +18163,7 @@ var init_content_project_inference = __esm({
 
 // src/_shared/sources/claude-code.ts
 import { createHash as createHash4 } from "node:crypto";
-import { readdirSync as readdirSync8, readFileSync as readFileSync25, statSync as statSync4, existsSync as existsSync27 } from "node:fs";
+import { readdirSync as readdirSync8, readFileSync as readFileSync25, statSync as statSync5, existsSync as existsSync27 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
 import { join as join30, basename as basename2 } from "node:path";
 function getRoots() {
@@ -18324,7 +18334,7 @@ var init_claude_code = __esm({
               if (e.name === "subagents") continue;
               stack.push(p2);
             } else if (e.isFile() && e.name.endsWith(".jsonl")) {
-              const st = statSync4(p2);
+              const st = statSync5(p2);
               const buf = readFileSync25(p2);
               const sha = createHash4("sha256").update(buf).digest("hex");
               yield {
@@ -18343,7 +18353,7 @@ var init_claude_code = __esm({
 
 // src/_shared/sources/vscode-copilot.ts
 import { createHash as createHash5 } from "node:crypto";
-import { readdirSync as readdirSync9, readFileSync as readFileSync26, statSync as statSync5, existsSync as existsSync28 } from "node:fs";
+import { readdirSync as readdirSync9, readFileSync as readFileSync26, statSync as statSync6, existsSync as existsSync28 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
 import { join as join31, basename as basename3 } from "node:path";
 function defaultStorageRoot() {
@@ -18603,7 +18613,7 @@ var init_vscode_copilot = __esm({
               const isJsonl = f.name.endsWith(".jsonl");
               if (!isJson && !isJsonl) continue;
               const p2 = join31(chatDir, f.name);
-              const st = statSync5(p2);
+              const st = statSync6(p2);
               if (st.size === 0) continue;
               chatSessionIds.add(basename3(f.name, isJsonl ? ".jsonl" : ".json"));
               const buf = readFileSync26(p2);
@@ -18629,7 +18639,7 @@ var init_vscode_copilot = __esm({
               const id = basename3(f.name, ".jsonl");
               if (chatSessionIds.has(id)) continue;
               const p2 = join31(transcriptsDir, f.name);
-              const st = statSync5(p2);
+              const st = statSync6(p2);
               if (st.size === 0) continue;
               const buf = readFileSync26(p2);
               const sha = createHash5("sha256").update(buf).digest("hex");
