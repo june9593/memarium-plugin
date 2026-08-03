@@ -67,8 +67,12 @@ export function loadMemoryIndex(repoRoot: string): MemoryIndex {
  *  `saveUsage` now shares (both had drifting copies of the idiom). Round-39: the
  *  temp file is created EXCLUSIVELY and under a UNIQUE name — `"w"` follows a
  *  pre-planted SYMLINK and truncates its target, and a deterministic
- *  `<file>.tmp-<pid>` name is shared by every writer in the process. See that
- *  module for the full rationale. */
+ *  `<file>.tmp-<pid>` name is shared by every writer in the process. Round-40:
+ *  the target's permission bits are re-applied before the rename (a
+ *  create-then-rename does not inherit them the way a truncating write did, so a
+ *  `chmod 600 index.memory.json` was silently reverted to 0644), and an index
+ *  created for the FIRST time is 0600 rather than umask-default. See that module
+ *  for the full rationale. */
 export function saveMemoryIndex(repoRoot: string, idx: MemoryIndex): void {
   const p = join(repoRoot, MEMORY_INDEX_REL);
   mkdirSync(dirname(p), { recursive: true });

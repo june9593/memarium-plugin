@@ -48,7 +48,7 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync, chmodSync, statSync } from "node:fs";
 import { loadMemoryIndex, saveMemoryIndex, MEMORY_INDEX_REL } from "../../src/memory/index-store.js";
 import type { MemoryEntry, MemoryIndex } from "../../src/memory/types.js";
 
@@ -106,12 +106,16 @@ describe("saveMemoryIndex — atomic temp+rename (a failed save can never trunca
   it("leaves the PREVIOUS index byte-identical when the rename fails", () => {
     saveMemoryIndex(repo, idx(entry("semantic/p/first"), entry("semantic/p/second")));
     const before = readFileSync(idxPath(), "utf8");
+    // Round-40: this is the failure path where the temp DID get chmod'ed. The
+    // restrictive-by-default mode must not leak onto the surviving target either.
+    chmodSync(idxPath(), 0o640);
 
     ctl.failRename = true;
     expect(() => saveMemoryIndex(repo, idx(entry("semantic/p/replacement"))))
       .toThrow(/ENOSPC/);
 
     expect(readFileSync(idxPath(), "utf8")).toBe(before);
+    expect(statSync(idxPath()).mode & 0o777).toBe(0o640);
     expect(Object.keys(loadMemoryIndex(repo).entries).sort())
       .toEqual(["semantic/p/first", "semantic/p/second"]);
     // The temp file DID get written this time — it must not be left behind.

@@ -41,7 +41,7 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync, writeFileSync, symlinkSync, lstatSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync, writeFileSync, symlinkSync, lstatSync, chmodSync, statSync } from "node:fs";
 import { loadMemoryIndex, saveMemoryIndex, MEMORY_INDEX_REL } from "../../src/memory/index-store.js";
 import type { MemoryEntry, MemoryIndex } from "../../src/memory/types.js";
 
@@ -84,6 +84,7 @@ describe("saveMemoryIndex — exclusive, unique temp file (round-39)", () => {
 
     const sentinel = join(sandbox, "sentinel.txt");
     writeFileSync(sentinel, "PRECIOUS — must survive byte-identical\n");
+    chmodSync(sentinel, 0o600);
     ctl.plant = (tmp) => symlinkSync(sentinel, tmp);
 
     // Pre-fix: no throw at all — the save "succeeded" INTO the sentinel.
@@ -91,6 +92,8 @@ describe("saveMemoryIndex — exclusive, unique temp file (round-39)", () => {
 
     // The whole point: the symlink's target is untouched.
     expect(readFileSync(sentinel, "utf8")).toBe("PRECIOUS — must survive byte-identical\n");
+    // Round-40: the mode chmod must not reach it through the symlink either.
+    expect(statSync(sentinel).mode & 0o777).toBe(0o600);
     // ...and the real index is neither replaced nor turned into a symlink.
     expect(readFileSync(idxPath(), "utf8")).toBe(before);
     expect(lstatSync(idxPath()).isSymbolicLink()).toBe(false);

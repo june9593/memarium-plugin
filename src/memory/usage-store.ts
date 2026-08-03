@@ -71,7 +71,9 @@ export function loadUsage(repoPath: string): UsageMap {
  *  so the temp leaf itself was unguarded), and `access.json.tmp-<pid>` is one
  *  shared name for every writer in the process. Both call sites now go through
  *  `_shared/atomic-write`, which creates the temp exclusively (`O_EXCL`) under a
- *  unique name. */
+ *  unique name. Round-40: it also preserves the sidecar's existing permission
+ *  bits across the rename (create-then-rename otherwise republished the umask
+ *  default over a user's `chmod 600`) and creates a brand-new sidecar 0600. */
 function saveUsage(repoPath: string, usage: UsageMap): void {
   const dir = usageDir(repoPath);
   guardUsagePath(dir);
