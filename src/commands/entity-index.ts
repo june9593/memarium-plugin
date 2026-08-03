@@ -7,7 +7,11 @@ import { parseEntityMarkdown } from "../entity/parse.js";
 import { healUndefinedFrontmatter } from "../_shared/heal-frontmatter.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 
-export interface EntityIndexReport { indexed: number; healed: number; }
+/** `skipped` = md files under memory/entities/ that did not parse (no frontmatter
+ *  block, a missing id/kind, or a DUPLICATE frontmatter key — see the round-35
+ *  note in `readFrontmatterBlock`). Reported rather than silent so a
+ *  corrupt/poisoned legacy file is visible instead of just vanishing. */
+export interface EntityIndexReport { indexed: number; healed: number; skipped: number; }
 
 function walkMd(dir: string): string[] {
   const out: string[] = [];
@@ -31,6 +35,7 @@ export async function entityIndexCmd(): Promise<EntityIndexReport> {
   const idx: EntityIndex = emptyEntityIndex();
   let indexed = 0;
   let healed = 0;
+  let skipped = 0;
 
   // The heal step now writes md, so refuse to traverse/rewrite through a
   // symlinked ancestor or the memory/entities leaf (could escape the repo).
@@ -42,7 +47,9 @@ export async function entityIndexCmd(): Promise<EntityIndexReport> {
       const fixed = healUndefinedFrontmatter(md, mtimeDate);
       if (fixed !== null) { writeFileSync(abs, fixed); md = fixed; healed++; }
       const entry = parseEntityMarkdown(md);
-      if (!entry) continue;
+      // Unparseable (incl. a duplicate-key document the parser refuses): skip and
+      // COUNT it. A rebuild must degrade past one bad file, never crash on it.
+      if (!entry) { skipped++; continue; }
       entry.path = relative(cfg.repoPath, abs);
       upsertEntity(idx, entry);
       indexed++;
@@ -50,5 +57,5 @@ export async function entityIndexCmd(): Promise<EntityIndexReport> {
   }
 
   saveEntityIndex(cfg.repoPath, idx);
-  return { indexed, healed };
+  return { indexed, healed, skipped };
 }

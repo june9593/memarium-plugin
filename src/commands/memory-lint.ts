@@ -2,8 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
-import { loadIndex } from "../_shared/index-store.js";
-import type { Tool } from "../_shared/types.js";
 import { MEMORY_INDEX_REL } from "../memory/index-store.js";
 import { ENTITY_INDEX_REL } from "../entity/index-store.js";
 import { QA_INDEX_REL } from "../qa/index-store.js";
@@ -11,17 +9,11 @@ import { emptyMemoryIndex, type MemoryIndex, type MemoryEntry } from "../memory/
 import { emptyEntityIndex, type EntityIndex } from "../entity/types.js";
 import { emptyQaIndex, type QaIndex } from "../qa/types.js";
 import { lintMemory, type LintFinding, type LintReport } from "../memory/lint.js";
+import { loadKnownSessions } from "../memory/known-sessions.js";
 import { writeProposal, flatTargetKey, type MemoryProposal } from "../memory/proposal-store.js";
 import { targetKey, deriveAction, canonicalMemoryPath } from "../memory/gate.js";
 
 export interface MemoryLintOptions { cwd?: string; json?: boolean; fix?: boolean; }
-
-// Runtime allowlist mirroring the `Tool` union in _shared/types.ts. Typed as
-// Set<Tool> so tsc rejects a typo'd literal here, but read as ReadonlySet<string>
-// so it can test the untyped tool field off a raw index entry. Keep in sync with
-// `Tool`: an index entry whose tool isn't one of these is not something memarium
-// writes, so a nonempty index containing one is untrusted (→ skip stale-provenance).
-const KNOWN_TOOLS: ReadonlySet<string> = new Set<Tool>(["claude", "copilot"]);
 
 /** Recover a memory's body (the prose after the `# title` heading) from its md,
  *  so a --fix proposal preserves content and only flips status. */
@@ -111,30 +103,11 @@ export async function memoryLintCmd(opts: MemoryLintOptions): Promise<void> {
   }
   const now = new Date().toISOString().slice(0, 10);
   // Full sessionIds known to the spool index. Feeds lintMemory's stale-provenance
-  // check (a memory whose sourceSessions are all gone from the spool). We build the
-  // known-set ONLY when the index is positively trustworthy: present, non-empty, and
-  // every entry well-formed (a non-empty string sessionId whose map key matches
-  // keyFor(tool, sessionId)). Absent, empty, corrupt (unparseable/bad version), OR
-  // malformed (a parseable index with any bogus entry) all collapse to undefined,
-  // which SKIPS the check — so lint never false-flags every provenanced memory on a
-  // repo whose index isn't cleanly loadable. loadIndex returns an empty index on an
-  // absent file and throws only on a corrupt one; the well-formedness gate below
-  // catches the parseable-but-garbage case loadIndex can't (it validates only the
-  // version). Keeps lint a no-throw read-only diagnostic.
-  let knownSessions: Set<string> | undefined;
-  try {
-    const spool = loadIndex(cfg.repoPath);
-    const pairs = Object.entries(spool.entries);
-    const wellFormed = pairs.length > 0 && pairs.every(([key, ent]) => {
-      const e2 = ent as { tool?: unknown; sessionId?: unknown };
-      return typeof e2.sessionId === "string" && e2.sessionId.length > 0
-        && typeof e2.tool === "string" && KNOWN_TOOLS.has(e2.tool)
-        && key === `${e2.tool}:${e2.sessionId}`;
-    });
-    knownSessions = wellFormed
-      ? new Set(pairs.map(([, ent]) => (ent as { sessionId: string }).sessionId))
-      : undefined; // absent / empty / malformed → skip
-  } catch { knownSessions = undefined; } // corrupt → skip
+  // check (a memory whose sourceSessions are all gone from the spool). undefined
+  // when the index is absent / empty / corrupt / malformed → the check is SKIPPED,
+  // so lint never false-flags every provenanced memory on a repo whose index isn't
+  // cleanly loadable. (Shared with the archival engine — see known-sessions.ts.)
+  const knownSessions = loadKnownSessions(cfg.repoPath);
   const m = readIndexOnce<MemoryIndex>(cfg.repoPath, MEMORY_INDEX_REL, "memory", emptyMemoryIndex());
   const e = readIndexOnce<EntityIndex>(cfg.repoPath, ENTITY_INDEX_REL, "entity", emptyEntityIndex());
   const q = readIndexOnce<QaIndex>(cfg.repoPath, QA_INDEX_REL, "qa", emptyQaIndex());

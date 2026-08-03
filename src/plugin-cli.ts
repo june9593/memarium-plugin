@@ -185,6 +185,25 @@ export async function run(argv: string[]) {
       await memoryLintCmd({ cwd: o.cwd, json: o.json, fix: o.fix });
     });
 
+  program.command("memory-archive")
+    .description("Archive stale/unused memories out of recall (reversible — keeps the .md + index row). Dry-run unless --apply.")
+    .option("--cwd <path>", "project dir (accepted for symmetry; archive plans store-wide)")
+    .option("--json", "emit the structured plan / result JSON instead of a human report")
+    .option("--apply", "apply the plan (default: dry-run — prints the plan, writes nothing)")
+    .action(async (o: { cwd?: string; json?: boolean; apply?: boolean }) => {
+      const { memoryArchiveCmd } = await import("./commands/memory-archive.js");
+      await memoryArchiveCmd({ cwd: o.cwd, json: o.json, apply: o.apply });
+    });
+
+  program.command("memory-unarchive")
+    .description("Restore an archived memory to its pre-archive status (active, or superseded for a superseded-cleanup archive; clears archivedAt/archivedReason). No-op if the id is unknown or not archived.")
+    .argument("<id>", "memory id to restore (e.g. semantic/<project>/<slug>)")
+    .option("--cwd <path>", "project dir (accepted for symmetry; the store is resolved from memariumHome())")
+    .action(async (id: string, o: { cwd?: string }) => {
+      const { memoryUnarchiveCmd } = await import("./commands/memory-unarchive.js");
+      await memoryUnarchiveCmd({ id, cwd: o.cwd });
+    });
+
   program.command("memory-propose")
     .description("Queue a gated (core/procedural/pinned) memory change as a local proposal instead of writing it. Reads an --input JSON array of {entry, body, rationale?, sourceSession?}.")
     .requiredOption("--input <path>", "JSON file: array of { entry, body, rationale?, sourceSession? }")

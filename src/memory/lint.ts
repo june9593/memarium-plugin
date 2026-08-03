@@ -4,6 +4,7 @@ import type { EntityPage } from "../entity/types.js";
 import type { QaIndex } from "../qa/types.js";
 import type { QaEntry } from "../qa/types.js";
 import { scanLeaks } from "./leak-scan.js";
+import { calendarDate } from "./dates.js";
 
 /** Returns a short, truncated, safe snapshot of an unknown entry for use in error details. */
 function entrySnapshot(e: unknown): string {
@@ -15,7 +16,7 @@ function entrySnapshot(e: unknown): string {
 
 /** Safely extract values from a Record-shaped unknown — returns [] for anything non-object/array/null.
  *  Array values are excluded: typeof [] === "object" but arrays are not valid entries. */
-function safeValues<T>(rec: unknown): T[] {
+export function safeValues<T>(rec: unknown): T[] {
   if (!rec || typeof rec !== "object" || Array.isArray(rec)) return [];
   return Object.values(rec as Record<string, T>).filter(
     (v): v is T => v !== null && typeof v === "object" && !Array.isArray(v),
@@ -24,8 +25,12 @@ function safeValues<T>(rec: unknown): T[] {
 
 /** Returns true only when rec[id] is a non-null, non-array object whose id field equals the lookup key.
  *  A truthy-but-corrupt value (string, number, array, empty object, or object with a mismatched id) returns false.
- *  An id/key mismatch is itself a corruption — treat the entry as not a valid target. */
-function validEntryExists(rec: unknown, id: string): boolean {
+ *  An id/key mismatch is itself a corruption — treat the entry as not a valid target.
+ *  Exported because the archival commands need the same key===id agreement check: they
+ *  plan/resolve by `row.id` while looking rows up by KEY, and `writeMemoryEntryFile`
+ *  derives the canonical .md path from `entry.id` — so a row filed under the wrong key
+ *  would silently rewrite the UNRELATED record its id names. */
+export function validEntryExists(rec: unknown, id: string): boolean {
   if (!rec || typeof rec !== "object" || Array.isArray(rec)) return false;
   const v = (rec as Record<string, unknown>)[id];
   return v !== null && typeof v === "object" && !Array.isArray(v) && (v as { id?: unknown }).id === id;
@@ -69,6 +74,18 @@ function inScope(scope: unknown, cwdProject: string | null): boolean {
 const tokenize = (s: string): Set<string> =>
   new Set(s.toLowerCase().split(/[^a-z0-9_]+/).filter((t) => t.length > 1));
 
+/** Round-36: `title` / `summary` are UNTRUSTED index values and are NOT
+ *  guaranteed to be strings — an index row can carry `summary: ["type","array",
+ *  "not","string"]` (hand-edited JSON, a merge from another device, a legacy
+ *  writer). Interpolating that into a template COERCES it — `String(["a","b"])`
+ *  is `"a,b"` — so a malformed row tokenized exactly like healthy prose and could
+ *  pair as a near-duplicate, which the archival pass then acts on by ARCHIVING
+ *  the losing side. The `try` around the comparison never fired: coercion does
+ *  not throw. So validate the type instead of relying on it: a non-string
+ *  contributes NOTHING to the token set (and a row with neither field a string
+ *  ends up with an empty set, which `jaccard` scores 0 against everything). */
+const textOf = (v: unknown): string => (typeof v === "string" ? v : "");
+
 const jaccard = (a: Set<string>, b: Set<string>): number => {
   if (a.size === 0 && b.size === 0) return 0;
   let inter = 0;
@@ -78,6 +95,83 @@ const jaccard = (a: Set<string>, b: Set<string>): number => {
 
 const daysBetween = (a: string, b: string): number =>
   (Date.parse(a) - Date.parse(b)) / 86400000;
+
+/** One near-duplicate pair, WITH the score that produced it. */
+export interface NearDuplicatePair {
+  /** lexicographically first id of the pair */
+  a: string;
+  /** lexicographically second id */
+  b: string;
+  /** The Jaccard overlap that CAUSED this pair — the single source of truth for
+   *  "how similar are these two".
+   *
+   *  ROUND-39: lint's `duplicate-like` finding used to RECOMPUTE this for its
+   *  detail string, tokenizing `` `${e.title} ${e.summary}` `` directly. That is
+   *  the very template-literal COERCION round-36 removed from the matcher: the
+   *  matcher type-guards both fields and treats a non-string as EMPTY, the detail
+   *  did not. So for any pair involving a malformed row the REPORTED overlap was
+   *  not the overlap the decision was made on — it could report a plausible 0.50
+   *  for a pair the matcher had scored 1.00 on the guarded (string-only) text, or
+   *  a healthy-looking number for text the matcher saw as empty. Returning the
+   *  decision's own score deletes the second implementation outright, so the two
+   *  cannot drift again. */
+  similarity: number;
+}
+
+/** Near-duplicate pairs by Jaccard over title+summary content tokens ≥ threshold.
+ *  Pure + shared by lint (the `duplicate-like` check) and the archival engine.
+ *  `candidateStatuses` selects which statuses count as duplicate candidates —
+ *  DEFAULT is ACTIVE-only (lint's behavior, unchanged). The archival pass passes
+ *  active+pinned so a PINNED entry can be a duplicate WINNER (its lower-value
+ *  active dup then gets archived); pinned is never a loser because archive.ts's
+ *  archivable() guard rejects it. Only compares within the same type/scope/project
+ *  bucket (so a semantic and a procedural memory are never reported as duplicates).
+ *  Each returned pair is lexicographically sorted (`a` < `b`) and carries its own
+ *  `similarity`; order across pairs follows bucket/insertion order. Malformed
+ *  pairs are skipped defensively. */
+export function nearDuplicatePairs(
+  entries: MemoryEntry[],
+  threshold = 0.8,
+  candidateStatuses: ReadonlySet<MemoryEntry["status"]> = new Set(["active"]),
+): NearDuplicatePair[] {
+  const candidates = entries.filter((e) => candidateStatuses.has(e.status));
+  const buckets = new Map<string, { e: MemoryEntry; tokens: Set<string> }[]>();
+  for (const e of candidates) {
+    // ROUND-38 — the bucket key is STRUCTURAL (JSON-encoded tuple), never a
+    // delimiter-joined string. A space-joined `${type} ${scope} ${project}` is
+    // AMBIGUOUS because scope/project may legitimately CONTAIN SPACES
+    // (`projectSlugFromPath` does not sanitize, so a checkout at
+    // `~/code/my project` yields project `code-my project` — see the same note in
+    // render.ts / gate.ts / apply.ts). `("project:a", "b c")` and
+    // `("project:a b", "c")` then joined to the SAME key, so entries from
+    // DIFFERENT projects were compared as near-duplicates — and this function
+    // feeds `planArchival`, which ARCHIVES the losing side of a pair. A collision
+    // could therefore archive a memory because of an unrelated project's entry.
+    // `JSON.stringify` quotes and escapes each component, so no combination of
+    // values can collide. Bucketing SEMANTICS are unchanged: same type + same
+    // scope + same project bucket together, `_global` still standing in for a
+    // null/absent project.
+    const key = JSON.stringify([e.type, e.scope, e.project ?? "_global"]);
+    const arr = buckets.get(key) ?? [];
+    arr.push({ e, tokens: tokenize(`${textOf(e.title)} ${textOf(e.summary)}`) });
+    buckets.set(key, arr);
+  }
+  const pairs: NearDuplicatePair[] = [];
+  for (const group of buckets.values()) {
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        try {
+          const similarity = jaccard(group[i].tokens, group[j].tokens);
+          if (similarity >= threshold) {
+            const [a, b] = [group[i].e.id, group[j].e.id].slice().sort() as [string, string];
+            pairs.push({ a, b, similarity });
+          }
+        } catch { /* defensive: skip malformed pair */ }
+      }
+    }
+  }
+  return pairs;
+}
 
 export function lintMemory(
   memoryIdx: MemoryIndex,
@@ -94,9 +188,11 @@ export function lintMemory(
   for (const e of memEntries) {
     try {
       if (e.status === "active" && e.validTo !== null) {
-        const ts = Date.parse(e.validTo);
-        let vDate: string | null = null;
-        if (isFinite(ts)) { try { vDate = new Date(ts).toISOString().slice(0, 10); } catch { vDate = null; } }
+        // Round-24: the same shared `calendarDate()` the archival planner, the
+        // restorer and the read paths use (this check is where those semantics
+        // came from — it just kept its own copy of them until now). null ⇒ we
+        // cannot read the date at all: report it as malformed, never as expired.
+        const vDate = calendarDate(e.validTo);
         if (vDate === null) {
           issues.push({ check: "malformed-date", severity: "warning", layer: "memory", id: e.id,
             detail: `unparseable validTo=${JSON.stringify(e.validTo)}` });
@@ -165,26 +261,12 @@ export function lintMemory(
 
   const dupThreshold = opts.dupThreshold ?? 0.6;
   const active = memEntries.filter((e) => e.status === "active");
-  const buckets = new Map<string, { e: MemoryEntry; tokens: Set<string> }[]>();
-  for (const e of active) {
-    const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
-    const arr = buckets.get(key) ?? [];
-    arr.push({ e, tokens: tokenize(`${e.title} ${e.summary}`) });
-    buckets.set(key, arr);
-  }
-  for (const group of buckets.values()) {
-    for (let i = 0; i < group.length; i++) {
-      for (let j = i + 1; j < group.length; j++) {
-        try {
-          const sim = jaccard(group[i].tokens, group[j].tokens);
-          if (sim >= dupThreshold) {
-            const pair = [group[i].e.id, group[j].e.id].slice().sort();
-            issues.push({ check: "duplicate-like", severity: "info", layer: "memory",
-              id: pair[0], detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`, refs: pair });
-          }
-        } catch { /* defensive: skip malformed pair */ }
-      }
-    }
+  // Round-39: the reported overlap is the matcher's OWN score, not a second
+  // computation over raw (uncoerced, unguarded) title/summary — see
+  // `NearDuplicatePair.similarity`.
+  for (const { a: id0, b: id1, similarity } of nearDuplicatePairs(active, dupThreshold)) {
+    issues.push({ check: "duplicate-like", severity: "info", layer: "memory",
+      id: id0, detail: `near-duplicate of ${id1} (overlap ${similarity.toFixed(2)})`, refs: [id0, id1] });
   }
 
   const entEntries = safeValues<EntityPage>(entityIdx.entries)

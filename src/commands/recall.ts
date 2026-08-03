@@ -4,6 +4,11 @@ import { resolveMemoryView, resolveEntryAbsPath } from "../memory/source-resolve
 import { scoreMemories } from "../memory/score.js";
 import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
 import { renderPrimer } from "../memory/primer.js";
+// R2 cold-storage valve — SHARED with `memory-query` (src/memory/cold-pass.ts).
+// `recall` is the PRIMARY task-recall path (/memarium-recall), so archival's
+// "a wrongly-archived memory resurfaces on demand" guarantee has to hold HERE,
+// not only in /memarium-context's memory-query.
+import { runColdPass, renderColdHints, renderColdNextStep, isContentHitReason, type ColdStorageHit } from "../memory/cold-pass.js";
 import type { MemoryType } from "../memory/types.js";
 
 /**
@@ -26,9 +31,8 @@ import type { MemoryType } from "../memory/types.js";
 
 const DEFAULT_LIMIT = 25;
 
-// A real CONTENT hit (vs scope/importance/recency baseline) — same markers
-// memory-query/eval use. Only content-hit results are recorded as an "access".
-const CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
+// Only content-hit results are recorded as an "access" (marker list lives in
+// cold-pass.ts, shared with memory-query/eval).
 const BUMP_TOP_N = 5;
 
 export interface RecallHit {
@@ -55,6 +59,16 @@ export interface RecallPayload {
   query: string;
   repoPath: string;
   entries: RecallHit[];
+  /** R2 cold-storage valve (READ ONLY): strongly-matching ARCHIVED entries,
+   *  surfaced only when the live/active recall answers the query weakly. This is
+   *  what makes automatic archival reversible on the recall path — each hit
+   *  carries its own vetted `restoreCommand` (null when it can't be restored
+   *  here: the archive lives on another device, or its id isn't safe to put in a
+   *  command). Consumers must run that string, never build one from `id`.
+   *  Always present; `[]` when nothing cold matched, the primary recall was
+   *  already strong, or the supplied cwd resolved to no project (round-34: an
+   *  unresolved cwd must not widen this to every project's archive). */
+  coldStorage: ColdStorageHit[];
   /** Only populated when there's no query — a "what's in this project" overview
    *  (the same render the SessionStart primer uses). Omitted for a real query. */
   primer?: string;
@@ -98,7 +112,32 @@ export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
   overlayUsage(entries, loadUsage(cfg.repoPath));
 
   const query = (opts.q ?? "").trim();
-  const scored = scoreMemories(entries, { project: projectFilter, text: query, type: null, now });
+  const scoreQuery = { project: projectFilter, text: query, type: null, now };
+  const scored = scoreMemories(entries, scoreQuery);
+
+  // R2 resurrect valve (READ ONLY, shared with memory-query): scoreMemories
+  // excludes every archived entry, so without this a wrongly-archived memory is
+  // invisible on the primary /memarium-recall path. Fires only on a weak
+  // content-matched primary recall; scope/type filtered like the primary pass;
+  // NEVER writes or mutates status/index. Takes `view.entries` (the KEYED map)
+  // rather than the value array so each cold hit's origin is resolved under the
+  // same key `view.sources` is keyed with — never the row's untrusted `id`.
+  //
+  // SCOPE (round-34, SECURITY): SKIPPED ENTIRELY when the caller named a `cwd`
+  // we could not resolve to a synced project. `projectFilter` stays null in that
+  // case, and a null project means WHOLE STORE to the cold pass (`inScope` is
+  // true for everything) — so an unresolved cwd silently widened the archived
+  // valve to EVERY project, the inverse of the project scoping it was given in
+  // round 6, and it renders a restore command per hit. A null project is only a
+  // legitimate whole-store request when it was ASKED for (`--all`, or no cwd at
+  // all); an unresolved cwd is a failure to scope, not a request to widen — so
+  // fail CLOSED. The primary pass agrees about scope by construction: it is the
+  // same `scoreQuery`, and when the cwd doesn't resolve the payload flags
+  // `meta.cwdUnresolved` and `meta.nextStep` tells the caller to re-run with
+  // `--project <slug>` / `--all`, which then legitimately reaches both passes.
+  const coldStorage = cwdUnresolved
+    ? []
+    : runColdPass({ entries: view.entries, scored, query: scoreQuery, sources: view.sources });
 
   const limit = opts.limit && opts.limit > 0 ? opts.limit : DEFAULT_LIMIT;
   const hits: RecallHit[] = scored.slice(0, limit).map((s) => ({
@@ -120,6 +159,7 @@ export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
     query,
     repoPath: cfg.repoPath,
     entries: hits,
+    coldStorage,
     meta: {
       total: scored.length,
       returned: hits.length,
@@ -128,7 +168,13 @@ export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
         ? "Read the top 1–5 entry.path with the Read tool for full bodies (episodes carry the arc)."
         : (cwdUnresolved
             ? "cwd didn't resolve to a synced project — pass --project <slug> or --all."
-            : "No memory yet for this project. Run /memarium to digest sessions."),
+            // Cold-only recall: the restore instruction comes from the SHARED
+            // origin-aware renderer, never a hard-coded local command — when every
+            // cold hit is an overlay (sibling-device) archive, `memory-unarchive`
+            // reads the LOCAL index and would just report "not archived".
+            : coldStorage.length > 0
+              ? renderColdNextStep(coldStorage)
+              : "No memory yet for this project. Run /memarium to digest sessions."),
     },
   };
 
@@ -142,20 +188,28 @@ export function buildRecallPayload(opts: RecallOptions = {}): RecallPayload {
   return payload;
 }
 
-/** CLI entry: print payload as JSON to stdout, and (only on a real content-hit
- *  query) bump the device-local usage sidecar for the top hits. */
+/** CLI entry: print payload as JSON to stdout, print the cold-storage restore
+ *  hint to stderr, and (only on a real content-hit query) bump the device-local
+ *  usage sidecar for the top hits. */
 export async function recallCmd(opts: RecallOptions): Promise<void> {
   const payload = buildRecallPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
 
+  // Human hint for cold storage → stderr (stdout stays a clean machine payload
+  // for /memarium-recall). Same renderer memory-query uses, so the restore
+  // instruction is identical on both surfaces — and honest per hit: an overlay
+  // hit can't be unarchived locally.
+  for (const line of renderColdHints(payload.coldStorage)) console.error(line);
+
   // BUMP (the ONLY write side effect) — non-empty query + content hit only.
   // Reuse the repoPath buildRecallPayload already resolved (avoids a second
   // readPluginConfig + its migrate side-effect). Best-effort: usage is
-  // non-essential telemetry and must never break recall.
+  // non-essential telemetry and must never break recall. Cold hits are NEVER
+  // bumped — surfacing an archived entry must not touch its usage record.
   if (payload.query !== "") {
     try {
       const bumpIds = payload.entries
-        .filter((h) => Number.isFinite(h.score) && CONTENT_HIT_MARKERS.some((m) => h.whyRecalled.includes(m)))
+        .filter((h) => Number.isFinite(h.score) && isContentHitReason(h.whyRecalled))
         .slice(0, BUMP_TOP_N)
         .map((h) => h.id);
       const now = new Date().toISOString().slice(0, 10);

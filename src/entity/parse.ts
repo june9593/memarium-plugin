@@ -1,4 +1,5 @@
 import type { EntityPage, EntityKind } from "./types.js";
+import { readFrontmatterBlock } from "../_shared/frontmatter.js";
 
 function parseArr(v: string | undefined): string[] {
   const t = (v ?? "").trim();
@@ -25,17 +26,13 @@ function parseDate(v: string | undefined): string {
   return (t === "undefined" || t === "null") ? "" : t;
 }
 
-/** Inverse of renderEntityMarkdown: parse frontmatter (+ ignore body) → EntityPage. */
+/** Inverse of renderEntityMarkdown: parse frontmatter (+ ignore body) → EntityPage.
+ *  Returns null for an unparseable document — no frontmatter block, a missing
+ *  id/kind, or a DUPLICATE frontmatter key (corruption or injection; see the
+ *  round-35 note in `readFrontmatterBlock`). Callers skip a null. */
 export function parseEntityMarkdown(md: string): EntityPage | null {
-  md = md.replace(/\r\n/g, "\n"); // CRLF-safe (Windows checkouts)
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  const fm: Record<string, string> = {};
-  for (const line of m[1].split("\n")) {
-    const i = line.indexOf(":");
-    if (i === -1) continue;
-    fm[line.slice(0, i).trim()] = line.slice(i + 1).trim();
-  }
+  const fm = readFrontmatterBlock(md);
+  if (!fm) return null;
   if (!fm.id || !fm.kind) return null;
   return {
     id: fm.id,

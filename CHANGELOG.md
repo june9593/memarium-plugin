@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.20.0 — 2026-07-24
+
+### Memory dynamics: forgetting/archival (two-tier hot/cold memory)
+
+Memories now have a lifecycle. A new `status: "archived"` (+ `archivedAt` /
+`archivedReason` frontmatter) demotes stale/unused memories out of recall
+**without deleting them** — archival = cold storage, fully reversible.
+
+- **Auto-archive in digest consolidation** — `memory-archive --apply` (run from
+  the digest's Consolidate step) flips entries to `archived` by an aggressive
+  policy: superseded/expired/near-duplicate-loser, stale episodics (>90d),
+  stale-provenance (source sessions gone), and unused-low-value (accessCount 0 +
+  age >60d + importance ≤2, semantic/procedural only). `core` and `pinned` are
+  NEVER archived.
+- **Reversible + self-correcting** — archived `.md` stay git-tracked;
+  `memory-unarchive <id>` restores. A read-only **R2 cold-storage valve** shared
+  by **both** `memory-query` (`/memarium-context`) **and** `recall`
+  (`/memarium-recall`) resurfaces strongly-matching archived entries
+  (project-scoped) with a restore hint when active recall is weak, so a
+  wrongly-archived memory comes back on demand. The hint is **origin-aware and
+  fail-closed**: the local `memory-unarchive <id>` command is offered only for a
+  hit whose origin resolves to the local index; an overlay hit names its origin
+  device, and an origin that can't be established (`source: "unknown"`) gets a
+  generic "restore it on the device that archived it" — a wrong local command is
+  worse than a vaguer correct one.
+- Recall + primer + the memory-query conflicts section + entity-query all
+  exclude archived (single `isArchived` predicate). The R2 valve is the ONLY
+  read path that surfaces archived — and it never writes.
+- Archival is a deliberate, automatic, non-gated write (the one place the digest
+  bypasses the v4 human-review gate) — safe because of the core/pinned guard,
+  reversibility, and R2.
+- `archivedAt` / `archivedReason` are **machine-maintained**: only
+  `memory-archive` sets them and only `memory-unarchive` clears them. Authored
+  writes (`memory-write` / `memory-propose` → `memory-approve`) can therefore
+  neither **set** nor **clear** the archival lifecycle: they can't introduce
+  `archivedAt`/`archivedReason` on a non-archived entry (both are forced to
+  `null`, so an `active` entry never carries archival metadata), and they can't
+  reactivate an archived one — an authored update to an archived id updates its
+  content while keeping `status: archived` + both lifecycle fields verbatim
+  (restoring is `memory-unarchive`'s job). Superseding an already-archived
+  target likewise leaves it **archived** rather than producing a `superseded`
+  row that still carries archival metadata — but the machine does record the
+  transition on it, rewriting its `archivedReason` to `superseded-cleanup` (and
+  restamping `archivedAt`). That keeps the two consumers of that field honest:
+  the R2 cold valve stops advertising the entry as restorable, and a later
+  `memory-unarchive` returns it to `superseded` instead of `active` (which would
+  resurrect an obsolete fact next to its live replacement). Both archival
+  commands also refuse to rewrite an index row too incomplete to re-render
+  faithfully (missing `id`/`type`/`scope`/`title`/`project`/`status`/`updatedAt`).
+
+Schema-compatible: old entries parse the new fields as `null`; the npm CI
+aggregator (`merge-books.mjs`) carries `archived` through unchanged.
+
 ## 0.19.8 — 2026-07-24
 
 ### Digest prompt: scope abstracted rules by reuse reach (fixes over-narrow scoping)

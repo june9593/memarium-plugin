@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { writeFileAtomicSync } from "../_shared/atomic-write.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
 import { memariumHome } from "../memarium-home.js";
 import type { MemoryEntry } from "./types.js";
@@ -61,16 +62,23 @@ export function loadUsage(repoPath: string): UsageMap {
   return out;
 }
 
-/** Atomic write: temp file + rename, so an interrupted write can't leave a
- *  half-written (corrupt) sidecar in place. */
+/** Atomic write: unique temp sibling + rename, so an interrupted write can't
+ *  leave a half-written (corrupt) sidecar in place.
+ *
+ *  Round-39: this used to be its own copy of the idiom, with the SAME two holes
+ *  `saveMemoryIndex` had — `writeFileSync`'s implicit `"w"` FOLLOWS a symlink
+ *  planted at the temp path (and `guardUsagePath` only walks the DIRECTORY chain,
+ *  so the temp leaf itself was unguarded), and `access.json.tmp-<pid>` is one
+ *  shared name for every writer in the process. Both call sites now go through
+ *  `_shared/atomic-write`, which creates the temp exclusively (`O_EXCL`) under a
+ *  unique name. Round-40: it also preserves the sidecar's existing permission
+ *  bits across the rename (create-then-rename otherwise republished the umask
+ *  default over a user's `chmod 600`) and creates a brand-new sidecar 0600. */
 function saveUsage(repoPath: string, usage: UsageMap): void {
   const dir = usageDir(repoPath);
   guardUsagePath(dir);
   mkdirSync(dir, { recursive: true });
-  const file = usageFile(repoPath);
-  const tmp = join(dir, `access.json.tmp-${process.pid}`);
-  writeFileSync(tmp, JSON.stringify(usage, null, 2) + "\n");
-  renameSync(tmp, file);
+  writeFileAtomicSync(usageFile(repoPath), JSON.stringify(usage, null, 2) + "\n");
 }
 
 /** Increment count + set lastAccess for each id (load → mutate → atomic save).

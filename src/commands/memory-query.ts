@@ -1,26 +1,44 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
-import { scoreMemories, type ScoredMemory } from "../memory/score.js";
+import { scoreMemories, isArchived, type ScoredMemory } from "../memory/score.js";
 import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
 import { renderPrimer } from "../memory/primer.js";
-import type { MemoryType } from "../memory/types.js";
+// R2 cold-storage valve — SHARED with `recall` (src/memory/cold-pass.ts) so both
+// primary recall surfaces honour archival's "wrongly-archived resurfaces on
+// demand" guarantee identically.
+import { runColdPass, renderColdHints, isContentHit, type ColdStorageHit } from "../memory/cold-pass.js";
+import type { MemoryEntry, MemoryType } from "../memory/types.js";
 
 export interface MemoryQueryOptions { cwd?: string; type?: string; q?: string; }
+
+export type { ColdStorageHit };
+
+export interface MemoryQueryResult {
+  project: string | null;
+  primer: string;
+  core: ScoredMemory[];
+  procedures: ScoredMemory[];
+  semantic: ScoredMemory[];
+  untrustedSemantic: ScoredMemory[];
+  episodes: ScoredMemory[];
+  conflicts: { entry: MemoryEntry; score: number; whyRecalled: string }[];
+  coldStorage: ColdStorageHit[];
+  meta: { total: number; project: string | null };
+}
 
 function isType(s: string | undefined): MemoryType | null {
   const ok = ["core", "semantic", "episodic", "procedural"];
   return s && ok.includes(s) ? (s as MemoryType) : null;
 }
 
-// A real CONTENT hit (vs scope/importance/recency baseline) — same markers
-// eval.ts uses. Only content-hit results are recorded as an "access"; bumping
-// baseline entries would let an unrelated query (e.g. "kubernetes helm") slowly
-// inflate high-importance memories and poison local preference.
-const CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
+// Only content-hit results are recorded as an "access" (see cold-pass.ts for the
+// marker list) — bumping baseline entries would let an unrelated query (e.g.
+// "kubernetes helm") slowly inflate high-importance memories and poison local
+// preference.
 const BUMP_TOP_N = 5;
 
-export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
+export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQueryResult> {
   const cfg = readPluginConfig();
   const cwd = opts.cwd ?? process.cwd();
   const project = resolveProjectFromCwd(cwd, cfg.repoPath);
@@ -38,9 +56,10 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
   const usage = loadUsage(cfg.repoPath);
   overlayUsage(entries, usage);
 
-  const scored = scoreMemories(entries, {
+  const scoreQuery = {
     project, text: opts.q ?? "", type: isType(opts.type), now,
-  });
+  };
+  const scored = scoreMemories(entries, scoreQuery);
 
   const byType = (t: MemoryType): ScoredMemory[] => scored.filter((s) => s.entry.type === t);
 
@@ -53,8 +72,12 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
     primer = renderPrimer(project, entries);
   }
 
+  // Archived is out of recall on ALL read surfaces — exclude it here too. An
+  // entry archived via the "expired" rule keeps validTo !== null, so without this
+  // guard it would still match the time-bounded rule and leak into every payload's
+  // conflicts section (the R2 cold-storage valve is the ONLY archived read path).
   const conflicts = entries
-    .filter((e) => e.status === "superseded" || e.supersedes !== null || e.validTo !== null)
+    .filter((e) => !isArchived(e) && (e.status === "superseded" || e.supersedes !== null || e.validTo !== null))
     .map((e) => ({
       entry: e,
       score: 0,
@@ -71,7 +94,28 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
   const semanticAll = byType("semantic");
   const isTrusted = (s: ScoredMemory): boolean => (s.entry.trust ?? "unknown") === "trusted";
 
-  const payload = {
+  // R2 resurrect valve (READ ONLY): if the active recall produced few
+  // content-matched hits, surface the top strongly-matching ARCHIVED entries.
+  // Shared with `recall` — see src/memory/cold-pass.ts for the gate, the scope/
+  // type filtering and the trust handling. NEVER writes/mutates status. Passes
+  // `view.entries` (the KEYED map) so each hit's origin resolves under the same
+  // key `view.sources` is keyed with, never the row's untrusted `id`.
+  //
+  // SCOPE (round-34, SECURITY): SKIPPED when the cwd resolved to NO project.
+  // `memory-query` has no `--all` / `--project` escape hatch, so `project ===
+  // null` here means exactly one thing — this cwd is not a synced project — and
+  // a null project means WHOLE STORE to the cold pass (`inScope` is true for
+  // everything). Running /memarium-context from an unsynced directory therefore
+  // used to surface every OTHER project's archived memory, complete with a
+  // restore command per hit. Fail closed instead; the primary pass agrees about
+  // scope by construction (same `scoreQuery`), and its own results already carry
+  // `meta.project: null` so the skill knows the recall wasn't project-scoped.
+  const cwdUnresolved = project === null;
+  const coldStorage: ColdStorageHit[] = cwdUnresolved ? [] : runColdPass({
+    entries: view.entries, scored, query: scoreQuery, sources: view.sources,
+  });
+
+  const payload: MemoryQueryResult = {
     project,
     primer,
     core: byType("core"),
@@ -80,9 +124,15 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
     untrustedSemantic: semanticAll.filter((s) => !isTrusted(s)),
     episodes: byType("episodic"),
     conflicts,
+    coldStorage,
     meta: { total: scored.length, project },
   };
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+
+  // Human hint for cold storage → stderr, so the JSON on stdout stays a clean
+  // machine payload for the skill (memory-query is consumed as JSON). Lines are
+  // rendered by the shared cold pass so `recall` prints the identical hint.
+  for (const line of renderColdHints(coldStorage)) console.error(line);
 
   // BUMP (the ONLY write side effect) — only on a real recall: non-empty query
   // AND a content hit. Take the top BUMP_TOP_N content-hit, finite-scored
@@ -93,11 +143,13 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<void> {
   if ((opts.q ?? "").trim() !== "") {
     try {
       const bumpIds = scored
-        .filter((s) => Number.isFinite(s.score) && CONTENT_HIT_MARKERS.some((m) => s.whyRecalled.includes(m)))
+        .filter((s) => Number.isFinite(s.score) && isContentHit(s))
         .slice(0, BUMP_TOP_N)
         .map((s) => s.entry.id);
       bumpUsage(cfg.repoPath, bumpIds, now);
     } catch { /* usage is non-essential telemetry; never fail a recall over it */ }
   }
+
+  return payload;
 }
 

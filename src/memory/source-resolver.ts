@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { memariumHome } from "../memarium-home.js";
+import { calendarDate, epochMs } from "./dates.js";
 import { loadMemoryIndex, MEMORY_INDEX_REL } from "./index-store.js";
 import type { MemoryEntry } from "./types.js";
 
@@ -42,11 +43,48 @@ export function aggregatedOverlayPath(): string {
 }
 
 /**
- * Merge two id-keyed entry maps: union; on id collision, **latest `updatedAt`
- * wins; equal timestamp prefers `local`** (own-device authority + possibly
- * newer unpushed state). NOTE: this is a read-view override, NOT CI parity —
- * merge-books uses strict `>` and keeps the first-traversed device on ties.
- * Does NOT filter status (superseded kept; consumers filter).
+ * Merge two id-keyed entry maps: union; on id collision, **the later CALENDAR
+ * DAY wins; the same day is a TIE and prefers `local`** (own-device authority +
+ * possibly newer unpushed state). NOTE: this is a read-view override, NOT CI
+ * parity — merge-books uses strict `>` and keeps the first-traversed device on
+ * ties. Does NOT filter status (superseded kept; consumers filter).
+ *
+ * DAY GRANULARITY IS A CROSS-SURFACE CONTRACT — three places agree BY DESIGN and
+ * a change to one must change all three:
+ *   1. this READ merge,
+ *   2. the cross-device WRITE guard (`isOverlayConflict`, overlay-conflict.ts),
+ *      which treats a same calendar day as a TIE so a same-day sibling edit still
+ *      reaches its substantive divergence check,
+ *   3. the LIFECYCLE WRITERS (`memory-archive`, `memory-unarchive`, and the
+ *      supersede transition in `applyMemoryItems`), which stamp `updatedAt` as a
+ *      plain day-granular `YYYY-MM-DD`.
+ * Because the writers only ever record a DAY, a stamp denotes a whole day, not an
+ * instant — so two copies stamped the same day are genuinely UNORDERED.
+ *
+ * Round-31 ordered this merge by INSTANT (`epochMs`) instead, which is
+ * chronologically correct but disagrees with (2): an equivalent overlay copy at
+ * `2026-07-24T10:00Z` beat a local `2026-07-24` in the read view, while the write
+ * guard called the same pair a tie and let local win. Read view and write guard
+ * then disagreed about which copy is authoritative — the same planner-vs-reader
+ * skew that already bit this PR at rounds 20→24, just inverted.
+ *
+ * Comparing the raw STRINGS (what this did before round-31) is not an option
+ * either: it is not chronological for valid mixed ISO forms —
+ * `2026-05-06T20:00:00-10:00` is 2026-05-07T06:00Z (a genuinely LATER day) yet
+ * sorts lexically SMALLER than `2026-05-06T23:00:00Z`, and
+ * `2026-05-06T01:00:00+14:00` is 2026-05-05T11:00Z (a genuinely EARLIER day) yet
+ * sorts lexically LARGER than `2026-05-06`. So the DAY is compared through the
+ * shared `calendarDate()` (UTC-normalized), and the instant only ever confirms
+ * the direction once the days already differ.
+ *
+ * UNREADABLE STAMPS (absent / non-string / unparseable → `epochMs` null): a
+ * timestamp we cannot read cannot be PROVEN newer, so it never beats a readable
+ * one — in either direction. That keeps a corrupt row from silently winning the
+ * read view: under the old lexical compare a garbage string like `"not-a-date"`
+ * outranked every real ISO date, so an unreadable overlay row displaced a
+ * perfectly good local one (and vice versa). When BOTH sides are unreadable
+ * there is nothing to order by, so it falls back to the documented tie behavior:
+ * LOCAL wins.
  */
 export function mergeIndexById(
   local: Record<string, MemoryEntry>,
@@ -60,13 +98,28 @@ export function mergeIndexById(
   }
   for (const [id, e] of Object.entries(local)) {
     const ex = entries[id];
-    // `>=` → local wins on a tie; overlay only survives when strictly newer.
-    if (!ex || (e.updatedAt ?? "") >= (ex.updatedAt ?? "")) {
+    if (!ex || localWins(e.updatedAt, ex.updatedAt)) {
       entries[id] = e;
       sources[id] = "local";
     }
   }
   return { entries, sources };
+}
+
+/** True when the LOCAL copy should own the merged slot for a colliding id.
+ *  Overlay survives only when it is on a strictly, provably LATER calendar day —
+ *  the same two-level rule `isOverlayConflict` applies (day picks the branch, the
+ *  instant only confirms the direction once the days differ). */
+function localWins(localAt: unknown, overlayAt: unknown): boolean {
+  const localMs = epochMs(localAt);
+  const overlayMs = epochMs(overlayAt);
+  if (overlayMs === null) return true;   // overlay unreadable (or both) → can't be newer; tie → local
+  if (localMs === null) return false;    // only local unreadable → can't be proven newer either
+  // Same calendar DAY → the two are unordered (writers stamp days, not instants)
+  // → TIE → local wins, exactly as the write guard resolves it.
+  // Both stamps parsed above, so both calendarDate() calls are non-null here.
+  if (calendarDate(localAt) === calendarDate(overlayAt)) return true;
+  return localMs >= overlayMs;           // different days → later day wins (`>=` keeps the tie shape)
 }
 
 /**

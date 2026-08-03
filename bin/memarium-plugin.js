@@ -605,9 +605,9 @@ var require_help = __commonJS({
           "g"
         );
         const lines = columnText.match(regex) || [];
-        return leadingStr + lines.map((line, i2) => {
-          if (line === "\n") return "";
-          return (i2 > 0 ? indentString : "") + line.trimEnd();
+        return leadingStr + lines.map((line3, i2) => {
+          if (line3 === "\n") return "";
+          return (i2 > 0 ? indentString : "") + line3.trimEnd();
         }).join("\n");
       }
     };
@@ -7299,6 +7299,52 @@ var init_index_store = __esm({
   }
 });
 
+// src/_shared/atomic-write.ts
+import { randomBytes } from "node:crypto";
+import { closeSync, fchmodSync, fsyncSync, openSync, renameSync as renameSync2, rmSync, statSync, writeFileSync as writeFileSync3 } from "node:fs";
+import { basename, dirname, join as join6 } from "node:path";
+function tempSiblingPath(target) {
+  seq = (seq + 1) % 16777216;
+  const uniq = `${process.pid}-${seq.toString(36)}-${randomBytes(4).toString("hex")}`;
+  return join6(dirname(target), `${basename(target)}.tmp-${uniq}`);
+}
+function modeToPreserve(target) {
+  try {
+    return statSync(target).mode & 4095;
+  } catch {
+    return NEW_FILE_MODE;
+  }
+}
+function writeFileAtomicSync(target, data) {
+  const mode = modeToPreserve(target);
+  const tmp = tempSiblingPath(target);
+  const fd = openSync(tmp, "wx");
+  try {
+    try {
+      writeFileSync3(fd, data);
+      fchmodSync(fd, mode);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync2(tmp, target);
+  } catch (err) {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+    }
+    throw err;
+  }
+}
+var seq, NEW_FILE_MODE;
+var init_atomic_write = __esm({
+  "src/_shared/atomic-write.ts"() {
+    "use strict";
+    seq = 0;
+    NEW_FILE_MODE = 384;
+  }
+});
+
 // src/memory/types.ts
 function memoryKey(entry) {
   return entry.id;
@@ -7313,23 +7359,35 @@ var init_types2 = __esm({
 });
 
 // src/memory/index-store.ts
-import { existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "node:fs";
-import { dirname, join as join6 } from "node:path";
-function loadMemoryIndex(repoRoot) {
-  const p2 = join6(repoRoot, MEMORY_INDEX_REL);
-  if (!existsSync4(p2)) return emptyMemoryIndex();
+import { existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync4 } from "node:fs";
+import { dirname as dirname2, join as join7 } from "node:path";
+function loadMemoryIndexStrict(repoRoot) {
+  const p2 = join7(repoRoot, MEMORY_INDEX_REL);
+  if (!existsSync4(p2)) return { kind: "absent" };
+  let parsed;
   try {
-    const parsed = JSON.parse(readFileSync4(p2, "utf8"));
-    if (parsed.version !== 1 || !parsed.entries) return emptyMemoryIndex();
-    return parsed;
-  } catch {
-    return emptyMemoryIndex();
+    parsed = JSON.parse(readFileSync4(p2, "utf8"));
+  } catch (err) {
+    return { kind: "corrupt", reason: `unparseable JSON (${err.message})` };
   }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { kind: "corrupt", reason: "not a JSON object" };
+  }
+  const obj = parsed;
+  if (obj.version !== 1) return { kind: "corrupt", reason: `unsupported index version ${JSON.stringify(obj.version)}` };
+  if (!obj.entries || typeof obj.entries !== "object" || Array.isArray(obj.entries)) {
+    return { kind: "corrupt", reason: "missing or non-object `entries` map" };
+  }
+  return { kind: "ok", index: parsed };
+}
+function loadMemoryIndex(repoRoot) {
+  const loaded = loadMemoryIndexStrict(repoRoot);
+  return loaded.kind === "ok" ? loaded.index : emptyMemoryIndex();
 }
 function saveMemoryIndex(repoRoot, idx) {
-  const p2 = join6(repoRoot, MEMORY_INDEX_REL);
-  mkdirSync3(dirname(p2), { recursive: true });
-  writeFileSync3(p2, JSON.stringify(idx, null, 2) + "\n");
+  const p2 = join7(repoRoot, MEMORY_INDEX_REL);
+  mkdirSync3(dirname2(p2), { recursive: true });
+  writeFileAtomicSync(p2, JSON.stringify(idx, null, 2) + "\n");
 }
 function upsertMemory(idx, entry) {
   idx.entries[memoryKey(entry)] = entry;
@@ -7338,6 +7396,7 @@ var MEMORY_INDEX_REL;
 var init_index_store2 = __esm({
   "src/memory/index-store.ts"() {
     "use strict";
+    init_atomic_write();
     init_repo_data_dir();
     init_types2();
     MEMORY_INDEX_REL = `${REPO_DATA_DIR}/index.memory.json`;
@@ -7346,9 +7405,9 @@ var init_index_store2 = __esm({
 
 // src/spool/skip-store.ts
 import { mkdirSync as mkdirSync4, readFileSync as readFileSync5, writeFileSync as writeFileSync4, existsSync as existsSync5 } from "node:fs";
-import { join as join7 } from "node:path";
+import { join as join8 } from "node:path";
 function loadSkips(repoRoot) {
-  const p2 = join7(repoRoot, SKIP_INDEX_REL);
+  const p2 = join8(repoRoot, SKIP_INDEX_REL);
   if (!existsSync5(p2)) return { version: 1, sessions: {} };
   try {
     const parsed = JSON.parse(readFileSync5(p2, "utf8"));
@@ -7362,7 +7421,7 @@ function loadSkips(repoRoot) {
 }
 function saveSkips(repoRoot, idx) {
   mkdirSync4(dataDirAbs(repoRoot), { recursive: true });
-  writeFileSync4(join7(repoRoot, SKIP_INDEX_REL), JSON.stringify(idx, null, 2) + "\n");
+  writeFileSync4(join8(repoRoot, SKIP_INDEX_REL), JSON.stringify(idx, null, 2) + "\n");
 }
 function upsertSkips(idx, sessions, at) {
   let added = 0;
@@ -7522,9 +7581,9 @@ var init_types3 = __esm({
 
 // src/qa/index-store.ts
 import { existsSync as existsSync6, mkdirSync as mkdirSync5, readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "node:fs";
-import { dirname as dirname2, join as join8 } from "node:path";
+import { dirname as dirname3, join as join9 } from "node:path";
 function loadQaIndex(repoRoot) {
-  const p2 = join8(repoRoot, QA_INDEX_REL);
+  const p2 = join9(repoRoot, QA_INDEX_REL);
   if (!existsSync6(p2)) return emptyQaIndex();
   try {
     const parsed = JSON.parse(readFileSync6(p2, "utf8"));
@@ -7535,8 +7594,8 @@ function loadQaIndex(repoRoot) {
   }
 }
 function saveQaIndex(repoRoot, idx) {
-  const p2 = join8(repoRoot, QA_INDEX_REL);
-  mkdirSync5(dirname2(p2), { recursive: true });
+  const p2 = join9(repoRoot, QA_INDEX_REL);
+  mkdirSync5(dirname3(p2), { recursive: true });
   writeFileSync5(p2, JSON.stringify(idx, null, 2) + "\n");
 }
 function upsertQa(idx, entry) {
@@ -7567,9 +7626,9 @@ var init_types4 = __esm({
 
 // src/entity/index-store.ts
 import { existsSync as existsSync7, mkdirSync as mkdirSync6, readFileSync as readFileSync7, writeFileSync as writeFileSync6 } from "node:fs";
-import { dirname as dirname3, join as join9 } from "node:path";
+import { dirname as dirname4, join as join10 } from "node:path";
 function loadEntityIndex(repoRoot) {
-  const p2 = join9(repoRoot, ENTITY_INDEX_REL);
+  const p2 = join10(repoRoot, ENTITY_INDEX_REL);
   if (!existsSync7(p2)) return emptyEntityIndex();
   try {
     const parsed = JSON.parse(readFileSync7(p2, "utf8"));
@@ -7580,8 +7639,8 @@ function loadEntityIndex(repoRoot) {
   }
 }
 function saveEntityIndex(repoRoot, idx) {
-  const p2 = join9(repoRoot, ENTITY_INDEX_REL);
-  mkdirSync6(dirname3(p2), { recursive: true });
+  const p2 = join10(repoRoot, ENTITY_INDEX_REL);
+  mkdirSync6(dirname4(p2), { recursive: true });
   writeFileSync6(p2, JSON.stringify(idx, null, 2) + "\n");
 }
 function upsertEntity(idx, entry) {
@@ -7597,11 +7656,33 @@ var init_index_store4 = __esm({
   }
 });
 
+// src/memory/dates.ts
+function calendarDate(v) {
+  if (typeof v !== "string") return null;
+  const ts = Date.parse(v);
+  if (!isFinite(ts)) return null;
+  try {
+    return new Date(ts).toISOString().slice(0, 10);
+  } catch {
+    return null;
+  }
+}
+function epochMs(v) {
+  if (typeof v !== "string") return null;
+  const ts = Date.parse(v);
+  return Number.isFinite(ts) ? ts : null;
+}
+var init_dates = __esm({
+  "src/memory/dates.ts"() {
+    "use strict";
+  }
+});
+
 // src/memory/source-resolver.ts
 import { existsSync as existsSync8 } from "node:fs";
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 function aggregatedOverlayPath() {
-  return join10(memariumHome(), "aggregated");
+  return join11(memariumHome(), "aggregated");
 }
 function mergeIndexById(local, overlay) {
   const entries = {};
@@ -7612,18 +7693,26 @@ function mergeIndexById(local, overlay) {
   }
   for (const [id, e] of Object.entries(local)) {
     const ex = entries[id];
-    if (!ex || (e.updatedAt ?? "") >= (ex.updatedAt ?? "")) {
+    if (!ex || localWins(e.updatedAt, ex.updatedAt)) {
       entries[id] = e;
       sources[id] = "local";
     }
   }
   return { entries, sources };
 }
+function localWins(localAt, overlayAt) {
+  const localMs = epochMs(localAt);
+  const overlayMs = epochMs(overlayAt);
+  if (overlayMs === null) return true;
+  if (localMs === null) return false;
+  if (calendarDate(localAt) === calendarDate(overlayAt)) return true;
+  return localMs >= overlayMs;
+}
 function resolveMemoryView(repoPath, overlayRoot = aggregatedOverlayPath()) {
   const local = loadMemoryIndex(repoPath).entries;
   let overlayEntries = {};
   let overlayPresent = false;
-  if (overlayRoot && overlayRoot !== repoPath && existsSync8(join10(overlayRoot, MEMORY_INDEX_REL))) {
+  if (overlayRoot && overlayRoot !== repoPath && existsSync8(join11(overlayRoot, MEMORY_INDEX_REL))) {
     overlayPresent = true;
     overlayEntries = loadMemoryIndex(overlayRoot).entries;
   }
@@ -7639,12 +7728,13 @@ function resolveEntryAbsPath(view, id) {
   const e = view.entries[id];
   if (!e) return null;
   const root = view.sources[id] === "overlay" && view.roots.overlay ? view.roots.overlay : view.roots.local;
-  return join10(root, e.path);
+  return join11(root, e.path);
 }
 var init_source_resolver = __esm({
   "src/memory/source-resolver.ts"() {
     "use strict";
     init_memarium_home();
+    init_dates();
     init_index_store2();
   }
 });
@@ -7731,8 +7821,8 @@ function extractUserTexts(md) {
   const lines = md.split("\n");
   let inUser = false;
   let buf = [];
-  for (const line of lines) {
-    if (/^## User\b/.test(line)) {
+  for (const line3 of lines) {
+    if (/^## User\b/.test(line3)) {
       if (buf.length > 0) {
         out.push(buf.join("\n").trim());
         buf = [];
@@ -7740,7 +7830,7 @@ function extractUserTexts(md) {
       inUser = true;
       continue;
     }
-    if (/^## /.test(line)) {
+    if (/^## /.test(line3)) {
       if (inUser && buf.length > 0) {
         out.push(buf.join("\n").trim());
         buf = [];
@@ -7748,7 +7838,7 @@ function extractUserTexts(md) {
       inUser = false;
       continue;
     }
-    if (inUser) buf.push(line);
+    if (inUser) buf.push(line3);
   }
   if (inUser && buf.length > 0) out.push(buf.join("\n").trim());
   return out.filter((s) => s.length > 0);
@@ -9077,8 +9167,8 @@ function isArrayLike(input) {
   return filterHasLength(input);
 }
 function toLinesWithContent(input = "", trimmed2 = true, separator = "\n") {
-  return input.split(separator).reduce((output, line) => {
-    const lineContent = trimmed2 ? line.trim() : line;
+  return input.split(separator).reduce((output, line3) => {
+    const lineContent = trimmed2 ? line3.trim() : line3;
     if (lineContent) {
       output.push(lineContent);
     }
@@ -9086,7 +9176,7 @@ function toLinesWithContent(input = "", trimmed2 = true, separator = "\n") {
   }, []);
 }
 function forEachLineWithContent(input, callback) {
-  return toLinesWithContent(input, true).map((line) => callback(line));
+  return toLinesWithContent(input, true).map((line3) => callback(line3));
 }
 function folderExists(path) {
   return (0, import_file_exists.exists)(path, import_file_exists.FOLDER);
@@ -9248,13 +9338,13 @@ function callTaskParser(parser4, streams) {
 function parseStringResponse(result, parsers12, texts, trim = true) {
   asArray(texts).forEach((text) => {
     for (let lines = toLinesWithContent(text, trim), i2 = 0, max = lines.length; i2 < max; i2++) {
-      const line = (offset = 0) => {
+      const line3 = (offset = 0) => {
         if (i2 + offset >= max) {
           return;
         }
         return lines[i2 + offset];
       };
-      parsers12.some(({ parse }) => parse(line, result));
+      parsers12.some(({ parse }) => parse(line3, result));
     }
   });
   return result;
@@ -9300,8 +9390,8 @@ function isNotRepoMessage(error) {
 function cleanSummaryParser(dryRun, text) {
   const summary = new CleanResponse(dryRun);
   const regexp = dryRun ? dryRunRemovalRegexp : removalRegexp;
-  toLinesWithContent(text).forEach((line) => {
-    const removed = line.replace(regexp, "");
+  toLinesWithContent(text).forEach((line3) => {
+    const removed = line3.replace(regexp, "");
     summary.paths.push(removed);
     (isFolderRegexp.test(removed) ? summary.folders : summary.files).push(removed);
   });
@@ -9443,9 +9533,9 @@ function* configParser(text, requestedKey = null) {
     let value = lines[i2++];
     let key = requestedKey;
     if (value.includes("\n")) {
-      const line = splitOn(value, "\n");
-      key = line[0];
-      value = line[1];
+      const line3 = splitOn(value, "\n");
+      key = line3[0];
+      value = line3[1];
     }
     yield { file, key, value };
   }
@@ -9537,10 +9627,10 @@ function parseGrep(grep) {
   const paths = /* @__PURE__ */ new Set();
   const results = {};
   forEachLineWithContent(grep, (input) => {
-    const [path, line, preview] = input.split(NULL);
+    const [path, line3, preview] = input.split(NULL);
     paths.add(path);
     (results[path] = results[path] || []).push({
-      line: asNumber(line),
+      line: asNumber(line3),
       path,
       preview
     });
@@ -9892,9 +9982,9 @@ function getDiffParser(format = "") {
 }
 function lineBuilder(tokens, fields) {
   return fields.reduce(
-    (line, field, index) => {
-      line[field] = tokens[index] || "";
-      return line;
+    (line3, field, index) => {
+      line3[field] = tokens[index] || "";
+      return line3;
     },
     /* @__PURE__ */ Object.create({ diff: null })
   );
@@ -10126,8 +10216,8 @@ function show_default() {
     }
   };
 }
-function renamedFile(line) {
-  const [to, from] = line.split(NULL);
+function renamedFile(line3) {
+  const [to, from] = line3.split(NULL);
   return {
     from: from || to,
     to
@@ -10436,7 +10526,7 @@ function parseGetRemotesVerbose(text) {
   return Object.values(remotes);
 }
 function forEach(text, handler) {
-  forEachLineWithContent(text, (line) => handler(line.split(/\s+/)));
+  forEachLineWithContent(text, (line3) => handler(line3.split(/\s+/)));
 }
 function addRemoteTask(remoteName, remoteRepo, customArgs) {
   return straightThroughStringTask(["remote", "add", ...customArgs, remoteName, remoteRepo]);
@@ -10994,9 +11084,9 @@ var init_esm = __esm({
           constructor(regExp, useMatches) {
             this.matches = [];
             this.useMatches = useMatchesDefault;
-            this.parse = (line, target) => {
+            this.parse = (line3, target) => {
               this.resetMatches();
-              if (!this._regExp.every((reg, index) => this.addMatch(reg, index, line(index)))) {
+              if (!this._regExp.every((reg, index) => this.addMatch(reg, index, line3(index)))) {
                 return false;
               }
               return this.useMatches(target, this.prepareMatches()) !== false;
@@ -11012,8 +11102,8 @@ var init_esm = __esm({
           prepareMatches() {
             return this.matches;
           }
-          addMatch(reg, index, line) {
-            const matched = line && reg.exec(line);
+          addMatch(reg, index, line3) {
+            const matched = line3 && reg.exec(line3);
             if (matched) {
               this.pushMatch(index, matched);
             }
@@ -11024,8 +11114,8 @@ var init_esm = __esm({
           }
         };
         RemoteLineParser = class extends LineParser {
-          addMatch(reg, index, line) {
-            return /^remote:\s/.test(String(line)) && super.addMatch(reg, index, line);
+          addMatch(reg, index, line3) {
+            return /^remote:\s/.test(String(line3)) && super.addMatch(reg, index, line3);
           }
           pushMatch(index, matched) {
             if (index > 0 || matched.length > 1) {
@@ -12394,25 +12484,25 @@ var init_esm = __esm({
           ),
           [
             "##",
-            (result, line) => {
+            (result, line3) => {
               const aheadReg = /ahead (\d+)/;
               const behindReg = /behind (\d+)/;
               const currentReg = /^(.+?(?=(?:\.{3}|\s|$)))/;
               const trackingReg = /\.{3}(\S*)/;
               const onEmptyBranchReg = /\son\s(\S+?)(?=\.{3}|$)/;
-              let regexResult = aheadReg.exec(line);
+              let regexResult = aheadReg.exec(line3);
               result.ahead = regexResult && +regexResult[1] || 0;
-              regexResult = behindReg.exec(line);
+              regexResult = behindReg.exec(line3);
               result.behind = regexResult && +regexResult[1] || 0;
-              regexResult = currentReg.exec(line);
+              regexResult = currentReg.exec(line3);
               result.current = filterType(regexResult?.[1], filterString, null);
-              regexResult = trackingReg.exec(line);
+              regexResult = trackingReg.exec(line3);
               result.tracking = filterType(regexResult?.[1], filterString, null);
-              regexResult = onEmptyBranchReg.exec(line);
+              regexResult = onEmptyBranchReg.exec(line3);
               if (regexResult) {
                 result.current = filterType(regexResult?.[1], filterString, result.current);
               }
-              result.detached = /\(no branch\)/.test(line);
+              result.detached = /\(no branch\)/.test(line3);
             }
           ]
         ]);
@@ -12420,14 +12510,14 @@ var init_esm = __esm({
           const lines = text.split(NULL);
           const status = new StatusSummary();
           for (let i2 = 0, l = lines.length; i2 < l; ) {
-            let line = lines[i2++].trim();
-            if (!line) {
+            let line3 = lines[i2++].trim();
+            if (!line3) {
               continue;
             }
-            if (line.charAt(0) === "R") {
-              line += NULL + (lines[i2++] || "");
+            if (line3.charAt(0) === "R") {
+              line3 += NULL + (lines[i2++] || "");
             }
-            splitLine(status, line);
+            splitLine(status, line3);
           }
           return status;
         };
@@ -12996,7 +13086,7 @@ var init_esm = __esm({
         var { Scheduler: Scheduler2 } = (init_scheduler(), __toCommonJS(scheduler_exports));
         var { adhocExecTask: adhocExecTask2, configurationErrorTask: configurationErrorTask2 } = (init_task(), __toCommonJS(task_exports));
         var {
-          asArray: asArray2,
+          asArray: asArray22,
           filterArray: filterArray2,
           filterPrimitives: filterPrimitives2,
           filterString: filterString2,
@@ -13254,13 +13344,13 @@ var init_esm = __esm({
         };
         Git2.prototype.rm = function(files) {
           return this._runTask(
-            straightThroughStringTask2(["rm", "-f", ...asArray2(files)]),
+            straightThroughStringTask2(["rm", "-f", ...asArray22(files)]),
             trailingFunctionArgument2(arguments)
           );
         };
         Git2.prototype.rmKeepLocal = function(files) {
           return this._runTask(
-            straightThroughStringTask2(["rm", "--cached", ...asArray2(files)]),
+            straightThroughStringTask2(["rm", "--cached", ...asArray22(files)]),
             trailingFunctionArgument2(arguments)
           );
         };
@@ -13301,7 +13391,7 @@ var init_esm = __esm({
         Git2.prototype.applyPatch = function(patches) {
           const task = !filterStringOrStringArray2(patches) ? configurationErrorTask2(
             `git.applyPatch requires one or more string patches as the first argument`
-          ) : applyPatchTask2(asArray2(patches), getTrailingOptions2([].slice.call(arguments, 1)));
+          ) : applyPatchTask2(asArray22(patches), getTrailingOptions2([].slice.call(arguments, 1)));
           return this._runTask(task, trailingFunctionArgument2(arguments));
         };
         Git2.prototype.revparse = function() {
@@ -13343,7 +13433,7 @@ var init_esm = __esm({
         };
         Git2.prototype.checkIgnore = function(pathnames, then) {
           return this._runTask(
-            checkIgnoreTask2(asArray2(filterType2(pathnames, filterStringOrStringArray2, []))),
+            checkIgnoreTask2(asArray22(filterType2(pathnames, filterStringOrStringArray2, []))),
             trailingFunctionArgument2(arguments)
           );
         };
@@ -13537,7 +13627,7 @@ __export(prepare_exports, {
   prepareCmd: () => prepareCmd
 });
 import { readFileSync as readFileSync8, existsSync as existsSync9 } from "node:fs";
-import { join as join11 } from "node:path";
+import { join as join12 } from "node:path";
 function buildPreparePayload(opts = {}) {
   const cfg = readPluginConfig();
   const indexFile = loadIndex(cfg.repoPath);
@@ -13576,7 +13666,7 @@ function buildPreparePayload(opts = {}) {
       continue;
     }
     const mdRel = mdPathFor(entry);
-    const mdAbs = join11(cfg.repoPath, mdRel);
+    const mdAbs = join12(cfg.repoPath, mdRel);
     if (!existsSync9(mdAbs)) {
       continue;
     }
@@ -14160,15 +14250,15 @@ var init_source = __esm({
 // src/_shared/git-ops.ts
 import { existsSync as existsSync10, mkdirSync as mkdirSync7, readdirSync } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { join as join12, resolve } from "node:path";
+import { join as join13, resolve } from "node:path";
 import { spawn as spawn2 } from "node:child_process";
 function expandHome(p2) {
   if (p2 === "~") return homedir3();
-  if (p2.startsWith("~/")) return join12(homedir3(), p2.slice(2));
+  if (p2.startsWith("~/")) return join13(homedir3(), p2.slice(2));
   return p2;
 }
 function pushWithProgress(cwd, branch) {
-  return new Promise((resolve9) => {
+  return new Promise((resolve10) => {
     const errBuf = [];
     let bufLen = 0;
     const p2 = spawn2(
@@ -14186,10 +14276,10 @@ function pushWithProgress(cwd, branch) {
         if (drop) bufLen -= drop.length;
       }
     });
-    p2.on("error", () => resolve9({ ok: false, secretBlocked: false, stderrTail: errBuf.join("") }));
+    p2.on("error", () => resolve10({ ok: false, secretBlocked: false, stderrTail: errBuf.join("") }));
     p2.on("close", (code) => {
       const tail = errBuf.join("");
-      resolve9({
+      resolve10({
         ok: code === 0,
         secretBlocked: code !== 0 && SECRET_BLOCK_RE.test(tail),
         stderrTail: tail.slice(-4096)
@@ -14240,7 +14330,7 @@ ${msg}`
 async function ensureLocalRepo(localPath) {
   const path = resolve(expandHome(localPath));
   let initialized = false;
-  if (!existsSync10(join12(path, ".git"))) {
+  if (!existsSync10(join13(path, ".git"))) {
     mkdirSync7(path, { recursive: true });
     const g = simpleGit(path);
     await g.init();
@@ -14254,7 +14344,7 @@ async function ensureLocalRepo(localPath) {
   return { git: simpleGit(path), initialized, path };
 }
 async function commitWhitelist(git, repoPath, message, candidatePaths, opts, onProgress) {
-  const existing = candidatePaths.filter((p2) => existsSync10(join12(repoPath, p2)));
+  const existing = candidatePaths.filter((p2) => existsSync10(join13(repoPath, p2)));
   if (existing.length === 0) return { committed: false, pushed: false, staged: 0, branch: opts.branch };
   onProgress?.(`git add (${existing.length} whitelist paths)...`);
   await git.add(existing);
@@ -14344,58 +14434,6 @@ var init_finalize = __esm({
   }
 });
 
-// src/memory/render.ts
-function arr(xs) {
-  const a = xs ?? [];
-  return a.length === 0 ? "[]" : `[${a.join(", ")}]`;
-}
-function nullable(v) {
-  return v == null ? "null" : String(v);
-}
-function req(v, fallback) {
-  if (v == null || v === "") return fallback;
-  if (typeof v === "number" && !Number.isFinite(v)) return fallback;
-  return String(v);
-}
-function renderMemoryMarkdown(entry, body) {
-  const fm = [
-    "---",
-    `id: ${entry.id}`,
-    `type: ${entry.type}`,
-    `scope: ${entry.scope}`,
-    `project: ${nullable(entry.project)}`,
-    `title: ${entry.title}`,
-    `summary: ${entry.summary ?? ""}`,
-    `status: ${req(entry.status, "active")}`,
-    `confidence: ${req(entry.confidence, "0.5")}`,
-    `importance: ${req(entry.importance, "0")}`,
-    `createdAt: ${req(entry.createdAt, "")}`,
-    `updatedAt: ${req(entry.updatedAt, "")}`,
-    `validFrom: ${nullable(entry.validFrom)}`,
-    `validTo: ${nullable(entry.validTo)}`,
-    `supersedes: ${nullable(entry.supersedes)}`,
-    `originDevice: ${nullable(entry.originDevice)}`,
-    `sourceSessions: ${arr(entry.sourceSessions)}`,
-    `sourceCommits: ${arr(entry.sourceCommits)}`,
-    `sourceFiles: ${arr(entry.sourceFiles)}`,
-    `entities: ${arr(entry.entities)}`,
-    `trust: ${entry.trust ?? "unknown"}`,
-    "---"
-  ].join("\n");
-  const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
-  return `${fm}
-
-# ${entry.title}
-
-${trimmedBody}
-`;
-}
-var init_render = __esm({
-  "src/memory/render.ts"() {
-    "use strict";
-  }
-});
-
 // src/memory/gate.ts
 function isGated(e) {
   if (!e || typeof e !== "object") return false;
@@ -14436,6 +14474,24 @@ function safeSegment(seg, label) {
   }
   return seg;
 }
+function isSafeMemoryId(id) {
+  if (typeof id !== "string") return false;
+  if (id.length === 0 || id.length > MAX_MEMORY_ID_LENGTH) return false;
+  if (!SAFE_MEMORY_ID_RE.test(id)) return false;
+  return id.split("/").every(isSafePathSegment);
+}
+function hasControlChars(s) {
+  return CONTROL_CHAR_RE.test(s);
+}
+function neutralizeControlChars(s) {
+  return s.replace(CONTROL_CHAR_RE_GLOBAL, " ");
+}
+function isWritableMemoryId(id) {
+  if (typeof id !== "string") return false;
+  if (id.length === 0 || id.length > MAX_MEMORY_ID_LENGTH) return false;
+  if (hasControlChars(id)) return false;
+  return id.split("/").every(isSafePathSegment);
+}
 function canonicalMemoryPath(entry) {
   if (!MEMORY_TYPES.has(entry.type)) {
     throw new Error(`memory path: invalid type ${JSON.stringify(entry.type)} (not a MemoryType)`);
@@ -14444,7 +14500,7 @@ function canonicalMemoryPath(entry) {
   const slug = safeSegment(entry.id.split("/").pop() ?? entry.id, "slug");
   return `memory/${entry.type}/${scopeDir}/${slug}.md`;
 }
-var MEMORY_TYPES;
+var MEMORY_TYPES, SAFE_MEMORY_ID_RE, MAX_MEMORY_ID_LENGTH, CONTROL_CHAR_RE, CONTROL_CHAR_RE_GLOBAL;
 var init_gate = __esm({
   "src/memory/gate.ts"() {
     "use strict";
@@ -14454,6 +14510,113 @@ var init_gate = __esm({
       "episodic",
       "procedural"
     ]);
+    SAFE_MEMORY_ID_RE = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
+    MAX_MEMORY_ID_LENGTH = 256;
+    CONTROL_CHAR_RE = /[\u0000-\u001F\u007F-\u009F]/;
+    CONTROL_CHAR_RE_GLOBAL = new RegExp(CONTROL_CHAR_RE.source, "g");
+  }
+});
+
+// src/memory/render.ts
+function arr(xs) {
+  const a = xs ?? [];
+  return a.length === 0 ? "[]" : `[${a.join(", ")}]`;
+}
+function nullable(v) {
+  return v == null ? "null" : String(v);
+}
+function req(v, fallback) {
+  if (v == null || v === "") return fallback;
+  if (typeof v === "number" && !Number.isFinite(v)) return fallback;
+  return String(v);
+}
+function identLine(key, value) {
+  if (hasControlChars(value)) {
+    throw new Error(
+      `memory render: refusing to write ${key} containing a control character \u2014 it would forge extra frontmatter lines (${JSON.stringify(value)})`
+    );
+  }
+  return `${key}: ${value}`;
+}
+function valueLine(key, value) {
+  return `${key}: ${neutralizeControlChars(value)}`;
+}
+function normalizeMemoryEntryForWrite(entry) {
+  const e = entry;
+  for (const k2 of MEMORY_IDENT_FIELDS) {
+    const v = e[k2];
+    if (typeof v === "string" && hasControlChars(v)) {
+      throw new Error(
+        `memory write: refusing to persist ${k2} containing a control character \u2014 it would forge extra frontmatter lines (${JSON.stringify(v)})`
+      );
+    }
+  }
+  for (const k2 of MEMORY_VALUE_FIELDS) {
+    const v = e[k2];
+    if (typeof v === "string") e[k2] = neutralizeControlChars(v);
+  }
+  for (const k2 of MEMORY_ARRAY_FIELDS) {
+    const v = e[k2];
+    if (Array.isArray(v)) e[k2] = v.map((x2) => typeof x2 === "string" ? neutralizeControlChars(x2) : x2);
+  }
+  return entry;
+}
+function renderMemoryMarkdown(entry, body) {
+  const fm = [
+    "---",
+    identLine("id", String(entry.id)),
+    identLine("type", String(entry.type)),
+    identLine("scope", String(entry.scope)),
+    identLine("project", nullable(entry.project)),
+    valueLine("title", String(entry.title ?? "")),
+    valueLine("summary", String(entry.summary ?? "")),
+    identLine("status", req(entry.status, "active")),
+    valueLine("confidence", req(entry.confidence, "0.5")),
+    valueLine("importance", req(entry.importance, "0")),
+    valueLine("createdAt", req(entry.createdAt, "")),
+    valueLine("updatedAt", req(entry.updatedAt, "")),
+    valueLine("validFrom", nullable(entry.validFrom)),
+    valueLine("validTo", nullable(entry.validTo)),
+    valueLine("supersedes", nullable(entry.supersedes)),
+    valueLine("originDevice", nullable(entry.originDevice)),
+    valueLine("archivedAt", nullable(entry.archivedAt)),
+    valueLine("archivedReason", nullable(entry.archivedReason)),
+    valueLine("sourceSessions", arr(entry.sourceSessions)),
+    valueLine("sourceCommits", arr(entry.sourceCommits)),
+    valueLine("sourceFiles", arr(entry.sourceFiles)),
+    valueLine("entities", arr(entry.entities)),
+    valueLine("trust", entry.trust ?? "unknown"),
+    "---"
+  ].join("\n");
+  const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
+  const heading = neutralizeControlChars(String(entry.title ?? ""));
+  return `${fm}
+
+# ${heading}
+
+${trimmedBody}
+`;
+}
+var MEMORY_IDENT_FIELDS, MEMORY_VALUE_FIELDS, MEMORY_ARRAY_FIELDS;
+var init_render = __esm({
+  "src/memory/render.ts"() {
+    "use strict";
+    init_gate();
+    MEMORY_IDENT_FIELDS = ["id", "type", "scope", "status", "project"];
+    MEMORY_VALUE_FIELDS = [
+      "title",
+      "summary",
+      "createdAt",
+      "updatedAt",
+      "validFrom",
+      "validTo",
+      "supersedes",
+      "originDevice",
+      "archivedAt",
+      "archivedReason",
+      "trust"
+    ];
+    MEMORY_ARRAY_FIELDS = ["sourceSessions", "sourceCommits", "sourceFiles", "entities"];
   }
 });
 
@@ -14516,14 +14679,14 @@ var init_leak_scan = __esm({
 
 // src/qa/path-guard.ts
 import { lstatSync } from "node:fs";
-import { join as join13, relative, sep } from "node:path";
+import { join as join14, relative, sep } from "node:path";
 function assertNoSymlinkedComponent(repoPath, targetAbs, label) {
   const rel = relative(repoPath, targetAbs);
   if (rel === "" || rel === ".." || rel.startsWith(".." + sep)) return;
   let cur = repoPath;
   for (const seg of rel.split(sep)) {
     if (!seg) continue;
-    cur = join13(cur, seg);
+    cur = join14(cur, seg);
     let st;
     try {
       st = lstatSync(cur);
@@ -14543,10 +14706,161 @@ var init_path_guard = __esm({
 });
 
 // src/memory/apply.ts
-import { existsSync as existsSync11, mkdirSync as mkdirSync8, readFileSync as readFileSync9, writeFileSync as writeFileSync7 } from "node:fs";
-import { dirname as dirname4, join as join14, resolve as resolve2, sep as sep2 } from "node:path";
+import { existsSync as existsSync11, mkdirSync as mkdirSync8, readFileSync as readFileSync9, rmSync as rmSync2, writeFileSync as writeFileSync7 } from "node:fs";
+import { dirname as dirname5, join as join15, resolve as resolve2, sep as sep2 } from "node:path";
 function normalizeRel(p2) {
   return p2.split("\\").join("/");
+}
+function readMemoryBody(abs, expect) {
+  let md;
+  try {
+    md = readFileSync9(abs, "utf8").replace(/\r\n/g, "\n");
+  } catch (err) {
+    throw new Error(
+      `memory rewrite: cannot recover body from ${abs} \u2014 .md missing or unreadable (${err.message}); aborting so a metadata-only rewrite never destroys the entry body`
+    );
+  }
+  const fmMatch = md.match(/^---\n([\s\S]*?)\n---\n?/);
+  if (!fmMatch) {
+    throw new Error(
+      `memory rewrite: cannot recover body from ${abs} \u2014 no valid frontmatter block; aborting so a metadata-only rewrite never clobbers the entry body`
+    );
+  }
+  const fm = fmMatch[1];
+  const persistedId = (fm.match(/^id:[ \t]*(.*)$/m)?.[1] ?? "").trim();
+  if (persistedId !== expect.id) {
+    throw new Error(
+      `memory rewrite: identity mismatch at ${abs} \u2014 persisted id ${JSON.stringify(persistedId)} != entry id ${JSON.stringify(expect.id)} (a different entry's .md sits at this canonical path); aborting so the rewrite never clobbers another entry's record`
+    );
+  }
+  const persistedType = fm.match(/^type:[ \t]*(.*)$/m)?.[1]?.trim();
+  if (persistedType !== void 0 && persistedType !== "" && persistedType !== expect.type) {
+    throw new Error(
+      `memory rewrite: identity mismatch at ${abs} \u2014 persisted type ${JSON.stringify(persistedType)} != entry type ${JSON.stringify(expect.type)}; aborting so the rewrite never clobbers another entry's record`
+    );
+  }
+  const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
+  if (!/^\n*# [^\n]*/.test(afterFm)) {
+    throw new Error(
+      `memory rewrite: cannot recover body from ${abs} \u2014 no "# heading" after frontmatter; aborting so a metadata-only rewrite never clobbers the entry body`
+    );
+  }
+  return afterFm.replace(/^\n*# [^\n]*\n*/, "").replace(/\n+$/, "");
+}
+function isMemoryStatus(v) {
+  return typeof v === "string" && REWRITABLE_STATUSES.has(v);
+}
+function missingRewriteField(entry) {
+  const e = entry;
+  const filled = (v) => typeof v === "string" && v.length > 0;
+  if (!filled(e.id)) return "id";
+  if (!filled(e.type) || !REWRITABLE_TYPES.has(e.type)) return "type";
+  if (!filled(e.scope)) return "scope";
+  if (hasControlChars(e.scope)) return "unsafe scope";
+  if (!(e.project === null || typeof e.project === "string")) return "project";
+  if (typeof e.project === "string" && hasControlChars(e.project)) return "unsafe project";
+  if (!filled(e.title)) return "title";
+  if (e.summary === void 0 || e.summary === null) return "summary";
+  if (typeof e.summary !== "string") return "unsafe summary";
+  if (e.status === void 0 || e.status === null) return "status";
+  if (!isMemoryStatus(e.status)) return "unsafe status";
+  if (e.confidence === void 0 || e.confidence === null) return "confidence";
+  if (typeof e.confidence !== "number" || !Number.isFinite(e.confidence)) return "unsafe confidence";
+  if (typeof e.createdAt !== "string") return "createdAt";
+  if (typeof e.updatedAt !== "string") return "updatedAt";
+  if (e.trust !== void 0 && e.trust !== null && !(typeof e.trust === "string" && REWRITABLE_TRUSTS.has(e.trust))) return "unsafe trust";
+  for (const field of REWRITE_NULLABLE_STRING_FIELDS) {
+    const v = e[field];
+    if (v === void 0 || v === null) continue;
+    if (typeof v !== "string") return `unsafe ${field}`;
+  }
+  if (e.importance === void 0 || e.importance === null) return "importance";
+  if (typeof e.importance !== "number" || !Number.isFinite(e.importance)) return "unsafe importance";
+  for (const field of REWRITE_COLLECTION_FIELDS) {
+    const v = e[field];
+    if (v === void 0 || v === null) continue;
+    if (!Array.isArray(v)) return field;
+    if (v.some((x2) => typeof x2 !== "string")) return `unsafe ${field}`;
+  }
+  if (!isSafePathSegment(e.project ?? "_global")) return "unsafe project segment";
+  if (!isWritableMemoryId(e.id)) return "unsafe id";
+  let canonical;
+  try {
+    canonical = canonicalMemoryPath(entry);
+  } catch {
+    return "unsafe canonical path";
+  }
+  const segs = canonical.split("/");
+  if (segs.length < 2 || segs[0] !== "memory" || segs.some((s) => s === "" || s === "." || s === "..")) {
+    return "unsafe canonical path";
+  }
+  return null;
+}
+function describeRewriteDefect(defect) {
+  return defect.startsWith("unsafe ") ? defect : `missing ${defect}`;
+}
+function assertWritableMemoryTarget(repoPath, entry) {
+  const memRoot = resolve2(join15(repoPath, "memory"));
+  const canonical = canonicalMemoryPath(entry);
+  const abs = resolve2(join15(repoPath, canonical));
+  if (abs !== memRoot && !abs.startsWith(memRoot + sep2)) {
+    throw new Error(`memory write: refusing to write outside memory/: ${canonical}`);
+  }
+  assertNoSymlinkedComponent(repoPath, abs, "memory write");
+  return canonical;
+}
+function writeMemoryEntryFile(repoPath, entry) {
+  normalizeMemoryEntryForWrite(entry);
+  const canonical = assertWritableMemoryTarget(repoPath, entry);
+  const abs = resolve2(join15(repoPath, canonical));
+  const body = readMemoryBody(abs, { id: entry.id, type: entry.type });
+  entry.path = canonical;
+  mkdirSync8(dirname5(abs), { recursive: true });
+  writeFileSync7(abs, renderMemoryMarkdown(entry, body));
+}
+function assertMemoryBodyRecoverable(repoPath, entry) {
+  const canonical = assertWritableMemoryTarget(repoPath, entry);
+  readMemoryBody(resolve2(join15(repoPath, canonical)), { id: entry.id, type: entry.type });
+}
+function snapshotMemoryEntryFile(repoPath, entry) {
+  const canonical = assertWritableMemoryTarget(repoPath, entry);
+  const abs = resolve2(join15(repoPath, canonical));
+  return { abs, canonical, bytes: existsSync11(abs) ? readFileSync9(abs) : null };
+}
+function restoreMemoryEntryFiles(snaps) {
+  const failed = [];
+  for (const s of snaps) {
+    try {
+      if (s.bytes === null) {
+        if (existsSync11(s.abs)) rmSync2(s.abs);
+      } else {
+        mkdirSync8(dirname5(s.abs), { recursive: true });
+        writeFileSync7(s.abs, s.bytes);
+      }
+    } catch {
+      failed.push(s.canonical);
+    }
+  }
+  return failed;
+}
+function rollbackMemoryWrites(context, snaps, cause) {
+  const failed = restoreMemoryEntryFiles(snaps);
+  const restored = snaps.length - failed.length;
+  const partial = failed.length ? ` \u2014 PARTIAL ROLLBACK: ${failed.length} file(s) could NOT be restored and now disagree with the index: ${failed.join(", ")}` : "";
+  const original = cause instanceof Error ? cause.message : String(cause);
+  throw new Error(
+    `${context} \u2014 rolled back ${restored} .md rewrite(s)${partial}: ${original}`,
+    { cause }
+  );
+}
+function setFrontmatterField(md, key, value) {
+  const m = md.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
+  if (!m) return md;
+  const [whole, open, fm, close] = m;
+  const line3 = new RegExp(`^${key}: .*$`, "m");
+  const patched = line3.test(fm) ? fm.replace(line3, `${key}: ${value}`) : `${fm}
+${key}: ${value}`;
+  return `${open}${patched}${close}${md.slice(whole.length)}`;
 }
 function applyMemoryItems(repoPath, items) {
   const idx = loadMemoryIndex(repoPath);
@@ -14562,17 +14876,18 @@ function applyMemoryItems(repoPath, items) {
     }),
     "memory-apply"
   );
-  const memRoot = resolve2(join14(repoPath, "memory"));
+  const memRoot = resolve2(join15(repoPath, "memory"));
   const willExist = { ...idx.entries };
   const planned = [];
   for (const { entry, body } of items) {
+    normalizeMemoryEntryForWrite(entry);
     const canonical = canonicalMemoryPath(entry);
     if (entry.path && normalizeRel(entry.path) !== canonical) {
       throw new Error(
         `memory apply: entry.path "${entry.path}" does not match canonical path for ${entry.id} ("${canonical}")`
       );
     }
-    const abs = resolve2(join14(repoPath, canonical));
+    const abs = resolve2(join15(repoPath, canonical));
     if (abs !== memRoot && !abs.startsWith(memRoot + sep2)) {
       throw new Error(`memory apply: refusing to write outside memory/: ${canonical}`);
     }
@@ -14581,75 +14896,154 @@ function applyMemoryItems(repoPath, items) {
     const sup = supersedesId(entry);
     if (sup && willExist[sup]) {
       const target = willExist[sup];
-      const tabs = resolve2(join14(repoPath, canonicalMemoryPath(target)));
+      const tabs = resolve2(join15(repoPath, canonicalMemoryPath(target)));
       let mdPath = null;
       if (tabs === memRoot || tabs.startsWith(memRoot + sep2)) {
         assertNoSymlinkedComponent(repoPath, tabs, "memory apply");
         mdPath = tabs;
       }
-      supersede = { targetId: sup, mdPath };
+      supersede = { targetId: sup, mdPath, target };
     }
     planned.push({ entry, body, canonical, abs, supersede });
     willExist[entry.id] = entry;
   }
+  const snapshots = [];
+  const snapped = /* @__PURE__ */ new Set();
+  const capture = (e) => {
+    const s = snapshotMemoryEntryFile(repoPath, e);
+    if (snapped.has(s.abs)) return;
+    snapped.add(s.abs);
+    snapshots.push(s);
+  };
+  for (const p2 of planned) {
+    capture(p2.entry);
+    if (p2.supersede && p2.supersede.mdPath) capture(p2.supersede.target);
+  }
   let written = 0, superseded = 0;
   const paths = [];
-  for (const { entry, body, canonical, abs, supersede } of planned) {
-    entry.path = canonical;
-    if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
-    if (entry.lastAccess === void 0) entry.lastAccess = null;
-    const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
-    const fallbackDate = isDate(entry.validFrom) ? entry.validFrom.slice(0, 10) : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-    if (!isDate(entry.createdAt)) entry.createdAt = fallbackDate;
-    if (!isDate(entry.updatedAt)) entry.updatedAt = fallbackDate;
-    if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
-    if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
-      entry.status = "active";
-    }
-    if (entry.supersedes === void 0) entry.supersedes = null;
-    if (entry.validFrom === void 0) entry.validFrom = null;
-    if (entry.validTo === void 0) entry.validTo = null;
-    if (entry.originDevice === void 0) entry.originDevice = null;
-    if (entry.project === void 0) entry.project = null;
-    if (typeof entry.confidence !== "number" || !isFinite(entry.confidence)) entry.confidence = 0.5;
-    if (typeof entry.importance !== "number" || !isFinite(entry.importance)) entry.importance = 0;
-    if (typeof entry.summary !== "string") entry.summary = "";
-    if (!Array.isArray(entry.sourceSessions)) entry.sourceSessions = [];
-    if (!Array.isArray(entry.sourceCommits)) entry.sourceCommits = [];
-    if (!Array.isArray(entry.sourceFiles)) entry.sourceFiles = [];
-    if (!Array.isArray(entry.entities)) entry.entities = [];
-    const prior = idx.entries[entry.id];
-    if (prior) {
-      const uni = (next, prev) => Array.from(/* @__PURE__ */ new Set([...Array.isArray(prev) ? prev : [], ...next]));
-      entry.sourceSessions = uni(entry.sourceSessions, prior.sourceSessions);
-      entry.sourceFiles = uni(entry.sourceFiles, prior.sourceFiles);
-      entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);
-    }
-    if (supersede && idx.entries[supersede.targetId]) {
-      idx.entries[supersede.targetId].status = "superseded";
-      superseded++;
-      if (supersede.mdPath && existsSync11(supersede.mdPath)) {
-        const md = readFileSync9(supersede.mdPath, "utf8").replace(/^status: .*$/m, "status: superseded");
-        writeFileSync7(supersede.mdPath, md);
+  try {
+    for (const { entry, body, canonical, abs, supersede } of planned) {
+      entry.path = canonical;
+      if (typeof entry.accessCount !== "number" || !isFinite(entry.accessCount)) entry.accessCount = 0;
+      if (entry.lastAccess === void 0) entry.lastAccess = null;
+      const isDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+      const fallbackDate = isDate(entry.validFrom) ? entry.validFrom.slice(0, 10) : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      if (!isDate(entry.createdAt)) entry.createdAt = fallbackDate;
+      if (!isDate(entry.updatedAt)) entry.updatedAt = fallbackDate;
+      if (entry.trust !== "trusted" && entry.trust !== "untrusted") entry.trust = "unknown";
+      const prior = idx.entries[entry.id];
+      if (prior && prior.status === "archived") {
+        entry.status = "archived";
+        entry.archivedAt = prior.archivedAt ?? null;
+        entry.archivedReason = prior.archivedReason ?? null;
+        const priorUpdated = typeof prior.updatedAt === "string" ? prior.updatedAt : null;
+        const priorDay = calendarDate(priorUpdated);
+        const authoredDay = calendarDate(entry.updatedAt);
+        if (priorUpdated !== null && priorDay !== null && (authoredDay === null || authoredDay < priorDay)) {
+          entry.updatedAt = priorUpdated;
+        }
+      } else {
+        if (entry.status !== "active" && entry.status !== "superseded" && entry.status !== "pinned") {
+          entry.status = "active";
+        }
+        entry.archivedAt = null;
+        entry.archivedReason = null;
       }
+      if (entry.supersedes === void 0) entry.supersedes = null;
+      if (entry.validFrom === void 0) entry.validFrom = null;
+      if (entry.validTo === void 0) entry.validTo = null;
+      if (entry.originDevice === void 0) entry.originDevice = null;
+      if (entry.project === void 0) entry.project = null;
+      if (typeof entry.confidence !== "number" || !isFinite(entry.confidence)) entry.confidence = 0.5;
+      if (typeof entry.importance !== "number" || !isFinite(entry.importance)) entry.importance = 0;
+      if (typeof entry.summary !== "string") entry.summary = "";
+      if (!Array.isArray(entry.sourceSessions)) entry.sourceSessions = [];
+      if (!Array.isArray(entry.sourceCommits)) entry.sourceCommits = [];
+      if (!Array.isArray(entry.sourceFiles)) entry.sourceFiles = [];
+      if (!Array.isArray(entry.entities)) entry.entities = [];
+      if (prior) {
+        const uni = (next, prev) => Array.from(/* @__PURE__ */ new Set([...Array.isArray(prev) ? prev : [], ...next]));
+        entry.sourceSessions = uni(entry.sourceSessions, prior.sourceSessions);
+        entry.sourceFiles = uni(entry.sourceFiles, prior.sourceFiles);
+        entry.sourceCommits = uni(entry.sourceCommits, prior.sourceCommits);
+      }
+      if (supersede) {
+        const target = idx.entries[supersede.targetId];
+        const patchMd = (fields) => {
+          if (!supersede.mdPath || !existsSync11(supersede.mdPath)) return;
+          let md = readFileSync9(supersede.mdPath, "utf8");
+          for (const [k2, v] of fields) md = setFrontmatterField(md, k2, v);
+          writeFileSync7(supersede.mdPath, md);
+        };
+        if (target && target.status === "archived") {
+          if (target.archivedReason !== "superseded-cleanup") {
+            const at = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+            target.archivedReason = "superseded-cleanup";
+            target.archivedAt = at;
+            target.updatedAt = at;
+            patchMd([
+              ["archivedReason", "superseded-cleanup"],
+              ["archivedAt", at],
+              ["updatedAt", at]
+            ]);
+          }
+        } else if (target) {
+          target.status = "superseded";
+          superseded++;
+          patchMd([["status", "superseded"]]);
+        }
+      }
+      mkdirSync8(dirname5(abs), { recursive: true });
+      normalizeMemoryEntryForWrite(entry);
+      writeFileSync7(abs, renderMemoryMarkdown(entry, body));
+      upsertMemory(idx, entry);
+      written++;
+      paths.push(canonical);
     }
-    mkdirSync8(dirname4(abs), { recursive: true });
-    writeFileSync7(abs, renderMemoryMarkdown(entry, body));
-    upsertMemory(idx, entry);
-    written++;
-    paths.push(canonical);
+  } catch (err) {
+    rollbackMemoryWrites("applyMemoryItems: a .md write failed mid-batch", snapshots, err);
   }
-  saveMemoryIndex(repoPath, idx);
+  try {
+    saveMemoryIndex(repoPath, idx);
+  } catch (err) {
+    rollbackMemoryWrites("applyMemoryItems: index save failed", snapshots, err);
+  }
   return { written, superseded, paths };
 }
+var REWRITABLE_TYPES, MEMORY_STATUSES, REWRITABLE_STATUSES, MEMORY_TRUSTS, REWRITABLE_TRUSTS, REWRITE_COLLECTION_FIELDS, REWRITE_NULLABLE_STRING_FIELDS, isRewritableEntry;
 var init_apply = __esm({
   "src/memory/apply.ts"() {
     "use strict";
     init_index_store2();
     init_render();
     init_gate();
+    init_dates();
     init_leak_scan();
     init_path_guard();
+    REWRITABLE_TYPES = /* @__PURE__ */ new Set(["core", "semantic", "episodic", "procedural"]);
+    MEMORY_STATUSES = {
+      active: true,
+      superseded: true,
+      pinned: true,
+      archived: true
+    };
+    REWRITABLE_STATUSES = new Set(Object.keys(MEMORY_STATUSES));
+    MEMORY_TRUSTS = {
+      trusted: true,
+      untrusted: true,
+      unknown: true
+    };
+    REWRITABLE_TRUSTS = new Set(Object.keys(MEMORY_TRUSTS));
+    REWRITE_COLLECTION_FIELDS = ["sourceSessions", "sourceCommits", "sourceFiles", "entities"];
+    REWRITE_NULLABLE_STRING_FIELDS = [
+      "validFrom",
+      "validTo",
+      "supersedes",
+      "originDevice",
+      "archivedAt",
+      "archivedReason"
+    ];
+    isRewritableEntry = (entry) => missingRewriteField(entry) === null;
   }
 });
 
@@ -14685,6 +15079,38 @@ var init_memory_write = __esm({
   }
 });
 
+// src/_shared/frontmatter.ts
+function readFrontmatterBlock(md) {
+  const text = md.replace(/\r\n/g, "\n");
+  const m = text.match(/^---\n([\s\S]*?)\n---/);
+  if (!m) return null;
+  const lines = text.split("\n");
+  const close = 1 + m[1].split("\n").length;
+  const headingIdx = lines.findIndex((l) => H1_LINE.test(l));
+  if (headingIdx !== -1) {
+    let delimiters = 0;
+    for (let i2 = 1; i2 < headingIdx; i2++) if (lines[i2] === "---") delimiters++;
+    if (delimiters !== 1) return null;
+    if (lines[close] !== "---" || lines[close + 1] !== "" || headingIdx !== close + 2) return null;
+  }
+  const fm = /* @__PURE__ */ Object.create(null);
+  for (const line3 of m[1].split("\n")) {
+    const i2 = line3.indexOf(":");
+    if (i2 === -1) continue;
+    const key = line3.slice(0, i2).trim();
+    if (key in fm) return null;
+    fm[key] = line3.slice(i2 + 1).trim();
+  }
+  return fm;
+}
+var H1_LINE;
+var init_frontmatter = __esm({
+  "src/_shared/frontmatter.ts"() {
+    "use strict";
+    H1_LINE = /^#(?: |$)/;
+  }
+});
+
 // src/memory/parse.ts
 function parseArr(v) {
   const t2 = (v ?? "").trim();
@@ -14715,15 +15141,8 @@ function deriveLegacyTrust(sourceSessions, sourceCommits, scope, project) {
   return ownProvenance && projectScoped ? "trusted" : "unknown";
 }
 function parseMemoryMarkdown(md) {
-  md = md.replace(/\r\n/g, "\n");
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  const fm = {};
-  for (const line of m[1].split("\n")) {
-    const i2 = line.indexOf(":");
-    if (i2 === -1) continue;
-    fm[line.slice(0, i2).trim()] = line.slice(i2 + 1).trim();
-  }
+  const fm = readFrontmatterBlock(md);
+  if (!fm) return null;
   if (!fm.id || !fm.type) return null;
   const scope = fm.scope;
   const project = parseScalar(fm.project);
@@ -14756,12 +15175,15 @@ function parseMemoryMarkdown(md) {
     trust,
     originDevice: parseScalar(fm.originDevice ?? "null"),
     accessCount: 0,
-    lastAccess: null
+    lastAccess: null,
+    archivedAt: parseScalar(fm.archivedAt ?? "null"),
+    archivedReason: parseScalar(fm.archivedReason ?? "null")
   };
 }
 var init_parse = __esm({
   "src/memory/parse.ts"() {
     "use strict";
+    init_frontmatter();
   }
 });
 
@@ -14785,8 +15207,13 @@ var memory_index_exports = {};
 __export(memory_index_exports, {
   memoryIndexCmd: () => memoryIndexCmd
 });
-import { existsSync as existsSync13, readFileSync as readFileSync11, readdirSync as readdirSync2, writeFileSync as writeFileSync8, statSync } from "node:fs";
-import { join as join15, relative as relative2 } from "node:path";
+import { existsSync as existsSync13, readFileSync as readFileSync11, readdirSync as readdirSync2, writeFileSync as writeFileSync8, statSync as statSync2 } from "node:fs";
+import { join as join16, relative as relative2, sep as sep3 } from "node:path";
+function isDerivedMemoryPath(memRoot, abs) {
+  const rel = relative2(memRoot, abs);
+  if (rel.startsWith("..")) return false;
+  return DERIVED_MEMORY_SUBTREES.has(rel.split(sep3)[0]);
+}
 function walkMd(dir) {
   const out = [];
   const stack = [dir];
@@ -14799,7 +15226,7 @@ function walkMd(dir) {
       continue;
     }
     for (const e of entries) {
-      const p2 = join15(cur, e.name);
+      const p2 = join16(cur, e.name);
       if (e.isDirectory()) stack.push(p2);
       else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
     }
@@ -14808,16 +15235,17 @@ function walkMd(dir) {
 }
 async function memoryIndexCmd() {
   const cfg = readPluginConfig();
-  const memRoot = join15(cfg.repoPath, "memory");
+  const memRoot = join16(cfg.repoPath, "memory");
   const idx = emptyMemoryIndex();
   let indexed = 0;
   let healed = 0;
+  let skipped = 0;
   assertNoSymlinkedComponent(cfg.repoPath, memRoot, "memory-index");
   if (existsSync13(memRoot)) {
     for (const abs of walkMd(memRoot)) {
-      if (abs.includes(`${join15("memory", "_primer")}/`)) continue;
+      if (isDerivedMemoryPath(memRoot, abs)) continue;
       let md = readFileSync11(abs, "utf8");
-      const mtimeDate = new Date(statSync(abs).mtimeMs).toISOString().slice(0, 10);
+      const mtimeDate = new Date(statSync2(abs).mtimeMs).toISOString().slice(0, 10);
       const fixed = healUndefinedFrontmatter(md, mtimeDate);
       if (fixed !== null) {
         writeFileSync8(abs, fixed);
@@ -14825,15 +15253,19 @@ async function memoryIndexCmd() {
         healed++;
       }
       const entry = parseMemoryMarkdown(md);
-      if (!entry) continue;
+      if (!entry) {
+        skipped++;
+        continue;
+      }
       entry.path = relative2(cfg.repoPath, abs);
       upsertMemory(idx, entry);
       indexed++;
     }
   }
   saveMemoryIndex(cfg.repoPath, idx);
-  return { indexed, healed };
+  return { indexed, healed, skipped };
 }
+var DERIVED_MEMORY_SUBTREES;
 var init_memory_index = __esm({
   "src/commands/memory-index.ts"() {
     "use strict";
@@ -14843,6 +15275,7 @@ var init_memory_index = __esm({
     init_parse();
     init_heal_frontmatter();
     init_path_guard();
+    DERIVED_MEMORY_SUBTREES = /* @__PURE__ */ new Set(["_primer", "entities", "qa"]);
   }
 });
 
@@ -14886,23 +15319,36 @@ function tokenize(s) {
 function num(v, dflt = 0) {
   return typeof v === "number" && isFinite(v) ? v : dflt;
 }
+function asArray2(v) {
+  return Array.isArray(v) ? v : [];
+}
+function isArchived(e) {
+  return e.status === "archived";
+}
 function isEligible(e, q2) {
-  if (e.status === "superseded") return false;
-  if (e.validTo !== null && e.validTo <= q2.now) return false;
+  if (e.status === "superseded" || isArchived(e)) return false;
+  const validToDate = calendarDate(e.validTo);
+  if (validToDate !== null && validToDate <= (calendarDate(q2.now) ?? q2.now)) return false;
   if (q2.type && e.type !== q2.type) return false;
   if (e.scope === "global" || e.scope === "user") return true;
   if (q2.project && e.scope === `project:${q2.project}`) return true;
   return q2.project === null;
 }
 function scoreMemories(entries, q2) {
+  return rankMemories(entries.filter((e) => isEligible(e, q2)), q2);
+}
+function scoreArchived(entries, q2) {
+  return rankMemories(entries.filter(isArchived), q2);
+}
+function rankMemories(list, q2) {
   const qTokens = new Set(tokenize(q2.text));
   const out = [];
-  for (const e of entries) {
-    if (!isEligible(e, q2)) continue;
+  for (const e of list) {
+    if (typeof e.id !== "string" || e.id === "") continue;
     let score = 0;
     const why = [];
     if (qTokens.size > 0) {
-      const haystack = new Set(tokenize(`${e.title} ${e.summary} ${e.entities.join(" ")}`));
+      const haystack = new Set(tokenize(`${e.title} ${e.summary} ${asArray2(e.entities).join(" ")}`));
       let hits = 0;
       for (const t2 of qTokens) if (haystack.has(t2)) hits++;
       if (hits > 0) {
@@ -14923,13 +15369,13 @@ function scoreMemories(entries, q2) {
       why.push("pinned");
     }
     const qf = new Set(q2.files ?? []);
-    const fileHit = e.sourceFiles.filter((f) => qf.has(f)).length;
+    const fileHit = asArray2(e.sourceFiles).filter((f) => qf.has(f)).length;
     if (fileHit > 0) {
       score += fileHit * 3;
       why.push(`file\xD7${fileHit}`);
     }
     const qc = new Set(q2.commits ?? []);
-    const commitHit = e.sourceCommits.filter((c3) => qc.has(c3)).length;
+    const commitHit = asArray2(e.sourceCommits).filter((c3) => qc.has(c3)).length;
     if (commitHit > 0) {
       score += commitHit * 3;
       why.push(`commit\xD7${commitHit}`);
@@ -14941,7 +15387,7 @@ function scoreMemories(entries, q2) {
     if (importance >= 3) why.push(`importance:${importance}`);
     out.push({ entry: e, score, whyRecalled: why.join(" ") || "scope-eligible" });
   }
-  out.sort((a, b2) => b2.score - a.score || a.entry.id.localeCompare(b2.entry.id));
+  out.sort((a, b2) => b2.score - a.score || String(a.entry.id ?? "").localeCompare(String(b2.entry.id ?? "")));
   return out;
 }
 function recencyBoost(updatedAt, now) {
@@ -14955,20 +15401,21 @@ var IMPORTANCE_CAP;
 var init_score = __esm({
   "src/memory/score.ts"() {
     "use strict";
+    init_dates();
     IMPORTANCE_CAP = 3;
   }
 });
 
 // src/memory/usage-store.ts
 import { createHash } from "node:crypto";
-import { existsSync as existsSync14, mkdirSync as mkdirSync9, readFileSync as readFileSync13, renameSync as renameSync2, writeFileSync as writeFileSync9 } from "node:fs";
-import { join as join16, resolve as resolve3 } from "node:path";
+import { existsSync as existsSync14, mkdirSync as mkdirSync9, readFileSync as readFileSync13 } from "node:fs";
+import { join as join17, resolve as resolve3 } from "node:path";
 function usageDir(repoPath) {
   const repoHash = createHash("sha256").update(resolve3(repoPath)).digest("hex").slice(0, 12);
-  return join16(memariumHome(), "usage", repoHash);
+  return join17(memariumHome(), "usage", repoHash);
 }
 function usageFile(repoPath) {
-  return join16(usageDir(repoPath), "access.json");
+  return join17(usageDir(repoPath), "access.json");
 }
 function guardUsagePath(targetAbs) {
   assertNoSymlinkedComponent(memariumHome(), targetAbs, "usage-store");
@@ -15011,10 +15458,7 @@ function saveUsage(repoPath, usage) {
   const dir = usageDir(repoPath);
   guardUsagePath(dir);
   mkdirSync9(dir, { recursive: true });
-  const file = usageFile(repoPath);
-  const tmp = join16(dir, `access.json.tmp-${process.pid}`);
-  writeFileSync9(tmp, JSON.stringify(usage, null, 2) + "\n");
-  renameSync2(tmp, file);
+  writeFileAtomicSync(usageFile(repoPath), JSON.stringify(usage, null, 2) + "\n");
 }
 function bumpUsage(repoPath, ids, now) {
   if (ids.length === 0) return;
@@ -15039,6 +15483,7 @@ function overlayUsage(entries, usage) {
 var init_usage_store = __esm({
   "src/memory/usage-store.ts"() {
     "use strict";
+    init_atomic_write();
     init_path_guard();
     init_memarium_home();
   }
@@ -15049,7 +15494,11 @@ function num2(v, dflt) {
   return typeof v === "number" && isFinite(v) ? v : dflt;
 }
 function eligible(entries, type, project, now) {
-  return entries.filter((e) => e.status !== "superseded" && e.type === type).filter((e) => e.validTo === null || e.validTo > now).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted").sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
+  const nowDate = calendarDate(now) ?? now;
+  return entries.filter((e) => e.status !== "superseded" && !isArchived(e) && e.type === type).filter((e) => {
+    const v = calendarDate(e.validTo);
+    return v === null || v > nowDate;
+  }).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted").sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
 }
 function section(title, all, max) {
   if (all.length === 0) return "";
@@ -15086,8 +15535,151 @@ var MAX_PER_SECTION, TENTATIVE_BELOW;
 var init_primer = __esm({
   "src/memory/primer.ts"() {
     "use strict";
+    init_score();
+    init_dates();
     MAX_PER_SECTION = 12;
     TENTATIVE_BELOW = 0.5;
+  }
+});
+
+// src/memory/cold-pass.ts
+function coldRestoreCommand(c3) {
+  if (c3.source !== "local") return null;
+  if (!isSafeMemoryId(c3.id)) return null;
+  return `memory-unarchive '${c3.id}'`;
+}
+function sanitizeForDisplay(value) {
+  let s = typeof value === "string" ? value : String(value);
+  for (const re of ESCAPE_SEQUENCES) s = s.replace(re, "");
+  s = s.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
+  const collapsed = s.replace(/\s+/g, " ").trim();
+  if (collapsed === "") return UNPRINTABLE;
+  return collapsed.length > MAX_DISPLAY_LENGTH ? `${collapsed.slice(0, MAX_DISPLAY_LENGTH - 1)}\u2026` : collapsed;
+}
+function inertMemoryId(id) {
+  const raw = sanitizeForDisplay(id);
+  const redacted = raw.slice(0, MAX_DISPLAY_LENGTH).replace(/[^A-Za-z0-9._/-]/g, "?");
+  return `'${redacted}'`;
+}
+function displayMemoryId(id) {
+  return isSafeMemoryId(id) ? id : inertMemoryId(id);
+}
+function inScope(e, project) {
+  if (e.scope === "global" || e.scope === "user") return true;
+  if (project && e.scope === `project:${project}`) return true;
+  return project === null;
+}
+function resolveColdOrigin(entries, sources) {
+  const keyOf = /* @__PURE__ */ new Map();
+  for (const [key, e] of Object.entries(entries)) {
+    if (!e || typeof e !== "object") continue;
+    keyOf.set(e, keyOf.has(e) ? null : key);
+  }
+  return (e) => {
+    const key = keyOf.get(e);
+    if (key == null) return "unknown";
+    const src = sources[key];
+    return src === "local" || src === "overlay" ? src : "unknown";
+  };
+}
+function runColdPass({ entries, scored, query, sources }) {
+  if (query.text.trim() === "") return [];
+  const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
+  if (strongPrimary >= COLD_FLOOR) return [];
+  const originOf = resolveColdOrigin(entries, sources);
+  return scoreArchived(Object.values(entries), query).filter((s) => isResurrectable(s.entry)).filter((s) => inScope(s.entry, query.project)).filter((s) => !query.type || s.entry.type === query.type).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => {
+    const source = originOf(s.entry);
+    return {
+      id: s.entry.id,
+      title: s.entry.title,
+      score: s.score,
+      archivedReason: s.entry.archivedReason,
+      source,
+      originDevice: s.entry.originDevice ?? null,
+      // Preserve trust so a restored-from-cold untrusted semantic (#23) is not
+      // surfaced indistinguishably from a trusted fact. Same rule the primary
+      // pass uses: anything not "trusted" is untrusted for surfacing.
+      trust: s.entry.trust ?? "unknown",
+      // The one vetted command for this hit (null unless local AND safely
+      // shaped) — so a JSON consumer never has to build one from the raw id.
+      restoreCommand: coldRestoreCommand({ id: s.entry.id, source })
+    };
+  });
+}
+function coldRestoreInstruction(c3) {
+  if (c3.source === "local") {
+    const cmd = coldRestoreCommand(c3);
+    if (cmd) return `${cmd} to restore`;
+    return `archived here under an unsafe id \u2014 restore manually (id ${inertMemoryId(c3.id)})`;
+  }
+  if (c3.source === "overlay") {
+    const device = c3.originDevice ? sanitizeForDisplay(c3.originDevice) : "";
+    const dev = device && device !== UNPRINTABLE ? `device ${device}` : "another device";
+    return `archived on ${dev}; restore it there`;
+  }
+  return "origin unknown; restore it on the device that archived it";
+}
+function renderColdHints(coldStorage) {
+  if (!coldStorage.length) return [];
+  const lines = [`
+\u2744\uFE0F ${coldStorage.length} archived also matched:`];
+  for (const c3 of coldStorage) {
+    const flag = c3.trust !== "trusted" ? " (untrusted)" : "";
+    const reason = sanitizeForDisplay(c3.archivedReason);
+    const title = sanitizeForDisplay(c3.title);
+    lines.push(`  ${displayMemoryId(c3.id)}  (${reason})  \u2014 ${title}${flag}  \u2014 ${coldRestoreInstruction(c3)}`);
+  }
+  return lines;
+}
+function renderColdNextStep(coldStorage) {
+  if (!coldStorage.length) return "";
+  const head = "No ACTIVE memory matched, but archived entries did \u2014 see coldStorage";
+  const local = coldStorage.filter((c3) => c3.source === "local");
+  if (local.length > 0 && !local.every((c3) => isSafeMemoryId(c3.id))) {
+    return `${head} \u2014 restore each hit from its own cold-storage hint. At least one archived id is unsafe to use in a command, so restore that one by hand.`;
+  }
+  if (local.length === coldStorage.length) return `${head} (memory-unarchive '<id>' to restore).`;
+  if (local.length > 0) {
+    return `${head}; each hit carries its own restore path (local hits: memory-unarchive '<id>'; the rest: restore on their origin device).`;
+  }
+  const overlay = coldStorage.filter((c3) => c3.source === "overlay");
+  if (overlay.length === coldStorage.length) {
+    const devices = new Set(overlay.map((c3) => c3.originDevice ? c3.originDevice : null));
+    const only = devices.size === 1 ? [...devices][0] : null;
+    const device = only !== null ? sanitizeForDisplay(only) : "";
+    const tail = device && device !== UNPRINTABLE ? `archived on device ${device}; restore it there` : "each is archived on another device; restore it there";
+    return `${head} \u2014 ${tail} (memory-unarchive is local-only).`;
+  }
+  return `${head} \u2014 restore each on the device that archived it (memory-unarchive is local-only).`;
+}
+var MAX_DISPLAY_LENGTH, UNPRINTABLE, ESCAPE_SEQUENCES, CONTENT_HIT_MARKERS, isContentHitReason, isContentHit, COLD_FLOOR, COLD_TOP_K, COLD_SCORE_FLOOR, NON_RESURRECTABLE_REASONS, isResurrectable;
+var init_cold_pass = __esm({
+  "src/memory/cold-pass.ts"() {
+    "use strict";
+    init_score();
+    init_gate();
+    MAX_DISPLAY_LENGTH = 120;
+    UNPRINTABLE = "(unprintable)";
+    ESCAPE_SEQUENCES = [
+      /\x1b\][\s\S]*?(?:\x07|\x1b\\|$)/g,
+      // OSC (window title, hyperlink) … BEL/ST
+      /\x1b[P^_X][\s\S]*?(?:\x1b\\|$)/g,
+      // DCS / PM / APC / SOS … ST
+      /\x1b\[[0-9;:<=>?]*[ -/]*[@-~]/g,
+      // CSI — colour, cursor move, erase
+      /\x1b[ -/]*[0-~]/g,
+      // any other ESC-introduced sequence
+      /\x1b/g
+      // a lone trailing ESC
+    ];
+    CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
+    isContentHitReason = (whyRecalled) => CONTENT_HIT_MARKERS.some((m) => whyRecalled.includes(m));
+    isContentHit = (s) => isContentHitReason(s.whyRecalled);
+    COLD_FLOOR = 3;
+    COLD_TOP_K = 3;
+    COLD_SCORE_FLOOR = 2;
+    NON_RESURRECTABLE_REASONS = /* @__PURE__ */ new Set(["superseded-cleanup"]);
+    isResurrectable = (e) => !NON_RESURRECTABLE_REASONS.has(e.archivedReason ?? "");
   }
 });
 
@@ -15109,24 +15701,32 @@ async function memoryQueryCmd(opts) {
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const usage = loadUsage(cfg.repoPath);
   overlayUsage(entries, usage);
-  const scored = scoreMemories(entries, {
+  const scoreQuery = {
     project,
     text: opts.q ?? "",
     type: isType(opts.type),
     now
-  });
+  };
+  const scored = scoreMemories(entries, scoreQuery);
   const byType = (t2) => scored.filter((s) => s.entry.type === t2);
   let primer = "";
   if (project) {
     primer = renderPrimer(project, entries);
   }
-  const conflicts2 = entries.filter((e) => e.status === "superseded" || e.supersedes !== null || e.validTo !== null).map((e) => ({
+  const conflicts2 = entries.filter((e) => !isArchived(e) && (e.status === "superseded" || e.supersedes !== null || e.validTo !== null)).map((e) => ({
     entry: e,
     score: 0,
     whyRecalled: e.status === "superseded" ? "superseded" : e.supersedes !== null ? "supersedes-other" : "time-bounded"
   }));
   const semanticAll = byType("semantic");
   const isTrusted = (s) => (s.entry.trust ?? "unknown") === "trusted";
+  const cwdUnresolved = project === null;
+  const coldStorage = cwdUnresolved ? [] : runColdPass({
+    entries: view.entries,
+    scored,
+    query: scoreQuery,
+    sources: view.sources
+  });
   const payload = {
     project,
     primer,
@@ -15136,18 +15736,21 @@ async function memoryQueryCmd(opts) {
     untrustedSemantic: semanticAll.filter((s) => !isTrusted(s)),
     episodes: byType("episodic"),
     conflicts: conflicts2,
+    coldStorage,
     meta: { total: scored.length, project }
   };
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+  for (const line3 of renderColdHints(coldStorage)) console.error(line3);
   if ((opts.q ?? "").trim() !== "") {
     try {
-      const bumpIds = scored.filter((s) => Number.isFinite(s.score) && CONTENT_HIT_MARKERS.some((m) => s.whyRecalled.includes(m))).slice(0, BUMP_TOP_N).map((s) => s.entry.id);
+      const bumpIds = scored.filter((s) => Number.isFinite(s.score) && isContentHit(s)).slice(0, BUMP_TOP_N).map((s) => s.entry.id);
       bumpUsage(cfg.repoPath, bumpIds, now);
     } catch {
     }
   }
+  return payload;
 }
-var CONTENT_HIT_MARKERS, BUMP_TOP_N;
+var BUMP_TOP_N;
 var init_memory_query = __esm({
   "src/commands/memory-query.ts"() {
     "use strict";
@@ -15157,7 +15760,7 @@ var init_memory_query = __esm({
     init_score();
     init_usage_store();
     init_primer();
-    CONTENT_HIT_MARKERS = ["keyword", "file", "commit"];
+    init_cold_pass();
     BUMP_TOP_N = 5;
   }
 });
@@ -15196,7 +15799,7 @@ __export(retro_gate_exports, {
   decideRetroGate: () => decideRetroGate,
   retroGateCmd: () => retroGateCmd
 });
-import { readFileSync as readFileSync14, existsSync as existsSync15, openSync, fstatSync, readSync, closeSync } from "node:fs";
+import { readFileSync as readFileSync14, existsSync as existsSync15, openSync as openSync2, fstatSync, readSync, closeSync as closeSync2 } from "node:fs";
 function isRetroSignal(tu) {
   if (tu.name === "Skill" && String(tu.input?.skill ?? "").includes("memarium-retro")) return true;
   if (tu.name === "Bash") {
@@ -15234,7 +15837,7 @@ function decideRetroGate(evt, rows) {
   return mutated && !didRetro ? { block: true, reason: RETRO_REASON } : { block: false };
 }
 function readTailLines(path, cap) {
-  const fd = openSync(path, "r");
+  const fd = openSync2(path, "r");
   try {
     const size = fstatSync(fd).size;
     const start = size > cap ? size - cap : 0;
@@ -15246,7 +15849,7 @@ function readTailLines(path, cap) {
     if (start > 0) lines.shift();
     return lines.filter(Boolean);
   } finally {
-    closeSync(fd);
+    closeSync2(fd);
   }
 }
 async function retroGateCmd() {
@@ -15295,34 +15898,53 @@ function nullable2(v) {
 function req2(v, fallback) {
   return v == null || v === "" ? fallback : String(v);
 }
+function line(key, value) {
+  return `${key}: ${neutralizeControlChars(value)}`;
+}
+function normalizeEntityPageForWrite(entry) {
+  const e = entry;
+  for (const k2 of ENTITY_SCALAR_FIELDS) {
+    const v = e[k2];
+    if (typeof v === "string") e[k2] = neutralizeControlChars(v);
+  }
+  for (const k2 of ENTITY_ARRAY_FIELDS) {
+    const v = e[k2];
+    if (Array.isArray(v)) e[k2] = v.map((x2) => typeof x2 === "string" ? neutralizeControlChars(x2) : x2);
+  }
+  return entry;
+}
 function renderEntityMarkdown(entry, body) {
   const fm = [
     "---",
-    `id: ${entry.id}`,
-    `kind: ${entry.kind}`,
-    `scope: ${entry.scope}`,
-    `project: ${nullable2(entry.project)}`,
-    `title: ${entry.title}`,
-    `aliases: ${arr2(entry.aliases)}`,
-    `sourceMemoryIds: ${arr2(entry.sourceMemoryIds)}`,
-    `sourceSessions: ${arr2(entry.sourceSessions)}`,
-    `sourceFiles: ${arr2(entry.sourceFiles)}`,
-    `relatedEntities: ${arr2(entry.relatedEntities)}`,
-    `createdAt: ${req2(entry.createdAt, "")}`,
-    `updatedAt: ${req2(entry.updatedAt, "")}`,
+    line("id", String(entry.id)),
+    line("kind", String(entry.kind)),
+    line("scope", String(entry.scope)),
+    line("project", nullable2(entry.project)),
+    line("title", String(entry.title ?? "")),
+    line("aliases", arr2(entry.aliases)),
+    line("sourceMemoryIds", arr2(entry.sourceMemoryIds)),
+    line("sourceSessions", arr2(entry.sourceSessions)),
+    line("sourceFiles", arr2(entry.sourceFiles)),
+    line("relatedEntities", arr2(entry.relatedEntities)),
+    line("createdAt", req2(entry.createdAt, "")),
+    line("updatedAt", req2(entry.updatedAt, "")),
     "---"
   ].join("\n");
   const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
   return `${fm}
 
-# ${entry.title}
+# ${neutralizeControlChars(String(entry.title ?? ""))}
 
 ${trimmedBody}
 `;
 }
+var ENTITY_SCALAR_FIELDS, ENTITY_ARRAY_FIELDS;
 var init_render2 = __esm({
   "src/entity/render.ts"() {
     "use strict";
+    init_gate();
+    ENTITY_SCALAR_FIELDS = ["id", "kind", "scope", "project", "title", "createdAt", "updatedAt"];
+    ENTITY_ARRAY_FIELDS = ["aliases", "sourceMemoryIds", "sourceSessions", "sourceFiles", "relatedEntities"];
   }
 });
 
@@ -15331,8 +15953,8 @@ var entity_write_exports = {};
 __export(entity_write_exports, {
   entityWriteCmd: () => entityWriteCmd
 });
-import { existsSync as existsSync16, mkdirSync as mkdirSync10, readFileSync as readFileSync15, realpathSync, writeFileSync as writeFileSync10 } from "node:fs";
-import { dirname as dirname5, join as join17, resolve as resolve4, sep as sep3 } from "node:path";
+import { existsSync as existsSync16, mkdirSync as mkdirSync10, readFileSync as readFileSync15, realpathSync, writeFileSync as writeFileSync9 } from "node:fs";
+import { dirname as dirname6, join as join18, resolve as resolve4, sep as sep4 } from "node:path";
 function entityPath(e) {
   const scopeDir = e.project ?? "_global";
   const slug = e.id.split("/").pop() ?? e.id;
@@ -15356,22 +15978,23 @@ async function entityWriteCmd(opts) {
     for (const k2 of ["aliases", "sourceMemoryIds", "sourceSessions", "sourceFiles", "relatedEntities"]) {
       if (!Array.isArray(entry[k2])) entry[k2] = [];
     }
-    if (!entry.path) entry.path = entityPath(entry);
-    const entRoot = resolve4(join17(cfg.repoPath, "memory", "entities"));
+    normalizeEntityPageForWrite(entry);
+    entry.path = entityPath(entry);
+    const entRoot = resolve4(join18(cfg.repoPath, "memory", "entities"));
     mkdirSync10(entRoot, { recursive: true });
     const memRoot = entRoot;
-    const abs = resolve4(join17(cfg.repoPath, entry.path));
-    if (abs !== memRoot && !abs.startsWith(memRoot + sep3)) {
+    const abs = resolve4(join18(cfg.repoPath, entry.path));
+    if (abs !== memRoot && !abs.startsWith(memRoot + sep4)) {
       throw new Error(`entity-write: refusing to write outside memory/entities/: ${entry.path}`);
     }
-    mkdirSync10(dirname5(abs), { recursive: true });
-    const realParent = realpathSync(dirname5(abs));
+    mkdirSync10(dirname6(abs), { recursive: true });
+    const realParent = realpathSync(dirname6(abs));
     const realRoot = realpathSync(entRoot);
-    if (realParent !== realRoot && !realParent.startsWith(realRoot + sep3)) {
+    if (realParent !== realRoot && !realParent.startsWith(realRoot + sep4)) {
       throw new Error(`entity-write: refusing to write outside memory/entities/ (symlink guard): ${entry.path}`);
     }
     const resolvedBody = body;
-    writeFileSync10(abs, renderEntityMarkdown(entry, resolvedBody));
+    writeFileSync9(abs, renderEntityMarkdown(entry, resolvedBody));
     upsertEntity(idx, entry);
     written++;
     paths.push(entry.path);
@@ -15410,15 +16033,8 @@ function parseDate2(v) {
   return t2 === "undefined" || t2 === "null" ? "" : t2;
 }
 function parseEntityMarkdown(md) {
-  md = md.replace(/\r\n/g, "\n");
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  const fm = {};
-  for (const line of m[1].split("\n")) {
-    const i2 = line.indexOf(":");
-    if (i2 === -1) continue;
-    fm[line.slice(0, i2).trim()] = line.slice(i2 + 1).trim();
-  }
+  const fm = readFrontmatterBlock(md);
+  if (!fm) return null;
   if (!fm.id || !fm.kind) return null;
   return {
     id: fm.id,
@@ -15440,6 +16056,7 @@ function parseEntityMarkdown(md) {
 var init_parse2 = __esm({
   "src/entity/parse.ts"() {
     "use strict";
+    init_frontmatter();
   }
 });
 
@@ -15448,8 +16065,8 @@ var entity_index_exports = {};
 __export(entity_index_exports, {
   entityIndexCmd: () => entityIndexCmd
 });
-import { existsSync as existsSync17, readFileSync as readFileSync16, readdirSync as readdirSync3, writeFileSync as writeFileSync11, statSync as statSync2 } from "node:fs";
-import { join as join18, relative as relative3 } from "node:path";
+import { existsSync as existsSync17, readFileSync as readFileSync16, readdirSync as readdirSync3, writeFileSync as writeFileSync10, statSync as statSync3 } from "node:fs";
+import { join as join19, relative as relative3 } from "node:path";
 function walkMd2(dir) {
   const out = [];
   const stack = [dir];
@@ -15462,7 +16079,7 @@ function walkMd2(dir) {
       continue;
     }
     for (const e of entries) {
-      const p2 = join18(cur, e.name);
+      const p2 = join19(cur, e.name);
       if (e.isDirectory()) stack.push(p2);
       else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
     }
@@ -15471,30 +16088,34 @@ function walkMd2(dir) {
 }
 async function entityIndexCmd() {
   const cfg = readPluginConfig();
-  const entitiesRoot = join18(cfg.repoPath, "memory", "entities");
+  const entitiesRoot = join19(cfg.repoPath, "memory", "entities");
   const idx = emptyEntityIndex();
   let indexed = 0;
   let healed = 0;
+  let skipped = 0;
   assertNoSymlinkedComponent(cfg.repoPath, entitiesRoot, "entity-index");
   if (existsSync17(entitiesRoot)) {
     for (const abs of walkMd2(entitiesRoot)) {
       let md = readFileSync16(abs, "utf8");
-      const mtimeDate = new Date(statSync2(abs).mtimeMs).toISOString().slice(0, 10);
+      const mtimeDate = new Date(statSync3(abs).mtimeMs).toISOString().slice(0, 10);
       const fixed = healUndefinedFrontmatter(md, mtimeDate);
       if (fixed !== null) {
-        writeFileSync11(abs, fixed);
+        writeFileSync10(abs, fixed);
         md = fixed;
         healed++;
       }
       const entry = parseEntityMarkdown(md);
-      if (!entry) continue;
+      if (!entry) {
+        skipped++;
+        continue;
+      }
       entry.path = relative3(cfg.repoPath, abs);
       upsertEntity(idx, entry);
       indexed++;
     }
   }
   saveEntityIndex(cfg.repoPath, idx);
-  return { indexed, healed };
+  return { indexed, healed, skipped };
 }
 var init_entity_index = __esm({
   "src/commands/entity-index.ts"() {
@@ -15568,14 +16189,16 @@ __export(entity_query_exports, {
   entityQueryCmd: () => entityQueryCmd
 });
 import { existsSync as existsSync18, readFileSync as readFileSync17, realpathSync as realpathSync2 } from "node:fs";
-import { join as join19, resolve as resolve5, sep as sep4 } from "node:path";
+import { join as join20, resolve as resolve5, sep as sep5 } from "node:path";
 function isKind(s) {
   const ok = ["file", "symbol", "api", "concept", "person"];
   return s && ok.includes(s) ? s : null;
 }
 function isEligibleMemory(m, now, project) {
   if (m.status === "superseded") return false;
-  if (m.validTo !== null && m.validTo <= now) return false;
+  if (isArchived(m)) return false;
+  const validToDate = calendarDate(m.validTo);
+  if (validToDate !== null && validToDate <= (calendarDate(now) ?? now)) return false;
   if (m.scope === "global" || m.scope === "user") return true;
   if (project && m.scope === `project:${project}`) return true;
   return project === null;
@@ -15618,20 +16241,20 @@ async function entityQueryCmd(opts) {
     }));
     payload.referencingMemories = referencingMemories;
     const nameSlug = entityName.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    const entRoot = resolve5(join19(cfg.repoPath, "memory", "entities"));
+    const entRoot = resolve5(join20(cfg.repoPath, "memory", "entities"));
     const matchedEntities = entries.filter((e) => isEligibleEntity(e, project)).filter((e) => {
       const titleMatch = e.title.toLowerCase() === entityName;
       const aliasMatch = (Array.isArray(e.aliases) ? e.aliases : []).some((a) => typeof a === "string" && a.toLowerCase() === entityName);
       const slugMatch = nameSlug.length > 0 && e.id.toLowerCase().endsWith("/" + nameSlug);
       return titleMatch || aliasMatch || slugMatch;
     }).map((e) => {
-      const abs = resolve5(join19(cfg.repoPath, e.path));
-      const inRoot = abs === entRoot || abs.startsWith(entRoot + sep4);
+      const abs = resolve5(join20(cfg.repoPath, e.path));
+      const inRoot = abs === entRoot || abs.startsWith(entRoot + sep5);
       let body = "";
       if (inRoot && existsSync18(abs)) {
         const realRoot = existsSync18(entRoot) ? realpathSync2(entRoot) : entRoot;
         const real = realpathSync2(abs);
-        if (real === realRoot || real.startsWith(realRoot + sep4)) {
+        if (real === realRoot || real.startsWith(realRoot + sep5)) {
           body = readFileSync17(abs, "utf8");
         }
       }
@@ -15649,6 +16272,8 @@ var init_entity_query = __esm({
     init_index_store4();
     init_score2();
     init_index_store2();
+    init_score();
+    init_dates();
   }
 });
 
@@ -15659,42 +16284,70 @@ function arr3(xs) {
 function req3(v, fallback) {
   return v == null || v === "" ? fallback : String(v);
 }
+function line2(key, value) {
+  return `${key}: ${neutralizeControlChars(value)}`;
+}
+function normalizeQaEntryForWrite(entry) {
+  const e = entry;
+  for (const k2 of QA_SCALAR_FIELDS) {
+    const v = e[k2];
+    if (typeof v === "string") e[k2] = neutralizeControlChars(v);
+  }
+  for (const k2 of QA_ARRAY_FIELDS) {
+    const v = e[k2];
+    if (Array.isArray(v)) e[k2] = v.map((x2) => typeof x2 === "string" ? neutralizeControlChars(x2) : x2);
+  }
+  return entry;
+}
 function renderQaMarkdown(entry, body) {
   const fm = [
     "---",
-    `id: ${entry.id}`,
-    `scope: ${entry.scope}`,
-    `project: ${entry.project == null ? "null" : JSON.stringify(entry.project)}`,
-    `question: ${JSON.stringify(entry.question)}`,
-    `answerSummary: ${JSON.stringify(entry.answerSummary)}`,
-    `kind: ${entry.kind}`,
-    `tags: ${arr3(entry.tags)}`,
-    `sources: ${arr3(entry.sources)}`,
-    `sourceMemoryIds: ${arr3(entry.sourceMemoryIds)}`,
-    `sourceSessions: ${arr3(entry.sourceSessions)}`,
-    `relatedEntities: ${arr3(entry.relatedEntities)}`,
-    `createdAt: ${req3(entry.createdAt, "")}`,
-    `updatedAt: ${req3(entry.updatedAt, "")}`,
+    line2("id", String(entry.id)),
+    line2("scope", String(entry.scope)),
+    line2("project", entry.project == null ? "null" : JSON.stringify(entry.project)),
+    line2("question", JSON.stringify(entry.question ?? "")),
+    line2("answerSummary", JSON.stringify(entry.answerSummary ?? "")),
+    line2("kind", String(entry.kind)),
+    line2("tags", arr3(entry.tags)),
+    line2("sources", arr3(entry.sources)),
+    line2("sourceMemoryIds", arr3(entry.sourceMemoryIds)),
+    line2("sourceSessions", arr3(entry.sourceSessions)),
+    line2("relatedEntities", arr3(entry.relatedEntities)),
+    line2("createdAt", req3(entry.createdAt, "")),
+    line2("updatedAt", req3(entry.updatedAt, "")),
     "---"
   ].join("\n");
   const trimmedBody = body.replace(/^\n+/, "").replace(/\n+$/, "");
   return `${fm}
 
-# ${entry.question}
+# ${neutralizeControlChars(String(entry.question ?? ""))}
 
 ${trimmedBody}
 `;
 }
+var QA_SCALAR_FIELDS, QA_ARRAY_FIELDS;
 var init_render3 = __esm({
   "src/qa/render.ts"() {
     "use strict";
+    init_gate();
+    QA_SCALAR_FIELDS = [
+      "id",
+      "scope",
+      "kind",
+      "createdAt",
+      "updatedAt",
+      "question",
+      "answerSummary",
+      "project"
+    ];
+    QA_ARRAY_FIELDS = ["tags", "sources", "sourceMemoryIds", "sourceSessions", "relatedEntities"];
   }
 });
 
 // src/qa/id.ts
 import { createHash as createHash2 } from "node:crypto";
 function normalizeSingleLine(s) {
-  return s.replace(/\s+/g, " ").trim();
+  return neutralizeControlChars(s).replace(/\s+/g, " ").trim();
 }
 function shortHash(canonical) {
   return createHash2("sha256").update(canonical).digest("hex").slice(0, 8);
@@ -15714,6 +16367,7 @@ var UNSAFE2;
 var init_id = __esm({
   "src/qa/id.ts"() {
     "use strict";
+    init_gate();
     UNSAFE2 = /[\\/:*?"'<>|\s.,;!()[\]{}@#$%^&+=`~]+/g;
   }
 });
@@ -15723,10 +16377,10 @@ var qa_write_exports = {};
 __export(qa_write_exports, {
   qaWriteCmd: () => qaWriteCmd
 });
-import { existsSync as existsSync19, lstatSync as lstatSync2, mkdirSync as mkdirSync11, readFileSync as readFileSync18, realpathSync as realpathSync3, writeFileSync as writeFileSync12 } from "node:fs";
-import { dirname as dirname6, join as join20, resolve as resolve6, sep as sep5 } from "node:path";
+import { existsSync as existsSync19, lstatSync as lstatSync2, mkdirSync as mkdirSync11, readFileSync as readFileSync18, realpathSync as realpathSync3, writeFileSync as writeFileSync11 } from "node:fs";
+import { dirname as dirname7, join as join21, resolve as resolve6, sep as sep6 } from "node:path";
 function isUnder(child, parent) {
-  return child === parent || child.startsWith(parent + sep5);
+  return child === parent || child.startsWith(parent + sep6);
 }
 function isSafeProjectSlug(p2) {
   if (!/^[A-Za-z0-9._-]+$/.test(p2)) return false;
@@ -15777,11 +16431,12 @@ async function qaWriteCmd(opts) {
       entry.project = null;
     }
     entry.id = qaId(entry.scope, entry.project, entry.question);
+    normalizeQaEntryForWrite(entry);
     entry.path = qaPath(entry);
-    const qaRoot = resolve6(join20(cfg.repoPath, "memory", "qa"));
-    const abs = resolve6(join20(cfg.repoPath, entry.path));
-    assertNoSymlinkedComponent(cfg.repoPath, dirname6(abs), "qa-write");
-    if (abs !== qaRoot && !abs.startsWith(qaRoot + sep5)) {
+    const qaRoot = resolve6(join21(cfg.repoPath, "memory", "qa"));
+    const abs = resolve6(join21(cfg.repoPath, entry.path));
+    assertNoSymlinkedComponent(cfg.repoPath, dirname7(abs), "qa-write");
+    if (abs !== qaRoot && !abs.startsWith(qaRoot + sep6)) {
       throw new Error(`qa-write: refusing to write outside memory/qa/: ${entry.path}`);
     }
     mkdirSync11(qaRoot, { recursive: true });
@@ -15790,8 +16445,8 @@ async function qaWriteCmd(opts) {
     if (!isUnder(realRoot, realRepo)) {
       throw new Error(`qa-write: refusing to write outside memory/qa/ (symlink guard): ${entry.path}`);
     }
-    mkdirSync11(dirname6(abs), { recursive: true });
-    const realParent = realpathSync3(dirname6(abs));
+    mkdirSync11(dirname7(abs), { recursive: true });
+    const realParent = realpathSync3(dirname7(abs));
     if (!isUnder(realParent, realRoot)) {
       throw new Error(`qa-write: refusing to write outside memory/qa/ (symlink guard): ${entry.path}`);
     }
@@ -15804,7 +16459,7 @@ async function qaWriteCmd(opts) {
     if (leafStat?.isSymbolicLink()) {
       throw new Error(`qa-write: refusing to write through a symlinked target file (symlink guard): ${entry.path}`);
     }
-    writeFileSync12(abs, renderQaMarkdown(entry, body));
+    writeFileSync11(abs, renderQaMarkdown(entry, body));
     upsertQa(idx, entry);
     written++;
     paths.push(entry.path);
@@ -15866,15 +16521,8 @@ function parseQuoted(v) {
   return t2;
 }
 function parseQaMarkdown(md) {
-  md = md.replace(/\r\n/g, "\n");
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  const fm = {};
-  for (const line of m[1].split("\n")) {
-    const i2 = line.indexOf(":");
-    if (i2 === -1) continue;
-    fm[line.slice(0, i2).trim()] = line.slice(i2 + 1).trim();
-  }
+  const fm = readFrontmatterBlock(md);
+  if (!fm) return null;
   if (!fm.id || !fm.kind) return null;
   return {
     id: fm.id,
@@ -15896,6 +16544,7 @@ function parseQaMarkdown(md) {
 var init_parse3 = __esm({
   "src/qa/parse.ts"() {
     "use strict";
+    init_frontmatter();
   }
 });
 
@@ -15904,8 +16553,8 @@ var qa_index_exports = {};
 __export(qa_index_exports, {
   qaIndexCmd: () => qaIndexCmd
 });
-import { existsSync as existsSync20, readFileSync as readFileSync19, readdirSync as readdirSync4, writeFileSync as writeFileSync13, statSync as statSync3 } from "node:fs";
-import { join as join21, relative as relative4 } from "node:path";
+import { existsSync as existsSync20, readFileSync as readFileSync19, readdirSync as readdirSync4, writeFileSync as writeFileSync12, statSync as statSync4 } from "node:fs";
+import { join as join22, relative as relative4 } from "node:path";
 function walkMd3(dir) {
   const out = [];
   const stack = [dir];
@@ -15918,7 +16567,7 @@ function walkMd3(dir) {
       continue;
     }
     for (const e of entries) {
-      const p2 = join21(cur, e.name);
+      const p2 = join22(cur, e.name);
       if (e.isDirectory()) stack.push(p2);
       else if (e.isFile() && e.name.endsWith(".md")) out.push(p2);
     }
@@ -15927,30 +16576,34 @@ function walkMd3(dir) {
 }
 async function qaIndexCmd() {
   const cfg = readPluginConfig();
-  const qaRoot = join21(cfg.repoPath, "memory", "qa");
+  const qaRoot = join22(cfg.repoPath, "memory", "qa");
   const idx = emptyQaIndex();
   let indexed = 0;
   let healed = 0;
+  let skipped = 0;
   assertNoSymlinkedComponent(cfg.repoPath, qaRoot, "qa-index");
   if (existsSync20(qaRoot)) {
     for (const abs of walkMd3(qaRoot)) {
       let md = readFileSync19(abs, "utf8");
-      const mtimeDate = new Date(statSync3(abs).mtimeMs).toISOString().slice(0, 10);
+      const mtimeDate = new Date(statSync4(abs).mtimeMs).toISOString().slice(0, 10);
       const fixed = healUndefinedFrontmatter(md, mtimeDate);
       if (fixed !== null) {
-        writeFileSync13(abs, fixed);
+        writeFileSync12(abs, fixed);
         md = fixed;
         healed++;
       }
       const entry = parseQaMarkdown(md);
-      if (!entry) continue;
+      if (!entry) {
+        skipped++;
+        continue;
+      }
       entry.path = relative4(cfg.repoPath, abs);
       upsertQa(idx, entry);
       indexed++;
     }
   }
   saveQaIndex(cfg.repoPath, idx);
-  return { indexed, healed };
+  return { indexed, healed, skipped };
 }
 var init_qa_index = __esm({
   "src/commands/qa-index.ts"() {
@@ -16086,29 +16739,47 @@ function validEntryExists(rec, id) {
   const v = rec[id];
   return v !== null && typeof v === "object" && !Array.isArray(v) && v.id === id;
 }
-function inScope(scope, cwdProject) {
+function inScope2(scope, cwdProject) {
   if (typeof scope !== "string") return cwdProject === null;
   if (cwdProject === null) return true;
   if (scope === "global" || scope === "user") return true;
   const scopeProject = scope.startsWith("project:") ? scope.slice("project:".length) : null;
   return scopeProject === cwdProject;
 }
+function nearDuplicatePairs(entries, threshold = 0.8, candidateStatuses = /* @__PURE__ */ new Set(["active"])) {
+  const candidates = entries.filter((e) => candidateStatuses.has(e.status));
+  const buckets = /* @__PURE__ */ new Map();
+  for (const e of candidates) {
+    const key = JSON.stringify([e.type, e.scope, e.project ?? "_global"]);
+    const arr4 = buckets.get(key) ?? [];
+    arr4.push({ e, tokens: tokenize4(`${textOf(e.title)} ${textOf(e.summary)}`) });
+    buckets.set(key, arr4);
+  }
+  const pairs = [];
+  for (const group of buckets.values()) {
+    for (let i2 = 0; i2 < group.length; i2++) {
+      for (let j2 = i2 + 1; j2 < group.length; j2++) {
+        try {
+          const similarity = jaccard(group[i2].tokens, group[j2].tokens);
+          if (similarity >= threshold) {
+            const [a, b2] = [group[i2].e.id, group[j2].e.id].slice().sort();
+            pairs.push({ a, b: b2, similarity });
+          }
+        } catch {
+        }
+      }
+    }
+  }
+  return pairs;
+}
 function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
   const issues = [];
   const suggestions = [];
-  const memEntries = safeValues(memoryIdx.entries).filter((e) => inScope(e.scope, opts.project));
+  const memEntries = safeValues(memoryIdx.entries).filter((e) => inScope2(e.scope, opts.project));
   for (const e of memEntries) {
     try {
       if (e.status === "active" && e.validTo !== null) {
-        const ts = Date.parse(e.validTo);
-        let vDate = null;
-        if (isFinite(ts)) {
-          try {
-            vDate = new Date(ts).toISOString().slice(0, 10);
-          } catch {
-            vDate = null;
-          }
-        }
+        const vDate = calendarDate(e.validTo);
         if (vDate === null) {
           issues.push({
             check: "malformed-date",
@@ -16208,35 +16879,17 @@ ${e.summary}`)) {
   }
   const dupThreshold = opts.dupThreshold ?? 0.6;
   const active = memEntries.filter((e) => e.status === "active");
-  const buckets = /* @__PURE__ */ new Map();
-  for (const e of active) {
-    const key = `${e.type} ${e.scope} ${e.project ?? "_global"}`;
-    const arr4 = buckets.get(key) ?? [];
-    arr4.push({ e, tokens: tokenize4(`${e.title} ${e.summary}`) });
-    buckets.set(key, arr4);
+  for (const { a: id0, b: id1, similarity } of nearDuplicatePairs(active, dupThreshold)) {
+    issues.push({
+      check: "duplicate-like",
+      severity: "info",
+      layer: "memory",
+      id: id0,
+      detail: `near-duplicate of ${id1} (overlap ${similarity.toFixed(2)})`,
+      refs: [id0, id1]
+    });
   }
-  for (const group of buckets.values()) {
-    for (let i2 = 0; i2 < group.length; i2++) {
-      for (let j2 = i2 + 1; j2 < group.length; j2++) {
-        try {
-          const sim = jaccard(group[i2].tokens, group[j2].tokens);
-          if (sim >= dupThreshold) {
-            const pair = [group[i2].e.id, group[j2].e.id].slice().sort();
-            issues.push({
-              check: "duplicate-like",
-              severity: "info",
-              layer: "memory",
-              id: pair[0],
-              detail: `near-duplicate of ${pair[1]} (overlap ${sim.toFixed(2)})`,
-              refs: pair
-            });
-          }
-        } catch {
-        }
-      }
-    }
-  }
-  const entEntries = safeValues(entityIdx.entries).filter((e) => inScope(e.scope, opts.project));
+  const entEntries = safeValues(entityIdx.entries).filter((e) => inScope2(e.scope, opts.project));
   for (const e of entEntries) {
     try {
       if (Array.isArray(e.sourceMemoryIds)) {
@@ -16280,7 +16933,7 @@ ${e.summary}`)) {
       });
     }
   }
-  const qaEntries = safeValues(qaIdx.entries).filter((e) => inScope(e.scope, opts.project));
+  const qaEntries = safeValues(qaIdx.entries).filter((e) => inScope2(e.scope, opts.project));
   for (const e of qaEntries) {
     try {
       if (Array.isArray(e.sourceMemoryIds)) {
@@ -16370,12 +17023,14 @@ ${e.summary}`)) {
     suggestions
   };
 }
-var tokenize4, jaccard, daysBetween;
+var tokenize4, textOf, jaccard, daysBetween;
 var init_lint = __esm({
   "src/memory/lint.ts"() {
     "use strict";
     init_leak_scan();
+    init_dates();
     tokenize4 = (s) => new Set(s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1));
+    textOf = (v) => typeof v === "string" ? v : "";
     jaccard = (a, b2) => {
       if (a.size === 0 && b2.size === 0) return 0;
       let inter = 0;
@@ -16386,13 +17041,36 @@ var init_lint = __esm({
   }
 });
 
+// src/memory/known-sessions.ts
+function loadKnownSessions(repoPath) {
+  try {
+    const spool = loadIndex(repoPath);
+    const pairs = Object.entries(spool.entries);
+    const wellFormed = pairs.length > 0 && pairs.every(([key, ent]) => {
+      const e2 = ent;
+      return typeof e2.sessionId === "string" && e2.sessionId.length > 0 && typeof e2.tool === "string" && KNOWN_TOOLS.has(e2.tool) && key === `${e2.tool}:${e2.sessionId}`;
+    });
+    return wellFormed ? new Set(pairs.map(([, ent]) => ent.sessionId)) : void 0;
+  } catch {
+    return void 0;
+  }
+}
+var KNOWN_TOOLS;
+var init_known_sessions = __esm({
+  "src/memory/known-sessions.ts"() {
+    "use strict";
+    init_index_store();
+    KNOWN_TOOLS = /* @__PURE__ */ new Set(["claude", "copilot"]);
+  }
+});
+
 // src/memory/proposal-store.ts
 import { createHash as createHash3 } from "node:crypto";
-import { existsSync as existsSync21, mkdirSync as mkdirSync12, readFileSync as readFileSync20, readdirSync as readdirSync5, rmSync, writeFileSync as writeFileSync14 } from "node:fs";
-import { join as join22, resolve as resolve7 } from "node:path";
+import { existsSync as existsSync21, mkdirSync as mkdirSync12, readFileSync as readFileSync20, readdirSync as readdirSync5, rmSync as rmSync3, writeFileSync as writeFileSync13 } from "node:fs";
+import { join as join23, resolve as resolve7 } from "node:path";
 function proposalsDir(repoPath) {
   const repoHash = createHash3("sha256").update(resolve7(repoPath)).digest("hex").slice(0, 12);
-  return join22(memariumHome(), "local-proposals", repoHash);
+  return join23(memariumHome(), "local-proposals", repoHash);
 }
 function guardQueuePath(targetAbs) {
   assertNoSymlinkedComponent(memariumHome(), targetAbs, "proposal-store");
@@ -16409,14 +17087,14 @@ function flatTargetKey(targetKey2) {
 }
 function fileFor(repoPath, idOrKey) {
   const flat = idOrKey.includes("/") ? flatTargetKey(idOrKey) : flatTargetKey(idOrKey.split("__").join("/"));
-  return join22(proposalsDir(repoPath), `${flat}.json`);
+  return join23(proposalsDir(repoPath), `${flat}.json`);
 }
 function writeProposal(repoPath, p2) {
   const dir = proposalsDir(repoPath);
-  const file = join22(dir, `${flatTargetKey(p2.targetKey)}.json`);
+  const file = join23(dir, `${flatTargetKey(p2.targetKey)}.json`);
   guardQueuePath(file);
   mkdirSync12(dir, { recursive: true });
-  writeFileSync14(file, JSON.stringify(p2, null, 2) + "\n");
+  writeFileSync13(file, JSON.stringify(p2, null, 2) + "\n");
   return file;
 }
 function readProposal(repoPath, idOrKey) {
@@ -16441,7 +17119,7 @@ function listProposals(repoPath) {
   const out = [];
   for (const name of readdirSync5(dir).sort()) {
     if (!name.endsWith(".json")) continue;
-    const file = join22(dir, name);
+    const file = join23(dir, name);
     guardQueuePath(file);
     try {
       out.push(JSON.parse(readFileSync20(file, "utf8")));
@@ -16459,7 +17137,7 @@ function deleteProposal(repoPath, idOrKey) {
   }
   guardQueuePath(file);
   if (!existsSync21(file)) return null;
-  rmSync(file);
+  rmSync3(file);
   return file;
 }
 var init_proposal_store = __esm({
@@ -16476,10 +17154,10 @@ __export(memory_lint_exports, {
   memoryLintCmd: () => memoryLintCmd
 });
 import { existsSync as existsSync22, readFileSync as readFileSync21 } from "node:fs";
-import { join as join23 } from "node:path";
+import { join as join24 } from "node:path";
 function readBody(repoPath, entry) {
   try {
-    const md = readFileSync21(join23(repoPath, entry.path), "utf8");
+    const md = readFileSync21(join24(repoPath, entry.path), "utf8");
     const afterFm = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
     return afterFm.replace(/^\s*#[^\n]*\n+/, "").trim();
   } catch {
@@ -16512,7 +17190,7 @@ function proposeStalenessFixes(repoPath, idx, report, now) {
   return queued;
 }
 function readIndexOnce(repoPath, rel, layer, empty) {
-  const p2 = join23(repoPath, rel);
+  const p2 = join24(repoPath, rel);
   if (!existsSync22(p2)) return { index: empty, finding: null };
   let parsed;
   try {
@@ -16565,18 +17243,7 @@ async function memoryLintCmd(opts) {
     }
   }
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  let knownSessions;
-  try {
-    const spool = loadIndex(cfg.repoPath);
-    const pairs = Object.entries(spool.entries);
-    const wellFormed = pairs.length > 0 && pairs.every(([key, ent]) => {
-      const e2 = ent;
-      return typeof e2.sessionId === "string" && e2.sessionId.length > 0 && typeof e2.tool === "string" && KNOWN_TOOLS.has(e2.tool) && key === `${e2.tool}:${e2.sessionId}`;
-    });
-    knownSessions = wellFormed ? new Set(pairs.map(([, ent]) => ent.sessionId)) : void 0;
-  } catch {
-    knownSessions = void 0;
-  }
+  const knownSessions = loadKnownSessions(cfg.repoPath);
   const m = readIndexOnce(cfg.repoPath, MEMORY_INDEX_REL, "memory", emptyMemoryIndex());
   const e = readIndexOnce(cfg.repoPath, ENTITY_INDEX_REL, "entity", emptyEntityIndex());
   const q2 = readIndexOnce(cfg.repoPath, QA_INDEX_REL, "qa", emptyQaIndex());
@@ -16599,13 +17266,11 @@ ${fixed.length} staleness fix(es) queued as proposals \u2014 review with \`memor
     process.stdout.write(out);
   }
 }
-var KNOWN_TOOLS;
 var init_memory_lint = __esm({
   "src/commands/memory-lint.ts"() {
     "use strict";
     init_plugin_config();
     init_project_resolve();
-    init_index_store();
     init_index_store2();
     init_index_store4();
     init_index_store3();
@@ -16613,9 +17278,332 @@ var init_memory_lint = __esm({
     init_types4();
     init_types3();
     init_lint();
+    init_known_sessions();
     init_proposal_store();
     init_gate();
-    KNOWN_TOOLS = /* @__PURE__ */ new Set(["claude", "copilot"]);
+  }
+});
+
+// src/memory/archive.ts
+function daysBetween2(now, then) {
+  const a = Date.parse(now), b2 = Date.parse(then);
+  if (!isFinite(a) || !isFinite(b2)) return NaN;
+  return (a - b2) / 864e5;
+}
+function importanceOf(e) {
+  const v = e.importance;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+function updatedAtMs(e) {
+  return epochMs(e.updatedAt);
+}
+function archivable(e) {
+  return e.type !== "core" && e.status !== "pinned" && e.status !== "archived";
+}
+function planArchival(entries, usage, opts) {
+  const chosen = /* @__PURE__ */ new Map();
+  const pick2 = (id, reason) => {
+    if (!chosen.has(id)) chosen.set(id, reason);
+  };
+  const nowDate = calendarDate(opts.now) ?? opts.now;
+  for (const e of entries) {
+    if (!archivable(e)) continue;
+    if (e.status === "superseded") {
+      pick2(e.id, "superseded-cleanup");
+      continue;
+    }
+    const validToDate = calendarDate(e.validTo);
+    if (validToDate !== null && validToDate <= nowDate) {
+      pick2(e.id, "expired");
+      continue;
+    }
+    if (e.type === "episodic" && daysBetween2(opts.now, e.updatedAt) > opts.episodicMaxAgeDays) {
+      pick2(e.id, `stale-episodic:>${opts.episodicMaxAgeDays}d`);
+      continue;
+    }
+    if (opts.knownSessions !== void 0 && Array.isArray(e.sourceSessions) && e.sourceSessions.length > 0 && e.sourceSessions.every((s) => !opts.knownSessions.has(s))) {
+      pick2(e.id, "stale-provenance");
+      continue;
+    }
+    const count = usage[e.id]?.count ?? e.accessCount ?? 0;
+    const imp = importanceOf(e);
+    if ((e.type === "semantic" || e.type === "procedural") && count === 0 && imp !== null && imp <= opts.unusedMaxImportance && daysBetween2(opts.now, e.updatedAt) > opts.unusedMinAgeDays) {
+      pick2(e.id, "unused-low-value");
+      continue;
+    }
+  }
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  for (const { a, b: b2 } of nearDuplicatePairs(entries, 0.8, /* @__PURE__ */ new Set(["active", "pinned"]))) {
+    const ea = byId.get(a), eb = byId.get(b2);
+    if (!ea || !eb) continue;
+    const ia = importanceOf(ea), ib = importanceOf(eb);
+    if (ia === null || ib === null) continue;
+    let loser;
+    if (ia !== ib) {
+      loser = ia < ib ? ea : eb;
+    } else {
+      const ta = updatedAtMs(ea), tb = updatedAtMs(eb);
+      if (ta === null || tb === null) continue;
+      loser = ta <= tb ? ea : eb;
+    }
+    const winner = loser === ea ? eb : ea;
+    if (chosen.has(winner.id)) continue;
+    if (archivable(loser)) chosen.set(loser.id, `near-duplicate-of:${winner.id}`);
+  }
+  return { archive: [...chosen].map(([id, reason]) => ({ id, reason })) };
+}
+var ARCHIVE_DEFAULTS;
+var init_archive = __esm({
+  "src/memory/archive.ts"() {
+    "use strict";
+    init_lint();
+    init_dates();
+    ARCHIVE_DEFAULTS = { episodicMaxAgeDays: 90, unusedMinAgeDays: 60, unusedMaxImportance: 2 };
+  }
+});
+
+// src/memory/overlay-conflict.ts
+import { readFileSync as readFileSync22 } from "node:fs";
+import { join as join25, resolve as resolve8 } from "node:path";
+function compareStringSet(a, b2) {
+  const norm = (v) => {
+    if (v === void 0 || v === null) return [];
+    if (!Array.isArray(v)) return null;
+    return [...v].sort();
+  };
+  const sa = norm(a);
+  const sb = norm(b2);
+  if (sa === null || sb === null) return "uncomparable";
+  return sa.length === sb.length && sa.every((v, i2) => v === sb[i2]) ? "same" : "different";
+}
+function hasWellFormedCollections(row) {
+  const r2 = row;
+  return COLLECTION_FIELDS.every((f) => {
+    const v = r2[f];
+    return v === void 0 || v === null || Array.isArray(v);
+  });
+}
+function sameMemoryContent(a, b2) {
+  return a.id === b2.id && a.status === b2.status && a.title === b2.title && a.summary === b2.summary && a.importance === b2.importance && a.confidence === b2.confidence && a.createdAt === b2.createdAt && (a.validTo ?? null) === (b2.validTo ?? null) && (a.validFrom ?? null) === (b2.validFrom ?? null) && (a.supersedes ?? null) === (b2.supersedes ?? null) && (a.archivedReason ?? null) === (b2.archivedReason ?? null) && (a.archivedAt ?? null) === (b2.archivedAt ?? null) && a.type === b2.type && a.scope === b2.scope && (a.project ?? null) === (b2.project ?? null) && (a.trust ?? "unknown") === (b2.trust ?? "unknown") && compareStringSet(a.entities, b2.entities) === "same";
+}
+function extractBody(md) {
+  const norm = md.replace(/\r\n/g, "\n");
+  if (!/^---\n[\s\S]*?\n---\n?/.test(norm)) return null;
+  const afterFm = norm.replace(/^---\n[\s\S]*?\n---\n?/, "");
+  if (!/^\n*# [^\n]*/.test(afterFm)) return null;
+  return afterFm.replace(/^\n*# [^\n]*\n*/, "").replace(/\n+$/, "");
+}
+function canonicalRel(entry) {
+  try {
+    return canonicalMemoryPath(entry);
+  } catch {
+    return null;
+  }
+}
+function readBodyAt(root, rel) {
+  if (!root || !rel) return null;
+  try {
+    return extractBody(readFileSync22(resolve8(join25(root, rel)), "utf8"));
+  } catch {
+    return null;
+  }
+}
+function isOverlayConflict(local, overlay, roots) {
+  if (overlay === void 0 || overlay === null) return false;
+  if (typeof overlay !== "object" || Array.isArray(overlay)) return true;
+  try {
+    return divergesFromOverlay(local, overlay, roots);
+  } catch {
+    return true;
+  }
+}
+function divergesFromOverlay(local, ov, roots) {
+  const ovMs = epochMs(ov.updatedAt);
+  const localMs = epochMs(local.updatedAt);
+  if (ovMs === null || localMs === null) return true;
+  if (!hasWellFormedCollections(ov) || !hasWellFormedCollections(local)) return true;
+  const ovDay = calendarDate(ov.updatedAt);
+  const localDay = calendarDate(local.updatedAt);
+  if (ovDay !== localDay) return ovMs > localMs;
+  if (!sameMemoryContent(local, ov)) return true;
+  const localRel = canonicalRel(local);
+  const overlayRel = canonicalRel(ov);
+  if (localRel === null || overlayRel === null || localRel !== overlayRel) return true;
+  const localBody = readBodyAt(roots.local, localRel);
+  const overlayBody = readBodyAt(roots.overlay, overlayRel);
+  if (localBody === null || overlayBody === null) return true;
+  return localBody !== overlayBody;
+}
+var COLLECTION_FIELDS;
+var init_overlay_conflict = __esm({
+  "src/memory/overlay-conflict.ts"() {
+    "use strict";
+    init_gate();
+    init_dates();
+    COLLECTION_FIELDS = ["entities", "sourceSessions", "sourceCommits", "sourceFiles"];
+  }
+});
+
+// src/commands/memory-archive.ts
+var memory_archive_exports = {};
+__export(memory_archive_exports, {
+  memoryArchiveCmd: () => memoryArchiveCmd
+});
+async function memoryArchiveCmd(opts) {
+  const cfg = readPluginConfig();
+  const idx = loadMemoryIndex(cfg.repoPath);
+  const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const usage = loadUsage(cfg.repoPath);
+  const knownSessions = loadKnownSessions(cfg.repoPath);
+  const rawCount = Object.keys(idx.entries ?? {}).length;
+  const entries = Object.keys(idx.entries ?? {}).filter((key) => validEntryExists(idx.entries, key)).map((key) => idx.entries[key]).filter(isRewritableEntry);
+  if (entries.length < rawCount) {
+    console.warn(`memory-archive: skipped ${rawCount - entries.length} malformed index row(s)`);
+  }
+  const view = resolveMemoryView(cfg.repoPath);
+  const overlayLoad = view.roots.overlay ? loadMemoryIndexStrict(view.roots.overlay) : { kind: "absent" };
+  let localWinners;
+  if (overlayLoad.kind === "corrupt") {
+    console.warn(
+      "memory-archive: overlay index unreadable \u2014 skipping archival this run to avoid clobbering sibling state"
+    );
+    localWinners = [];
+  } else {
+    const overlayEntries = overlayLoad.kind === "ok" ? overlayLoad.index.entries : {};
+    const inCrossDeviceConflict = (e) => isOverlayConflict(e, overlayEntries[e.id], { local: cfg.repoPath, overlay: view.roots.overlay });
+    localWinners = entries.filter((e) => !inCrossDeviceConflict(e));
+    const skippedOverlay = entries.length - localWinners.length;
+    if (skippedOverlay > 0) {
+      console.warn(`memory-archive: skipped ${skippedOverlay} id(s) in a cross-device conflict (a sibling holds a newer or divergent same-day copy)`);
+    }
+  }
+  const plan = planArchival(localWinners, usage, { now, ...ARCHIVE_DEFAULTS, knownSessions });
+  if (!opts.apply) {
+    if (opts.json) console.log(JSON.stringify(plan, null, 2));
+    else if (plan.archive.length === 0) console.log("nothing to archive");
+    else plan.archive.forEach((a) => console.log(`archive ${a.id}  (${a.reason})`));
+    return;
+  }
+  const planned = [];
+  for (const { id, reason } of plan.archive) {
+    if (!validEntryExists(idx.entries, id)) continue;
+    const e = idx.entries[id];
+    if (!isRewritableEntry(e)) continue;
+    if (e.type === "core" || e.status === "pinned" || e.status === "archived") continue;
+    planned.push({ ...e, status: "archived", archivedAt: now, archivedReason: reason, updatedAt: now });
+  }
+  for (const next of planned) assertMemoryBodyRecoverable(cfg.repoPath, next);
+  const snapshots = planned.map((next) => snapshotMemoryEntryFile(cfg.repoPath, next));
+  let archived = 0;
+  try {
+    for (const next of planned) {
+      writeMemoryEntryFile(cfg.repoPath, next);
+      idx.entries[next.id] = next;
+      archived++;
+    }
+  } catch (err) {
+    rollbackMemoryWrites("memory-archive: a .md rewrite failed mid-batch", snapshots, err);
+  }
+  if (archived > 0) {
+    try {
+      saveMemoryIndex(cfg.repoPath, idx);
+    } catch (err) {
+      rollbackMemoryWrites("memory-archive: index save failed", snapshots, err);
+    }
+  }
+  console.log(opts.json ? JSON.stringify({ archived }) : `archived ${archived}`);
+}
+var init_memory_archive = __esm({
+  "src/commands/memory-archive.ts"() {
+    "use strict";
+    init_plugin_config();
+    init_index_store2();
+    init_usage_store();
+    init_archive();
+    init_known_sessions();
+    init_lint();
+    init_source_resolver();
+    init_overlay_conflict();
+    init_apply();
+  }
+});
+
+// src/commands/memory-unarchive.ts
+var memory_unarchive_exports = {};
+__export(memory_unarchive_exports, {
+  memoryUnarchiveCmd: () => memoryUnarchiveCmd
+});
+async function memoryUnarchiveCmd(opts) {
+  const cfg = readPluginConfig();
+  const idx = loadMemoryIndex(cfg.repoPath);
+  const rows = idx.entries ?? {};
+  const raw = rows[opts.id];
+  if (raw === void 0 || raw === null) {
+    console.log(`not archived: ${opts.id}`);
+    return;
+  }
+  if (!validEntryExists(rows, opts.id)) {
+    throw new Error(`refusing to unarchive ${opts.id}: index row is corrupt (key/id mismatch)`);
+  }
+  const e = rows[opts.id];
+  if (e.status !== void 0 && e.status !== null && !isMemoryStatus(e.status)) {
+    throw new Error(`refusing to unarchive ${opts.id}: index row is incomplete (${describeRewriteDefect("unsafe status")})`);
+  }
+  if (e.status !== "archived") {
+    console.log(`not archived: ${opts.id}`);
+    return;
+  }
+  const missing = missingRewriteField(e);
+  if (missing) {
+    throw new Error(`refusing to unarchive ${opts.id}: index row is incomplete (${describeRewriteDefect(missing)})`);
+  }
+  const view = resolveMemoryView(cfg.repoPath);
+  const overlayLoad = view.roots.overlay ? loadMemoryIndexStrict(view.roots.overlay) : { kind: "absent" };
+  if (overlayLoad.kind === "corrupt") {
+    throw new Error(
+      `refusing to unarchive ${opts.id}: the aggregated overlay index is unreadable \u2014 cannot rule out a newer/divergent copy on another device`
+    );
+  }
+  const overlayEntries = overlayLoad.kind === "ok" ? overlayLoad.index.entries : {};
+  if (isOverlayConflict(e, overlayEntries[opts.id], { local: cfg.repoPath, overlay: view.roots.overlay })) {
+    throw new Error(
+      `refusing to unarchive ${opts.id}: a newer/divergent copy exists on another device \u2014 resolve there`
+    );
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const restoreSuperseded = e.archivedReason === "superseded-cleanup";
+  const validToDate = calendarDate(e.validTo);
+  const pastValidTo = !restoreSuperseded && validToDate !== null && validToDate <= now;
+  const next = {
+    ...e,
+    status: restoreSuperseded ? "superseded" : "active",
+    archivedAt: null,
+    archivedReason: null,
+    updatedAt: now,
+    ...pastValidTo ? { validTo: null } : {}
+  };
+  const snapshot = snapshotMemoryEntryFile(cfg.repoPath, next);
+  writeMemoryEntryFile(cfg.repoPath, next);
+  idx.entries[opts.id] = next;
+  try {
+    saveMemoryIndex(cfg.repoPath, idx);
+  } catch (err) {
+    rollbackMemoryWrites(`unarchive ${opts.id}: index save failed`, [snapshot], err);
+  }
+  console.log(
+    restoreSuperseded ? `restored ${opts.id} to superseded (its replacement is live; was archived as superseded-cleanup)` : pastValidTo ? `restored ${opts.id} (cleared past validTo=${e.validTo} so it is recallable again)` : `restored ${opts.id}`
+  );
+}
+var init_memory_unarchive = __esm({
+  "src/commands/memory-unarchive.ts"() {
+    "use strict";
+    init_plugin_config();
+    init_index_store2();
+    init_apply();
+    init_source_resolver();
+    init_overlay_conflict();
+    init_lint();
+    init_dates();
   }
 });
 
@@ -16624,12 +17612,12 @@ var memory_propose_exports = {};
 __export(memory_propose_exports, {
   memoryProposeCmd: () => memoryProposeCmd
 });
-import { existsSync as existsSync23, readFileSync as readFileSync22 } from "node:fs";
+import { existsSync as existsSync23, readFileSync as readFileSync23 } from "node:fs";
 async function memoryProposeCmd(opts) {
   if (!opts.inputPath || !existsSync23(opts.inputPath)) {
     throw new Error(`memory-propose: --input JSON not found: ${opts.inputPath}`);
   }
-  const items = JSON.parse(readFileSync22(opts.inputPath, "utf8"));
+  const items = JSON.parse(readFileSync23(opts.inputPath, "utf8"));
   const cfg = readPluginConfig();
   const idx = loadMemoryIndex(cfg.repoPath);
   assertNoBlockingLeak(items, "memory-propose");
@@ -16821,26 +17809,26 @@ var memory_approve_exports = {};
 __export(memory_approve_exports, {
   memoryApproveCmd: () => memoryApproveCmd
 });
-import { existsSync as existsSync24, readdirSync as readdirSync6, rmSync as rmSync2 } from "node:fs";
-import { join as join24 } from "node:path";
+import { existsSync as existsSync24, readdirSync as readdirSync6, rmSync as rmSync4 } from "node:fs";
+import { join as join26 } from "node:path";
 function refreshPrimers(repoPath, entry) {
-  const dir = join24(repoPath, "memory", "_primer");
+  const dir = join26(repoPath, "memory", "_primer");
   if (!existsSync24(dir)) return [];
   assertNoSymlinkedComponent(repoPath, dir, "memory-approve");
   const deleted = [];
   const del = (file) => {
     if (!existsSync24(file)) return;
     assertNoSymlinkedComponent(repoPath, file, "memory-approve");
-    rmSync2(file);
+    rmSync4(file);
     deleted.push(file);
   };
   const deleteAll = () => {
-    for (const name of readdirSync6(dir)) if (name.endsWith(".md")) del(join24(dir, name));
+    for (const name of readdirSync6(dir)) if (name.endsWith(".md")) del(join26(dir, name));
   };
   const scope = typeof entry.scope === "string" ? entry.scope : "";
   const project = scope.startsWith("project:") ? scope.slice("project:".length) : null;
   if (project && isSafePathSegment(project)) {
-    del(join24(dir, `${project}.md`));
+    del(join26(dir, `${project}.md`));
   } else {
     deleteAll();
   }
@@ -16923,7 +17911,9 @@ function buildRecallPayload(opts = {}) {
   const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   overlayUsage(entries, loadUsage(cfg.repoPath));
   const query = (opts.q ?? "").trim();
-  const scored = scoreMemories(entries, { project: projectFilter, text: query, type: null, now });
+  const scoreQuery = { project: projectFilter, text: query, type: null, now };
+  const scored = scoreMemories(entries, scoreQuery);
+  const coldStorage = cwdUnresolved ? [] : runColdPass({ entries: view.entries, scored, query: scoreQuery, sources: view.sources });
   const limit = opts.limit && opts.limit > 0 ? opts.limit : DEFAULT_LIMIT;
   const hits = scored.slice(0, limit).map((s) => ({
     id: s.entry.id,
@@ -16943,11 +17933,12 @@ function buildRecallPayload(opts = {}) {
     query,
     repoPath: cfg.repoPath,
     entries: hits,
+    coldStorage,
     meta: {
       total: scored.length,
       returned: hits.length,
       ...cwdUnresolved ? { cwdUnresolved: true } : {},
-      nextStep: hits.length > 0 ? "Read the top 1\u20135 entry.path with the Read tool for full bodies (episodes carry the arc)." : cwdUnresolved ? "cwd didn't resolve to a synced project \u2014 pass --project <slug> or --all." : "No memory yet for this project. Run /memarium to digest sessions."
+      nextStep: hits.length > 0 ? "Read the top 1\u20135 entry.path with the Read tool for full bodies (episodes carry the arc)." : cwdUnresolved ? "cwd didn't resolve to a synced project \u2014 pass --project <slug> or --all." : coldStorage.length > 0 ? renderColdNextStep(coldStorage) : "No memory yet for this project. Run /memarium to digest sessions."
     }
   };
   if (!query && projectFilter) {
@@ -16959,16 +17950,17 @@ function buildRecallPayload(opts = {}) {
 async function recallCmd(opts) {
   const payload = buildRecallPayload(opts);
   process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+  for (const line3 of renderColdHints(payload.coldStorage)) console.error(line3);
   if (payload.query !== "") {
     try {
-      const bumpIds = payload.entries.filter((h2) => Number.isFinite(h2.score) && CONTENT_HIT_MARKERS2.some((m) => h2.whyRecalled.includes(m))).slice(0, BUMP_TOP_N2).map((h2) => h2.id);
+      const bumpIds = payload.entries.filter((h2) => Number.isFinite(h2.score) && isContentHitReason(h2.whyRecalled)).slice(0, BUMP_TOP_N2).map((h2) => h2.id);
       const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
       bumpUsage(payload.repoPath, bumpIds, now);
     } catch {
     }
   }
 }
-var DEFAULT_LIMIT, CONTENT_HIT_MARKERS2, BUMP_TOP_N2;
+var DEFAULT_LIMIT, BUMP_TOP_N2;
 var init_recall = __esm({
   "src/commands/recall.ts"() {
     "use strict";
@@ -16978,31 +17970,31 @@ var init_recall = __esm({
     init_score();
     init_usage_store();
     init_primer();
+    init_cold_pass();
     DEFAULT_LIMIT = 25;
-    CONTENT_HIT_MARKERS2 = ["keyword", "file", "commit"];
     BUMP_TOP_N2 = 5;
   }
 });
 
 // src/spool/plugin-state.ts
-import { existsSync as existsSync25, mkdirSync as mkdirSync13, readFileSync as readFileSync23, writeFileSync as writeFileSync15 } from "node:fs";
-import { dirname as dirname7, join as join25 } from "node:path";
+import { existsSync as existsSync25, mkdirSync as mkdirSync13, readFileSync as readFileSync24, writeFileSync as writeFileSync14 } from "node:fs";
+import { dirname as dirname8, join as join27 } from "node:path";
 function statePath() {
-  return join25(memariumHome(), ".plugin-state.json");
+  return join27(memariumHome(), ".plugin-state.json");
 }
 function loadState() {
   const p2 = statePath();
   if (!existsSync25(p2)) return {};
   try {
-    return JSON.parse(readFileSync23(p2, "utf8"));
+    return JSON.parse(readFileSync24(p2, "utf8"));
   } catch {
     return {};
   }
 }
 function saveState(state) {
   const p2 = statePath();
-  mkdirSync13(dirname7(p2), { recursive: true });
-  writeFileSync15(p2, JSON.stringify(state, null, 2) + "\n");
+  mkdirSync13(dirname8(p2), { recursive: true });
+  writeFileSync14(p2, JSON.stringify(state, null, 2) + "\n");
 }
 var init_plugin_state = __esm({
   "src/spool/plugin-state.ts"() {
@@ -17048,11 +18040,11 @@ var init_first_run = __esm({
 
 // src/spool/ensure-dir.ts
 import { mkdirSync as mkdirSync14, existsSync as existsSync26 } from "node:fs";
-import { join as join26 } from "node:path";
+import { join as join28 } from "node:path";
 function ensureSpoolDir() {
-  const spoolRoot = join26(memariumHome(), "session-repo");
+  const spoolRoot = join28(memariumHome(), "session-repo");
   const created = !existsSync26(spoolRoot);
-  const rawSessionsDir = join26(spoolRoot, "raw_sessions");
+  const rawSessionsDir = join28(spoolRoot, "raw_sessions");
   mkdirSync14(rawSessionsDir, { recursive: true });
   return { spoolRoot, rawSessionsDir, created };
 }
@@ -17066,12 +18058,12 @@ var init_ensure_dir = __esm({
 // src/_shared/content-project-inference.ts
 import { readdirSync as readdirSync7 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { join as join27 } from "node:path";
+import { join as join29 } from "node:path";
 function decodeProjectDirName(name) {
   if (!name.startsWith("-")) return name;
   return "/" + name.slice(1).replace(/-/g, "/");
 }
-function listKnownProjectRoots(projectsDir = join27(homedir4(), ".claude", "projects")) {
+function listKnownProjectRoots(projectsDir = join29(homedir4(), ".claude", "projects")) {
   let entries;
   try {
     entries = readdirSync7(projectsDir);
@@ -17171,9 +18163,9 @@ var init_content_project_inference = __esm({
 
 // src/_shared/sources/claude-code.ts
 import { createHash as createHash4 } from "node:crypto";
-import { readdirSync as readdirSync8, readFileSync as readFileSync24, statSync as statSync4, existsSync as existsSync27 } from "node:fs";
+import { readdirSync as readdirSync8, readFileSync as readFileSync25, statSync as statSync5, existsSync as existsSync27 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { join as join28, basename } from "node:path";
+import { join as join30, basename as basename2 } from "node:path";
 function getRoots() {
   if (cachedRoots === null) cachedRoots = listKnownProjectRoots();
   return cachedRoots;
@@ -17188,10 +18180,10 @@ function parseClaudeJsonl(sourcePath, content) {
   let cwd = "";
   let startedAt = "";
   let endedAt = "";
-  for (const line of lines) {
+  for (const line3 of lines) {
     let obj;
     try {
-      obj = JSON.parse(line);
+      obj = JSON.parse(line3);
     } catch {
       continue;
     }
@@ -17225,7 +18217,7 @@ function parseClaudeJsonl(sourcePath, content) {
   }
   const firstUser = messages.find((m) => m.role === "user")?.text ?? "";
   const { slug, display } = deriveSlug(firstUser);
-  const fallbackId = basename(sourcePath, ".jsonl");
+  const fallbackId = basename2(sourcePath, ".jsonl");
   const finalId = sessionId || fallbackId;
   const shortId = finalId.slice(0, 8);
   const cwdProject = cachedProjectSlug(cwd);
@@ -17320,7 +18312,7 @@ var init_claude_code = __esm({
     init_content_project_inference();
     cachedRoots = null;
     ClaudeCodeAdapter = class {
-      constructor(root = join28(homedir5(), ".claude", "projects")) {
+      constructor(root = join30(homedir5(), ".claude", "projects")) {
         this.root = root;
       }
       name = "claude";
@@ -17336,14 +18328,14 @@ var init_claude_code = __esm({
             continue;
           }
           for (const e of entries) {
-            const p2 = join28(dir, e.name);
+            const p2 = join30(dir, e.name);
             if (e.isDirectory()) {
               if (dir === this.root && isMemariumOrTmpProjectDir(e.name)) continue;
               if (e.name === "subagents") continue;
               stack.push(p2);
             } else if (e.isFile() && e.name.endsWith(".jsonl")) {
-              const st = statSync4(p2);
-              const buf = readFileSync24(p2);
+              const st = statSync5(p2);
+              const buf = readFileSync25(p2);
               const sha = createHash4("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -17361,20 +18353,20 @@ var init_claude_code = __esm({
 
 // src/_shared/sources/vscode-copilot.ts
 import { createHash as createHash5 } from "node:crypto";
-import { readdirSync as readdirSync9, readFileSync as readFileSync25, statSync as statSync5, existsSync as existsSync28 } from "node:fs";
+import { readdirSync as readdirSync9, readFileSync as readFileSync26, statSync as statSync6, existsSync as existsSync28 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
-import { join as join29, basename as basename2 } from "node:path";
+import { join as join31, basename as basename3 } from "node:path";
 function defaultStorageRoot() {
   if (process.platform === "darwin")
-    return join29(homedir6(), "Library", "Application Support", "Code", "User", "workspaceStorage");
+    return join31(homedir6(), "Library", "Application Support", "Code", "User", "workspaceStorage");
   if (process.platform === "win32")
-    return join29(homedir6(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
-  return join29(homedir6(), ".config", "Code", "User", "workspaceStorage");
+    return join31(homedir6(), "AppData", "Roaming", "Code", "User", "workspaceStorage");
+  return join31(homedir6(), ".config", "Code", "User", "workspaceStorage");
 }
 function readWorkspacePath(workspaceJsonPath) {
   if (!existsSync28(workspaceJsonPath)) return "";
   try {
-    const obj = JSON.parse(readFileSync25(workspaceJsonPath, "utf8"));
+    const obj = JSON.parse(readFileSync26(workspaceJsonPath, "utf8"));
     const u = obj.folder ?? obj.workspace ?? "";
     if (!u) return "";
     return u.startsWith("file://") ? decodeURIComponent(u.slice("file://".length)) : u;
@@ -17384,18 +18376,18 @@ function readWorkspacePath(workspaceJsonPath) {
 }
 function parseCopilotJson(sourcePath, content, workspacePath) {
   const obj = JSON.parse(content);
-  const fileBase = basename2(sourcePath, ".json");
+  const fileBase = basename3(sourcePath, ".json");
   const sessionId = fileBase;
   const requests = Array.isArray(obj.requests) ? obj.requests : [];
   return buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath);
 }
 function parseCopilotChatSessionsJsonl(sourcePath, content, workspacePath) {
-  const fileBase = basename2(sourcePath, ".jsonl");
+  const fileBase = basename3(sourcePath, ".jsonl");
   let sessionId = fileBase;
   const turns = [];
   const lines = content.split("\n");
-  for (const line of lines) {
-    const s = line.trim();
+  for (const line3 of lines) {
+    const s = line3.trim();
     if (!s) continue;
     let obj;
     try {
@@ -17517,14 +18509,14 @@ function extractCopilotResponseParts(parts) {
   };
 }
 function parseCopilotTranscript(sourcePath, content, workspacePath) {
-  const fileBase = basename2(sourcePath, ".jsonl");
+  const fileBase = basename3(sourcePath, ".jsonl");
   let sessionId = fileBase;
   const messages = [];
   let startedAt = "";
   let endedAt = "";
   const lines = content.split("\n");
-  for (const line of lines) {
-    const s = line.trim();
+  for (const line3 of lines) {
+    const s = line3.trim();
     if (!s) continue;
     let obj;
     try {
@@ -17604,9 +18596,9 @@ var init_vscode_copilot = __esm({
         }
         for (const w of workspaces) {
           if (!w.isDirectory()) continue;
-          const wsDir = join29(this.root, w.name);
-          const wsPath = readWorkspacePath(join29(wsDir, "workspace.json"));
-          const chatDir = join29(wsDir, "chatSessions");
+          const wsDir = join31(this.root, w.name);
+          const wsPath = readWorkspacePath(join31(wsDir, "workspace.json"));
+          const chatDir = join31(wsDir, "chatSessions");
           const chatSessionIds = /* @__PURE__ */ new Set();
           if (existsSync28(chatDir)) {
             let files = [];
@@ -17620,11 +18612,11 @@ var init_vscode_copilot = __esm({
               const isJson = f.name.endsWith(".json");
               const isJsonl = f.name.endsWith(".jsonl");
               if (!isJson && !isJsonl) continue;
-              const p2 = join29(chatDir, f.name);
-              const st = statSync5(p2);
+              const p2 = join31(chatDir, f.name);
+              const st = statSync6(p2);
               if (st.size === 0) continue;
-              chatSessionIds.add(basename2(f.name, isJsonl ? ".jsonl" : ".json"));
-              const buf = readFileSync25(p2);
+              chatSessionIds.add(basename3(f.name, isJsonl ? ".jsonl" : ".json"));
+              const buf = readFileSync26(p2);
               const sha = createHash5("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -17634,7 +18626,7 @@ var init_vscode_copilot = __esm({
               };
             }
           }
-          const transcriptsDir = join29(wsDir, "GitHub.copilot-chat", "transcripts");
+          const transcriptsDir = join31(wsDir, "GitHub.copilot-chat", "transcripts");
           if (existsSync28(transcriptsDir)) {
             let tfiles = [];
             try {
@@ -17644,12 +18636,12 @@ var init_vscode_copilot = __esm({
             }
             for (const f of tfiles) {
               if (!f.isFile() || !f.name.endsWith(".jsonl")) continue;
-              const id = basename2(f.name, ".jsonl");
+              const id = basename3(f.name, ".jsonl");
               if (chatSessionIds.has(id)) continue;
-              const p2 = join29(transcriptsDir, f.name);
-              const st = statSync5(p2);
+              const p2 = join31(transcriptsDir, f.name);
+              const st = statSync6(p2);
               if (st.size === 0) continue;
-              const buf = readFileSync25(p2);
+              const buf = readFileSync26(p2);
               const sha = createHash5("sha256").update(buf).digest("hex");
               yield {
                 sourcePath: p2,
@@ -17676,11 +18668,11 @@ function extractManifest(messages, messageLineOffsets) {
   let assistant_turns = 0;
   for (let i2 = 0; i2 < messages.length; i2++) {
     const m = messages[i2];
-    const line = messageLineOffsets[i2] ?? 0;
+    const line3 = messageLineOffsets[i2] ?? 0;
     if (m.role === "user") user_turns++;
     else if (m.role === "assistant") assistant_turns++;
     if (m.role === "user" && m.text && DECISION_RE.test(m.text) && candidate_decisions.length < DECISIONS_CAP) {
-      candidate_decisions.push({ line, preview: previewOf(m.text, 100) });
+      candidate_decisions.push({ line: line3, preview: previewOf(m.text, 100) });
     }
     for (const b2 of m.contentBlocks ?? []) {
       if (b2.type !== "tool_use") continue;
@@ -17696,10 +18688,10 @@ function extractManifest(messages, messageLineOffsets) {
         const cmd = readBashCommand(b2);
         if (cmd) {
           const c3 = parseCommit(cmd);
-          if (c3) commits.push({ ...c3, line });
+          if (c3) commits.push({ ...c3, line: line3 });
           else {
             const t2 = parseTag(cmd);
-            if (t2) commits.push({ ...t2, line });
+            if (t2) commits.push({ ...t2, line: line3 });
           }
         }
       }
@@ -17862,19 +18854,19 @@ var init_toc = __esm({
 });
 
 // src/spool/writer.ts
-import { mkdirSync as mkdirSync15, writeFileSync as writeFileSync16 } from "node:fs";
-import { join as join30 } from "node:path";
+import { mkdirSync as mkdirSync15, writeFileSync as writeFileSync15 } from "node:fs";
+import { join as join32 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
-  const dirRel = join30("raw_sessions", s.tool, s.project, date);
-  const absDir = join30(repoRoot, dirRel);
+  const dirRel = join32("raw_sessions", s.tool, s.project, date);
+  const absDir = join32(repoRoot, dirRel);
   mkdirSync15(absDir, { recursive: true });
   const base = `${s.nameSlug}__${s.shortId}`;
-  const mdRel = join30(dirRel, `${base}.md`);
+  const mdRel = join32(dirRel, `${base}.md`);
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults = opts.fullToolResults ?? process.env.MEMARIUM_FULL_TOOL_RESULTS === "1";
-  writeFileSync16(
-    join30(repoRoot, mdRel),
+  writeFileSync15(
+    join32(repoRoot, mdRel),
     renderMarkdown(s, { includeReasoning, fullToolResults })
   );
   return { md: mdRel };
@@ -18198,14 +19190,14 @@ var {
 } = import_index.default;
 
 // src/plugin-cli.ts
-import { readFileSync as readFileSync26 } from "node:fs";
+import { readFileSync as readFileSync27 } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname as dirname8, resolve as resolve8 } from "node:path";
+import { dirname as dirname9, resolve as resolve9 } from "node:path";
 function readPackageVersion() {
-  const here = dirname8(fileURLToPath(import.meta.url));
+  const here = dirname9(fileURLToPath(import.meta.url));
   for (const rel of ["../package.json", "../../package.json", "../../../package.json"]) {
     try {
-      return JSON.parse(readFileSync26(resolve8(here, rel), "utf8")).version;
+      return JSON.parse(readFileSync27(resolve9(here, rel), "utf8")).version;
     } catch {
     }
   }
@@ -18290,6 +19282,14 @@ async function run(argv) {
     const { memoryLintCmd: memoryLintCmd2 } = await Promise.resolve().then(() => (init_memory_lint(), memory_lint_exports));
     await memoryLintCmd2({ cwd: o2.cwd, json: o2.json, fix: o2.fix });
   });
+  program2.command("memory-archive").description("Archive stale/unused memories out of recall (reversible \u2014 keeps the .md + index row). Dry-run unless --apply.").option("--cwd <path>", "project dir (accepted for symmetry; archive plans store-wide)").option("--json", "emit the structured plan / result JSON instead of a human report").option("--apply", "apply the plan (default: dry-run \u2014 prints the plan, writes nothing)").action(async (o2) => {
+    const { memoryArchiveCmd: memoryArchiveCmd2 } = await Promise.resolve().then(() => (init_memory_archive(), memory_archive_exports));
+    await memoryArchiveCmd2({ cwd: o2.cwd, json: o2.json, apply: o2.apply });
+  });
+  program2.command("memory-unarchive").description("Restore an archived memory to its pre-archive status (active, or superseded for a superseded-cleanup archive; clears archivedAt/archivedReason). No-op if the id is unknown or not archived.").argument("<id>", "memory id to restore (e.g. semantic/<project>/<slug>)").option("--cwd <path>", "project dir (accepted for symmetry; the store is resolved from memariumHome())").action(async (id, o2) => {
+    const { memoryUnarchiveCmd: memoryUnarchiveCmd2 } = await Promise.resolve().then(() => (init_memory_unarchive(), memory_unarchive_exports));
+    await memoryUnarchiveCmd2({ id, cwd: o2.cwd });
+  });
   program2.command("memory-propose").description("Queue a gated (core/procedural/pinned) memory change as a local proposal instead of writing it. Reads an --input JSON array of {entry, body, rationale?, sourceSession?}.").requiredOption("--input <path>", "JSON file: array of { entry, body, rationale?, sourceSession? }").action(async (o2) => {
     const { memoryProposeCmd: memoryProposeCmd2 } = await Promise.resolve().then(() => (init_memory_propose(), memory_propose_exports));
     const r2 = await memoryProposeCmd2({ inputPath: o2.input });
@@ -18324,7 +19324,7 @@ async function run(argv) {
   await program2.parseAsync(argv);
 }
 var _thisFile = fileURLToPath(import.meta.url);
-var _mainFile = process.argv[1] ? resolve8(process.argv[1]) : "";
+var _mainFile = process.argv[1] ? resolve9(process.argv[1]) : "";
 if (_thisFile === _mainFile || _mainFile.endsWith("memarium-plugin.js")) {
   run(process.argv).catch((err) => {
     console.error(err instanceof Error ? err.message : err);

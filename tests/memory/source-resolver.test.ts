@@ -56,6 +56,105 @@ describe("mergeIndexById", () => {
     expect(mergeIndexById(local, overlay).entries["x"].summary).toBe("local-new");
   });
 
+  // Round-31: the winner is picked CHRONOLOGICALLY (shared date helpers), not by
+  // comparing the raw strings. A raw compare is not chronological for valid mixed
+  // ISO forms, so the read view could hand consumers the OLDER copy — and worse,
+  // disagree with the write guard (`isOverlayConflict`), which orders
+  // chronologically since round-30.
+  //
+  // Round-32: "chronologically" is DAY-GRANULAR, exactly like the write guard and
+  // the lifecycle writers (memory-archive / memory-unarchive / the supersede
+  // transition all stamp `updatedAt` as a plain `YYYY-MM-DD`). Ordering by INSTANT
+  // *inside* a day — which round-31 briefly did — made the OVERLAY win a pair the
+  // write guard treats as a TIE (local wins), so the read view and the write guard
+  // disagreed about which copy is authoritative: the very skew round-31 set out to
+  // remove, just inverted.
+  it("same calendar day, overlay carrying a LATER instant, is a TIE → local wins (matches the write guard)", () => {
+    const local = { "x": mem({ id: "x", updatedAt: "2026-07-24", summary: "local" }) };
+    const overlay = { "x": mem({ id: "x", updatedAt: "2026-07-24T10:00:00Z", summary: "overlay" }) };
+    const r = mergeIndexById(local, overlay);
+    expect(r.entries["x"].summary).toBe("local");
+    expect(r.sources["x"]).toBe("local");
+  });
+
+  it("same calendar day across MIXED ISO forms is a TIE → local wins", () => {
+    // overlay 2026-05-05T23:00:00-10:00 === 2026-05-06T09:00Z → the SAME UTC day
+    // as local's 2026-05-06T01:00Z, so the two are unordered by day granularity.
+    const local = { "x": mem({ id: "x", updatedAt: "2026-05-06T01:00:00Z", summary: "local" }) };
+    const overlay = { "x": mem({ id: "x", updatedAt: "2026-05-05T23:00:00-10:00", summary: "overlay" }) };
+    const r = mergeIndexById(local, overlay);
+    expect(r.entries["x"].summary).toBe("local");
+    expect(r.sources["x"]).toBe("local");
+  });
+
+  it("a genuinely LATER DAY on the overlay still wins", () => {
+    const local = { "x": mem({ id: "x", updatedAt: "2026-07-24", summary: "local-older" }) };
+    const overlay = { "x": mem({ id: "x", updatedAt: "2026-07-25T00:00:00Z", summary: "overlay-newer" }) };
+    const r = mergeIndexById(local, overlay);
+    expect(r.entries["x"].summary).toBe("overlay-newer");
+    expect(r.sources["x"]).toBe("overlay");
+  });
+
+  it("mixed ISO forms: a later-DAY overlay that sorts lexically SMALLER still wins", () => {
+    // overlay 2026-05-06T20:00:00-10:00 === 2026-05-07T06:00Z (day 2026-05-07, NEWER)
+    // local   2026-05-06T23:00:00Z      === day 2026-05-06 (older)
+    // ...yet lexically "2026-05-06T20:00:00-10:00" < "2026-05-06T23:00:00Z", so the
+    // pre-round-30 RAW STRING compare handed consumers the older LOCAL copy.
+    const local = { "x": mem({ id: "x", updatedAt: "2026-05-06T23:00:00Z", summary: "local-older" }) };
+    const overlay = { "x": mem({ id: "x", updatedAt: "2026-05-06T20:00:00-10:00", summary: "overlay-newer" }) };
+    const r = mergeIndexById(local, overlay);
+    expect(r.entries["x"].summary).toBe("overlay-newer");
+    expect(r.sources["x"]).toBe("overlay");
+  });
+
+  it("mixed ISO forms: overlay on an EARLIER day but lexically LARGER loses", () => {
+    // overlay 2026-05-06T01:00:00+14:00 === 2026-05-05T11:00Z (older)
+    // local   2026-05-06                === 2026-05-06T00:00Z (NEWER)
+    // ...yet lexically "2026-05-06" < "2026-05-06T01:00:00+14:00" (prefix).
+    const local = { "x": mem({ id: "x", updatedAt: "2026-05-06", summary: "local-newer" }) };
+    const overlay = { "x": mem({ id: "x", updatedAt: "2026-05-06T01:00:00+14:00", summary: "overlay-older" }) };
+    const r = mergeIndexById(local, overlay);
+    expect(r.entries["x"].summary).toBe("local-newer");
+    expect(r.sources["x"]).toBe("local");
+  });
+
+  it("unreadable OVERLAY stamp never beats a valid local one", () => {
+    for (const bad of ["not-a-date", "", undefined as unknown as string]) {
+      const local = { "x": mem({ id: "x", updatedAt: "2026-06-01", summary: "local" }) };
+      const overlay = { "x": mem({ id: "x", updatedAt: bad, summary: "overlay-corrupt" }) };
+      const r = mergeIndexById(local, overlay);
+      expect(r.entries["x"].summary).toBe("local");
+      expect(r.sources["x"]).toBe("local");
+    }
+  });
+
+  it("unreadable LOCAL stamp never beats a valid overlay one", () => {
+    for (const bad of ["not-a-date", "", undefined as unknown as string]) {
+      const local = { "x": mem({ id: "x", updatedAt: bad, summary: "local-corrupt" }) };
+      const overlay = { "x": mem({ id: "x", updatedAt: "2026-06-01", summary: "overlay" }) };
+      const r = mergeIndexById(local, overlay);
+      expect(r.entries["x"].summary).toBe("overlay");
+      expect(r.sources["x"]).toBe("overlay");
+    }
+  });
+
+  it("BOTH stamps unreadable: falls back to the local-wins tie", () => {
+    const local = { "x": mem({ id: "x", updatedAt: "garbage", summary: "local" }) };
+    const overlay = { "x": mem({ id: "x", updatedAt: "also-garbage", summary: "overlay" }) };
+    const r = mergeIndexById(local, overlay);
+    expect(r.entries["x"].summary).toBe("local");
+    expect(r.sources["x"]).toBe("local");
+  });
+
+  it("equal instant expressed in DIFFERENT zones is a tie → local wins", () => {
+    // 2026-06-05T12:00:00Z === 2026-06-05T14:00:00+02:00 (same instant)
+    const local = { "x": mem({ id: "x", updatedAt: "2026-06-05T12:00:00Z", summary: "local" }) };
+    const overlay = { "x": mem({ id: "x", updatedAt: "2026-06-05T14:00:00+02:00", summary: "overlay" }) };
+    const r = mergeIndexById(local, overlay);
+    expect(r.entries["x"].summary).toBe("local");
+    expect(r.sources["x"]).toBe("local");
+  });
+
   it("keeps superseded entries (does NOT pre-filter status)", () => {
     const local = { "x": mem({ id: "x", status: "superseded", updatedAt: "2026-06-09" }) };
     const overlay = {};

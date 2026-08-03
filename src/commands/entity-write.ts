@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join, resolve, sep } from "node:path";
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { loadEntityIndex, saveEntityIndex, upsertEntity } from "../entity/index-store.js";
-import { renderEntityMarkdown } from "../entity/render.js";
+import { renderEntityMarkdown, normalizeEntityPageForWrite } from "../entity/render.js";
 import type { EntityPage } from "../entity/types.js";
 
 export interface EntityWriteOptions { inputPath?: string; }
@@ -42,7 +42,28 @@ export async function entityWriteCmd(opts: EntityWriteOptions): Promise<EntityWr
       if (!Array.isArray(entry[k])) entry[k] = [];
     }
 
-    if (!entry.path) entry.path = entityPath(entry);
+    // Round-36: normalize at the WRITE BOUNDARY — BEFORE `entityPath` derives the
+    // filename slug from `id` and before `upsertEntity` keys the index by it, so
+    // the index KEY, the stored `id`, the file name and the rendered frontmatter
+    // cannot disagree. The renderer's own neutralize stays as a backstop.
+    normalizeEntityPageForWrite(entry);
+
+    // Round-38: the persisted `path` is ALWAYS DERIVED from the POST-normalization
+    // values — a caller-supplied `path` is IGNORED, never trusted. Previously a
+    // non-empty payload `path` bypassed `entityPath(...)` entirely, so it still
+    // reflected the PRE-normalization `id`/`project`: the index then mapped a
+    // normalized id (e.g. `wid get`) to a stale, control-character-bearing
+    // filename, and a later `entity-index` rebuild — which derives the path from
+    // the file it actually finds — disagreed with the index.
+    //
+    // This is qa-write's convention ("CLI is authoritative for identity: always
+    // derive id/path ... ignoring any agent-provided id/path"); memory's
+    // `applyMemoryItems` reaches the same place from the other side, writing to
+    // its own `canonicalMemoryPath` and REJECTING a payload path that disagrees.
+    // Deriving makes the disagreement unrepresentable rather than merely detected.
+    // The path guards below still matter: `id` and `project` are caller-controlled
+    // and feed the derived path (a `project` of `../..` still escapes).
+    entry.path = entityPath(entry);
 
     // path-traversal guard: final resolved path must be within <repoPath>/memory/entities/
     const entRoot = resolve(join(cfg.repoPath, "memory", "entities"));

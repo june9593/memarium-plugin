@@ -88,6 +88,17 @@ describe("renderPrimer", () => {
     expect(md).not.toContain("same-day");
   });
 
+  it("excludes a SAME-DAY ISO TIMESTAMP validTo (round-24: calendar-date compare, like planArchival)", () => {
+    // The inverted `validTo > now` predicate had the same lexical bug: an ISO
+    // timestamp sorted AFTER the plain date, so a same-day expiry stayed in the
+    // primer while the archival planner already considered it expired.
+    const sameDayTs = e({ id: "semantic/p/ts", type: "semantic", title: "same-day-ts", summary: "boundary", validTo: "2026-06-10T00:00:00Z" });
+    const futureTs = e({ id: "semantic/p/fut", type: "semantic", title: "future-ts", summary: "valid", validTo: "2026-06-11T00:00:00Z" });
+    const md = renderPrimer("p", [sameDayTs, futureTs], { now: "2026-06-10" });
+    expect(md).not.toContain("same-day-ts");
+    expect(md).toContain("future-ts");
+  });
+
   it("surfaces a +N more footer when a section is truncated (not silent) — #19", () => {
     const many = Array.from({ length: 20 }, (_, i) =>
       e({ id: `semantic/p/${i}`, type: "semantic", title: `fact ${i}`, summary: "s", importance: i }));
@@ -135,6 +146,16 @@ describe("renderPrimer", () => {
     ]);
     expect(md).toContain("core rule"); // injected regardless of trust
     expect(md).toContain("proc step");
+  });
+
+  it("primer excludes archived entries", () => {
+    const entries = [
+      e({ id: "semantic/_global/a", type: "semantic", scope: "global", project: null, status: "active", trust: "trusted", title: "live global fact", summary: "keep me" }),
+      e({ id: "semantic/_global/b", type: "semantic", scope: "global", project: null, status: "archived", trust: "trusted", title: "cold global fact", summary: "hide me" }),
+    ];
+    const out = renderPrimer("p", entries, { now: "2026-07-24" });
+    expect(out).toContain("live global fact");
+    expect(out).not.toContain("cold global fact");
   });
 });
 

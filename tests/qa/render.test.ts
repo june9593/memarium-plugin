@@ -73,3 +73,66 @@ describe("renderQaMarkdown", () => {
     expect(parsed!.project).toBeNull();          // actual null
   });
 });
+
+describe("renderQaMarkdown — round-34 (SECURITY): no value can inject a line", () => {
+  const fmLines = (md: string, key: string) =>
+    md.match(/^---\n([\s\S]*?)\n---/)![1].split("\n").filter((l) => l.startsWith(`${key}:`));
+
+  it("the JSON-quoted fields were already safe — a newline stays an escape, not a new line", () => {
+    const md = renderQaMarkdown(entry({ question: "Q\nid: qa/other/forged" }), "body");
+    expect(fmLines(md, "id")).toEqual(["id: qa/code-demo/how-to-build-abc12345"]);
+    expect(parseQaMarkdown(md)?.id).toBe("qa/code-demo/how-to-build-abc12345");
+  });
+
+  it("a NEWLINE in a RAW scalar (`kind`, the dates) cannot forge a line", () => {
+    const md = renderQaMarkdown(entry({ kind: "operational\nscope: global" as never, updatedAt: "2026-06-11\nid: qa/other/forged" }), "body");
+    expect(fmLines(md, "scope")).toEqual(["scope: project:code-demo"]);
+    expect(fmLines(md, "id")).toEqual(["id: qa/code-demo/how-to-build-abc12345"]);
+  });
+
+  it("REJECTS a document with a duplicated key rather than picking an occurrence (round-35)", () => {
+    // Choosing by POSITION is unsound: the renderer emits keys in a fixed order,
+    // so a payload in an EARLY field forges its line ABOVE the real line of a
+    // LATER field. Here a poisoned `id` forges `kind:` before the real `kind:` —
+    // first-wins would hand the attacker the kind. The renderer emits each key
+    // exactly once, so a duplicate is corruption or injection either way.
+    const forgedBeforeReal = [
+      "---", "id: qa/code-demo/real", "kind: decision",
+      "scope: project:code-demo", "kind: operational",
+      "---", "", "# q", "body",
+    ].join("\n");
+    expect(parseQaMarkdown(forgedBeforeReal)).toBeNull();
+
+    const forgedAfterReal = [
+      "---", "id: qa/code-demo/real", "scope: project:code-demo", "kind: operational",
+      "id: qa/other/forged", "scope: global",
+      "---", "", "# q", "body",
+    ].join("\n");
+    expect(parseQaMarkdown(forgedAfterReal)).toBeNull();
+  });
+
+  it("a normal, singly-keyed document still parses and round-trips byte-identically", () => {
+    const md = renderQaMarkdown(entry(), "Regression lock.");
+    const keys = md.match(/^---\n([\s\S]*?)\n---/)![1]
+      .split("\n").map((l) => l.slice(0, l.indexOf(":")).trim());
+    expect(new Set(keys).size).toBe(keys.length);
+    const back = parseQaMarkdown(md);
+    expect(back).not.toBeNull();
+    expect(renderQaMarkdown({ ...back!, path: entry().path }, "Regression lock.")).toBe(md);
+  });
+
+  it("PAIRING: a control character in a value produces NO duplicate key, so a NEW file never trips the rejection", () => {
+    const md = renderQaMarkdown(
+      entry({ question: "Q\nkind: decision", tags: ["t\nscope: global"], updatedAt: "2026-06-11\nid: qa/other/forged" }),
+      "body",
+    );
+    const keys = md.match(/^---\n([\s\S]*?)\n---/)![1]
+      .split("\n").map((l) => l.slice(0, l.indexOf(":")).trim()).filter(Boolean);
+    expect(new Set(keys).size).toBe(keys.length);
+    const back = parseQaMarkdown(md);
+    expect(back).not.toBeNull();
+    expect(back!.id).toBe("qa/code-demo/how-to-build-abc12345");
+    expect(back!.kind).toBe("operational");
+    expect(back!.scope).toBe("project:code-demo");
+  });
+});

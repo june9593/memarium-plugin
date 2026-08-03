@@ -422,6 +422,72 @@ describe("entityQueryCmd", () => {
     expect(ids).toContain("core/g/workflow");
   });
 
+  it("referencingMemories excludes archived memories even when they reference the entity", async () => {
+    // Overwrite memory index with an archived entry (referencing the entity) + an active control.
+    // The archival invariant ("archived is out of recall") must keep it out of referencingMemories.
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({
+      version: 1, entries: {
+        "semantic/code-demo/archived-ref": {
+          id: "semantic/code-demo/archived-ref",
+          type: "semantic",
+          scope: "project:code-demo",
+          project: "code-demo",
+          title: "Archived SpoolWriter note",
+          summary: "archived, still references the entity",
+          path: "memory/semantic/code-demo/archived-ref.md",
+          status: "archived",
+          confidence: 0.9,
+          importance: 3,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+          validFrom: null,
+          validTo: null,
+          sourceSessions: [],
+          sourceCommits: [],
+          sourceFiles: [],
+          supersedes: null,
+          entities: ["SpoolWriter"],
+          originDevice: null,
+          accessCount: 0,
+          lastAccess: null,
+          archivedAt: "2026-05-01",
+          archivedReason: "unused-low-value",
+        },
+        "semantic/code-demo/active-ref": {
+          id: "semantic/code-demo/active-ref",
+          type: "semantic",
+          scope: "project:code-demo",
+          project: "code-demo",
+          title: "Active SpoolWriter note",
+          summary: "still active",
+          path: "memory/semantic/code-demo/active-ref.md",
+          status: "active",
+          confidence: 0.9,
+          importance: 3,
+          createdAt: "2026-06-01",
+          updatedAt: "2026-06-01",
+          validFrom: null,
+          validTo: null,
+          sourceSessions: [],
+          sourceCommits: [],
+          sourceFiles: [],
+          supersedes: null,
+          entities: ["SpoolWriter"],
+          originDevice: null,
+          accessCount: 0,
+          lastAccess: null,
+        },
+      },
+    }));
+    vi.resetModules();
+    const { entityQueryCmd } = await import("../../src/commands/entity-query.js");
+    await entityQueryCmd({ cwd: "/work/code-demo", entity: "spoolwriter" });
+    const payload = JSON.parse(stdout.join(""));
+    const ids = payload.referencingMemories.map((x: any) => x.id);
+    expect(ids).not.toContain("semantic/code-demo/archived-ref"); // archived excluded
+    expect(ids).toContain("semantic/code-demo/active-ref");       // active control included
+  });
+
   it("referencingMemories excludes expired memories (validTo <= today)", async () => {
     // Overwrite memory index with an expired entry
     writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({
