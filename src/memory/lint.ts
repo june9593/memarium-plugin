@@ -4,6 +4,7 @@ import type { EntityPage } from "../entity/types.js";
 import type { QaIndex } from "../qa/types.js";
 import type { QaEntry } from "../qa/types.js";
 import { scanLeaks } from "./leak-scan.js";
+import { isStaleProvenance } from "./known-sessions.js";
 import { calendarDate } from "./dates.js";
 
 /** Returns a short, truncated, safe snapshot of an unknown entry for use in error details. */
@@ -57,8 +58,10 @@ export interface LintOptions {
   dupThreshold?: number;
   clusterMin?: number;
   /** Full sessionIds known to the spool index (.memarium/index.json). When
-   *  provided, a non-core/non-pinned memory whose sourceSessions are ALL absent
-   *  from this set is flagged `stale-provenance` — its evidence is gone. */
+   *  provided, a non-core/non-pinned memory NONE of whose sourceSessions matches
+   *  a known session is flagged `stale-provenance` — its evidence is gone.
+   *  Matching is id-form tolerant (short-id vs full sessionId) — see
+   *  `isKnownSession` in known-sessions.ts. */
   knownSessions?: Set<string>;
 }
 
@@ -219,12 +222,20 @@ export function lintMemory(
           detail: `no sourceSessions/sourceCommits/sourceFiles — origin not traceable` });
       }
       // stale-provenance: evidence gone. A non-core, non-pinned memory whose
-      // sourceSessions are NON-empty but ALL absent from the spool index means
-      // its supporting raw sessions were pruned/deleted (poisoning-persistence
-      // probe, #54-era). Only runs when the caller supplies the known-session set.
+      // sourceSessions are NON-empty but NONE of which still matches a session
+      // the spool index vouches for means its supporting raw sessions were
+      // pruned/deleted (poisoning-persistence probe, #54-era). Only runs when
+      // the caller supplies the known-session set.
+      //
+      // Matching goes through the SHARED, id-form-tolerant `isStaleProvenance`
+      // rather than a `.has()` here: memories written by older versions store
+      // 8-char SHORT ids while the index stores FULL sessionIds, and exact set
+      // membership never matched those (see known-sessions.ts). This check must
+      // stay in lockstep with planArchival's Rule 4 — it only warns, but the
+      // planner ARCHIVES on the same predicate, and the two have drifted before.
       if (opts.knownSessions && e.type !== "core" && e.status !== "pinned") {
         const ss = Array.isArray(e.sourceSessions) ? e.sourceSessions : [];
-        if (ss.length > 0 && !ss.some((s) => opts.knownSessions!.has(s))) {
+        if (ss.length > 0 && isStaleProvenance(ss, opts.knownSessions)) {
           issues.push({ check: "stale-provenance", severity: "warning", layer: "memory", id: e.id,
             detail: `all ${ss.length} sourceSessions absent from the spool index — evidence gone`, refs: ss });
         }

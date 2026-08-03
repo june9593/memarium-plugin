@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.20.1 — 2026-08-04
+
+### Fix: `stale-provenance` false positives across short/full session id forms
+
+`memory-archive` (which digest runs **automatically** with `--apply`) was about
+to wrongly archive **52 of 169 memories — 31% of a real store** — including core
+project facts like `semantic/…-memarium/two-product-split` and
+`project-identity-from-git-remote`.
+
+**Cause.** The `stale-provenance` rule asks "are ALL of this memory's
+`sourceSessions` absent from the spool index?" and answered it with **exact set
+membership** — but the two sides never agreed on an id **form**. Memories written
+by older versions store 8-char **short** ids (`652535b6`); the spool index
+(`.memarium/index.json`) stores **full** sessionIds
+(`652535b6-518c-4f31-b8ad-c0d5354c6e4f`). A short id can never `.has()`-match a
+full one, so every legacy memory read as "evidence gone" while its raw session
+was still sitting right there in the spool.
+
+**Blast radius.** Archival is reversible (the `.md` + index row survive,
+`memory-unarchive` restores, and the R2 cold valve can resurface a hit), but the
+affected memories would have dropped out of `/memarium-context` and
+`/memarium-recall` silently and en masse — an unattended 31% recall regression on
+exactly the oldest, most-established facts in a store.
+
+**Fix.** Provenance matching is now **id-form tolerant** and lives in ONE shared
+matcher, `isKnownSession` / `isStaleProvenance` in `src/memory/known-sessions.ts`.
+A `sourceSession` counts as present on an exact match, when it is a **prefix** of
+a known full sessionId (the short-id case), or when a known value is a prefix of
+it (the inverse). Both prefix directions require **≥8 chars on both sides**, so a
+short/empty/garbage value can never launder itself into "still present". The
+`knownSessions === undefined` skip is unchanged — an absent/corrupt/malformed
+index still **skips** the check entirely rather than archiving on evidence it
+cannot read.
+
+Both consumers now call that one matcher: `planArchival`'s Rule 4 (which
+**archives**) in `src/memory/archive.ts` and the `stale-provenance` lint finding
+(which warns) in `src/memory/lint.ts` — they had already drifted apart once, and
+a warn/archive disagreement on this predicate is what makes it dangerous.
+
+**Why it survived 40 rounds of review**: every fixture used the **same** id form
+on both sides, which makes a form mismatch structurally invisible. The new tests
+deliberately **mix** forms across the two sides (short memory vs full spool, and
+the inverse), for both the planner and the lint check, plus negative controls
+(no-prefix-match and below-the-floor values must **still** be flagged). +33 tests
+(917 total).
+
+Dry run against the maintainer's real store: planned archivals **52 → 4**;
+`stale-provenance` **50 → 2** (the 2 survivors are genuinely sourceless).
+
 ## 0.20.0 — 2026-07-24
 
 ### Memory dynamics: forgetting/archival (two-tier hot/cold memory)

@@ -594,4 +594,38 @@ describe("stale-provenance (#54-era poisoning-persistence probe)", () => {
     expect(r.issues.some((i) => i.check === "stale-provenance")).toBe(false);
     expect(r.issues.some((i) => i.check === "missing-provenance")).toBe(true);
   });
+
+  // Every fixture above uses the SAME id form on both sides, which is what hid the
+  // short-vs-full mismatch for 40 review rounds. lint only WARNS, but it must
+  // agree with planArchival's Rule 4, which ARCHIVES on the same predicate — the
+  // two have drifted before, so the planner's mixed-form cases are mirrored here.
+  describe("mixed short/full session id forms", () => {
+    const FULL = "652535b6-518c-4f31-b8ad-c0d5354c6e4f";
+    const SHORT = FULL.slice(0, 8); // "652535b6"
+    const flagged = (e: MemoryEntry, known: Set<string>) =>
+      lintMemory(idxOf(e), emptyEntityIndex(), emptyQaIndex(), { now: NOW, project: null, knownSessions: known })
+        .issues.some((i) => i.check === "stale-provenance");
+
+    it("memory holds a SHORT id, spool holds the matching FULL sessionId → NOT flagged", () => {
+      expect(flagged(base({ sourceSessions: [SHORT] }), new Set([FULL]))).toBe(false);
+    });
+
+    it("memory holds a FULL id, spool holds only the SHORT form → NOT flagged", () => {
+      expect(flagged(base({ sourceSessions: [FULL] }), new Set([SHORT]))).toBe(false);
+    });
+
+    it("SHORT id matching NO known session prefix → STILL flagged", () => {
+      expect(flagged(base({ sourceSessions: ["deadbeef"] }), new Set([FULL]))).toBe(true);
+    });
+
+    it("a too-short sourceSession does not match everything → STILL flagged", () => {
+      expect(flagged(base({ sourceSessions: ["65"] }), new Set([FULL]))).toBe(true);
+    });
+
+    it("no knownSessions passed → still skipped entirely, whatever the id form", () => {
+      const r = lintMemory(idxOf(base({ sourceSessions: [SHORT] })), emptyEntityIndex(), emptyQaIndex(),
+        { now: NOW, project: null });
+      expect(r.issues.some((i) => i.check === "stale-provenance")).toBe(false);
+    });
+  });
 });

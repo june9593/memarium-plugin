@@ -1,6 +1,7 @@
 import type { MemoryEntry } from "./types.js";
 import type { UsageMap } from "./usage-store.js";
 import { nearDuplicatePairs } from "./lint.js";
+import { isStaleProvenance } from "./known-sessions.js";
 import { calendarDate, epochMs } from "./dates.js";
 
 /** Tunable thresholds for the age/importance rules. Overridable per call via
@@ -14,8 +15,9 @@ export interface ArchiveOpts {
   unusedMaxImportance: number;
   /** Full sessionIds known to the spool index. When undefined the
    *  stale-provenance rule is skipped entirely (we can't prove evidence is
-   *  gone). When provided, a memory whose sourceSessions are ALL absent from it
-   *  is stale-provenance. */
+   *  gone). When provided, a memory NONE of whose sourceSessions matches a known
+   *  session is stale-provenance. Matching is id-form tolerant (short-id vs full
+   *  sessionId) — see `isKnownSession` in known-sessions.ts. */
   knownSessions: Set<string> | undefined;
 }
 
@@ -110,9 +112,14 @@ export function planArchival(entries: MemoryEntry[], usage: UsageMap, opts: Arch
     if (e.type === "episodic" && daysBetween(opts.now, e.updatedAt) > opts.episodicMaxAgeDays) {
       pick(e.id, `stale-episodic:>${opts.episodicMaxAgeDays}d`); continue;
     }
-    // Rule 4: every supporting session is gone from the spool index.
+    // Rule 4: every supporting session is gone from the spool index. Matching is
+    // ID-FORM TOLERANT via the shared `isStaleProvenance` — memories written by
+    // older versions carry 8-char SHORT ids while the spool index carries FULL
+    // sessionIds, and a set-membership test made every one of those look
+    // evidence-less (31% of a real store). See known-sessions.ts for the history;
+    // do NOT inline a `.has()` here.
     if (opts.knownSessions !== undefined && Array.isArray(e.sourceSessions) && e.sourceSessions.length > 0 &&
-        e.sourceSessions.every((s) => !opts.knownSessions!.has(s))) {
+        isStaleProvenance(e.sourceSessions, opts.knownSessions)) {
       pick(e.id, "stale-provenance"); continue;
     }
     // Rule 5: never recalled, old, low-importance, and a semantic/procedural

@@ -95,6 +95,59 @@ it("stale-provenance: fires when all sources gone, skipped when knownSessions un
   expect(planArchival([ent], {}, stillKnown).archive).toEqual([]); // one source still present
 });
 
+// The rule above only ever saw the SAME id form on both sides, which is exactly
+// why the id-form mismatch below went unseen for 40 review rounds: older writers
+// put 8-char SHORT ids in sourceSessions while the spool index has always held
+// FULL sessionIds, and Rule 4's set-membership test could never match the two.
+// On the maintainer's real store that wrongly queued 52 of 169 memories (31%) for
+// AUTOMATIC archival — core project facts included — with their raw sessions
+// still present in the spool. These fixtures deliberately DISAGREE on form.
+describe("stale-provenance: mixed short/full session id forms (the 31%-of-store false positive)", () => {
+  const FULL = "652535b6-518c-4f31-b8ad-c0d5354c6e4f";
+  const SHORT = FULL.slice(0, 8); // "652535b6"
+  const OTHER_FULL = "88b5eb49-7323-4908-81e6-abf929a01c97";
+  const withKnown = (...ids: string[]) => ({ ...opts, knownSessions: new Set(ids) });
+
+  it("memory holds SHORT ids, spool holds the matching FULL sessionId → NOT stale", () => {
+    const ent = e({ id: "semantic/p/short", sourceSessions: [SHORT] });
+    expect(planArchival([ent], {}, withKnown(FULL, OTHER_FULL)).archive).toEqual([]);
+  });
+
+  it("memory holds a FULL id, spool holds only the SHORT form → NOT stale", () => {
+    const ent = e({ id: "semantic/p/full", sourceSessions: [FULL] });
+    expect(planArchival([ent], {}, withKnown(SHORT)).archive).toEqual([]);
+  });
+
+  it("SHORT id matching NO known session prefix → STILL archived (the rule keeps working)", () => {
+    const ent = e({ id: "semantic/p/gone", sourceSessions: ["deadbeef"] });
+    expect(planArchival([ent], {}, withKnown(FULL, OTHER_FULL)).archive)
+      .toEqual([{ id: "semantic/p/gone", reason: "stale-provenance" }]);
+  });
+
+  it("a too-short sourceSession does not match everything → STILL archived", () => {
+    const ent = e({ id: "semantic/p/frag", sourceSessions: ["65"] });
+    expect(planArchival([ent], {}, withKnown(FULL)).archive)
+      .toEqual([{ id: "semantic/p/frag", reason: "stale-provenance" }]);
+  });
+
+  it("knownSessions undefined still SKIPS entirely, whatever the id form", () => {
+    const ents = [
+      e({ id: "semantic/p/short", sourceSessions: [SHORT] }),
+      e({ id: "semantic/p/gone", sourceSessions: ["deadbeef"] }),
+    ];
+    expect(planArchival(ents, {}, { ...opts, knownSessions: undefined }).archive).toEqual([]);
+  });
+
+  it("mixed store: only the genuinely sourceless memory is planned", () => {
+    const ents = [
+      e({ id: "semantic/p/short", sourceSessions: [SHORT] }),          // legacy short form, alive
+      e({ id: "semantic/p/full", sourceSessions: [OTHER_FULL] }),      // modern full form, alive
+      e({ id: "semantic/p/gone", sourceSessions: ["cafebabe-dead"] }), // really gone
+    ];
+    expect(ids(planArchival(ents, {}, withKnown(FULL, OTHER_FULL)))).toEqual(["semantic/p/gone"]);
+  });
+});
+
 it("unused-low-value needs ALL of: count0 + age>min + importance<=max + semantic/procedural + non-core/pinned", () => {
   const good = e({ id: "semantic/p/u", importance: 2, accessCount: 0, updatedAt: daysAgo(70), sourceSessions: [] });
   expect(planArchival([good], {}, opts).archive[0].reason).toBe("unused-low-value");
