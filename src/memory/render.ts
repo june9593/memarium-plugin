@@ -1,5 +1,5 @@
 import type { MemoryEntry } from "./types.js";
-import { hasControlChars, neutralizeControlChars } from "./gate.js";
+import { hasControlChars, neutralizeControlChars, isUnsetIdentValue, isUnrepresentableProject, deriveMemoryIdentity } from "./gate.js";
 
 function arr(xs: string[] | undefined): string {
   const a = xs ?? [];
@@ -59,12 +59,34 @@ function req(v: string | number | null | undefined, fallback: string): string {
  * checkout at `~/code/my project` produces ids like
  * `semantic/code-my project/some-slug`. The stricter shell-safety predicate
  * (`isSafeMemoryId`) guards a DIFFERENT surface — see the paired note in gate.ts.
+ *
+ * Round-37 — `required: true` ALSO refuses an UNSET value (the literal
+ * "undefined"/"null", or blank). `scope` reached here as `String(entry.scope)`,
+ * so a missing scope serialized as `scope: undefined` — no control character, so
+ * this backstop waved it through, and the entry persisted with no usable scope in
+ * BOTH the .md and the index (the archival row-shape gate then skipped it as a
+ * malformed row). That is the SAME class #54 closed for the nullable fields; the
+ * `nullable()`/`req()` helpers exist precisely to prevent it, and the identifier
+ * fields routed through here bypassed both. Only the genuinely-required
+ * identifiers opt in: `project` is rendered via `identLine(nullable(...))` and
+ * legitimately emits the literal `null` for a global/user entry.
+ *
+ * The primary fix is at the WRITE boundary (`normalizeMemoryEntryForWrite`
+ * backfills a missing scope); this stays a loud backstop, so a future caller that
+ * bypasses the normalizer fails instead of silently persisting a broken record.
  */
-function identLine(key: string, value: string): string {
+function identLine(key: string, value: string, opts?: { required?: boolean }): string {
   if (hasControlChars(value)) {
     throw new Error(
       `memory render: refusing to write ${key} containing a control character — ` +
       `it would forge extra frontmatter lines (${JSON.stringify(value)})`,
+    );
+  }
+  if (opts?.required && isUnsetIdentValue(value)) {
+    throw new Error(
+      `memory render: refusing to write required field ${key} as ${JSON.stringify(value)} — ` +
+      `it is unset, and frontmatter would persist it as a real value (same class as #54); ` +
+      `normalize the entry (normalizeMemoryEntryForWrite) before rendering`,
     );
   }
   return `${key}: ${value}`;
@@ -164,6 +186,53 @@ export function normalizeMemoryEntryForWrite(entry: MemoryEntry): MemoryEntry {
     const v = e[k];
     if (Array.isArray(v)) e[k] = v.map((x) => (typeof x === "string" ? neutralizeControlChars(x) : x));
   }
+  // Round-38 — REFUSE a `project` the frontmatter format CANNOT REPRESENT. The
+  // field is emitted UNQUOTED and `parseScalar` coerces the bare tokens
+  // `null`/`undefined`/blank back to `null`, so a project slug that IS one of
+  // those tokens reads back as "no project": the record would persist
+  // `scope: project:null` beside a project every rebuild resolves to `null` —
+  // permanently self-contradicting, the same divergence class the backfill below
+  // exists to close. Refusing here (rather than quoting, which the parser does not
+  // unquote — see `isUnrepresentableProject`) matches how the other
+  // unrepresentable value, a control character, is handled: throw at the write
+  // boundary, and `missingRewriteField` reports "unsafe project" so an unattended
+  // batch SKIPS the row instead of aborting.
+  if (isUnrepresentableProject(e.project)) {
+    throw new Error(
+      `memory write: refusing to persist project ${JSON.stringify(e.project)} — frontmatter emits it ` +
+      `unquoted and reads it back as null, so the record's scope and project would permanently ` +
+      `disagree (same class as #54); give the entry a real project slug or project: null`,
+    );
+  }
+  // Round-37 — BACKFILL a missing `scope`. It is a REQUIRED identifier, but the
+  // authored write path never demanded it, so an entry could arrive here (and
+  // reach both stores) with no scope at all; the renderer then emitted
+  // `scope: undefined` and the archival row-shape gate counted the row malformed
+  // and skipped it. Derived from the entry's OWN identity, so the index row and
+  // the .md get the same recovered value — see `deriveMemoryIdentity`.
+  //
+  // ONLY when unset. `scope: "user"` is a legitimate value that `project: null`
+  // cannot distinguish from `"global"`, so an EXISTING scope is never rewritten.
+  // "Unset" includes the literal "undefined"/"null" strings, which is what a
+  // legacy .md written before this fix parses back as — those must be repaired,
+  // not passed through to `identLine`'s (correct) refusal in an unattended batch.
+  //
+  // Round-38 — BOTH FIELDS, from ONE derivation. `scope` and `project` are two
+  // views of the same fact, and the id fallback recovers a PROJECT
+  // (`semantic/code-demo/x` ⇒ the code-demo bucket), so filling only `scope` left
+  // `scope: project:code-demo` next to `project: null` — two identity fields
+  // DISAGREEING in the persisted record, which is what the backfill was supposed
+  // to prevent. `project` is written ONLY when it is itself unset (a real slug is
+  // never overwritten, and `project: null` on a global entry derives null anyway,
+  // so it stays null).
+  //
+  // AFTER the control-character loop above: that loop has already refused a
+  // poisoned `project`/`id`, so a value derived from them here is clean.
+  if (isUnsetIdentValue(e.scope)) {
+    const derived = deriveMemoryIdentity(entry);
+    e.scope = derived.scope;
+    if (isUnsetIdentValue(e.project) && derived.project !== null) e.project = derived.project;
+  }
   return entry;
 }
 
@@ -178,17 +247,19 @@ export function normalizeMemoryEntryForWrite(entry: MemoryEntry): MemoryEntry {
  *  (neutralizes it — everything else). That is the invariant that makes a
  *  forged second `key:` line impossible; a raw `` `k: ${v}` `` added back here
  *  would silently re-open it. THROWS on a control character in an identifier
- *  scalar — see `identLine`. */
+ *  scalar — see `identLine` — and, since round-37, on an UNSET required
+ *  identifier (`id`/`type`/`scope`/`status`), which used to serialize as the
+ *  literal "undefined". */
 export function renderMemoryMarkdown(entry: MemoryEntry, body: string): string {
   const fm = [
     "---",
-    identLine("id", String(entry.id)),
-    identLine("type", String(entry.type)),
-    identLine("scope", String(entry.scope)),
+    identLine("id", String(entry.id), { required: true }),
+    identLine("type", String(entry.type), { required: true }),
+    identLine("scope", String(entry.scope), { required: true }),
     identLine("project", nullable(entry.project)),
     valueLine("title", String(entry.title ?? "")),
     valueLine("summary", String(entry.summary ?? "")),
-    identLine("status", req(entry.status, "active")),
+    identLine("status", req(entry.status, "active"), { required: true }),
     valueLine("confidence", req(entry.confidence, "0.5")),
     valueLine("importance", req(entry.importance, "0")),
     valueLine("createdAt", req(entry.createdAt, "")),
