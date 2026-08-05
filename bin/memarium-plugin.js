@@ -16717,6 +16717,43 @@ var init_qa_query = __esm({
   }
 });
 
+// src/memory/known-sessions.ts
+function loadKnownSessions(repoPath) {
+  try {
+    const spool = loadIndex(repoPath);
+    const pairs = Object.entries(spool.entries);
+    const wellFormed = pairs.length > 0 && pairs.every(([key, ent]) => {
+      const e2 = ent;
+      return typeof e2.sessionId === "string" && e2.sessionId.length > 0 && typeof e2.tool === "string" && KNOWN_TOOLS.has(e2.tool) && key === `${e2.tool}:${e2.sessionId}`;
+    });
+    return wellFormed ? new Set(pairs.map(([, ent]) => ent.sessionId)) : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function isKnownSession(sourceSession, known) {
+  if (typeof sourceSession !== "string" || sourceSession.length === 0) return false;
+  if (known.has(sourceSession)) return true;
+  if (sourceSession.length < SESSION_ID_PREFIX_MIN) return false;
+  for (const k2 of known) {
+    if (k2.length < SESSION_ID_PREFIX_MIN) continue;
+    if (k2.startsWith(sourceSession) || sourceSession.startsWith(k2)) return true;
+  }
+  return false;
+}
+function isStaleProvenance(sourceSessions, known) {
+  return !sourceSessions.some((s) => isKnownSession(s, known));
+}
+var KNOWN_TOOLS, SESSION_ID_PREFIX_MIN;
+var init_known_sessions = __esm({
+  "src/memory/known-sessions.ts"() {
+    "use strict";
+    init_index_store();
+    KNOWN_TOOLS = /* @__PURE__ */ new Set(["claude", "copilot"]);
+    SESSION_ID_PREFIX_MIN = 8;
+  }
+});
+
 // src/memory/lint.ts
 function entrySnapshot(e) {
   let s;
@@ -16833,7 +16870,7 @@ function lintMemory(memoryIdx, entityIdx, qaIdx, opts) {
       }
       if (opts.knownSessions && e.type !== "core" && e.status !== "pinned") {
         const ss = Array.isArray(e.sourceSessions) ? e.sourceSessions : [];
-        if (ss.length > 0 && !ss.some((s) => opts.knownSessions.has(s))) {
+        if (ss.length > 0 && isStaleProvenance(ss, opts.knownSessions)) {
           issues.push({
             check: "stale-provenance",
             severity: "warning",
@@ -17028,6 +17065,7 @@ var init_lint = __esm({
   "src/memory/lint.ts"() {
     "use strict";
     init_leak_scan();
+    init_known_sessions();
     init_dates();
     tokenize4 = (s) => new Set(s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1));
     textOf = (v) => typeof v === "string" ? v : "";
@@ -17038,29 +17076,6 @@ var init_lint = __esm({
       return inter / (a.size + b2.size - inter);
     };
     daysBetween = (a, b2) => (Date.parse(a) - Date.parse(b2)) / 864e5;
-  }
-});
-
-// src/memory/known-sessions.ts
-function loadKnownSessions(repoPath) {
-  try {
-    const spool = loadIndex(repoPath);
-    const pairs = Object.entries(spool.entries);
-    const wellFormed = pairs.length > 0 && pairs.every(([key, ent]) => {
-      const e2 = ent;
-      return typeof e2.sessionId === "string" && e2.sessionId.length > 0 && typeof e2.tool === "string" && KNOWN_TOOLS.has(e2.tool) && key === `${e2.tool}:${e2.sessionId}`;
-    });
-    return wellFormed ? new Set(pairs.map(([, ent]) => ent.sessionId)) : void 0;
-  } catch {
-    return void 0;
-  }
-}
-var KNOWN_TOOLS;
-var init_known_sessions = __esm({
-  "src/memory/known-sessions.ts"() {
-    "use strict";
-    init_index_store();
-    KNOWN_TOOLS = /* @__PURE__ */ new Set(["claude", "copilot"]);
   }
 });
 
@@ -17321,7 +17336,7 @@ function planArchival(entries, usage, opts) {
       pick2(e.id, `stale-episodic:>${opts.episodicMaxAgeDays}d`);
       continue;
     }
-    if (opts.knownSessions !== void 0 && Array.isArray(e.sourceSessions) && e.sourceSessions.length > 0 && e.sourceSessions.every((s) => !opts.knownSessions.has(s))) {
+    if (opts.knownSessions !== void 0 && Array.isArray(e.sourceSessions) && e.sourceSessions.length > 0 && isStaleProvenance(e.sourceSessions, opts.knownSessions)) {
       pick2(e.id, "stale-provenance");
       continue;
     }
@@ -17357,6 +17372,7 @@ var init_archive = __esm({
   "src/memory/archive.ts"() {
     "use strict";
     init_lint();
+    init_known_sessions();
     init_dates();
     ARCHIVE_DEFAULTS = { episodicMaxAgeDays: 90, unusedMinAgeDays: 60, unusedMaxImportance: 2 };
   }
