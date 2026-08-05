@@ -2,7 +2,7 @@
 description: Digest already-synced sessions into a per-project typed Memory OS — episodic memories (one per work thread) + semantic/procedural/core facts + entity wiki + distilled Q&A. AI-native; no human book.
 ---
 
-Invoke the **memarium** skill via the `Skill` tool with `skill: "memarium"`.
+Invoke the **memarium** skill via the `Skill` tool with `skill: "memarium:memarium"`.
 
 The skill walks you through (typed-memory only — there is no book/chronicles/topics):
 1. Locate the plugin binary (`VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"; [ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-)`).

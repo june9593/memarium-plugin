@@ -3,7 +3,7 @@ description: Two-stage ranked recall over your memarium typed memory. Stage 1 sc
 ---
 
 Invoke the **memarium-recall** skill via the `Skill` tool with
-`skill: "memarium-recall"`.
+`skill: "memarium:memarium-recall"`.
 
 Use this **before** you start exploring code in a project repo where the
 user has run memarium sync + digest. The skill walks you through two stages:

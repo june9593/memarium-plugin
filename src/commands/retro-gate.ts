@@ -20,7 +20,9 @@ interface Row {
  *  never forced to write a junk memory. */
 export const RETRO_REASON =
   "This turn changed files. Before you stop, capture the ONE reusable insight " +
-  "from it into memarium typed memory: invoke the /memarium-retro skill now — " +
+  "from it into memarium typed memory: invoke the Skill tool with " +
+  'skill: "memarium:memarium-retro" now (the `memarium:` prefix is required — ' +
+  "the bare name fails with Unknown skill) — " +
   "distill the insight, run the fact-hygiene + memory-query dedup, and write it " +
   "(memory-write for semantic/episodic, memory-propose for gated). If, on " +
   "reflection, nothing here is durably reusable — or you already captured it — " +
