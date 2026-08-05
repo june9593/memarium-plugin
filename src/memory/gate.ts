@@ -219,7 +219,49 @@ export function isUnsetIdentValue(v: unknown): boolean {
 }
 
 /**
- * Derive the scope an entry MUST have from its OWN identity.
+ * True iff a PRESENT `project` value cannot survive the frontmatter round-trip.
+ *
+ * Round-38. `renderMemoryMarkdown` emits `project` UNQUOTED —
+ * `identLine("project", nullable(entry.project))` — and `parseScalar` coerces the
+ * bare tokens `null`, `undefined` and `` (blank) back to `null`. So a project slug
+ * that IS one of those tokens writes a line that reads back as "NO project": the
+ * value is simply not representable in this format. Persisting it produces a
+ * permanently self-contradicting record — `scope: project:null` beside a `project`
+ * that every rebuild-from-md resolves to `null` — which is the index-vs-reality
+ * class the scope backfill exists to close, re-opened from the other side.
+ *
+ * So the write is REFUSED rather than silently persisted wrong. That is the same
+ * fail-closed choice already made for a control character in an identifier
+ * (`identLine` / `normalizeMemoryEntryForWrite` both throw, and
+ * `missingRewriteField` reports `"unsafe project"` so an UNATTENDED batch SKIPS
+ * the row instead of aborting) — and for the same reason: the value cannot be
+ * represented in a line-oriented `key: value` scalar.
+ *
+ * QUOTING THE FIELD WAS THE ALTERNATIVE AND DOES NOT WORK. Neither
+ * `readFrontmatterBlock` nor `parseScalar` strips quotes, so `project: "null"`
+ * parses back as the six-character string `"null"` (quotes included) — a
+ * different value, a different canonical directory, and a change that would alter
+ * the round-trip of EVERY existing project. Teaching the parser to unquote would
+ * additionally reinterpret every legitimate slug that already contains a quote.
+ *
+ * Deliberately only answers about a PRESENT string: `project: null` (the real
+ * absent value) is legitimate and common — that is a global/user entry.
+ */
+export function isUnrepresentableProject(v: unknown): boolean {
+  return typeof v === "string" && isUnsetIdentValue(v);
+}
+
+/** The two identity fields that must always agree: `scope` and `project` are two
+ *  views of ONE fact, so they are derived together and never patched apart. */
+export interface DerivedMemoryIdentity {
+  scope: string;
+  /** The project slug this identity implies, or null for the `_global` bucket.
+   *  A caller backfilling an UNSET project must use exactly this value. */
+  project: string | null;
+}
+
+/**
+ * Derive the scope+project an entry MUST have from its OWN identity.
  *
  * `scope` is a required identifier field, but nothing on the authored write path
  * demanded it, so an entry could reach the renderer with `scope: undefined` —
@@ -236,14 +278,47 @@ export function isUnsetIdentValue(v: unknown): boolean {
  * When `project` itself is absent the id's own middle segment is the fallback:
  * ids are `<type>/<project|_global>/<slug>` (a two-segment id like
  * `core/user-workflow` has no project segment at all → global).
+ *
+ * ROUND-38 — RETURNS BOTH FIELDS, because the id fallback recovers a PROJECT, not
+ * just a scope. The previous shape returned only the scope, so the caller wrote
+ * `scope: project:code-demo` next to an untouched `project: null`: the two
+ * identity fields DISAGREED, and downstream they are read for different jobs
+ * (scope drives recall eligibility, project drives the canonical path and
+ * grouping) — the exact index-vs-reality divergence this backfill was added to
+ * close. One derivation, one source of truth, both fields.
+ *
+ * A project value that cannot round-trip (`isUnrepresentableProject`) is NOT used
+ * as a source of truth here — from either the field or the id segment — so this
+ * can never hand a caller `project:null`. The write gate refuses such a value
+ * outright; this just makes the derivation incapable of manufacturing one.
  */
-export function deriveMemoryScope(entry: Pick<MemoryEntry, "id" | "project">): string {
-  const project = typeof entry.project === "string" ? entry.project.trim() : "";
-  if (project !== "" && project !== "_global") return `project:${project}`;
+export function deriveMemoryIdentity(entry: Pick<MemoryEntry, "id" | "project">): DerivedMemoryIdentity {
+  const raw = entry.project;
+  if (typeof raw === "string" && !isUnsetIdentValue(raw)) {
+    const p = raw.trim();
+    // `_global` is the GLOBAL BUCKET'S DIRECTORY NAME, not a project slug. Treat
+    // it as an explicit "no project" and do NOT fall through to the id segment:
+    // consulting the id there could hand back a project the entry's own `project`
+    // field contradicts — reintroducing the disagreement in a new place.
+    if (p === "_global") return { scope: "global", project: raw };
+    return { scope: `project:${p}`, project: raw };
+  }
+  // `project` is genuinely unset → the id's middle segment is the only other
+  // witness to which bucket this entry belongs to. Whatever it says, it decides
+  // BOTH fields.
   const segments = typeof entry.id === "string" ? entry.id.split("/") : [];
   if (segments.length >= 3) {
     const middle = segments[segments.length - 2].trim();
-    if (middle !== "" && middle !== "_global") return `project:${middle}`;
+    if (middle !== "_global" && !isUnsetIdentValue(middle)) {
+      return { scope: `project:${middle}`, project: middle };
+    }
   }
-  return "global";
+  return { scope: "global", project: null };
+}
+
+/** Scope-only view of `deriveMemoryIdentity`, for callers that genuinely need
+ *  just the scope. Writers must use `deriveMemoryIdentity` — filling one of the
+ *  two fields alone is what round-38 fixed. */
+export function deriveMemoryScope(entry: Pick<MemoryEntry, "id" | "project">): string {
+  return deriveMemoryIdentity(entry).scope;
 }

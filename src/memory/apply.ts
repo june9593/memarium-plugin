@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join, resolve, sep } from "node:path";
 import { loadMemoryIndex, saveMemoryIndex, upsertMemory } from "./index-store.js";
 import { renderMemoryMarkdown, normalizeMemoryEntryForWrite } from "./render.js";
-import { canonicalMemoryPath, isWritableMemoryId, isSafePathSegment, supersedesId, hasControlChars } from "./gate.js";
+import { canonicalMemoryPath, isWritableMemoryId, isSafePathSegment, supersedesId, hasControlChars, isUnrepresentableProject } from "./gate.js";
 import { calendarDate } from "./dates.js";
 import { assertNoBlockingLeak } from "./leak-scan.js";
 import { assertNoSymlinkedComponent } from "../qa/path-guard.js";
@@ -246,6 +246,12 @@ export function missingRewriteField(entry: MemoryEntry): string | null {
   if (hasControlChars(e.scope as string)) return "unsafe scope";
   if (!(e.project === null || typeof e.project === "string")) return "project";
   if (typeof e.project === "string" && hasControlChars(e.project)) return "unsafe project";
+  // Round-38: a PRESENT project of "null" / "undefined" / blank is UNREPRESENTABLE
+  // in this frontmatter (emitted unquoted, parsed back as `null`), so
+  // `normalizeMemoryEntryForWrite` THROWS on it. Same reasoning as the control
+  // character above: catch it HERE so an unattended batch skips the one row
+  // instead of aborting the whole consolidation on the writer's refusal.
+  if (isUnrepresentableProject(e.project)) return "unsafe project";
   if (!filled(e.title)) return "title";
   // summary: a rendered scalar (`String(entry.summary ?? "")`), so a non-string
   // is stringified into the document. parse and applyMemoryItems both guarantee a

@@ -14505,15 +14505,24 @@ function isUnsetIdentValue(v) {
   const t2 = v.trim();
   return t2 === "" || t2 === "undefined" || t2 === "null";
 }
-function deriveMemoryScope(entry) {
-  const project = typeof entry.project === "string" ? entry.project.trim() : "";
-  if (project !== "" && project !== "_global") return `project:${project}`;
+function isUnrepresentableProject(v) {
+  return typeof v === "string" && isUnsetIdentValue(v);
+}
+function deriveMemoryIdentity(entry) {
+  const raw = entry.project;
+  if (typeof raw === "string" && !isUnsetIdentValue(raw)) {
+    const p2 = raw.trim();
+    if (p2 === "_global") return { scope: "global", project: raw };
+    return { scope: `project:${p2}`, project: raw };
+  }
   const segments = typeof entry.id === "string" ? entry.id.split("/") : [];
   if (segments.length >= 3) {
     const middle = segments[segments.length - 2].trim();
-    if (middle !== "" && middle !== "_global") return `project:${middle}`;
+    if (middle !== "_global" && !isUnsetIdentValue(middle)) {
+      return { scope: `project:${middle}`, project: middle };
+    }
   }
-  return "global";
+  return { scope: "global", project: null };
 }
 var MEMORY_TYPES, SAFE_MEMORY_ID_RE, MAX_MEMORY_ID_LENGTH, CONTROL_CHAR_RE, CONTROL_CHAR_RE_GLOBAL;
 var init_gate = __esm({
@@ -14579,7 +14588,16 @@ function normalizeMemoryEntryForWrite(entry) {
     const v = e[k2];
     if (Array.isArray(v)) e[k2] = v.map((x2) => typeof x2 === "string" ? neutralizeControlChars(x2) : x2);
   }
-  if (isUnsetIdentValue(e.scope)) e.scope = deriveMemoryScope(entry);
+  if (isUnrepresentableProject(e.project)) {
+    throw new Error(
+      `memory write: refusing to persist project ${JSON.stringify(e.project)} \u2014 frontmatter emits it unquoted and reads it back as null, so the record's scope and project would permanently disagree (same class as #54); give the entry a real project slug or project: null`
+    );
+  }
+  if (isUnsetIdentValue(e.scope)) {
+    const derived = deriveMemoryIdentity(entry);
+    e.scope = derived.scope;
+    if (isUnsetIdentValue(e.project) && derived.project !== null) e.project = derived.project;
+  }
   return entry;
 }
 function renderMemoryMarkdown(entry, body) {
@@ -14780,6 +14798,7 @@ function missingRewriteField(entry) {
   if (hasControlChars(e.scope)) return "unsafe scope";
   if (!(e.project === null || typeof e.project === "string")) return "project";
   if (typeof e.project === "string" && hasControlChars(e.project)) return "unsafe project";
+  if (isUnrepresentableProject(e.project)) return "unsafe project";
   if (!filled(e.title)) return "title";
   if (e.summary === void 0 || e.summary === null) return "summary";
   if (typeof e.summary !== "string") return "unsafe summary";

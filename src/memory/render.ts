@@ -1,5 +1,5 @@
 import type { MemoryEntry } from "./types.js";
-import { hasControlChars, neutralizeControlChars, isUnsetIdentValue, deriveMemoryScope } from "./gate.js";
+import { hasControlChars, neutralizeControlChars, isUnsetIdentValue, isUnrepresentableProject, deriveMemoryIdentity } from "./gate.js";
 
 function arr(xs: string[] | undefined): string {
   const a = xs ?? [];
@@ -186,12 +186,30 @@ export function normalizeMemoryEntryForWrite(entry: MemoryEntry): MemoryEntry {
     const v = e[k];
     if (Array.isArray(v)) e[k] = v.map((x) => (typeof x === "string" ? neutralizeControlChars(x) : x));
   }
+  // Round-38 — REFUSE a `project` the frontmatter format CANNOT REPRESENT. The
+  // field is emitted UNQUOTED and `parseScalar` coerces the bare tokens
+  // `null`/`undefined`/blank back to `null`, so a project slug that IS one of
+  // those tokens reads back as "no project": the record would persist
+  // `scope: project:null` beside a project every rebuild resolves to `null` —
+  // permanently self-contradicting, the same divergence class the backfill below
+  // exists to close. Refusing here (rather than quoting, which the parser does not
+  // unquote — see `isUnrepresentableProject`) matches how the other
+  // unrepresentable value, a control character, is handled: throw at the write
+  // boundary, and `missingRewriteField` reports "unsafe project" so an unattended
+  // batch SKIPS the row instead of aborting.
+  if (isUnrepresentableProject(e.project)) {
+    throw new Error(
+      `memory write: refusing to persist project ${JSON.stringify(e.project)} — frontmatter emits it ` +
+      `unquoted and reads it back as null, so the record's scope and project would permanently ` +
+      `disagree (same class as #54); give the entry a real project slug or project: null`,
+    );
+  }
   // Round-37 — BACKFILL a missing `scope`. It is a REQUIRED identifier, but the
   // authored write path never demanded it, so an entry could arrive here (and
   // reach both stores) with no scope at all; the renderer then emitted
   // `scope: undefined` and the archival row-shape gate counted the row malformed
   // and skipped it. Derived from the entry's OWN identity, so the index row and
-  // the .md get the same recovered value — see `deriveMemoryScope`.
+  // the .md get the same recovered value — see `deriveMemoryIdentity`.
   //
   // ONLY when unset. `scope: "user"` is a legitimate value that `project: null`
   // cannot distinguish from `"global"`, so an EXISTING scope is never rewritten.
@@ -199,9 +217,22 @@ export function normalizeMemoryEntryForWrite(entry: MemoryEntry): MemoryEntry {
   // legacy .md written before this fix parses back as — those must be repaired,
   // not passed through to `identLine`'s (correct) refusal in an unattended batch.
   //
+  // Round-38 — BOTH FIELDS, from ONE derivation. `scope` and `project` are two
+  // views of the same fact, and the id fallback recovers a PROJECT
+  // (`semantic/code-demo/x` ⇒ the code-demo bucket), so filling only `scope` left
+  // `scope: project:code-demo` next to `project: null` — two identity fields
+  // DISAGREEING in the persisted record, which is what the backfill was supposed
+  // to prevent. `project` is written ONLY when it is itself unset (a real slug is
+  // never overwritten, and `project: null` on a global entry derives null anyway,
+  // so it stays null).
+  //
   // AFTER the control-character loop above: that loop has already refused a
   // poisoned `project`/`id`, so a value derived from them here is clean.
-  if (isUnsetIdentValue(e.scope)) e.scope = deriveMemoryScope(entry);
+  if (isUnsetIdentValue(e.scope)) {
+    const derived = deriveMemoryIdentity(entry);
+    e.scope = derived.scope;
+    if (isUnsetIdentValue(e.project) && derived.project !== null) e.project = derived.project;
+  }
   return entry;
 }
 
