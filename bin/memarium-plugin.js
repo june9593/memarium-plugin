@@ -15923,7 +15923,7 @@ var RETRO_REASON, MUTATION_TOOLS;
 var init_retro_gate = __esm({
   "src/commands/retro-gate.ts"() {
     "use strict";
-    RETRO_REASON = "This turn changed files. Before you stop, capture the ONE reusable insight from it into memarium typed memory: invoke the /memarium-retro skill now \u2014 distill the insight, run the fact-hygiene + memory-query dedup, and write it (memory-write for semantic/episodic, memory-propose for gated). If, on reflection, nothing here is durably reusable \u2014 or you already captured it \u2014 say so in one line and stop; do not force a low-value memory.";
+    RETRO_REASON = 'This turn changed files. Before you stop, capture the ONE reusable insight from it into memarium typed memory: invoke the Skill tool with skill: "memarium:memarium-retro" now (the `memarium:` prefix is required \u2014 the bare name fails with Unknown skill) \u2014 distill the insight, run the fact-hygiene + memory-query dedup, and write it (memory-write for semantic/episodic, memory-propose for gated). If, on reflection, nothing here is durably reusable \u2014 or you already captured it \u2014 say so in one line and stop; do not force a low-value memory.';
     MUTATION_TOOLS = /* @__PURE__ */ new Set(["Edit", "Write", "NotebookEdit", "MultiEdit"]);
   }
 });

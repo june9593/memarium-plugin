@@ -3,7 +3,11 @@ description: Capture the reusable insight from THIS session into memarium typed 
 ---
 
 Invoke the **memarium-retro** skill via the `Skill` tool with
-`skill: "memarium-retro"`.
+`skill: "memarium:memarium-retro"`.
+
+> The `memarium:` prefix is REQUIRED. Plugin skills register as
+> `<plugin>:<skill>`, so the bare name `memarium-retro` fails with
+> `Unknown skill`. Do not "simplify" it away.
 
 Use this **at the end of a task** — after code changes, an architectural
 decision, debugging, or non-trivial problem solving — to distill what you

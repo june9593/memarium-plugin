@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.20.3 — 2026-08-06
+
+### Fix: the slash commands told agents to invoke skills by the wrong name
+
+All four `commands/*.md` files instructed the agent to call the `Skill` tool with
+the BARE skill name (`skill: "memarium-retro"`), but plugin skills register as
+`<plugin>:<skill>` — so every agent that followed the instruction failed with
+`Unknown skill: memarium-retro`. The Stop hook's retro nudge had the same problem:
+it said "invoke the /memarium-retro skill", mixing slash-command syntax with the
+Skill tool and leaving the agent to guess the id.
+
+- All four command files now name the prefixed id (`memarium:memarium`,
+  `memarium:memarium-context`, `memarium:memarium-recall`,
+  `memarium:memarium-retro`), with a note that the prefix is required.
+- `RETRO_REASON` (the Stop-hook nudge, `src/commands/retro-gate.ts`) now names the
+  Skill tool and the exact prefixed id instead of a slash-command-looking string.
+- Regression test locks that the nudge names the prefixed id and never the bare
+  name — verified non-vacuous (swapping in the bare name turns it red).
+
+The `/memarium-retro` **slash command** itself always worked; only the invocation
+instruction inside it was wrong, which is why the failure showed up as agents
+reporting the skill "not found" mid-session.
+
 ## 0.20.2 — 2026-08-05
 
 ### Fix: a memory could be persisted with **no scope** (`scope: undefined`)

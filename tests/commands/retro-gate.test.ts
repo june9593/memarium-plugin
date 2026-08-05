@@ -22,6 +22,25 @@ describe("decideRetroGate", () => {
     expect(d.reason).toBe(RETRO_REASON);
   });
 
+  // Regression lock: the reason is fed to the model as the thing to DO, so it must
+  // name the skill exactly as the Skill tool registers it. Plugin skills register
+  // as `<plugin>:<skill>`, so instructing the BARE name made every agent that
+  // followed this nudge fail with `Unknown skill: memarium-retro`.
+  //
+  // Check the two prohibited forms EXPLICITLY rather than with a clever regex: the
+  // first version of this test used a negative lookahead `(?!")` that skipped the
+  // very form it claimed to forbid (`skill: "memarium-retro"` — the id IS followed
+  // by a quote), so that assertion was dead while the test still went green. Each
+  // assertion below is verified to fail on its own violating input.
+  it("names the plugin-prefixed skill id, never the bare name", () => {
+    expect(RETRO_REASON).toContain('skill: "memarium:memarium-retro"');
+    // bare quoted id — what an agent would copy into the Skill tool and fail with
+    expect(RETRO_REASON).not.toContain('skill: "memarium-retro"');
+    // slash form — a valid SLASH COMMAND but not a valid Skill-tool id, so naming
+    // it here leaves the agent guessing which mechanism is meant
+    expect(RETRO_REASON).not.toContain("/memarium-retro");
+  });
+
   it("blocks on Write / NotebookEdit / MultiEdit too", () => {
     for (const tool of ["Write", "NotebookEdit", "MultiEdit"]) {
       const rows = [userText("q"), toolUse(tool, { file_path: "x" })];
