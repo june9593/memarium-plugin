@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.20.2 — 2026-08-05
+
+### Fix: a memory could be persisted with **no scope** (`scope: undefined`)
+
+Found by inspecting a real store: two importance-4 `_global` memories written
+2026-07-27/28 (`semantic/_global/local-agent-source-repos-under-edge`,
+`semantic/_global/anthropic-access-via-gateway-not-api-key`) carried
+`scope: null`. They still recalled, but `memory-archive`'s row-shape gate
+(`missingRewriteField`) counted them malformed and **skipped** them — the
+"skipped N malformed index row(s)" line — so their whole lifecycle silently
+stopped being maintained.
+
+**Cause — the same class as #54.** `renderMemoryMarkdown` emitted the required
+identifier via `identLine("scope", String(entry.scope))`. `String(undefined)` is
+the literal text `"undefined"`, which contains no control character, so
+`identLine`'s injection guard waved it through and the `.md` got a real
+`scope: undefined` line, mirrored into the index. #54 fixed exactly this for the
+NULLABLE scalars (`== null` → the YAML `null` literal) and added the
+`nullable()` / `req()` helpers to prevent it — but the identifier fields routed
+through `identLine` bypassed **both** helpers.
+
+**Fix — two layers.**
+
+1. **Write boundary (primary).** `normalizeMemoryEntryForWrite`
+   (`src/memory/render.ts`) — the single place round-36 established as
+   normalizing before BOTH the index and the `.md` receive the object — now
+   **backfills a missing scope** from the entry's own identity, via the new
+   `deriveMemoryScope` in `src/memory/gate.ts` (scope and project are two views
+   of the same fact): a real `project` → `project:<slug>`; `project`
+   null/`_global` → `global`, falling back to the id's middle segment
+   (`<type>/<project|_global>/<slug>`) when `project` itself is absent.
+   It only ever fills a **missing** scope — `user` is a legitimate value that
+   `project: null` cannot distinguish from `global`, so an existing scope is
+   never rewritten. "Missing" also covers the literal `"undefined"` / `"null"` /
+   blank strings, which is what a legacy `.md` parses back as, so a rewrite of an
+   already-affected file repairs it instead of tripping layer 2 mid-batch.
+
+2. **Serialization backstop.** `identLine` takes `required: true` for the
+   genuinely-required identifiers (`id`, `type`, `scope`, `status`) and now
+   **throws** on an unset value (`"undefined"` / `"null"` / blank) the same way it
+   throws on a control character — so a future caller that bypasses the
+   normalizer fails loudly instead of silently persisting a broken record.
+   `project` is unaffected: it renders via `identLine(nullable(...))` and its
+   literal `null` stays legitimate.
+
+This closes the #54 class for the required identifier fields. No data migration
+ships here: an already-affected record is repaired the next time it is written
+through the shared normalizer (a `memory-write` / `memory-approve` update of the
+same id, or a `writeMemoryEntryFile` rewrite). The two records found in the wild
+were repaired by hand.
+
+12 new tests (929 total, up from 917).
+
 ## 0.20.1 — 2026-08-04
 
 ### Fix: `stale-provenance` false positives across short/full session id forms

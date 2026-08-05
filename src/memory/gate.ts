@@ -202,3 +202,48 @@ export function canonicalMemoryPath(entry: MemoryEntry): string {
   const slug = safeSegment(entry.id.split("/").pop() ?? entry.id, "slug");
   return `memory/${entry.type}/${scopeDir}/${slug}.md`;
 }
+
+/**
+ * True when a REQUIRED identifier scalar carries no usable value.
+ *
+ * "Unset" is not just `undefined`: a value that has already been through a
+ * `String()` (or a legacy `.md` written before #54 / this fix) arrives as the
+ * LITERAL text `"undefined"` or `"null"`, which is indistinguishable from a real
+ * value once it is in line-oriented frontmatter — that is exactly the class of
+ * bug #54 closed for the NULLABLE fields. Treat all three the same.
+ */
+export function isUnsetIdentValue(v: unknown): boolean {
+  if (typeof v !== "string") return true;
+  const t = v.trim();
+  return t === "" || t === "undefined" || t === "null";
+}
+
+/**
+ * Derive the scope an entry MUST have from its OWN identity.
+ *
+ * `scope` is a required identifier field, but nothing on the authored write path
+ * demanded it, so an entry could reach the renderer with `scope: undefined` —
+ * which `String()`d to the literal "undefined" and persisted as a scope-less
+ * record in BOTH the `.md` and the index (the archival row-shape gate then
+ * counted it "malformed" and skipped it). The value is fully recoverable from
+ * the entry, because scope and project are two views of the same fact:
+ *
+ *   • a real `project` slug  → `project:<slug>`
+ *   • `project` null/absent  → `global`   (the `_global` bucket; `user` scope
+ *     also lives there, which is why this only ever fills a MISSING scope and
+ *     never rewrites an existing one — see the caller in render.ts)
+ *
+ * When `project` itself is absent the id's own middle segment is the fallback:
+ * ids are `<type>/<project|_global>/<slug>` (a two-segment id like
+ * `core/user-workflow` has no project segment at all → global).
+ */
+export function deriveMemoryScope(entry: Pick<MemoryEntry, "id" | "project">): string {
+  const project = typeof entry.project === "string" ? entry.project.trim() : "";
+  if (project !== "" && project !== "_global") return `project:${project}`;
+  const segments = typeof entry.id === "string" ? entry.id.split("/") : [];
+  if (segments.length >= 3) {
+    const middle = segments[segments.length - 2].trim();
+    if (middle !== "" && middle !== "_global") return `project:${middle}`;
+  }
+  return "global";
+}

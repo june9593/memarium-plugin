@@ -14500,6 +14500,21 @@ function canonicalMemoryPath(entry) {
   const slug = safeSegment(entry.id.split("/").pop() ?? entry.id, "slug");
   return `memory/${entry.type}/${scopeDir}/${slug}.md`;
 }
+function isUnsetIdentValue(v) {
+  if (typeof v !== "string") return true;
+  const t2 = v.trim();
+  return t2 === "" || t2 === "undefined" || t2 === "null";
+}
+function deriveMemoryScope(entry) {
+  const project = typeof entry.project === "string" ? entry.project.trim() : "";
+  if (project !== "" && project !== "_global") return `project:${project}`;
+  const segments = typeof entry.id === "string" ? entry.id.split("/") : [];
+  if (segments.length >= 3) {
+    const middle = segments[segments.length - 2].trim();
+    if (middle !== "" && middle !== "_global") return `project:${middle}`;
+  }
+  return "global";
+}
 var MEMORY_TYPES, SAFE_MEMORY_ID_RE, MAX_MEMORY_ID_LENGTH, CONTROL_CHAR_RE, CONTROL_CHAR_RE_GLOBAL;
 var init_gate = __esm({
   "src/memory/gate.ts"() {
@@ -14530,10 +14545,15 @@ function req(v, fallback) {
   if (typeof v === "number" && !Number.isFinite(v)) return fallback;
   return String(v);
 }
-function identLine(key, value) {
+function identLine(key, value, opts) {
   if (hasControlChars(value)) {
     throw new Error(
       `memory render: refusing to write ${key} containing a control character \u2014 it would forge extra frontmatter lines (${JSON.stringify(value)})`
+    );
+  }
+  if (opts?.required && isUnsetIdentValue(value)) {
+    throw new Error(
+      `memory render: refusing to write required field ${key} as ${JSON.stringify(value)} \u2014 it is unset, and frontmatter would persist it as a real value (same class as #54); normalize the entry (normalizeMemoryEntryForWrite) before rendering`
     );
   }
   return `${key}: ${value}`;
@@ -14559,18 +14579,19 @@ function normalizeMemoryEntryForWrite(entry) {
     const v = e[k2];
     if (Array.isArray(v)) e[k2] = v.map((x2) => typeof x2 === "string" ? neutralizeControlChars(x2) : x2);
   }
+  if (isUnsetIdentValue(e.scope)) e.scope = deriveMemoryScope(entry);
   return entry;
 }
 function renderMemoryMarkdown(entry, body) {
   const fm = [
     "---",
-    identLine("id", String(entry.id)),
-    identLine("type", String(entry.type)),
-    identLine("scope", String(entry.scope)),
+    identLine("id", String(entry.id), { required: true }),
+    identLine("type", String(entry.type), { required: true }),
+    identLine("scope", String(entry.scope), { required: true }),
     identLine("project", nullable(entry.project)),
     valueLine("title", String(entry.title ?? "")),
     valueLine("summary", String(entry.summary ?? "")),
-    identLine("status", req(entry.status, "active")),
+    identLine("status", req(entry.status, "active"), { required: true }),
     valueLine("confidence", req(entry.confidence, "0.5")),
     valueLine("importance", req(entry.importance, "0")),
     valueLine("createdAt", req(entry.createdAt, "")),
