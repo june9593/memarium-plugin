@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.21.1 — 2026-09-03
+
+### Mirror the Windows non-git project-path fix
+
+The shared `projectSlugFromPath()` mirror now splits both path separators and
+drops standalone drive-letter segments, matching the npm fix for #37. This
+keeps autonomous plugin scans from deriving a raw Windows drive path as a
+project folder. The bundled plugin and shared identity regression test are
+updated in lockstep.
+
 ## 0.21.0 — 2026-09-03
 
 ### Add Codex Desktop and interactive Codex CLI as a third session source

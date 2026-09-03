@@ -7885,7 +7885,7 @@ function deriveSlug(firstUserMessage) {
 }
 function projectSlugFromPath(cwdOrPath) {
   if (!cwdOrPath || cwdOrPath === "/") return "root";
-  const parts = cwdOrPath.split("/").filter(Boolean);
+  const parts = cwdOrPath.split(/[/\\]/).filter((part) => part && !/^[A-Za-z]:$/.test(part));
   if (parts.length === 0) return "root";
   if (parts.length === 1) return parts[0];
   const last2 = parts[parts.length - 1];
