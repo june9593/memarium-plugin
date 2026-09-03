@@ -18864,6 +18864,7 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
   const responseToolKeys = /* @__PURE__ */ new Set();
   const responseOutputKeys = /* @__PURE__ */ new Set();
   const eventTools = [];
+  const responseToolSpans = /* @__PURE__ */ new Map();
   for (const record of records) {
     const subtype = stringValue(record.payload.type);
     if (record.type === "response_item") {
@@ -18873,6 +18874,8 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
         const text = sanitizeCodexText(extractText(record.payload.content));
         if (!text) continue;
         responseMessages.push(textMessage(record, role, text));
+      } else if (subtype === "agent_message") {
+        continue;
       } else if (subtype === "reasoning") {
         const reasoning = reasoningText(record.payload);
         if (reasoning) responseReasoning.push(reasoningMessage(record, reasoning));
@@ -18883,6 +18886,7 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
           responseToolKeys.add(key);
           responseTools.push(projected);
         }
+        extendToolSpan(responseToolSpans, key, record.index);
       } else if (RESPONSE_TOOL_OUTPUTS.has(subtype)) {
         const projected = responseToolOutput(record);
         const key = projected.id ?? `${subtype}:${record.index}`;
@@ -18890,6 +18894,7 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
           responseOutputKeys.add(key);
           responseTools.push(projected);
         }
+        extendToolSpan(responseToolSpans, key, record.index);
       }
       continue;
     }
@@ -18925,7 +18930,8 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
   const messages = [
     ...mergeTextLanes(displayMessages, responseMessages),
     ...mergeReasoningLanes(responseReasoning, displayReasoning),
-    ...responseTools.length > 0 ? responseTools : eventTools
+    ...responseTools,
+    ...eventToolsOutsideResponseSpans(eventTools, responseToolSpans)
   ].sort((a, b2) => a.index - b2.index || a.order - b2.order).map(toSessionMessage);
   const firstUser = messages.find((message) => message.role === "user")?.text ?? "";
   const indexedTitle = usableTitle(titleMap.get(sessionId) ?? "");
@@ -18976,6 +18982,26 @@ function mergeReasoningLanes(response, display) {
   }
   return out;
 }
+function extendToolSpan(spans, key, index) {
+  const span = spans.get(key);
+  if (span) {
+    span.start = Math.min(span.start, index);
+    span.end = Math.max(span.end, index);
+  } else {
+    spans.set(key, { start: index, end: index });
+  }
+}
+function eventToolsOutsideResponseSpans(eventTools, spans) {
+  const coveredEventIds = /* @__PURE__ */ new Set();
+  for (const event of eventTools) {
+    if (!event.id) continue;
+    const covered = [...spans.values()].some(
+      (span) => event.index >= span.start - 1 && event.index <= span.end + 1
+    );
+    if (covered) coveredEventIds.add(event.id);
+  }
+  return eventTools.filter((event) => !event.id || !coveredEventIds.has(event.id));
+}
 function textMessage(record, role, text) {
   const id = stringValue(record.payload.id) || void 0;
   return {
@@ -19006,8 +19032,10 @@ function responseToolCall(record, subtype) {
   let name = stringValue(payload.name);
   let input;
   if (subtype === "function_call") input = parseMaybeJson(payload.arguments);
-  else if (subtype === "custom_tool_call") input = parseMaybeJson(payload.input);
-  else if (subtype === "local_shell_call") {
+  else if (subtype === "custom_tool_call") {
+    const parsed = parseMaybeJson(payload.input);
+    input = name === "apply_patch" && typeof parsed === "string" ? { patch: parsed } : parsed;
+  } else if (subtype === "local_shell_call") {
     name ||= "local_shell";
     input = payload.action ?? payload.command ?? {};
   } else if (subtype === "tool_search_call") {
@@ -19143,6 +19171,10 @@ function sanitizeCodexText(text) {
     const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     value = value.replace(new RegExp(`<${escaped}\\b[^>]*>[\\s\\S]*?<\\/${escaped}>`, "gi"), "");
   }
+  value = value.replace(
+    /^# AGENTS\.md instructions[^\n]*\r?\n\s*\r?\n<INSTRUCTIONS>[\s\S]*?<\/INSTRUCTIONS>\s*/i,
+    ""
+  );
   value = value.replace(/^# AGENTS\.md instructions[^\n]*\r?\n[\s\S]*?(?:\r?\n){2}/, "");
   if (/^# AGENTS\.md instructions/i.test(value.trimStart())) return "";
   if (/^<(?:environment_context|permissions|turn_aborted|subagent_notification)\b/i.test(value.trimStart())) return "";
@@ -19363,18 +19395,18 @@ function readFilePath(b2) {
 function readShellCommand(b2) {
   const input = b2.input;
   if (!input || typeof input !== "object") return null;
-  if (typeof input.command === "string") return input.command;
-  if (typeof input.cmd === "string") return input.cmd;
-  if (Array.isArray(input.cmd)) {
-    const parts = input.cmd.filter((part) => typeof part === "string");
-    return parts.length > 0 ? parts.join(" ") : null;
-  }
-  return null;
+  return commandText(input.command) ?? commandText(input.cmd);
+}
+function commandText(value) {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return null;
+  const parts = value.filter((part) => typeof part === "string");
+  return parts.length > 0 ? parts.join(" ") : null;
 }
 function readPatchPaths(b2) {
   const input = b2.input;
   if (!input || typeof input !== "object" || typeof input.patch !== "string") return [];
-  return [...input.patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((match) => match[1].trim()).filter(Boolean);
+  return [...input.patch.matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File:|Move to:) (.+)$/gm)].map((match) => match[1].trim()).filter(Boolean);
 }
 function parseCommit(cmd) {
   const h2 = cmd.match(GIT_COMMIT_HEREDOC_RE);
@@ -19479,20 +19511,20 @@ function computePreview(m) {
 function readCommand(b2) {
   const input = b2.input;
   if (!input || typeof input !== "object") return null;
-  if (typeof input.command === "string") return input.command;
-  if (typeof input.cmd === "string") return input.cmd;
-  if (Array.isArray(input.cmd)) {
-    const parts = input.cmd.filter((part) => typeof part === "string");
-    return parts.length > 0 ? parts.join(" ") : null;
-  }
-  return null;
+  return commandText2(input.command) ?? commandText2(input.cmd);
+}
+function commandText2(value) {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return null;
+  const parts = value.filter((part) => typeof part === "string");
+  return parts.length > 0 ? parts.join(" ") : null;
 }
 function readEditPath(b2) {
   const input = b2.input;
   if (!input || typeof input !== "object") return null;
   if (typeof input.file_path === "string") return input.file_path;
   if (typeof input.patch !== "string") return null;
-  return input.patch.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/m)?.[1]?.trim() ?? null;
+  return input.patch.match(/^\*\*\* (?:(?:Add|Update|Delete) File:|Move to:) (.+)$/m)?.[1]?.trim() ?? null;
 }
 function previewOf2(text, max) {
   const collapsed = text.replace(/\s+/g, " ").trim();

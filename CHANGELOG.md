@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.21.2 — 2026-09-03
+
+### Mirror the Codex review hardening
+
+Mirror the npm parser and digest fixes for local-shell command arrays, raw
+custom apply-patch input, rename destinations, multi-paragraph AGENTS wrappers,
+and mixed response/event tool lanes. Keep `ResponseItem::AgentMessage` excluded
+as inter-agent traffic, add focused shared digest coverage, fix the English page
+pronoun agreement, and rebuild the committed plugin bundle.
+
 ## 0.21.1 — 2026-09-03
 
 ### Mirror the Windows non-git project-path fix
