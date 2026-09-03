@@ -18886,7 +18886,7 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
           responseToolKeys.add(key);
           responseTools.push(projected);
         }
-        extendToolSpan(responseToolSpans, key, record.index);
+        extendToolSpan(responseToolSpans, key, record.index, projected.toolSignature);
       } else if (RESPONSE_TOOL_OUTPUTS.has(subtype)) {
         const projected = responseToolOutput(record);
         const key = projected.id ?? `${subtype}:${record.index}`;
@@ -18982,21 +18982,22 @@ function mergeReasoningLanes(response, display) {
   }
   return out;
 }
-function extendToolSpan(spans, key, index) {
+function extendToolSpan(spans, key, index, signature) {
   const span = spans.get(key);
   if (span) {
     span.start = Math.min(span.start, index);
     span.end = Math.max(span.end, index);
+    if (signature) span.signature = signature;
   } else {
-    spans.set(key, { start: index, end: index });
+    spans.set(key, { start: index, end: index, ...signature ? { signature } : {} });
   }
 }
 function eventToolsOutsideResponseSpans(eventTools, spans) {
   const coveredEventIds = /* @__PURE__ */ new Set();
   for (const event of eventTools) {
-    if (!event.id) continue;
+    if (!event.id || !event.toolSignature) continue;
     const covered = [...spans.values()].some(
-      (span) => event.index >= span.start - 1 && event.index <= span.end + 1
+      (span) => span.signature === event.toolSignature && event.index >= span.start - 1 && event.index <= span.end + 1
     );
     if (covered) coveredEventIds.add(event.id);
   }
@@ -19052,7 +19053,8 @@ function responseToolCall(record, subtype) {
     role: "assistant",
     text: "",
     timestamp: record.timestamp,
-    contentBlocks: [{ type: "tool_use", name: name || subtype, input: input ?? {}, ...id ? { id } : {} }]
+    contentBlocks: [{ type: "tool_use", name: name || subtype, input: input ?? {}, ...id ? { id } : {} }],
+    toolSignature: toolSignature(name || subtype, input ?? {})
   };
 }
 function responseToolOutput(record) {
@@ -19076,7 +19078,7 @@ function eventToolMessages(record, item, itemType) {
   let output;
   if (itemType === "CommandExecution") {
     name = "exec";
-    const command = Array.isArray(item.command) ? item.command.filter((part) => typeof part === "string").join(" ") : stringValue(item.command);
+    const command = Array.isArray(item.command) ? item.command.filter((part) => typeof part === "string") : stringValue(item.command);
     input = { cmd: command, cwd: stringValue(item.cwd) };
     output = item.aggregated_output ?? item.formatted_output ?? item.stdout ?? item.stderr;
   } else {
@@ -19093,7 +19095,8 @@ function eventToolMessages(record, item, itemType) {
     role: "assistant",
     text: "",
     timestamp: record.timestamp,
-    contentBlocks: [{ type: "tool_use", name, input, id }]
+    contentBlocks: [{ type: "tool_use", name, input, id }],
+    toolSignature: toolSignature(name, input)
   }];
   if (output !== void 0) {
     messages.push({
@@ -19139,6 +19142,44 @@ function extractText(value) {
     }
   }
   return texts.join("\n");
+}
+function toolSignature(name, input) {
+  const family = ["exec", "exec_command", "local_shell"].includes(name) ? "shell" : name;
+  if (family === "shell") {
+    const command = toolCommandText(input);
+    if (command) return `shell:${normalizeText(command)}`;
+  }
+  if (family === "apply_patch") {
+    const patch = objectValue(input).patch;
+    if (typeof patch === "string") return `apply_patch:${normalizeText(patch)}`;
+  }
+  return `${family}:${stableJson(input)}`;
+}
+function toolCommandText(input) {
+  if (typeof input === "string") return input;
+  const row = objectValue(input);
+  return commandTextForSignature(row.command) ?? commandTextForSignature(row.cmd);
+}
+function commandTextForSignature(value) {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return null;
+  const parts = value.filter((part) => typeof part === "string");
+  if (parts.length === 0) return null;
+  const executable = parts[0].split(/[/\\]/).pop().toLowerCase();
+  if (["sh", "bash", "zsh", "fish", "pwsh", "powershell", "powershell.exe", "cmd", "cmd.exe"].includes(executable)) {
+    const commandFlag = parts.findIndex(
+      (part, index) => index > 0 && (/^-[a-z]*c[a-z]*$/i.test(part) || /^--?command$/i.test(part) || /^\/c$/i.test(part))
+    );
+    if (commandFlag >= 0 && parts[commandFlag + 1]) return parts[commandFlag + 1];
+  }
+  return parts.join(" ");
+}
+function stableJson(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 function flattenToolOutput(value) {
   if (typeof value === "string") return value;
@@ -19320,7 +19361,7 @@ var init_codex = __esm({
           }
           const indexedTitle = usableTitle(titleMap.get(candidate.header.id) ?? "");
           const location = relative5(this.root, candidate.sourcePath);
-          const sha = createHash6("sha256").update(content).update("\0").update(indexedTitle).update("\0").update(location).digest("hex");
+          const sha = createHash6("sha256").update(content).update("\0").update(indexedTitle).update("\0").update(location).update("\0full-session-id-path-v1").digest("hex");
           yield {
             sourcePath: candidate.sourcePath,
             sourceMtimeMs,
@@ -19401,7 +19442,19 @@ function commandText(value) {
   if (typeof value === "string") return value;
   if (!Array.isArray(value)) return null;
   const parts = value.filter((part) => typeof part === "string");
-  return parts.length > 0 ? parts.join(" ") : null;
+  if (parts.length === 0) return null;
+  const executable = parts[0].split(/[/\\]/).pop().toLowerCase();
+  if (["sh", "bash", "zsh", "fish", "pwsh", "powershell", "powershell.exe", "cmd", "cmd.exe"].includes(executable)) {
+    const commandFlag = parts.findIndex(
+      (part, index) => index > 0 && (/^-[a-z]*c[a-z]*$/i.test(part) || /^--?command$/i.test(part) || /^\/c$/i.test(part))
+    );
+    if (commandFlag >= 0 && parts[commandFlag + 1]) return parts[commandFlag + 1];
+  }
+  return parts.map(formatArg).join(" ");
+}
+function formatArg(value) {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  return JSON.stringify(value);
 }
 function readPatchPaths(b2) {
   const input = b2.input;
@@ -19517,7 +19570,19 @@ function commandText2(value) {
   if (typeof value === "string") return value;
   if (!Array.isArray(value)) return null;
   const parts = value.filter((part) => typeof part === "string");
-  return parts.length > 0 ? parts.join(" ") : null;
+  if (parts.length === 0) return null;
+  const executable = parts[0].split(/[/\\]/).pop().toLowerCase();
+  if (["sh", "bash", "zsh", "fish", "pwsh", "powershell", "powershell.exe", "cmd", "cmd.exe"].includes(executable)) {
+    const commandFlag = parts.findIndex(
+      (part, index) => index > 0 && (/^-[a-z]*c[a-z]*$/i.test(part) || /^--?command$/i.test(part) || /^\/c$/i.test(part))
+    );
+    if (commandFlag >= 0 && parts[commandFlag + 1]) return parts[commandFlag + 1];
+  }
+  return parts.map(formatArg2).join(" ");
+}
+function formatArg2(value) {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  return JSON.stringify(value);
 }
 function readEditPath(b2) {
   const input = b2.input;
@@ -19568,7 +19633,8 @@ function writeSession(repoRoot, s, opts = {}) {
   const dirRel = join33("raw_sessions", s.tool, s.project, date);
   const absDir = join33(repoRoot, dirRel);
   mkdirSync15(absDir, { recursive: true });
-  const base = `${s.nameSlug}__${s.shortId}`;
+  const storageId = s.tool === "codex" ? safeStorageId(s.sessionId) : s.shortId;
+  const base = `${s.nameSlug}__${storageId}`;
   const mdRel = join33(dirRel, `${base}.md`);
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults = opts.fullToolResults ?? process.env.MEMARIUM_FULL_TOOL_RESULTS === "1";
@@ -19577,6 +19643,9 @@ function writeSession(repoRoot, s, opts = {}) {
     renderMarkdown(s, { includeReasoning, fullToolResults })
   );
   return { md: mdRel };
+}
+function safeStorageId(sessionId) {
+  return sessionId.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
 }
 function renderMarkdown(s, ctx) {
   const renderedPerMessage = [];

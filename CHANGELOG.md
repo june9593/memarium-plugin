@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.21.3 — 2026-09-03
+
+### Mirror Codex collision/correlation hardening
+
+Mirror the npm changes that use full Codex UUIDs for collision-proof rendered
+paths, correlate response/event tools by normalized identity and input rather
+than proximity alone, and preserve direct local-shell argv boundaries. Add
+plugin-side storage and digest regressions and rebuild the committed bundle.
+
 ## 0.21.2 — 2026-09-03
 
 ### Mirror the Codex review hardening

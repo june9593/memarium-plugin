@@ -9,7 +9,7 @@
     {
       "name": "memarium",
       "description": "/memarium digests Claude Code, Copilot Chat, and Codex sessions into typed memory (episodic / semantic / procedural / core) + an entity wiki + distilled Q&A. A SessionStart hook auto-injects the project primer; /memarium-context and /memarium-recall provide deeper retrieval.",
-      "version": "0.21.2",
+      "version": "0.21.3",
       "source": "./",
       "category": "productivity"
     }
