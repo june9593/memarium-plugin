@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.21.0 — 2026-09-03
+
+### Add Codex Desktop and interactive Codex CLI as a third session source
+
+- The autonomous plugin now scans active and archived `~/.codex` rollout
+  JSONL, so `/memarium` can digest Codex sessions without the optional npm CLI.
+  `codex exec` and explicit subagent/guardian child threads remain excluded.
+- The shared adapter reconciles display events with response items, removes
+  injected app/environment context, preserves plaintext reasoning, and maps
+  legacy/current/custom tool calls and structured results into the existing
+  single-Markdown spool format.
+- Codex uses full thread UUIDs for identity and UUIDv7-safe tail short IDs for
+  display; append-only title changes trigger a guarded re-render cleanup.
+- `prepare` and provenance validation now accept `tool: codex`; source typing,
+  manifest/TOC extraction, sanitized fixtures, and the committed plugin bundle
+  remain aligned with the npm implementation.
+
 ## 0.20.3 — 2026-08-06
 
 ### Fix: the slash commands told agents to invoke skills by the wrong name

@@ -1,7 +1,7 @@
 {
   "name": "memarium-plugin",
-  "version": "0.20.3",
-  "description": "Memarium Claude Code plugin: digest your AI coding sessions into a per-project typed Memory OS (episodic / semantic / procedural / core memory, entity wiki, distilled Q&A), and recall it before new work. Standalone — works without the memarium npm CLI.",
+  "version": "0.21.0",
+  "description": "Memarium Claude Code plugin: digest Claude Code, Copilot Chat, and Codex sessions into a per-project typed Memory OS (episodic / semantic / procedural / core memory, entity wiki, distilled Q&A), and recall it before new work. Standalone — works without the memarium npm CLI.",
   "type": "module",
   "license": "MIT",
   "private": true,
@@ -14,6 +14,7 @@
   "keywords": [
     "claude-code",
     "plugin",
+    "codex",
     "session",
     "memory",
     "knowledge-base",

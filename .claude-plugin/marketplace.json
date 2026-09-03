@@ -1,15 +1,15 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "memarium-plugin",
-  "description": "Memarium Claude Code plugin — digest sessions into a per-project typed Memory OS (episodic / semantic / procedural / core, entity wiki, Q&A), recall it before work. Standalone, no extra CLI required. For cross-device sync, see the memarium npm CLI (separate package).",
+  "description": "Memarium Claude Code plugin — digest Claude Code, Copilot Chat, and Codex sessions into a per-project typed Memory OS, then recall it before work. Standalone, no extra CLI required.",
   "owner": {
     "name": "june9593"
   },
   "plugins": [
     {
       "name": "memarium",
-      "description": "/memarium digests sessions into typed memory (episodic / semantic / procedural / core) + an entity wiki + distilled Q&A. A SessionStart hook auto-injects the project primer so a new session starts already knowing the project. /memarium-context for deeper recall + entities + past Q&A; /memarium-recall to rank + surface relevant memory for a task.",
-      "version": "0.20.3",
+      "description": "/memarium digests Claude Code, Copilot Chat, and Codex sessions into typed memory (episodic / semantic / procedural / core) + an entity wiki + distilled Q&A. A SessionStart hook auto-injects the project primer; /memarium-context and /memarium-recall provide deeper retrieval.",
+      "version": "0.21.0",
       "source": "./",
       "category": "productivity"
     }

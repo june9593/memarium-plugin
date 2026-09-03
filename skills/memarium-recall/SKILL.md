@@ -8,7 +8,7 @@ description: |
 
 You (in-session Claude) just landed in a project repo. The user has been
 working in this repo (and others) for weeks/months, and the memarium plugin
-has captured every Claude Code + Copilot session into `~/.memarium/session-repo/`.
+has captured every Claude Code + Copilot + supported Codex session into `~/.memarium/session-repo/`.
 The `/memarium` digest distilled those sessions into **typed memory** —
 `episodic` (the arc / dead-ends / decisions of a past work thread), `semantic`
 (durable project facts), `procedural` (how-to playbooks + gotchas), `core`

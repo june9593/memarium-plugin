@@ -1,7 +1,7 @@
 // @sync-from: github.com/june9593/memarium → src/types.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
-export type Tool = "claude" | "copilot";
+export type Tool = "claude" | "copilot" | "codex";
 
 /** A single rich content block from the source jsonl. Mirrors the
  *  Anthropic API content block shape so renderers can produce markdown
@@ -9,7 +9,7 @@ export type Tool = "claude" | "copilot";
  *  (which earlier versions stripped).
  *
  *  Sources that don't expose tool data (e.g. Copilot Chat) emit only
- *  `text` and `thinking` blocks. Sources that do (Claude Code) emit
+ *  `text` and `thinking` blocks. Sources that do (Claude Code / Codex) emit
  *  the full set. */
 export type ContentBlock =
   | { type: "text"; text: string }
@@ -36,7 +36,7 @@ export interface SessionMessage {
 export interface NormalizedSession {
   tool: Tool;
   sessionId: string;        // source-native id (e.g. Claude uuid)
-  shortId: string;          // first 8 chars of sessionId
+  shortId: string;          // source-specific 8-char display id
   project: string;          // human-readable project slug (e.g. "code-demo")
   projectRaw: string;       // original path or workspace hash
   startedAt: string;        // ISO 8601 of first message

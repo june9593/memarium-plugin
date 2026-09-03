@@ -22,7 +22,8 @@ segmentation + writing — is yours, in this conversation, with full context.
 ## Inputs you assume
 
 - The plugin's `orchestrate` step (Pre-step + Step 0 below) scans the user's
-  local `~/.claude/projects/` + Copilot Chat jsonl, writes rendered `.md` into
+  local Claude Code + Copilot Chat + Codex Desktop/interactive CLI JSONL,
+  writes rendered `.md` into
   `~/.memarium/session-repo/raw_sessions/...`, and updates `.memarium/index.json`.
   **You don't need to check whether sync ran** — the plugin scans on every run.
 - If the user also installed the optional `memarium` npm CLI for cross-device
@@ -108,7 +109,7 @@ The payload shape:
 {
   "project": "github.com-acme-web",
   "newSessions": [
-    { "sessionId": "abc12345-6789-4abc-8def-0123456789ab", "shortId": "abc12345", "tool": "claude" | "copilot",
+    { "sessionId": "abc12345-6789-4abc-8def-0123456789ab", "shortId": "abc12345", "tool": "claude" | "copilot" | "codex",
       "endedAt": "2026-04-22T15:30:00Z",
       "mdPath": "raw_sessions/claude/github.com-acme-web/2026-04-22/...md",
       "preview": "first 300 chars of user's first real message", "insightScore": 0.62 }

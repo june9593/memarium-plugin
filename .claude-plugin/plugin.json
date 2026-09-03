@@ -1,11 +1,12 @@
 {
   "name": "memarium",
   "description": "Turn your Claude Code + VS Code Copilot Chat + Codex sessions into per-project typed memory — episodic / semantic / procedural / core memory, a personal entity wiki, and distilled Q&A — then auto-load the project primer at the start of every session so a new session already knows the project (architecture, setup, gotchas, rules). Standalone Claude Code plugin. Optional memarium npm CLI for cross-device sync.",
-  "version": "0.20.3",
+  "version": "0.21.0",
   "license": "MIT",
   "keywords": [
     "claude-code",
     "copilot-chat",
+    "codex",
     "session",
     "memory",
     "knowledge-base",

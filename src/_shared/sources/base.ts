@@ -1,10 +1,10 @@
 // @sync-from: github.com/june9593/memarium → src/sources/base.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
-import type { NormalizedSession } from "../types.js";
+import type { NormalizedSession, Tool } from "../types.js";
 
 export interface SourceAdapter {
-  name: "claude" | "copilot";
+  name: Tool;
   /** Scan the local filesystem and yield every session found. */
   discover(): AsyncIterable<DiscoveredSession>;
 }
