@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.21.4 — 2026-09-03
+
+### Mirror one-to-one canonical tool correlation
+
+Mirror the npm fixes for one-response/one-event consumption, MCP namespace
+normalization, recursively stable input signatures, and argv-boundary-safe
+correlation. The Windows-safe adapter test and rebuilt bundle are included.
+
 ## 0.21.3 — 2026-09-03
 
 ### Mirror Codex collision/correlation hardening

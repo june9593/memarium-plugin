@@ -18993,13 +18993,17 @@ function extendToolSpan(spans, key, index, signature) {
   }
 }
 function eventToolsOutsideResponseSpans(eventTools, spans) {
+  const unmatchedSpans = [...spans.values()];
   const coveredEventIds = /* @__PURE__ */ new Set();
   for (const event of eventTools) {
     if (!event.id || !event.toolSignature) continue;
-    const covered = [...spans.values()].some(
+    const match = unmatchedSpans.findIndex(
       (span) => span.signature === event.toolSignature && event.index >= span.start - 1 && event.index <= span.end + 1
     );
-    if (covered) coveredEventIds.add(event.id);
+    if (match >= 0) {
+      coveredEventIds.add(event.id);
+      unmatchedSpans.splice(match, 1);
+    }
   }
   return eventTools.filter((event) => !event.id || !coveredEventIds.has(event.id));
 }
@@ -19030,7 +19034,7 @@ function reasoningMessage(record, reasoning) {
 function responseToolCall(record, subtype) {
   const payload = record.payload;
   const id = stringValue(payload.call_id) || stringValue(payload.id) || void 0;
-  let name = stringValue(payload.name);
+  let name = responseToolName(payload);
   let input;
   if (subtype === "function_call") input = parseMaybeJson(payload.arguments);
   else if (subtype === "custom_tool_call") {
@@ -19144,7 +19148,8 @@ function extractText(value) {
   return texts.join("\n");
 }
 function toolSignature(name, input) {
-  const family = ["exec", "exec_command", "local_shell"].includes(name) ? "shell" : name;
+  const canonicalName = canonicalToolName(name);
+  const family = ["exec", "exec_command", "local_shell"].includes(canonicalName) ? "shell" : canonicalName;
   if (family === "shell") {
     const command = toolCommandText(input);
     if (command) return `shell:${normalizeText(command)}`;
@@ -19172,14 +19177,41 @@ function commandTextForSignature(value) {
     );
     if (commandFlag >= 0 && parts[commandFlag + 1]) return parts[commandFlag + 1];
   }
-  return parts.join(" ");
+  return parts.map(formatSignatureArg).join(" ");
+}
+function formatSignatureArg(value) {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  return JSON.stringify(value);
+}
+function responseToolName(payload) {
+  const name = stringValue(payload.name);
+  const embedded = canonicalToolName(name);
+  if (embedded !== name) return embedded;
+  const namespace = canonicalToolName(stringValue(payload.namespace));
+  if (!namespace || name.startsWith(namespace + ".")) return name;
+  return name ? `${namespace}.${name}` : namespace;
+}
+function canonicalToolName(name) {
+  const parts = name.split("__");
+  if (parts[0] === "mcp" && parts.length >= 3) {
+    return `${parts[1]}.${parts.slice(2).join("__")}`;
+  }
+  if (parts[0] === "mcp" && parts.length === 2) return parts[1];
+  return name;
 }
 function stableJson(value) {
   try {
-    return JSON.stringify(value);
+    return JSON.stringify(sortJsonValue(value)) ?? String(value);
   } catch {
     return String(value);
   }
+}
+function sortJsonValue(value) {
+  if (Array.isArray(value)) return value.map(sortJsonValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).sort(([a], [b2]) => a.localeCompare(b2)).map(([key, child]) => [key, sortJsonValue(child)])
+  );
 }
 function flattenToolOutput(value) {
   if (typeof value === "string") return value;
