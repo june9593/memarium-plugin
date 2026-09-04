@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.21.6 — 2026-09-04
+
+### Mirror Codex image-generation trace support
+
+Mirror the canonical image-generation `tool_use`/`tool_result` projection,
+fixture, tests, and rebuilt production bundle.
+
 ## 0.21.5 — 2026-09-04
 
 ### Mirror portable path and shell-result safeguards

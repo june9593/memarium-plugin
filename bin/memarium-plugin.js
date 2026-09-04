@@ -18879,6 +18879,17 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
       } else if (subtype === "reasoning") {
         const reasoning = reasoningText(record.payload);
         if (reasoning) responseReasoning.push(reasoningMessage(record, reasoning));
+      } else if (subtype === "image_generation_call") {
+        const projected = responseImageGeneration(record);
+        const callKey = projected[0].id ?? `${subtype}:${record.index}`;
+        if (!responseToolKeys.has(callKey)) {
+          responseToolKeys.add(callKey);
+          responseTools.push(projected[0]);
+        }
+        if (projected[1] && !responseOutputKeys.has(callKey)) {
+          responseOutputKeys.add(callKey);
+          responseTools.push(projected[1]);
+        }
       } else if (RESPONSE_TOOL_CALLS.has(subtype)) {
         const projected = responseToolCall(record, subtype);
         const key = projected.id ?? `${subtype}:${record.index}`;
@@ -19063,6 +19074,41 @@ function reasoningMessage(record, reasoning) {
     timestamp: record.timestamp,
     contentBlocks: [{ type: "thinking", thinking: reasoning }]
   };
+}
+function responseImageGeneration(record) {
+  const payload = record.payload;
+  const id = stringValue(payload.call_id) || stringValue(payload.id) || `codex-image-${record.index}`;
+  const prompt = stringValue(payload.revised_prompt);
+  const messages = [{
+    index: record.index,
+    order: 0,
+    id,
+    role: "assistant",
+    text: "",
+    timestamp: record.timestamp,
+    contentBlocks: [{
+      type: "tool_use",
+      name: "image_generation",
+      input: prompt ? { prompt } : {},
+      id
+    }]
+  }];
+  if (payload.result !== void 0 && payload.result !== null) {
+    messages.push({
+      index: record.index,
+      order: 1,
+      id,
+      role: "tool",
+      text: "",
+      timestamp: record.timestamp,
+      contentBlocks: [{
+        type: "tool_result",
+        content: flattenToolOutput(payload.result),
+        toolUseId: id
+      }]
+    });
+  }
+  return messages;
 }
 function responseToolCall(record, subtype) {
   const payload = record.payload;
