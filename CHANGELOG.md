@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.21.7 — 2026-09-04
+
+### Mirror hidden-context filtering and index-path repair
+
+Mirror metadata-aware Codex user-context filtering, legacy wrapper fallbacks,
+MCP failure-result preservation, and loaded-index backslash normalization. Add
+shared migration coverage and rebuild the bundle.
+
 ## 0.21.6 — 2026-09-04
 
 ### Mirror Codex image-generation trace support
