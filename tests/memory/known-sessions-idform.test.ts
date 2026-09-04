@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { isKnownSession, isStaleProvenance, SESSION_ID_PREFIX_MIN } from "../../src/memory/known-sessions.js";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { isKnownSession, isStaleProvenance, loadKnownSessions, SESSION_ID_PREFIX_MIN } from "../../src/memory/known-sessions.js";
 
 // THE FIXTURES IN THIS FILE DELIBERATELY MIX ID FORMS ACROSS THE TWO SIDES.
 //
@@ -91,5 +94,44 @@ describe("isStaleProvenance", () => {
 
   it("stale when every sourceSession is below the prefix floor and absent", () => {
     expect(isStaleProvenance(["s1", "s2"], new Set([FULL_A]))).toBe(true);
+  });
+});
+
+
+describe("loadKnownSessions: source-tool allowlist", () => {
+  it("trusts a well-formed mixed Claude, Copilot, and Codex spool index", () => {
+    const repo = mkdtempSync(join(tmpdir(), "memarium-known-tools-"));
+    try {
+      mkdirSync(join(repo, ".memarium"), { recursive: true });
+      writeFileSync(join(repo, ".memarium/index.json"), JSON.stringify({
+        version: 1,
+        entries: {
+          "claude:claude-full-id": { tool: "claude", sessionId: "claude-full-id" },
+          "copilot:copilot-full-id": { tool: "copilot", sessionId: "copilot-full-id" },
+          "codex:codex-full-id": { tool: "codex", sessionId: "codex-full-id" },
+        },
+      }));
+      expect(loadKnownSessions(repo)).toEqual(new Set([
+        "claude-full-id",
+        "copilot-full-id",
+        "codex-full-id",
+      ]));
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("still rejects an unknown tool", () => {
+    const repo = mkdtempSync(join(tmpdir(), "memarium-unknown-tool-"));
+    try {
+      mkdirSync(join(repo, ".memarium"), { recursive: true });
+      writeFileSync(join(repo, ".memarium/index.json"), JSON.stringify({
+        version: 1,
+        entries: { "other:x": { tool: "other", sessionId: "x" } },
+      }));
+      expect(loadKnownSessions(repo)).toBeUndefined();
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

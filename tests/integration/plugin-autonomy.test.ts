@@ -97,6 +97,40 @@ describe("plugin autonomy (no npm CLI, no ~/.memarium/ at start)", () => {
     expect(sessionIds).toEqual(["ses-1", "ses-2"]);
   });
 
+  it("scans and prepares Codex JSONL with only the plugin installed", async () => {
+    const sessionId = "019f0000-aaaa-7000-8000-0000ddddeeee";
+    const codexDir = join(fakeHome, ".codex/sessions/2026/05/13");
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(join(codexDir, `rollout-${sessionId}.jsonl`), [
+      JSON.stringify({ timestamp: "2026-05-13T12:00:00Z", type: "session_meta", payload: {
+        id: sessionId, timestamp: "2026-05-13T12:00:00Z", cwd: "/Users/test/code/src",
+        originator: "codex-tui", source: "cli", thread_source: "user",
+      } }),
+      JSON.stringify({ timestamp: "2026-05-13T12:00:01Z", type: "event_msg", payload: {
+        type: "user_message", message: "add retry handling to the request path",
+      } }),
+      JSON.stringify({ timestamp: "2026-05-13T12:00:02Z", type: "event_msg", payload: {
+        type: "agent_message", message: "I added retry handling and verified the tests.", phase: "final_answer",
+      } }),
+    ].join("\n") + "\n");
+
+    await orchestrateCmd({ mode: "project", cwd: "/Users/test/code/src" });
+    const orchestrateOut = JSON.parse(stdoutChunks.join(""));
+    expect(orchestrateOut.scan.imported).toBe(1);
+    const index = JSON.parse(readFileSync(
+      join(fakeHome, ".memarium/session-repo/.memarium/index.json"),
+      "utf8",
+    ));
+    expect(index.entries[`codex:${sessionId}`].tool).toBe("codex");
+    expect(existsSync(join(fakeHome, ".memarium/session-repo/raw_sessions/codex"))).toBe(true);
+
+    stdoutChunks = [];
+    await prepareCmd({ cwd: "/Users/test/code/src" });
+    const prepared = JSON.parse(stdoutChunks.join(""));
+    expect(prepared.newSessions).toHaveLength(1);
+    expect(prepared.newSessions[0]).toMatchObject({ sessionId, tool: "codex" });
+  });
+
   it("scans VS Code Copilot Chat sessions too (regression guard for 0.1.4 bug)", async () => {
     // Plant 1 Claude Code session AND 1 Copilot Chat session.
     // Copilot's defaultStorageRoot() on macOS is:

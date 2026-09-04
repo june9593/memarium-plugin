@@ -1,5 +1,5 @@
-// Plugin scan: walk ~/.claude/projects/, render each session into the spool
-// as .md + .raw.json (matching npm sync's writer output byte-for-byte), and
+// Plugin scan: walk supported local session stores, render each session into
+// the spool as .md (matching npm sync's writer output byte-for-byte), and
 // upsert per-session entries into ~/.memarium/session-repo/.memarium/index.json.
 //
 // This is the plugin equivalent of npm sync.ts's main loop (sync.ts:80-125),
@@ -11,12 +11,15 @@
 // whose source jsonl mtime + sha256 are unchanged. First call on a fresh spool
 // imports everything; subsequent calls only import what's new or changed.
 
+import { existsSync, rmSync } from "node:fs";
+import { resolve, sep } from "node:path";
 import { ClaudeCodeAdapter } from "../_shared/sources/claude-code.js";
 import { VSCodeCopilotAdapter } from "../_shared/sources/vscode-copilot.js";
+import { CodexAdapter } from "../_shared/sources/codex.js";
 import type { SourceAdapter } from "../_shared/sources/base.js";
 import { isRealProjectPath } from "../_shared/digest/project-filter.js";
-import { loadIndex, saveIndex, upsertEntry, hasUnchanged } from "../_shared/index-store.js";
-import type { IndexEntry } from "../_shared/types.js";
+import { loadIndex, saveIndex, upsertEntry, hasUnchanged, keyFor } from "../_shared/index-store.js";
+import type { IndexEntry, IndexFile } from "../_shared/types.js";
 import { ensureSpoolDir } from "./ensure-dir.js";
 import { writeSession } from "./writer.js";
 
@@ -35,14 +38,15 @@ export interface ScanResult {
 export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
   const { spoolRoot } = ensureSpoolDir();
 
-  // Both adapters: Claude Code (~/.claude/projects/) AND VS Code Copilot
-  // Chat (its workspaceStorage). npm sync.ts:75-78 runs both in sequence;
-  // plugin must mirror that or we silently miss every Copilot session.
+  // Keep the autonomous plugin aligned with npm sync: Claude Code,
+  // VS Code Copilot Chat, and Codex Desktop / interactive Codex CLI.
   const adapters: SourceAdapter[] = [
     new ClaudeCodeAdapter(),
     new VSCodeCopilotAdapter(),
+    new CodexAdapter(),
   ];
   const idx = loadIndex(spoolRoot);
+  const pendingRemovals: { indexKey: string; previousPath: string }[] = [];
 
   const result: ScanResult = {
     imported: 0,
@@ -90,7 +94,12 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
       // content blocks. includeReasoning=true matches npm sync's default;
       // we don't read config here (plugin must work without
       // ~/.memarium/config.json).
+      const indexKey = keyFor(session.tool, session.sessionId);
+      const previousPath = idx.entries[indexKey]?.relativePath;
       const written = writeSession(spoolRoot, session, { includeReasoning: true });
+      if (previousPath && previousPath !== written.md) {
+        pendingRemovals.push({ indexKey, previousPath });
+      }
 
       const entry: IndexEntry = {
         sessionId: session.sessionId,
@@ -116,6 +125,25 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
   // `memarium sync` (if user installs npm CLI later) sees plugin-written
   // entries as already-known and doesn't re-render them.
   saveIndex(spoolRoot, idx);
+  for (const { indexKey, previousPath } of pendingRemovals) {
+    removeSupersededRenderedSession(spoolRoot, idx, indexKey, previousPath);
+  }
 
   return result;
+}
+
+function removeSupersededRenderedSession(
+  spoolRoot: string,
+  idx: IndexFile,
+  currentKey: string,
+  previousPath: string,
+): void {
+  const rawRoot = resolve(spoolRoot, "raw_sessions");
+  const previousAbs = resolve(spoolRoot, previousPath);
+  if (!previousAbs.startsWith(rawRoot + sep)) return;
+  const shared = Object.entries(idx.entries).some(([key, entry]) =>
+    key !== currentKey && entry.relativePath === previousPath,
+  );
+  if (shared || !existsSync(previousAbs)) return;
+  try { rmSync(previousAbs); } catch { /* best-effort orphan cleanup */ }
 }

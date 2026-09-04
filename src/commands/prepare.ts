@@ -8,7 +8,7 @@ import { extractSessionSignals, isMemariumMetaSession } from "../_shared/digest/
 import { isRealProjectPath } from "../_shared/digest/project-filter.js";
 import { projectSlugFromPath } from "../_shared/slug.js";
 import { resolveProjectFromCwdWithIndex } from "../_shared/project-resolve.js";
-import type { IndexEntry } from "../_shared/types.js";
+import type { IndexEntry, Tool } from "../_shared/types.js";
 
 export interface PreparePayload {
   /** Project filter applied (or null for all). */
@@ -39,7 +39,7 @@ export interface PreparePayload {
 export interface PreparedSession {
   sessionId: string;
   shortId: string;
-  tool: "claude" | "copilot";
+  tool: Tool;
   project: string;
   startedAt: string;
   endedAt: string;

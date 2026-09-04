@@ -9,8 +9,8 @@ import Base from "../../layouts/Base.astro";
   <section class="hero container">
     <h1>不要再让 AI 重新发明你已经摸索过的轮子。</h1>
     <p class="lede">
-      <strong>memarium plugin</strong> 把你过去的 Claude Code 与
-      VS Code Copilot Chat 会话蒸馏成一套 agent 能直接 recall 的
+      <strong>memarium plugin</strong> 把你过去的 Claude Code、VS Code Copilot Chat 与
+      Codex Desktop / 交互式 CLI 会话蒸馏成一套 agent 能直接 recall 的
       <strong>分层记忆</strong> — 每个项目背后的 episode、决定、
       死胡同与长期成立的事实。跑一次 <code>/memarium</code> 整理素材，
       做任何不平凡的任务前跑一次 <code>/memarium-recall</code> 把
@@ -36,8 +36,8 @@ import Base from "../../layouts/Base.astro";
       代码。
     </p>
     <p class="lede" style="margin-top: var(--space-5);">
-      你的 Claude Code 会话历史就在 <code>~/.claude/projects/</code>。
-      memarium 读它、把它蒸馏成分层记忆，让未来的会话可以站在这些
+      你的 Claude Code 与 Codex 会话历史已经保存在本地。
+      memarium 读取它们、把它蒸馏成分层记忆，让未来的会话可以站在这些
       素材之上。
     </p>
   </section>
@@ -48,7 +48,7 @@ import Base from "../../layouts/Base.astro";
       <div class="feature-card">
         <h3><code>/memarium</code></h3>
         <p>
-          扫描 <code>~/.claude/projects/</code> 与 Copilot Chat
+          扫描 Claude Code、Copilot Chat 与 Codex Desktop / 交互式 CLI
           历史,把每个会话蒸馏成<strong>分层记忆</strong>:
         </p>
         <ul style="color: var(--olive-gray); padding-left: var(--space-6);">

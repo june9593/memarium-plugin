@@ -8,8 +8,8 @@ import Base from "../layouts/Base.astro";
   <section class="hero container">
     <h1>Don't re-derive what past-you already figured out.</h1>
     <p class="lede">
-      <strong>memarium plugin</strong> distills your past Claude Code and
-      VS Code Copilot Chat sessions into a <strong>typed memory</strong> your
+      <strong>memarium plugin</strong> distills your past Claude Code, VS Code Copilot Chat,
+      and Codex Desktop / interactive CLI sessions into a <strong>typed memory</strong> your
       agent can recall — the episodes, decisions, dead ends, and durable facts
       behind each project. Run <code>/memarium</code> to digest; run
       <code>/memarium-recall</code> before any non-trivial task to surface
@@ -36,9 +36,9 @@ import Base from "../layouts/Base.astro";
       explained twice.
     </p>
     <p class="lede" style="margin-top: var(--space-5);">
-      Your Claude Code session-history is right there in
-      <code>~/.claude/projects/</code>. memarium reads it, distills it into
-      typed memory, and lets future sessions stand on it.
+      Your Claude Code and Codex session histories are already local.
+      memarium reads and distills them into
+      typed memory, and lets future sessions stand on that work.
     </p>
   </section>
 
@@ -48,7 +48,7 @@ import Base from "../layouts/Base.astro";
       <div class="feature-card">
         <h3><code>/memarium</code></h3>
         <p>
-          Walks <code>~/.claude/projects/</code> and your Copilot Chat
+          Walks Claude Code, Copilot Chat, and Codex Desktop / interactive CLI
           history, then distills each session into <strong>typed memory</strong>:
         </p>
         <ul style="color: var(--olive-gray); padding-left: var(--space-6);">

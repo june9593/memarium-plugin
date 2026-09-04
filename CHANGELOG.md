@@ -1,5 +1,82 @@
 # Changelog
 
+## 0.21.7 — 2026-09-04
+
+### Mirror hidden-context filtering and index-path repair
+
+Mirror metadata-aware Codex user-context filtering, legacy wrapper fallbacks,
+MCP failure-result preservation, and loaded-index backslash normalization. Add
+shared migration coverage and rebuild the bundle.
+
+## 0.21.6 — 2026-09-04
+
+### Mirror Codex image-generation trace support
+
+Mirror the canonical image-generation `tool_use`/`tool_result` projection,
+fixture, tests, and rebuilt production bundle.
+
+## 0.21.5 — 2026-09-04
+
+### Mirror portable path and shell-result safeguards
+
+Mirror slash-normalized persisted session paths, local-shell result preservation,
+whitespace-exact command signatures, and post-index-save stale-render cleanup.
+Add failure-order and plugin writer regressions, then rebuild the bundle.
+
+## 0.21.4 — 2026-09-03
+
+### Mirror one-to-one canonical tool correlation
+
+Mirror the npm fixes for one-response/one-event consumption, MCP namespace
+normalization, recursively stable input signatures, and argv-boundary-safe
+correlation. The Windows-safe adapter test and rebuilt bundle are included.
+
+## 0.21.3 — 2026-09-03
+
+### Mirror Codex collision/correlation hardening
+
+Mirror the npm changes that use full Codex UUIDs for collision-proof rendered
+paths, correlate response/event tools by normalized identity and input rather
+than proximity alone, and preserve direct local-shell argv boundaries. Add
+plugin-side storage and digest regressions and rebuild the committed bundle.
+
+## 0.21.2 — 2026-09-03
+
+### Mirror the Codex review hardening
+
+Mirror the npm parser and digest fixes for local-shell command arrays, raw
+custom apply-patch input, rename destinations, multi-paragraph AGENTS wrappers,
+and mixed response/event tool lanes. Keep `ResponseItem::AgentMessage` excluded
+as inter-agent traffic, add focused shared digest coverage, fix the English page
+pronoun agreement, and rebuild the committed plugin bundle.
+
+## 0.21.1 — 2026-09-03
+
+### Mirror the Windows non-git project-path fix
+
+The shared `projectSlugFromPath()` mirror now splits both path separators and
+drops standalone drive-letter segments, matching the npm fix for #37. This
+keeps autonomous plugin scans from deriving a raw Windows drive path as a
+project folder. The bundled plugin and shared identity regression test are
+updated in lockstep.
+
+## 0.21.0 — 2026-09-03
+
+### Add Codex Desktop and interactive Codex CLI as a third session source
+
+- The autonomous plugin now scans active and archived `~/.codex` rollout
+  JSONL, so `/memarium` can digest Codex sessions without the optional npm CLI.
+  `codex exec` and explicit subagent/guardian child threads remain excluded.
+- The shared adapter reconciles display events with response items, removes
+  injected app/environment context, preserves plaintext reasoning, and maps
+  legacy/current/custom tool calls and structured results into the existing
+  single-Markdown spool format.
+- Codex uses full thread UUIDs for identity and UUIDv7-safe tail short IDs for
+  display; append-only title changes trigger a guarded re-render cleanup.
+- `prepare` and provenance validation now accept `tool: codex`; source typing,
+  manifest/TOC extraction, sanitized fixtures, and the committed plugin bundle
+  remain aligned with the npm implementation.
+
 ## 0.20.3 — 2026-08-06
 
 ### Fix: the slash commands told agents to invoke skills by the wrong name

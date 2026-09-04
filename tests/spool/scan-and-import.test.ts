@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readFileSync, readdirSync, cpSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { scanAndImport } from "../../src/spool/scan-and-import.js";
+
+const fixturesDir = join(fileURLToPath(new URL(".", import.meta.url)), "..", "fixtures");
 
 describe("scanAndImport", () => {
   let fakeHome: string;
@@ -95,6 +98,61 @@ describe("scanAndImport", () => {
     const spoolRoot = join(fakeHome, ".memarium/session-repo");
     const projectSlugs = readdirSync(join(spoolRoot, "raw_sessions/claude"));
     expect(projectSlugs).toEqual(["code-src"]);
+  });
+
+  it("imports Codex Desktop and interactive CLI sessions without npm", async () => {
+    cpSync(join(fixturesDir, "codex"), join(fakeHome, ".codex"), { recursive: true });
+
+    const result = await scanAndImport({ projectFilter: null });
+    expect(result.imported).toBe(4);
+    const indexPath = join(fakeHome, ".memarium/session-repo/.memarium/index.json");
+    const idx = JSON.parse(readFileSync(indexPath, "utf8"));
+    expect(Object.keys(idx.entries).every((key) => key.startsWith("codex:"))).toBe(true);
+    expect(existsSync(join(fakeHome, ".memarium/session-repo/raw_sessions/codex"))).toBe(true);
+
+    const second = await scanAndImport({ projectFilter: null });
+    expect(second.imported).toBe(0);
+    expect(second.skipped).toBe(4);
+  });
+
+  it.skipIf(process.platform === "win32")("keeps the indexed render when replacement index persistence fails", async () => {
+    const codexRoot = join(fakeHome, ".codex");
+    cpSync(join(fixturesDir, "codex"), codexRoot, { recursive: true });
+    await scanAndImport({ projectFilter: null });
+    const indexPath = join(fakeHome, ".memarium/session-repo/.memarium/index.json");
+    const id = "019f0000-1111-7000-8000-0000aaaabbbb";
+    const oldPath = JSON.parse(readFileSync(indexPath, "utf8")).entries[`codex:${id}`].relativePath;
+    const titleIndex = join(codexRoot, "session_index.jsonl");
+    writeFileSync(titleIndex, readFileSync(titleIndex, "utf8") + JSON.stringify({
+      id, thread_name: "Rename before failed save", updated_at: "2026-09-02T12:00:00Z",
+    }) + "\n");
+    chmodSync(indexPath, 0o444);
+    try {
+      await expect(scanAndImport({ projectFilter: null })).rejects.toThrow();
+      expect(existsSync(join(fakeHome, ".memarium/session-repo", oldPath))).toBe(true);
+    } finally {
+      chmodSync(indexPath, 0o644);
+    }
+  });
+
+  it("removes the superseded Codex render after a title-only rename", async () => {
+    const codexRoot = join(fakeHome, ".codex");
+    cpSync(join(fixturesDir, "codex"), codexRoot, { recursive: true });
+    await scanAndImport({ projectFilter: null });
+    const indexPath = join(fakeHome, ".memarium/session-repo/.memarium/index.json");
+    const id = "019f0000-1111-7000-8000-0000aaaabbbb";
+    const before = JSON.parse(readFileSync(indexPath, "utf8")).entries[`codex:${id}`];
+    const titleIndex = join(codexRoot, "session_index.jsonl");
+    writeFileSync(titleIndex, readFileSync(titleIndex, "utf8") + JSON.stringify({
+      id, thread_name: "Renamed plugin thread", updated_at: "2026-09-01T11:00:00Z",
+    }) + "\n");
+
+    const result = await scanAndImport({ projectFilter: null });
+    const after = JSON.parse(readFileSync(indexPath, "utf8")).entries[`codex:${id}`];
+    expect(result.imported).toBe(1);
+    expect(after.relativePath).not.toBe(before.relativePath);
+    expect(existsSync(join(fakeHome, ".memarium/session-repo", before.relativePath))).toBe(false);
+    expect(existsSync(join(fakeHome, ".memarium/session-repo", after.relativePath))).toBe(true);
   });
 
   it("skips meta-project paths (.worktrees-, *-workspacestorage)", async () => {

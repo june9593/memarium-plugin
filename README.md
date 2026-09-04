@@ -19,8 +19,9 @@ flowchart LR
   subgraph Sources
     A[Claude Code sessions]
     B[VS Code Copilot Chat]
+    C[Codex Desktop + CLI]
   end
-  A & B -->|extract| SP[raw_sessions/*.md<br/>spool]
+  A & B & C -->|extract| SP[raw_sessions/*.md<br/>spool]
   SP -->|/memarium digest<br/>in-session agent| D{Distill}
   D --> M[typed memory<br/>4 types incl. episodic]
   D --> E[entity wiki]
@@ -48,7 +49,7 @@ flowchart TD
 
 ### What it is
 
-A Claude Code plugin that gives an AI coding agent **long-term memory it can trust**. Run `/memarium` to digest your sessions into a per-project typed memory store; a SessionStart hook then auto-loads a compact *primer* so every new session begins already knowing the project's rules, setup, facts, and gotchas — instead of re-deriving them every time.
+A Claude Code plugin that gives an AI coding agent **long-term memory it can trust**. It imports sessions from Claude Code, VS Code Copilot Chat, Codex Desktop, and interactive Codex CLI. Run `/memarium` to digest them into a per-project typed memory store; a SessionStart hook then auto-loads a compact *primer* so every new session begins already knowing the project's rules, setup, facts, and gotchas — instead of re-deriving them every time.
 
 Self-contained: no extra CLI required, no cloud service, your data stays local and human-readable.
 
@@ -96,7 +97,7 @@ memarium is deliberately grounded in published research and a clear set of trade
 /plugin install memarium
 ```
 
-Open any Claude Code session and run `/memarium` to digest your local sessions; a new session afterward auto-loads the project primer.
+Open any Claude Code session and run `/memarium` to digest your local Claude Code, Copilot Chat, and Codex sessions; a new session afterward auto-loads the project primer.
 
 ### Cross-device sync (optional)
 
@@ -111,7 +112,7 @@ It syncs `~/.memarium/session-repo/` (sessions **and** the `memory/` layer) to a
 
 ```sh
 memarium list-sessions --since 1d   # find the sessionId
-memarium resume <sessionId>         # copies jsonl into ~/.claude/projects/ + prints `claude --resume <id>`
+memarium resume <sessionId>         # starts fresh Claude Code with the rendered session as context
 ```
 
 > **Note:** the memory layer (`memory/` + its indexes) syncs only with CLI **≥ 0.8.6**. The plugin and CLI share the same spool path; install one, both, or neither. npm CLI: https://github.com/june9593/memarium
@@ -128,7 +129,7 @@ The plugin **does not** create or modify `.git/` or the npm CLI's config files �
 ### Limitations & roadmap
 
 - **Lexical-only retrieval (the known gap).** Recall ranks by keyword overlap + scope + recency + importance, so a *semantically* related but *lexically* different query can under-recall. The scorer is **presence-based term-overlap, not IDF-weighted** — rare and common tokens weigh equally (IDF was evaluated and deferred as net-neutral on the current corpus). Planned: an **optional local embedding index** used only for recall ranking (markdown stays the source of truth — never "vector-only"), validated against the v5 eval harness before adoption.
-- **Codex as a third session source** — adapter in progress.
+- **Codex scope.** Desktop and interactive CLI JSONL are imported; `codex exec` batch runs and internal subagent/guardian child threads are excluded by default.
 - **End-to-end answer-quality eval** (no-context vs recalled-context) — a documented follow-up to the v5 retrieval eval.
 
 ### Repo layout
@@ -149,7 +150,7 @@ PRs welcome. Open an issue first for anything beyond a typo — design changes a
 
 ### 这是什么
 
-一个 Claude Code 插件,给 AI 编程 agent 一套**可信赖的长期记忆**。跑 `/memarium` 把会话整理成按项目分组的、有类型的长期记忆;之后 SessionStart hook 会自动加载一份精简的 *primer*,让每个新会话一开始就知道这个项目的规则、配置、事实和坑 —— 而不是每次都重新摸索。
+一个 Claude Code 插件,给 AI 编程 agent 一套**可信赖的长期记忆**。它会导入 Claude Code、VS Code Copilot Chat、Codex Desktop 和交互式 Codex CLI 会话。跑 `/memarium` 把这些会话整理成按项目分组的、有类型的长期记忆;之后 SessionStart hook 会自动加载一份精简的 *primer*,让每个新会话一开始就知道这个项目的规则、配置、事实和坑 —— 而不是每次都重新摸索。
 
 独立运行:不需要额外 CLI、不需要云服务,数据全部留在本地、人类可读。
 
@@ -197,7 +198,7 @@ memarium 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 /plugin install memarium
 ```
 
-开任何 Claude Code 会话跑 `/memarium` 整理本机会话;之后新会话会自动加载项目 primer。
+开任何 Claude Code 会话跑 `/memarium` 整理本机的 Claude Code、Copilot Chat 与 Codex 会话;之后新会话会自动加载项目 primer。
 
 ### 跨设备同步(可选)
 
@@ -229,7 +230,7 @@ memarium resume <sessionId>
 ### 局限与路线图
 
 - **纯词法召回(已知缺口)。** 召回靠关键词重叠 + scope + recency + importance 排序,所以语义相关但词面不同的查询可能漏召回。打分是**基于出现的 term-overlap,不是 IDF 加权** —— 稀有词和泛词同权(IDF 评估过,在当前语料上净收益为零,已搁置)。计划:加一个**可选的本地 embedding 索引**,只用于召回排序(markdown 仍是唯一真相源,绝不"纯向量"),上线前用 v5 eval harness 实测验证。
-- **Codex 作为第三个会话源** —— adapter 进行中。
+- **Codex 范围。** 支持 Desktop 与交互式 CLI JSONL;默认排除 `codex exec` 批处理和内部 subagent/guardian 子线程。
 - **端到端答案质量评估**(无上下文 vs 召回上下文)—— v5 召回评估之后的后续项。
 
 ### 仓库布局

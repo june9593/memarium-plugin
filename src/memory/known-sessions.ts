@@ -6,7 +6,7 @@ import type { Tool } from "../_shared/types.js";
 // so it can test the untyped tool field off a raw index entry. Keep in sync with
 // `Tool`: an index entry whose tool isn't one of these is not something memarium
 // writes, so a nonempty index containing one is untrusted.
-const KNOWN_TOOLS: ReadonlySet<string> = new Set<Tool>(["claude", "copilot"]);
+const KNOWN_TOOLS: ReadonlySet<string> = new Set<Tool>(["claude", "copilot", "codex"]);
 
 /** Full sessionIds the spool index (`.memarium/index.json`) positively vouches
  *  for — the input to every "is this memory's evidence still present?" check
