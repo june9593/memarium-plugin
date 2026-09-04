@@ -46,6 +46,7 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
     new CodexAdapter(),
   ];
   const idx = loadIndex(spoolRoot);
+  const pendingRemovals: { indexKey: string; previousPath: string }[] = [];
 
   const result: ScanResult = {
     imported: 0,
@@ -97,7 +98,7 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
       const previousPath = idx.entries[indexKey]?.relativePath;
       const written = writeSession(spoolRoot, session, { includeReasoning: true });
       if (previousPath && previousPath !== written.md) {
-        removeSupersededRenderedSession(spoolRoot, idx, indexKey, previousPath);
+        pendingRemovals.push({ indexKey, previousPath });
       }
 
       const entry: IndexEntry = {
@@ -124,6 +125,9 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
   // `memarium sync` (if user installs npm CLI later) sees plugin-written
   // entries as already-known and doesn't re-render them.
   saveIndex(spoolRoot, idx);
+  for (const { indexKey, previousPath } of pendingRemovals) {
+    removeSupersededRenderedSession(spoolRoot, idx, indexKey, previousPath);
+  }
 
   return result;
 }

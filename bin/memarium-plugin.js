@@ -18886,7 +18886,10 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
           responseToolKeys.add(key);
           responseTools.push(projected);
         }
-        extendToolSpan(responseToolSpans, key, record.index, projected.toolSignature);
+        extendToolSpan(responseToolSpans, key, record.index, {
+          signature: projected.toolSignature,
+          toolUseId: projected.id
+        });
       } else if (RESPONSE_TOOL_OUTPUTS.has(subtype)) {
         const projected = responseToolOutput(record);
         const key = projected.id ?? `${subtype}:${record.index}`;
@@ -18894,7 +18897,11 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
           responseOutputKeys.add(key);
           responseTools.push(projected);
         }
-        extendToolSpan(responseToolSpans, key, record.index);
+        extendToolSpan(responseToolSpans, key, record.index, {
+          hasOutput: projected.contentBlocks.some(
+            (block) => block.type === "tool_result" && block.content.length > 0
+          )
+        });
       }
       continue;
     }
@@ -18982,30 +18989,56 @@ function mergeReasoningLanes(response, display) {
   }
   return out;
 }
-function extendToolSpan(spans, key, index, signature) {
+function extendToolSpan(spans, key, index, update) {
   const span = spans.get(key);
   if (span) {
     span.start = Math.min(span.start, index);
     span.end = Math.max(span.end, index);
-    if (signature) span.signature = signature;
+    if (update.signature) span.signature = update.signature;
+    if (update.toolUseId) span.toolUseId = update.toolUseId;
+    if (update.hasOutput) span.hasOutput = true;
   } else {
-    spans.set(key, { start: index, end: index, ...signature ? { signature } : {} });
+    spans.set(key, {
+      start: index,
+      end: index,
+      hasOutput: update.hasOutput ?? false,
+      ...update.signature ? { signature: update.signature } : {},
+      ...update.toolUseId ? { toolUseId: update.toolUseId } : {}
+    });
   }
 }
 function eventToolsOutsideResponseSpans(eventTools, spans) {
   const unmatchedSpans = [...spans.values()];
-  const coveredEventIds = /* @__PURE__ */ new Set();
+  const matchedEvents = /* @__PURE__ */ new Map();
   for (const event of eventTools) {
     if (!event.id || !event.toolSignature) continue;
     const match = unmatchedSpans.findIndex(
       (span) => span.signature === event.toolSignature && event.index >= span.start - 1 && event.index <= span.end + 1
     );
     if (match >= 0) {
-      coveredEventIds.add(event.id);
+      matchedEvents.set(event.id, unmatchedSpans[match]);
       unmatchedSpans.splice(match, 1);
     }
   }
-  return eventTools.filter((event) => !event.id || !coveredEventIds.has(event.id));
+  const out = [];
+  for (const event of eventTools) {
+    const span = event.id ? matchedEvents.get(event.id) : void 0;
+    if (!span) {
+      out.push(event);
+      continue;
+    }
+    const result = event.contentBlocks.find((block) => block.type === "tool_result");
+    if (!result || span.hasOutput) continue;
+    out.push({
+      ...event,
+      id: span.toolUseId ?? event.id,
+      contentBlocks: [{
+        ...result,
+        ...span.toolUseId ? { toolUseId: span.toolUseId } : {}
+      }]
+    });
+  }
+  return out;
 }
 function textMessage(record, role, text) {
   const id = stringValue(record.payload.id) || void 0;
@@ -19152,7 +19185,7 @@ function toolSignature(name, input) {
   const family = ["exec", "exec_command", "local_shell"].includes(canonicalName) ? "shell" : canonicalName;
   if (family === "shell") {
     const command = toolCommandText(input);
-    if (command) return `shell:${normalizeText(command)}`;
+    if (command) return `shell:${command.trim()}`;
   }
   if (family === "apply_patch") {
     const patch = objectValue(input).patch;
@@ -19662,16 +19695,17 @@ import { mkdirSync as mkdirSync15, writeFileSync as writeFileSync15 } from "node
 import { join as join33 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
-  const dirRel = join33("raw_sessions", s.tool, s.project, date);
-  const absDir = join33(repoRoot, dirRel);
+  const dirRel = ["raw_sessions", s.tool, s.project, date].join("/");
+  const absDir = join33(repoRoot, "raw_sessions", s.tool, s.project, date);
   mkdirSync15(absDir, { recursive: true });
   const storageId = s.tool === "codex" ? safeStorageId(s.sessionId) : s.shortId;
   const base = `${s.nameSlug}__${storageId}`;
-  const mdRel = join33(dirRel, `${base}.md`);
+  const fileName = `${base}.md`;
+  const mdRel = `${dirRel}/${fileName}`;
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults = opts.fullToolResults ?? process.env.MEMARIUM_FULL_TOOL_RESULTS === "1";
   writeFileSync15(
-    join33(repoRoot, mdRel),
+    join33(absDir, fileName),
     renderMarkdown(s, { includeReasoning, fullToolResults })
   );
   return { md: mdRel };
@@ -19875,6 +19909,7 @@ async function scanAndImport(opts) {
     new CodexAdapter()
   ];
   const idx = loadIndex(spoolRoot);
+  const pendingRemovals = [];
   const result = {
     imported: 0,
     skipped: 0,
@@ -19909,7 +19944,7 @@ async function scanAndImport(opts) {
       const previousPath = idx.entries[indexKey]?.relativePath;
       const written = writeSession(spoolRoot, session, { includeReasoning: true });
       if (previousPath && previousPath !== written.md) {
-        removeSupersededRenderedSession(spoolRoot, idx, indexKey, previousPath);
+        pendingRemovals.push({ indexKey, previousPath });
       }
       const entry = {
         sessionId: session.sessionId,
@@ -19931,6 +19966,9 @@ async function scanAndImport(opts) {
     }
   }
   saveIndex(spoolRoot, idx);
+  for (const { indexKey, previousPath } of pendingRemovals) {
+    removeSupersededRenderedSession(spoolRoot, idx, indexKey, previousPath);
+  }
   return result;
 }
 function removeSupersededRenderedSession(spoolRoot, idx, currentKey, previousPath) {

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.21.5 — 2026-09-04
+
+### Mirror portable path and shell-result safeguards
+
+Mirror slash-normalized persisted session paths, local-shell result preservation,
+whitespace-exact command signatures, and post-index-save stale-render cleanup.
+Add failure-order and plugin writer regressions, then rebuild the bundle.
+
 ## 0.21.4 — 2026-09-03
 
 ### Mirror one-to-one canonical tool correlation

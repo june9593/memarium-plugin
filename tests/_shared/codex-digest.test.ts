@@ -56,6 +56,8 @@ describe("Codex digest metadata", () => {
       const firstPath = writeSession(repo, first).md;
       const secondPath = writeSession(repo, second).md;
       expect(firstPath).not.toBe(secondPath);
+      expect(firstPath).not.toContain("\\");
+      expect(secondPath).not.toContain("\\");
       expect(existsSync(join(repo, firstPath))).toBe(true);
       expect(existsSync(join(repo, secondPath))).toBe(true);
     } finally {

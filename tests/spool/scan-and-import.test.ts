@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readFileSync, readdirSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readFileSync, readdirSync, cpSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -113,6 +113,26 @@ describe("scanAndImport", () => {
     const second = await scanAndImport({ projectFilter: null });
     expect(second.imported).toBe(0);
     expect(second.skipped).toBe(4);
+  });
+
+  it.skipIf(process.platform === "win32")("keeps the indexed render when replacement index persistence fails", async () => {
+    const codexRoot = join(fakeHome, ".codex");
+    cpSync(join(fixturesDir, "codex"), codexRoot, { recursive: true });
+    await scanAndImport({ projectFilter: null });
+    const indexPath = join(fakeHome, ".memarium/session-repo/.memarium/index.json");
+    const id = "019f0000-1111-7000-8000-0000aaaabbbb";
+    const oldPath = JSON.parse(readFileSync(indexPath, "utf8")).entries[`codex:${id}`].relativePath;
+    const titleIndex = join(codexRoot, "session_index.jsonl");
+    writeFileSync(titleIndex, readFileSync(titleIndex, "utf8") + JSON.stringify({
+      id, thread_name: "Rename before failed save", updated_at: "2026-09-02T12:00:00Z",
+    }) + "\n");
+    chmodSync(indexPath, 0o444);
+    try {
+      await expect(scanAndImport({ projectFilter: null })).rejects.toThrow();
+      expect(existsSync(join(fakeHome, ".memarium/session-repo", oldPath))).toBe(true);
+    } finally {
+      chmodSync(indexPath, 0o644);
+    }
   });
 
   it("removes the superseded Codex render after a title-only rename", async () => {
