@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.22.1 — 2026-09-05
+
+### Preserve final renders across duplicate workspace discoveries
+
+Deduplicate queued old-path removals and check all final index references before
+deleting a render, including references from the same session. This prevents an
+A → B → A discovery order from deleting the file still indexed at A. The
+regression exercises repeated autonomous scans with three workspace copies of
+one session; the production bundle is rebuilt.
+
+The corresponding npm patch separately repairs staging/retry of migrated
+filenames. No source session data or index schema changes are required.
+
 ## 0.22.0 — 2026-09-05
 
 ### Prefer Copilot's persisted session title

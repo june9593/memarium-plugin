@@ -19994,7 +19994,7 @@ async function scanAndImport(opts) {
     new CodexAdapter()
   ];
   const idx = loadIndex(spoolRoot);
-  const pendingRemovals = [];
+  const pendingRemovals = /* @__PURE__ */ new Set();
   const result = {
     imported: 0,
     skipped: 0,
@@ -20029,7 +20029,7 @@ async function scanAndImport(opts) {
       const previousPath = idx.entries[indexKey]?.relativePath;
       const written = writeSession(spoolRoot, session, { includeReasoning: true });
       if (previousPath && previousPath !== written.md) {
-        pendingRemovals.push({ indexKey, previousPath });
+        pendingRemovals.add(previousPath);
       }
       const entry = {
         sessionId: session.sessionId,
@@ -20051,19 +20051,19 @@ async function scanAndImport(opts) {
     }
   }
   saveIndex(spoolRoot, idx);
-  for (const { indexKey, previousPath } of pendingRemovals) {
-    removeSupersededRenderedSession(spoolRoot, idx, indexKey, previousPath);
+  for (const previousPath of pendingRemovals) {
+    removeSupersededRenderedSession(spoolRoot, idx, previousPath);
   }
   return result;
 }
-function removeSupersededRenderedSession(spoolRoot, idx, currentKey, previousPath) {
+function removeSupersededRenderedSession(spoolRoot, idx, previousPath) {
   const rawRoot = resolve9(spoolRoot, "raw_sessions");
   const previousAbs = resolve9(spoolRoot, previousPath);
   if (!previousAbs.startsWith(rawRoot + sep7)) return;
-  const shared = Object.entries(idx.entries).some(
-    ([key, entry]) => key !== currentKey && entry.relativePath === previousPath
+  const referenced = Object.values(idx.entries).some(
+    (entry) => resolve9(spoolRoot, entry.relativePath) === previousAbs
   );
-  if (shared || !existsSync30(previousAbs)) return;
+  if (referenced || !existsSync30(previousAbs)) return;
   try {
     rmSync5(previousAbs);
   } catch {

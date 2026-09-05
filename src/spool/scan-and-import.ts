@@ -46,7 +46,7 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
     new CodexAdapter(),
   ];
   const idx = loadIndex(spoolRoot);
-  const pendingRemovals: { indexKey: string; previousPath: string }[] = [];
+  const pendingRemovals = new Set<string>();
 
   const result: ScanResult = {
     imported: 0,
@@ -98,7 +98,7 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
       const previousPath = idx.entries[indexKey]?.relativePath;
       const written = writeSession(spoolRoot, session, { includeReasoning: true });
       if (previousPath && previousPath !== written.md) {
-        pendingRemovals.push({ indexKey, previousPath });
+        pendingRemovals.add(previousPath);
       }
 
       const entry: IndexEntry = {
@@ -125,8 +125,8 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
   // `memarium sync` (if user installs npm CLI later) sees plugin-written
   // entries as already-known and doesn't re-render them.
   saveIndex(spoolRoot, idx);
-  for (const { indexKey, previousPath } of pendingRemovals) {
-    removeSupersededRenderedSession(spoolRoot, idx, indexKey, previousPath);
+  for (const previousPath of pendingRemovals) {
+    removeSupersededRenderedSession(spoolRoot, idx, previousPath);
   }
 
   return result;
@@ -135,15 +135,16 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
 function removeSupersededRenderedSession(
   spoolRoot: string,
   idx: IndexFile,
-  currentKey: string,
   previousPath: string,
 ): void {
   const rawRoot = resolve(spoolRoot, "raw_sessions");
   const previousAbs = resolve(spoolRoot, previousPath);
   if (!previousAbs.startsWith(rawRoot + sep)) return;
-  const shared = Object.entries(idx.entries).some(([key, entry]) =>
-    key !== currentKey && entry.relativePath === previousPath,
+  // Include the current session: repeated workspace discoveries can return to
+  // a path queued for deletion earlier in the same run (A → B → A).
+  const referenced = Object.values(idx.entries).some((entry) =>
+    resolve(spoolRoot, entry.relativePath) === previousAbs,
   );
-  if (shared || !existsSync(previousAbs)) return;
+  if (referenced || !existsSync(previousAbs)) return;
   try { rmSync(previousAbs); } catch { /* best-effort orphan cleanup */ }
 }
