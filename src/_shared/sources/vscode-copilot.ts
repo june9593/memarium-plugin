@@ -11,6 +11,9 @@ import { deriveSlug } from "../slug.js";
 import { cachedProjectSlug } from "../project-identity.js";
 import { sanitizeMessageText } from "./claude-code.js";
 
+// Re-import unchanged chat files once when the filename/title policy changes.
+const COPILOT_CHAT_FINGERPRINT_VERSION = "custom-title-v1";
+
 function defaultStorageRoot(): string {
   if (process.platform === "darwin")
     return join(homedir(), "Library", "Application Support", "Code", "User", "workspaceStorage");
@@ -60,7 +63,10 @@ export class VSCodeCopilotAdapter implements SourceAdapter {
           if (st.size === 0) continue;
           chatSessionIds.add(basename(f.name, isJsonl ? ".jsonl" : ".json"));
           const buf = readFileSync(p);
-          const sha = createHash("sha256").update(buf).digest("hex");
+          const sha = createHash("sha256")
+            .update(buf)
+            .update(`\0${COPILOT_CHAT_FINGERPRINT_VERSION}`)
+            .digest("hex");
           yield {
             sourcePath: p,
             sourceMtimeMs: st.mtimeMs,
@@ -113,7 +119,8 @@ function parseCopilotJson(sourcePath: string, content: string, workspacePath: st
   const fileBase = basename(sourcePath, ".json");
   const sessionId = fileBase;
   const requests = Array.isArray(obj.requests) ? obj.requests : [];
-  return buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath);
+  const customTitle = typeof obj.customTitle === "string" ? obj.customTitle.trim() : "";
+  return buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath, customTitle);
 }
 
 /**
@@ -124,8 +131,8 @@ function parseCopilotJson(sourcePath: string, content: string, workspacePath: st
  *
  * Event schema:
  *   - kind=0 (first line): initial state with v.requests (usually `[]`).
- *   - kind=1: replace top-level state path (e.g. inputState, responderUsername).
- *     Not relevant to conversation turns; we ignore.
+ *   - kind=1: replace a top-level state path. We retain the latest
+ *     `customTitle`; unrelated state (inputState, responderUsername) is ignored.
  *   - kind=2 with k=["requests"]: VS Code's snapshot is a 1-element array
  *     containing only the *latest* turn. But the conceptual `requests` array
  *     grows monotonically across turns — subsequent patches reference
@@ -140,6 +147,7 @@ function parseCopilotJson(sourcePath: string, content: string, workspacePath: st
 function parseCopilotChatSessionsJsonl(sourcePath: string, content: string, workspacePath: string): NormalizedSession {
   const fileBase = basename(sourcePath, ".jsonl");
   let sessionId = fileBase;
+  let customTitle = "";
   const turns: any[] = [];
   const lines = content.split("\n");
   for (const line of lines) {
@@ -150,10 +158,17 @@ function parseCopilotChatSessionsJsonl(sourcePath: string, content: string, work
 
     if (obj?.kind === 0 && obj?.v) {
       if (typeof obj.v.sessionId === "string" && obj.v.sessionId) sessionId = obj.v.sessionId;
+      if (typeof obj.v.customTitle === "string") customTitle = obj.v.customTitle.trim();
       if (Array.isArray(obj.v.requests)) {
         // Initial state — seed turns from whatever was already in v.requests
         for (const r of obj.v.requests) turns.push(r);
       }
+      continue;
+    }
+
+    if (obj?.kind === 1 &&
+        Array.isArray(obj.k) && obj.k.length === 1 && obj.k[0] === "customTitle") {
+      customTitle = typeof obj.v === "string" ? obj.v.trim() : "";
       continue;
     }
 
@@ -182,7 +197,7 @@ function parseCopilotChatSessionsJsonl(sourcePath: string, content: string, work
       }
     }
   }
-  return buildSessionFromRequests(sourcePath, sessionId, turns, workspacePath);
+  return buildSessionFromRequests(sourcePath, sessionId, turns, workspacePath, customTitle);
 }
 
 function buildSessionFromRequests(
@@ -190,6 +205,7 @@ function buildSessionFromRequests(
   sessionId: string,
   requests: any[],
   workspacePath: string,
+  customTitle = "",
 ): NormalizedSession {
   const messages: SessionMessage[] = [];
   let startedAt = "";
@@ -217,8 +233,8 @@ function buildSessionFromRequests(
   }
 
   const firstUser = messages.find((m) => m.role === "user")?.text ?? "";
-  const { slug, display } = deriveSlug(firstUser);
   const shortId = sessionId.slice(0, 8);
+  const { slug, display } = deriveSlug(customTitle || firstUser || shortId);
 
   return {
     tool: "copilot",

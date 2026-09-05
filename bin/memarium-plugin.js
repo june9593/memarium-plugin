@@ -18440,11 +18440,13 @@ function parseCopilotJson(sourcePath, content, workspacePath) {
   const fileBase = basename3(sourcePath, ".json");
   const sessionId = fileBase;
   const requests = Array.isArray(obj.requests) ? obj.requests : [];
-  return buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath);
+  const customTitle = typeof obj.customTitle === "string" ? obj.customTitle.trim() : "";
+  return buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath, customTitle);
 }
 function parseCopilotChatSessionsJsonl(sourcePath, content, workspacePath) {
   const fileBase = basename3(sourcePath, ".jsonl");
   let sessionId = fileBase;
+  let customTitle = "";
   const turns = [];
   const lines = content.split("\n");
   for (const line3 of lines) {
@@ -18458,9 +18460,14 @@ function parseCopilotChatSessionsJsonl(sourcePath, content, workspacePath) {
     }
     if (obj?.kind === 0 && obj?.v) {
       if (typeof obj.v.sessionId === "string" && obj.v.sessionId) sessionId = obj.v.sessionId;
+      if (typeof obj.v.customTitle === "string") customTitle = obj.v.customTitle.trim();
       if (Array.isArray(obj.v.requests)) {
         for (const r2 of obj.v.requests) turns.push(r2);
       }
+      continue;
+    }
+    if (obj?.kind === 1 && Array.isArray(obj.k) && obj.k.length === 1 && obj.k[0] === "customTitle") {
+      customTitle = typeof obj.v === "string" ? obj.v.trim() : "";
       continue;
     }
     if (obj?.kind !== 2 || !Array.isArray(obj.k) || obj.k[0] !== "requests") continue;
@@ -18486,9 +18493,9 @@ function parseCopilotChatSessionsJsonl(sourcePath, content, workspacePath) {
       }
     }
   }
-  return buildSessionFromRequests(sourcePath, sessionId, turns, workspacePath);
+  return buildSessionFromRequests(sourcePath, sessionId, turns, workspacePath, customTitle);
 }
-function buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath) {
+function buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath, customTitle = "") {
   const messages = [];
   let startedAt = "";
   let endedAt = "";
@@ -18516,8 +18523,8 @@ function buildSessionFromRequests(sourcePath, sessionId, requests, workspacePath
     }
   }
   const firstUser = messages.find((m) => m.role === "user")?.text ?? "";
-  const { slug, display } = deriveSlug(firstUser);
   const shortId = sessionId.slice(0, 8);
+  const { slug, display } = deriveSlug(customTitle || firstUser || shortId);
   return {
     tool: "copilot",
     sessionId,
@@ -18635,13 +18642,14 @@ function parseCopilotTranscript(sourcePath, content, workspacePath) {
     sourcePath
   };
 }
-var VSCodeCopilotAdapter;
+var COPILOT_CHAT_FINGERPRINT_VERSION, VSCodeCopilotAdapter;
 var init_vscode_copilot = __esm({
   "src/_shared/sources/vscode-copilot.ts"() {
     "use strict";
     init_slug();
     init_project_identity();
     init_claude_code();
+    COPILOT_CHAT_FINGERPRINT_VERSION = "custom-title-v1";
     VSCodeCopilotAdapter = class {
       constructor(root = defaultStorageRoot()) {
         this.root = root;
@@ -18678,7 +18686,7 @@ var init_vscode_copilot = __esm({
               if (st.size === 0) continue;
               chatSessionIds.add(basename3(f.name, isJsonl ? ".jsonl" : ".json"));
               const buf = readFileSync26(p2);
-              const sha = createHash5("sha256").update(buf).digest("hex");
+              const sha = createHash5("sha256").update(buf).update(`\0${COPILOT_CHAT_FINGERPRINT_VERSION}`).digest("hex");
               yield {
                 sourcePath: p2,
                 sourceMtimeMs: st.mtimeMs,

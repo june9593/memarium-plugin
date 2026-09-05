@@ -99,6 +99,15 @@ memarium is deliberately grounded in published research and a clear set of trade
 
 Open any Claude Code session and run `/memarium` to digest your local Claude Code, Copilot Chat, and Codex sessions; a new session afterward auto-loads the project primer.
 
+When a provider stores its own session title, memarium uses it for the rendered
+name and filename (`Copilot customTitle`, `Codex thread_name`); otherwise it
+falls back to the first real user message. Clearing a Copilot title restores
+that fallback. On upgrade, the next scan reimports unchanged local Copilot
+`chatSessions` once and replaces the indexed rendered filename; source files and
+session IDs stay unchanged. No rename script is required. Update both the CLI
+and plugin if you use both. Sessions without a local source keep their old names
+until rescanned on the source device.
+
 ### Cross-device sync (optional)
 
 To carry sessions **and** memory across machines, install the optional **memarium** npm CLI:
@@ -199,6 +208,13 @@ memarium 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 ```
 
 开任何 Claude Code 会话跑 `/memarium` 整理本机的 Claude Code、Copilot Chat 与 Codex 会话;之后新会话会自动加载项目 primer。
+
+如果来源保存了自己的会话标题,memarium 会优先用它生成渲染名称和文件名
+(`Copilot customTitle`、`Codex thread_name`);否则回退到第一条真实用户消息。
+清空 Copilot 标题后也会恢复首句回退。升级后的下一次扫描会一次性重新导入
+本地 Copilot `chatSessions`(即使源文件未修改),按同一 session ID 更新索引并
+替换旧渲染文件名;不修改源文件,不需要手动改名脚本。同时使用 CLI 和 plugin
+时请一起更新。没有本地源文件的会话暂时保留旧名字,需在持有源文件的设备重扫。
 
 ### 跨设备同步(可选)
 
