@@ -1,8 +1,8 @@
 // @sync-from: github.com/june9593/memarium → src/writer.ts
 // Keep this file in sync with the canonical version above. If you fix a bug here, also patch it there.
 
-import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { lstatSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import type { NormalizedSession, ContentBlock, SessionManifest, TocEntry } from "../_shared/types.js";
 import { extractManifest } from "../_shared/digest/manifest.js";
 import { buildTocEntries, renderTocMarkdown } from "../_shared/digest/toc.js";
@@ -52,11 +52,16 @@ export function writeSession(
     renderMarkdown(s, { includeReasoning, fullToolResults }),
   );
 
-  // A case-only write can retain the directory entry's old spelling on macOS
-  // and Windows. Index that spelling so a case-sensitive Git tree can find it.
-  const actualRel = relative(realpathSync.native(repoRoot), realpathSync.native(join(absDir, fileName))).split(sep).join("/");
-  // Do not replace logical spool paths with symlink targets.
-  return { md: actualRel.toLowerCase() === mdRel.toLowerCase() ? actualRel : mdRel };
+  // Recover ordinary entry spelling one component at a time. Resolving the
+  // whole path would replace symlinks with their targets, even case-only ones.
+  const storedParts: string[] = [];
+  let parent = repoRoot;
+  for (const part of mdRel.split("/")) {
+    const abs = join(parent, part);
+    storedParts.push(lstatSync(abs).isSymbolicLink() ? part : basename(realpathSync.native(abs)));
+    parent = abs;
+  }
+  return { md: storedParts.join("/") };
 }
 
 function safeStorageId(sessionId: string): string {

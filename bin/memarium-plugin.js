@@ -19776,8 +19776,8 @@ var init_toc = __esm({
 });
 
 // src/spool/writer.ts
-import { mkdirSync as mkdirSync15, realpathSync as realpathSync4, writeFileSync as writeFileSync16 } from "node:fs";
-import { join as join33, relative as relative6, sep as sep7 } from "node:path";
+import { lstatSync as lstatSync3, mkdirSync as mkdirSync15, realpathSync as realpathSync4, writeFileSync as writeFileSync16 } from "node:fs";
+import { basename as basename5, join as join33 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
   const dirRel = ["raw_sessions", s.tool, s.project, date].join("/");
@@ -19793,8 +19793,14 @@ function writeSession(repoRoot, s, opts = {}) {
     join33(absDir, fileName),
     renderMarkdown(s, { includeReasoning, fullToolResults })
   );
-  const actualRel = relative6(realpathSync4.native(repoRoot), realpathSync4.native(join33(absDir, fileName))).split(sep7).join("/");
-  return { md: actualRel.toLowerCase() === mdRel.toLowerCase() ? actualRel : mdRel };
+  const storedParts = [];
+  let parent = repoRoot;
+  for (const part of mdRel.split("/")) {
+    const abs = join33(parent, part);
+    storedParts.push(lstatSync3(abs).isSymbolicLink() ? part : basename5(realpathSync4.native(abs)));
+    parent = abs;
+  }
+  return { md: storedParts.join("/") };
 }
 function safeStorageId(sessionId) {
   return sessionId.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
@@ -19986,7 +19992,7 @@ var init_writer = __esm({
 
 // src/spool/scan-and-import.ts
 import { realpathSync as realpathSync5, rmSync as rmSync6 } from "node:fs";
-import { resolve as resolve9, sep as sep8 } from "node:path";
+import { resolve as resolve9, sep as sep7 } from "node:path";
 async function scanAndImport(opts) {
   const { spoolRoot } = ensureSpoolDir();
   const adapters = [
@@ -20069,7 +20075,7 @@ function removeSupersededRenderedSessions(spoolRoot, idx, previousPaths) {
   }
   for (const previousPath of previousPaths) {
     const previousAbs = resolve9(spoolRoot, previousPath);
-    if (!previousAbs.startsWith(rawRoot + sep8) || referenced.has(previousAbs)) continue;
+    if (!previousAbs.startsWith(rawRoot + sep7) || referenced.has(previousAbs)) continue;
     try {
       if (!referenced.has(realpathSync5.native(previousAbs))) rmSync6(previousAbs);
     } catch {

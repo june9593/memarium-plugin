@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.22.3 — 2026-09-06
+
+### Preserve symlinks while recovering filename spelling
+
+- Mirror component-wise writer path recovery: keep each symlink component's
+  logical name instead of substituting its target, including case-only targets.
+  Ordinary files and directories beneath symlinks retain their actual spelling.
+- Exercise root/project symlinks and case-only renames on both case-insensitive
+  and case-sensitive temporary filesystems. Correct conditional test skips to
+  use the actual Vitest context and rebuild the committed plugin bundle.
+- The paired npm patch also repairs Git case aliases before staging missing
+  renders whose sources cannot currently be parsed.
+
 ## 0.22.2 — 2026-09-06
 
 ### Preserve case-insensitive render aliases

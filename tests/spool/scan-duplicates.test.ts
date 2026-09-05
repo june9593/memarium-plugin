@@ -52,36 +52,42 @@ describe("duplicate workspace render cleanup", () => {
     }
   });
 
-  it.each([false, true])("keeps the render and actual path spelling after a case-only title change (legacy alias: %s)", async (legacyAlias, ctx) => {
-    const base = process.platform === "darwin" ? "Library/Application Support/Code/User/workspaceStorage"
-      : process.platform === "win32" ? "AppData/Roaming/Code/User/workspaceStorage"
-      : ".config/Code/User/workspaceStorage";
-    const ws = join(home, base, "workspace");
-    mkdirSync(join(ws, "chatSessions"), { recursive: true });
-    writeFileSync(join(ws, "workspace.json"), JSON.stringify({ folder: pathToFileURL(join(home, "projects/one")).href }));
-    const id = "12345678-abcd-4000-8000-123456789abc";
-    const src = join(ws, "chatSessions", `${id}.json`);
-    const state = { version: 3, customTitle: "Foo", requests: [{
-      message: { text: "Inspect the configuration loader" }, timestamp: Date.parse("2026-09-01T12:00:00Z"), response: [],
-    }] };
-    writeFileSync(src, JSON.stringify(state));
-    await scanAndImport({ projectFilter: null });
-    const spool = join(home, ".memarium/session-repo");
-    if (legacyAlias) {
-      const idx = loadIndex(spool);
-      const alias = idx.entries[`copilot:${id}`]!.relativePath.replace("Foo__", "foo__");
-      if (!existsSync(join(spool, alias))) { ctx.skip(); return; } // case-sensitive filesystem
-      idx.entries[`copilot:${id}`]!.relativePath = alias;
-      saveIndex(spool, idx);
-    }
-    state.customTitle = "foo";
-    writeFileSync(src, JSON.stringify(state));
-    await scanAndImport({ projectFilter: null });
-    const entry = loadIndex(spool).entries[`copilot:${id}`]!;
-    expect(entry.displayName).toBe("foo");
-    const abs = join(spool, entry.relativePath);
-    expect(existsSync(abs)).toBe(true);
-    expect(readFileSync(abs, "utf8")).toContain("displayName: foo");
-    expect(realpathSync.native(abs)).toBe(join(realpathSync.native(spool), entry.relativePath));
-  });
+  for (const legacyAlias of [false, true]) {
+    it(`keeps the render and actual path spelling after a case-only title change (legacy alias: ${legacyAlias})`, async (ctx) => {
+      const base = process.platform === "darwin" ? "Library/Application Support/Code/User/workspaceStorage"
+        : process.platform === "win32" ? "AppData/Roaming/Code/User/workspaceStorage"
+        : ".config/Code/User/workspaceStorage";
+      const ws = join(home, base, "workspace");
+      mkdirSync(join(ws, "chatSessions"), { recursive: true });
+      writeFileSync(join(ws, "workspace.json"), JSON.stringify({ folder: pathToFileURL(join(home, "projects/one")).href }));
+      const id = "12345678-abcd-4000-8000-123456789abc";
+      const src = join(ws, "chatSessions", `${id}.json`);
+      const state = { version: 3, customTitle: "Foo", requests: [{
+        message: { text: "Inspect the configuration loader" }, timestamp: Date.parse("2026-09-01T12:00:00Z"), response: [],
+      }] };
+      writeFileSync(src, JSON.stringify(state));
+      await scanAndImport({ projectFilter: null });
+      const spool = join(home, ".memarium/session-repo");
+      if (legacyAlias) {
+        const idx = loadIndex(spool);
+        const alias = idx.entries[`copilot:${id}`]!.relativePath.replace("Foo__", "foo__");
+        if (!existsSync(join(spool, alias))) {
+          vi.unstubAllEnvs();
+          rmSync(home, { recursive: true, force: true });
+          ctx.skip(); return; // case-sensitive filesystem
+        }
+        idx.entries[`copilot:${id}`]!.relativePath = alias;
+        saveIndex(spool, idx);
+      }
+      state.customTitle = "foo";
+      writeFileSync(src, JSON.stringify(state));
+      await scanAndImport({ projectFilter: null });
+      const entry = loadIndex(spool).entries[`copilot:${id}`]!;
+      expect(entry.displayName).toBe("foo");
+      const abs = join(spool, entry.relativePath);
+      expect(existsSync(abs)).toBe(true);
+      expect(readFileSync(abs, "utf8")).toContain("displayName: foo");
+      expect(realpathSync.native(abs)).toBe(join(realpathSync.native(spool), entry.relativePath));
+    });
+  }
 });
