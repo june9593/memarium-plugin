@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readFileSync, readdirSync, cpSync, chmodSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readFileSync, readdirSync, cpSync, chmodSync, appendFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,6 +99,85 @@ describe("scanAndImport", () => {
     const spoolRoot = join(fakeHome, ".memarium/session-repo");
     const projectSlugs = readdirSync(join(spoolRoot, "raw_sessions/claude"));
     expect(projectSlugs).toEqual(["code-src"]);
+  });
+
+  it("imports the latest Copilot customTitle through the autonomous scanner", async () => {
+    const ws = join(
+      fakeHome,
+      process.platform === "darwin" ? "Library/Application Support/Code/User/workspaceStorage/hashTitle"
+        : process.platform === "win32" ? "AppData/Roaming/Code/User/workspaceStorage/hashTitle"
+        : ".config/Code/User/workspaceStorage/hashTitle",
+    );
+    mkdirSync(join(ws, "chatSessions"), { recursive: true });
+    cpSync(join(fixturesDir, "copilot", "workspace.json"), join(ws, "workspace.json"));
+    cpSync(
+      join(fixturesDir, "copilot", "vscode-copilot-chatsessions.jsonl"),
+      join(ws, "chatSessions", "sess-bbbb2222.jsonl"),
+    );
+
+    const result = await scanAndImport({ projectFilter: null });
+    expect(result.imported).toBe(1);
+    const indexPath = join(fakeHome, ".memarium/session-repo/.memarium/index.json");
+    const entry = JSON.parse(readFileSync(indexPath, "utf8")).entries["copilot:sess-bbbb2222"];
+    expect(entry.displayName).toBe("Final Copilot session title");
+    expect(entry.relativePath).toContain("Final-Copilot-session-title");
+  });
+
+  it.each(["json", "jsonl"] as const)("migrates an unchanged %s source once and tracks subsequent provider renames", async (extension) => {
+    const storage = join(fakeHome, process.platform === "darwin"
+      ? "Library/Application Support/Code/User/workspaceStorage"
+      : process.platform === "win32" ? "AppData/Roaming/Code/User/workspaceStorage"
+      : ".config/Code/User/workspaceStorage");
+    const ws = join(storage, "workspace");
+    mkdirSync(join(ws, "chatSessions"), { recursive: true });
+    cpSync(join(fixturesDir, "copilot", "workspace.json"), join(ws, "workspace.json"));
+    const id = "12345678-abcd-4000-8000-123456789abc";
+    const sourcePath = join(ws, "chatSessions", `${id}.${extension}`);
+    const state = {
+      version: 3, sessionId: id, customTitle: "Provider title", requests: [{
+        message: { text: "First user prompt" }, timestamp: Date.parse("2026-09-01T00:00:00Z"),
+        response: [{ kind: "markdownContent", content: { value: "Original response" } }],
+      }],
+    };
+    writeFileSync(sourcePath, JSON.stringify(extension === "json" ? state : { kind: 0, v: state }) + "\n");
+    const originalSource = readFileSync(sourcePath);
+    const st = statSync(sourcePath);
+    const spool = join(fakeHome, ".memarium/session-repo");
+    const relativePath = "raw_sessions/copilot/code-demo/2026-09-01/First-user-prompt__12345678.md";
+    mkdirSync(join(spool, "raw_sessions/copilot/code-demo/2026-09-01"), { recursive: true });
+    writeFileSync(join(spool, relativePath), "Legacy render");
+    mkdirSync(join(spool, ".memarium"), { recursive: true });
+    const indexPath = join(spool, ".memarium/index.json");
+    writeFileSync(indexPath, JSON.stringify({ version: 1, entries: { [`copilot:${id}`]: {
+      sessionId: id, shortId: "12345678", tool: "copilot", project: "code-demo",
+      projectRaw: "/Users/me/code/demo", startedAt: "2026-09-01T00:00:00.000Z",
+      endedAt: "2026-09-01T00:00:00.000Z", displayName: "First user prompt",
+      nameSlug: "First-user-prompt", relativePath, sourcePath, sourceMtimeMs: st.mtimeMs,
+      sourceSha256: createHash("sha256").update(originalSource).digest("hex"),
+    } } }));
+
+    expect((await scanAndImport({ projectFilter: null })).imported).toBe(1);
+    const migrated = JSON.parse(readFileSync(indexPath, "utf8")).entries[`copilot:${id}`];
+    expect(migrated.displayName).toBe("Provider title");
+    expect(existsSync(join(spool, relativePath))).toBe(false);
+    expect(readFileSync(join(spool, migrated.relativePath), "utf8")).toContain("First user prompt");
+    expect(readFileSync(sourcePath)).toEqual(originalSource);
+    expect(statSync(sourcePath).mtimeMs).toBe(st.mtimeMs);
+    expect((await scanAndImport({ projectFilter: null })).imported).toBe(0);
+
+    if (extension === "json") {
+      writeFileSync(sourcePath, JSON.stringify({ ...state, customTitle: "Renamed provider title" }));
+    } else {
+      appendFileSync(sourcePath, JSON.stringify({ kind: 1, k: ["customTitle"], v: "Renamed provider title" }) + "\n");
+    }
+    expect((await scanAndImport({ projectFilter: null })).imported).toBe(1);
+    const index = JSON.parse(readFileSync(indexPath, "utf8"));
+    expect(Object.keys(index.entries)).toEqual([`copilot:${id}`]);
+    const renamed = index.entries[`copilot:${id}`];
+    expect(renamed.displayName).toBe("Renamed provider title");
+    expect(existsSync(join(spool, migrated.relativePath))).toBe(false);
+    expect(existsSync(join(spool, renamed.relativePath))).toBe(true);
+    expect((await scanAndImport({ projectFilter: null })).imported).toBe(0);
   });
 
   it("imports Codex Desktop and interactive CLI sessions without npm", async () => {

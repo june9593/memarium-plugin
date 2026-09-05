@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.22.0 — 2026-09-05
+
+### Prefer Copilot's persisted session title
+
+Mirror the canonical Copilot `customTitle` parser and versioned chat-session
+fingerprint. Autonomous scans now prefer initial/later provider titles and
+migrate unchanged local JSON/JSONL from first-prompt filenames once, preserving
+IDs and source files. A cleared title restores the first-user/short-ID fallback.
+Codex's existing title support is unchanged.
+
+Add the shared Copilot fixtures/adapter suite and autonomous migration/rename
+regressions for both chat formats, update the bilingual README, and rebuild the
+committed plugin bundle. Update the CLI and plugin together if using both.
+
 ## 0.21.7 — 2026-09-04
 
 ### Mirror hidden-context filtering and index-path repair
