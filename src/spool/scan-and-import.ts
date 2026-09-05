@@ -11,7 +11,7 @@
 // whose source jsonl mtime + sha256 are unchanged. First call on a fresh spool
 // imports everything; subsequent calls only import what's new or changed.
 
-import { existsSync, rmSync } from "node:fs";
+import { realpathSync, rmSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { ClaudeCodeAdapter } from "../_shared/sources/claude-code.js";
 import { VSCodeCopilotAdapter } from "../_shared/sources/vscode-copilot.js";
@@ -125,26 +125,31 @@ export async function scanAndImport(opts: ScanOptions): Promise<ScanResult> {
   // `memarium sync` (if user installs npm CLI later) sees plugin-written
   // entries as already-known and doesn't re-render them.
   saveIndex(spoolRoot, idx);
-  for (const previousPath of pendingRemovals) {
-    removeSupersededRenderedSession(spoolRoot, idx, previousPath);
-  }
+  removeSupersededRenderedSessions(spoolRoot, idx, pendingRemovals);
 
   return result;
 }
 
-function removeSupersededRenderedSession(
+function removeSupersededRenderedSessions(
   spoolRoot: string,
   idx: IndexFile,
-  previousPath: string,
+  previousPaths: Set<string>,
 ): void {
+  if (previousPaths.size === 0) return;
   const rawRoot = resolve(spoolRoot, "raw_sessions");
-  const previousAbs = resolve(spoolRoot, previousPath);
-  if (!previousAbs.startsWith(rawRoot + sep)) return;
-  // Include the current session: repeated workspace discoveries can return to
-  // a path queued for deletion earlier in the same run (A → B → A).
-  const referenced = Object.values(idx.entries).some((entry) =>
-    resolve(spoolRoot, entry.relativePath) === previousAbs,
-  );
-  if (referenced || !existsSync(previousAbs)) return;
-  try { rmSync(previousAbs); } catch { /* best-effort orphan cleanup */ }
+  // Protect the final A in A → B → A, including case-insensitive aliases.
+  // Cache canonical references once, rather than rescanning for each removal.
+  const referenced = new Set<string>();
+  for (const entry of Object.values(idx.entries)) {
+    const abs = resolve(spoolRoot, entry.relativePath);
+    referenced.add(abs);
+    try { referenced.add(realpathSync.native(abs)); } catch { /* missing render */ }
+  }
+  for (const previousPath of previousPaths) {
+    const previousAbs = resolve(spoolRoot, previousPath);
+    if (!previousAbs.startsWith(rawRoot + sep) || referenced.has(previousAbs)) continue;
+    try {
+      if (!referenced.has(realpathSync.native(previousAbs))) rmSync(previousAbs);
+    } catch { /* best-effort orphan cleanup */ }
+  }
 }

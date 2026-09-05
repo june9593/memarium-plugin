@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.22.2 — 2026-09-06
+
+### Preserve case-insensitive render aliases
+
+- Compare canonical final-index references before deleting superseded renders,
+  protecting case-only aliases as well as A → B → A discovery cycles.
+- Mirror the writer fix that records the actual on-disk filename spelling
+  after case-only title changes, while retaining logical symlink paths.
+- Make the duplicate-workspace regression deterministic: identical mtimes,
+  distinct source fingerprints, and all three copies imported on each scan.
+  The strengthened test fails against the original cleanup implementation.
+- Mirror bounded, literal, NUL-delimited staging in the shared Git helper and
+  add staging/case-alias regressions. Rebuild the committed plugin bundle.
+
 ## 0.22.1 — 2026-09-05
 
 ### Preserve final renders across duplicate workspace discoveries
