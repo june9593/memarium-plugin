@@ -19776,7 +19776,7 @@ var init_toc = __esm({
 });
 
 // src/spool/writer.ts
-import { lstatSync as lstatSync3, mkdirSync as mkdirSync15, realpathSync as realpathSync4, writeFileSync as writeFileSync16 } from "node:fs";
+import { lstatSync as lstatSync3, mkdirSync as mkdirSync15, readdirSync as readdirSync11, realpathSync as realpathSync4, writeFileSync as writeFileSync16 } from "node:fs";
 import { basename as basename5, join as join33 } from "node:path";
 function writeSession(repoRoot, s, opts = {}) {
   const date = s.startedAt.slice(0, 10);
@@ -19797,10 +19797,29 @@ function writeSession(repoRoot, s, opts = {}) {
   let parent = repoRoot;
   for (const part of mdRel.split("/")) {
     const abs = join33(parent, part);
-    storedParts.push(lstatSync3(abs).isSymbolicLink() ? part : basename5(realpathSync4.native(abs)));
+    storedParts.push(storedEntryName(parent, part));
     parent = abs;
   }
   return { md: storedParts.join("/") };
+}
+function storedEntryName(parent, requested) {
+  const abs = join33(parent, requested);
+  const identity = lstatSync3(abs, { bigint: true });
+  if (!identity.isSymbolicLink()) return basename5(realpathSync4.native(abs));
+  const names = readdirSync11(parent);
+  if (names.includes(requested)) return requested;
+  const aliases = names.filter((name) => {
+    try {
+      const candidate = lstatSync3(join33(parent, name), { bigint: true });
+      return candidate.dev === identity.dev && candidate.ino === identity.ino;
+    } catch {
+      return false;
+    }
+  });
+  const sameCaseFold = aliases.filter((name) => name.toLowerCase() === requested.toLowerCase());
+  if (sameCaseFold.length === 1) return sameCaseFold[0];
+  if (aliases.length === 1) return aliases[0];
+  throw new Error(`Cannot determine symlink entry spelling: ${abs}`);
 }
 function safeStorageId(sessionId) {
   return sessionId.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync, utimesSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, utimesSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { scanAndImport } from "../../src/spool/scan-and-import.js";
+import { VSCodeCopilotAdapter } from "../../src/_shared/sources/vscode-copilot.js";
 import { loadIndex, saveIndex } from "../../src/_shared/index-store.js";
 
 describe("duplicate workspace render cleanup", () => {
@@ -14,6 +15,7 @@ describe("duplicate workspace render cleanup", () => {
     vi.stubEnv("MEMARIUM_DIR", join(home, ".memarium"));
   });
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     rmSync(home, { recursive: true, force: true });
   });
@@ -23,28 +25,36 @@ describe("duplicate workspace render cleanup", () => {
       : process.platform === "win32" ? "AppData/Roaming/Code/User/workspaceStorage"
       : ".config/Code/User/workspaceStorage";
     const storage = join(home, base);
-    for (const name of ["workspace-a", "workspace-b", "workspace-c"]) {
-      mkdirSync(join(storage, name, "chatSessions"), { recursive: true });
-    }
+    const workspaces = [["workspace-a", "one"], ["workspace-b", "two"], ["workspace-c", "one"]] as const;
     const id = "12345678-abcd-4000-8000-123456789abc";
-    readdirSync(storage).forEach((name, i) => {
+    for (const [name, project] of workspaces) {
       const ws = join(storage, name);
+      mkdirSync(join(ws, "chatSessions"), { recursive: true });
       writeFileSync(join(ws, "workspace.json"), JSON.stringify({
-        folder: pathToFileURL(join(home, "projects", i === 1 ? "two" : "one")).href,
+        folder: pathToFileURL(join(home, "projects", project)).href,
       }));
       writeFileSync(join(ws, "chatSessions", `${id}.json`), JSON.stringify({
         version: 3, customTitle: "Shared session title", requests: [{
-          requestId: `workspace-${i}`,
+          requestId: name,
           message: { text: "Inspect the configuration loader" },
           response: [{ kind: "markdownContent", content: { value: "The configuration was checked." } }],
           timestamp: Date.parse("2026-09-01T12:00:00Z"),
         }],
       }));
       utimesSync(join(ws, "chatSessions", `${id}.json`), new Date("2026-09-01"), new Date("2026-09-01"));
+    }
+    const discovered = [];
+    for await (const item of new VSCodeCopilotAdapter(storage).discover()) discovered.push(item);
+    discovered.sort((a, b) => a.sourcePath.localeCompare(b.sourcePath));
+    expect(discovered.map((item) => item.sourcePath)).toEqual(workspaces.map(([name]) => join(storage, name, "chatSessions", `${id}.json`)));
+    // Replay A → B → A explicitly, regardless of the filesystem's order.
+    const ordered = vi.spyOn(VSCodeCopilotAdapter.prototype, "discover").mockImplementation(async function* () {
+      yield* discovered;
     });
 
     for (let pass = 0; pass < 2; pass++) {
       expect((await scanAndImport({ projectFilter: null })).imported).toBe(3);
+      expect(ordered).toHaveBeenCalledTimes(pass + 1);
       const spool = join(home, ".memarium/session-repo");
       const idx = loadIndex(spool);
       expect(Object.keys(idx.entries)).toEqual([`copilot:${id}`]);

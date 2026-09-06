@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.22.4 — 2026-09-06
+
+### Preserve symlink entry spelling and deterministic regression order
+
+- Mirror directory-entry identity lookup for symlink names. A requested
+  `raw_sessions` alias of a stored `RAW_SESSIONS` link now records the actual
+  link entry, never the target or another link to that target.
+- Assign A/B/A projects to fixed workspace names and explicitly replay sorted
+  real adapter discoveries in the duplicate regression. Assert the controlled
+  adapter is used and all three imports occur on each pass; do not change
+  production enumeration order.
+- Validate symlink-name aliases and case-sensitive targets on both filesystem
+  case policies, rerun the ordered regression against the original cleanup,
+  and rebuild the committed plugin bundle.
+
 ## 0.22.3 — 2026-09-06
 
 ### Preserve symlinks while recovering filename spelling
