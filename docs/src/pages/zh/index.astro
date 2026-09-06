@@ -4,7 +4,7 @@ import Base from "../../layouts/Base.astro";
 <Base
   lang="zh"
   title="memarium plugin — 让 AI 编程会话变成可检索的分层记忆"
-  description="Claude Code 插件，把过往的 AI 编程会话蒸馏成分层记忆（episode / 事实 / 实体 / 问答），下一次开始工作前自动 recall。无需额外 CLI，独立运行。"
+  description="Claude Code 插件，把过往的 AI 编程会话蒸馏成分层记忆（episode / 事实 / 实体 / 问答），下一次开始工作前加载 primer,按任务召回相关记忆。无需额外 CLI，独立运行。"
 >
   <section class="hero container">
     <h1>不要再让 AI 重新发明你已经摸索过的轮子。</h1>
@@ -43,7 +43,9 @@ import Base from "../../layouts/Base.astro";
   </section>
 
   <section class="container">
-    <h2>两个 slash 命令</h2>
+    <h2>四个 skill,一个记忆闭环</h2>
+    <p>短别名冲突时使用完整的 <code>/memarium:skill-name</code> 入口。
+      启动 primer 自动加载;排序召回由 agent 或你显式调用。</p>
     <div class="three-col" style="grid-template-columns: 1fr 1fr;">
       <div class="feature-card">
         <h3><code>/memarium</code></h3>
@@ -83,6 +85,17 @@ import Base from "../../layouts/Base.astro";
           瞬间不假思索地触发第一阶段。
         </p>
       </div>
+      <div class="feature-card">
+        <h3><code>/memarium-context</code></h3>
+        <p>加载更完整的项目上下文:规则、步骤、事实、episode、实体、问答、
+          冲突,以及等待人工审批的记忆提案。</p>
+      </div>
+      <div class="feature-card">
+        <h3><code>/memarium-retro</code></h3>
+        <p>检查当前任务是否产生可复用经验。Stop hook 在识别到支持的修改迹象后
+          可提示一次回顾,不强制写记忆。先去重,尊重用户拒绝,受保护的更改
+          仍需进入人工审批队列。</p>
+      </div>
     </div>
   </section>
 
@@ -90,8 +103,8 @@ import Base from "../../layouts/Base.astro";
     <div class="container">
       <h2>recall 究竟做什么 — 一个说明性场景</h2>
       <p>
-        Recall 不是你需要记着主动调用的功能。是 Claude 在感觉
-        "这事儿好像和过去的工作有重叠" 时自己伸手去翻的工具。
+        Skill 描述和启动 primer 会提示 Claude 在新任务涉及过往工作时调用 recall。
+        它仍需由 agent 实际调用,不是独立的后台检索;你也可以显式运行。
         想象你对 Claude 说:
       </p>
       <pre style="background: var(--deep-dark); color: var(--ivory); padding: var(--space-5); border-radius: var(--r-md);">&gt; 这个集成测试已经 flaky 一周了,帮我修一下</pre>

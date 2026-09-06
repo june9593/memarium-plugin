@@ -12,13 +12,22 @@ conversation, captured now — not the batch `/memarium` digest (which reads
 already-synced sessions and writes richer typed memory). Both coexist; dedup keeps
 them from doubling up.
 
-## Resolve the plugin CLI once
+## Resolve the plugin CLI for this shell
 
 ```bash
-VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"
-[ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-)
-[ -x "$VBP" ] && "$VBP" --version   # sanity check (silent no-op if unresolved)
+VBP="${CLAUDE_PLUGIN_ROOT}/bin/memarium-plugin.js"
+[ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$(0)}' | sort -V | tail -1 | cut -f2-)
+[ -x "$VBP" ] && "$VBP" --version
 ```
+
+The skill loader substitutes `${CLAUDE_PLUGIN_ROOT}` with this plugin's
+installation directory. If that root is unavailable, the fallback selects the
+highest cached **semver**, regardless of marketplace name or directory mtime.
+
+**Bash calls do not share shell variables.** Run discovery and the first CLI
+command in the same Bash call. For later calls, use the resolved absolute binary
+path (quoted), or repeat discovery; do not assume `$VBP` is still set.
+
 
 If `$VBP` doesn't resolve, the plugin isn't installed — stop silently (don't block the turn).
 

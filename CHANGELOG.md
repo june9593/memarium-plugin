@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.22.5 — 2026-09-07
+
+### Restore proactive skill routing and Bash retro evidence
+
+- Remove four duplicate command wrappers. The complete digest/context/recall/retro
+  skills now own their namespaced entrypoints without self-forwarding collisions.
+- Use the rendered plugin root first and preserve semver-based cache fallback.
+  Change awk `$0` to `$(0)` so skill argument interpolation cannot erase the
+  binary path. Clarify per-Bash-call variable lifetime and fix the context QA call.
+- Match current-turn tool calls to results by ID. The advisory Stop gate now
+  recognizes bounded Bash evidence for Git commits, cat redirects, in-place sed,
+  and inline/heredoc Python writes, while excluding read-only examples and
+  unsupported control flow. A later failing test/push does not erase earlier
+  affirmative work evidence; background launch alone is not completion.
+- Distinguish successful retro prompting, positive write/proposal receipts, and
+  user refusal. Never require junk memory, automatically retry a refusal, or
+  treat loading a skill as proof of persistence. Keep the loop guard, bounded
+  transcript tail, and read-only/fail-open hook behavior.
+- Add command, result-correlation, rendered-skill discovery, and actual bundled
+  hook regressions; align bilingual docs and rebuild the committed plugin CLI.
+
+This fixes plugin source behavior. Existing sessions must update/reload the
+plugin before using the new entrypoints; it does not backfill missed retros,
+change personal settings, or add any out-of-session LLM calls.
+
 ## 0.22.4 — 2026-09-06
 
 ### Preserve symlink entry spelling and deterministic regression order

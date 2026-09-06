@@ -82,10 +82,20 @@ memarium is deliberately grounded in published research and a clear set of trade
 ### Commands & skills
 
 **Skills (slash commands — the everyday surface):**
+Canonical names use `/memarium:<skill-name>`, for example `/memarium:memarium-recall`.
+The short aliases below work when no other command uses the same name.
 - **`/memarium`** — digest synced sessions into per-project typed memory (episodic + semantic/procedural/core) + entity wiki + distilled Q&A (with a conservative consolidation pass).
 - **`/memarium-context`** — load this project's memory at the start of work: *Core rules / Procedures & gotchas / Project facts / Episodes / Conflicts / Entities / Past Q&A / Pending memory proposals.*
 - **`/memarium-recall`** — 2-stage ranked recall over typed memory (score the index → Read the top entries).
+- **`/memarium-retro`** — assess the current task for reusable insights; deduplicate and capture only useful memory, respecting the proposal gate.
 - **SessionStart hook** — auto-injects the project primer so a new session starts informed.
+
+The primer is injected automatically; ranked recall is an agent-invoked skill.
+The Stop hook can request one retro assessment after completed file-edit tools
+or supported Bash write evidence (Git commits, cat redirects, in-place sed,
+inline/heredoc Python writes). It is not a general shell side-effect detector:
+unknown scripts may need an explicit retro. Read-only commands stay quiet,
+user refusal is respected, and no new insight means no memory write.
 
 **Underlying `bin/memarium-plugin.js` subcommands** (the skills call these; pure I/O, no LLM):
 `memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `skip-write` · `list-projects` · `status` · `prepare`.
@@ -146,8 +156,8 @@ The plugin **does not** create or modify `.git/` or the npm CLI's config files �
 
 ### Repo layout
 
-- `skills/` — `/memarium`, `/memarium-context`, `/memarium-recall` skill files (in-session prompts).
-- `commands/` — slash-command thin wrappers · `hooks/` — SessionStart primer + Stop nudge.
+- `skills/` — the four canonical in-session workflows: digest, context, recall, and retro; no duplicate command wrappers.
+- `hooks/` — automatic SessionStart primer + advisory Stop assessment.
 - `bin/memarium-plugin.js` — bundled CLI invoked by the skills (single esbuild output; not on PATH).
 - `src/` — TypeScript source · `tests/` — vitest suite (`npm install && npx vitest run`).
 - `docs/` — GitHub Pages source (product landing page).
@@ -195,10 +205,18 @@ memarium 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 ### 命令与 skills
 
 **Skills(斜杠命令 —— 日常入口):**
+完整入口为 `/memarium:<skill-name>`,例如 `/memarium:memarium-recall`。
+下列短别名仅在没有同名命令冲突时可用。
 - **`/memarium`** —— 把会话整理成按项目的 typed memory(episodic + semantic/procedural/core)+ entity wiki + 精炼 Q&A(带保守整合)。
 - **`/memarium-context`** —— 工作开始时加载本项目记忆:核心规则 / 操作与坑 / 项目事实 / 片段 / 冲突 / 实体 / 历史 Q&A / 待审记忆提案。
 - **`/memarium-recall`** —— 两阶段召回 typed memory(给 index 打分 → Read 命中的条目)。
+- **`/memarium-retro`** —— 检查当前任务是否产生可复用经验,去重后按审批规则记录;没有新知识就不写。
 - **SessionStart hook** —— 自动注入项目 primer,新会话一开始就有底。
+
+自动注入的是 primer;排序召回仍需 agent 调用 skill。Stop hook 在已完成的
+文件编辑或支持的 Bash 修改迹象后,可要求一次 retro 检查(Git 提交、cat 重定向、
+sed 原地修改、Python inline/heredoc 写入)。它不是通用 shell 副作用分析器,
+未知脚本可能需要显式回顾。只读操作不打扰,尊重用户拒绝,不强迫每轮生成记忆。
 
 **底层 `bin/memarium-plugin.js` 子命令**(skills 调用;纯 I/O,不调 LLM):
 `memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `skip-write` · `list-projects` · `status` · `prepare`。
@@ -256,8 +274,8 @@ memarium resume <sessionId>
 
 ### 仓库布局
 
-- `skills/` —— `/memarium`、`/memarium-context`、`/memarium-recall` 的 skill 文件。
-- `commands/` —— slash 命令薄壳 · `hooks/` —— SessionStart primer + Stop 提醒。
+- `skills/` —— digest、context、recall、retro 四个完整工作流;不再注册同名转发壳。
+- `hooks/` —— 自动 SessionStart primer + 建议性的 Stop 回顾检查。
 - `bin/memarium-plugin.js` —— skill 调用的打包 CLI(单 esbuild 输出;不进 PATH)。
 - `src/` —— TypeScript 源 · `tests/` —— vitest(`npm install && npx vitest run`)。
 - `docs/` —— GitHub Pages 源(产品落地页)。

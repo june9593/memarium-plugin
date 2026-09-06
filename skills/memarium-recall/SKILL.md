@@ -32,14 +32,22 @@ relevance-sorted list directly.
 ## Step 0 — locate the plugin binary
 
 ```bash
-VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"
-[ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-)
+VBP="${CLAUDE_PLUGIN_ROOT}/bin/memarium-plugin.js"
+[ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$(0)}' | sort -V | tail -1 | cut -f2-)
+[ -x "$VBP" ] && "$VBP" --version
 ```
 
-`$CLAUDE_PLUGIN_ROOT` is set when the skill runs inside the plugin. The `ls`
-fallback globs the plugin cache and picks the highest **semver** version (the
-`*` covers the marketplace segment). If `$VBP` is empty the plugin isn't
-installed — tell the user and stop.
+The skill loader substitutes `${CLAUDE_PLUGIN_ROOT}` with this plugin's
+installation directory. If that root is unavailable, the fallback selects the
+highest cached **semver**, regardless of marketplace name or directory mtime.
+
+**Bash calls do not share shell variables.** Run discovery and the first CLI
+command in the same Bash call. For later calls, use the resolved absolute binary
+path (quoted), or repeat discovery; do not assume `$VBP` is still set.
+
+
+If the binary is empty or not executable, tell the user it could not be
+resolved and stop. Do not substitute the separate npm `memarium` CLI.
 
 ## Step 1 — Stage 1: ranked recall
 

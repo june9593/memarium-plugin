@@ -114,7 +114,7 @@ export async function run(argv: string[]) {
 
   program
     .command("retro-gate")
-    .description("Read-only: reads the Stop-hook event JSON on stdin and, only when the just-finished turn changed files (and hasn't already retro'd), prints a {decision:block} JSON that makes the agent run /memarium-retro before stopping. Backs the Stop hook. Never writes, never throws.")
+    .description("Read-only advisory Stop gate: inspect current-turn tool results and bounded Bash mutation evidence; request one retro assessment unless already prompted, captured or declined. Never forces a memory write or calls an LLM; malformed input is nonblocking.")
     .action(async () => {
       const { retroGateCmd } = await import("./commands/retro-gate.js");
       await retroGateCmd();

@@ -33,25 +33,27 @@ segmentation + writing — is yours, in this conversation, with full context.
 
 ## Step −1 — Locate the plugin binary (DO THIS FIRST OF ALL)
 
-`${CLAUDE_PLUGIN_ROOT}` is **not** populated in your in-session Bash environment,
-so discover the plugin's bin path and stash it in a shell variable:
+Resolve the installed plugin binary before running its I/O commands:
 
 ```bash
-VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"
-[ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-)
-echo "VBP=$VBP"
-```
-
-Confirm it resolves (picks the highest **semver** version):
-
-```bash
+VBP="${CLAUDE_PLUGIN_ROOT}/bin/memarium-plugin.js"
+[ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$(0)}' | sort -V | tail -1 | cut -f2-)
 [ -x "$VBP" ] && "$VBP" --version
 ```
+
+The skill loader substitutes `${CLAUDE_PLUGIN_ROOT}` with this plugin's
+installation directory. If that root is unavailable, the fallback selects the
+highest cached **semver**, regardless of marketplace name or directory mtime.
+
+**Bash calls do not share shell variables.** Run discovery and the first CLI
+command in the same Bash call. For later calls, use the resolved absolute binary
+path (quoted), or repeat discovery; do not assume `$VBP` is still set.
+
 
 **If `$VBP` is empty or the version doesn't print**, the plugin isn't installed —
 STOP and tell the user to `/plugin install memarium`. Do not fall back to a PATH
 `memarium` (that's the separate npm CLI). Run every subcommand as `"$VBP" <sub>`
-in the same shell where you set `$VBP`.
+with discovery repeated in that Bash call, or use its resolved absolute path.
 
 ---
 

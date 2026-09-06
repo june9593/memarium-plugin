@@ -49,12 +49,12 @@ var require_error = __commonJS({
        * @param {string} code an id string representing the error
        * @param {string} message human-readable description of the error
        */
-      constructor(exitCode, code, message) {
+      constructor(exitCode2, code, message) {
         super(message);
         Error.captureStackTrace(this, this.constructor);
         this.name = this.constructor.name;
         this.code = code;
-        this.exitCode = exitCode;
+        this.exitCode = exitCode2;
         this.nestedError = void 0;
       }
     };
@@ -1398,11 +1398,11 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @return never
        * @private
        */
-      _exit(exitCode, code, message) {
+      _exit(exitCode2, code, message) {
         if (this._exitCallback) {
-          this._exitCallback(new CommanderError2(exitCode, code, message));
+          this._exitCallback(new CommanderError2(exitCode2, code, message));
         }
-        process3.exit(exitCode);
+        process3.exit(exitCode2);
       }
       /**
        * Register callback `fn` for the command.
@@ -2478,9 +2478,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
           this.outputHelp({ error: true });
         }
         const config = errorOptions || {};
-        const exitCode = config.exitCode || 1;
+        const exitCode2 = config.exitCode || 1;
         const code = config.code || "commander.error";
-        this._exit(exitCode, code, message);
+        this._exit(exitCode2, code, message);
       }
       /**
        * Apply any option related environment variables, if option does
@@ -2925,11 +2925,11 @@ Expecting one of '${allowedValues.join("', '")}'`);
        */
       help(contextOptions) {
         this.outputHelp(contextOptions);
-        let exitCode = process3.exitCode || 0;
-        if (exitCode === 0 && contextOptions && typeof contextOptions !== "function" && contextOptions.error) {
-          exitCode = 1;
+        let exitCode2 = process3.exitCode || 0;
+        if (exitCode2 === 0 && contextOptions && typeof contextOptions !== "function" && contextOptions.error) {
+          exitCode2 = 1;
         }
-        this._exit(exitCode, "commander.help", "(outputHelp)");
+        this._exit(exitCode2, "commander.help", "(outputHelp)");
       }
       /**
        * Add additional text to be displayed with the built-in help.
@@ -6642,23 +6642,23 @@ var init_types = __esm({
         }
         if (effect.type === "transform") {
           if (ctx.common.async === false) {
-            const base = this._def.schema._parseSync({
+            const base2 = this._def.schema._parseSync({
               data: ctx.data,
               path: ctx.path,
               parent: ctx
             });
-            if (!isValid(base))
+            if (!isValid(base2))
               return INVALID;
-            const result = effect.transform(base.value, checkCtx);
+            const result = effect.transform(base2.value, checkCtx);
             if (result instanceof Promise) {
               throw new Error(`Asynchronous transform encountered during synchronous parse operation. Use .parseAsync instead.`);
             }
             return { status: status.value, value: result };
           } else {
-            return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((base) => {
-              if (!isValid(base))
+            return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((base2) => {
+              if (!isValid(base2))
                 return INVALID;
-              return Promise.resolve(effect.transform(base.value, checkCtx)).then((result) => ({
+              return Promise.resolve(effect.transform(base2.value, checkCtx)).then((result) => ({
                 status: status.value,
                 value: result
               }));
@@ -10410,8 +10410,8 @@ function deleteBranchesTask(branches, forceDelete = false) {
     parser(stdOut, stdErr) {
       return parseBranchDeletions(stdOut, stdErr);
     },
-    onError({ exitCode, stdOut }, error, done, fail) {
-      if (!hasBranchDeletionError(String(error), exitCode)) {
+    onError({ exitCode: exitCode2, stdOut }, error, done, fail) {
+      if (!hasBranchDeletionError(String(error), exitCode2)) {
         return fail(error);
       }
       done(stdOut);
@@ -10425,8 +10425,8 @@ function deleteBranchTask(branch, forceDelete = false) {
     parser(stdOut, stdErr) {
       return parseBranchDeletions(stdOut, stdErr).branches[branch];
     },
-    onError({ exitCode, stdErr, stdOut }, error, _2, fail) {
-      if (!hasBranchDeletionError(String(error), exitCode)) {
+    onError({ exitCode: exitCode2, stdErr, stdOut }, error, _2, fail) {
+      if (!hasBranchDeletionError(String(error), exitCode2)) {
         return fail(error);
       }
       throw new GitResponseError(
@@ -10693,7 +10693,7 @@ function completionDetectionPlugin({
   onExit = 50
 } = {}) {
   function createEvents() {
-    let exitCode = -1;
+    let exitCode2 = -1;
     const events = {
       close: (0, import_promise_deferred2.deferred)(),
       closeTimeout: (0, import_promise_deferred2.deferred)(),
@@ -10708,15 +10708,15 @@ function completionDetectionPlugin({
     configureTimeout(onExit, events.exit, events.exitTimeout);
     return {
       close(code) {
-        exitCode = code;
+        exitCode2 = code;
         events.close.done();
       },
       exit(code) {
-        exitCode = code;
+        exitCode2 = code;
         events.exit.done();
       },
       get exitCode() {
-        return exitCode;
+        return exitCode2;
       },
       result
     };
@@ -11230,8 +11230,8 @@ var init_esm = __esm({
           CheckRepoActions2["IS_REPO_ROOT"] = "root";
           return CheckRepoActions2;
         })(CheckRepoActions || {});
-        onError = ({ exitCode }, error, done, fail) => {
-          if (exitCode === 128 && isNotRepoMessage(error)) {
+        onError = ({ exitCode: exitCode2 }, error, done, fail) => {
+          if (exitCode2 === 128 && isNotRepoMessage(error)) {
             return done(Buffer.from("false"));
           }
           fail(error);
@@ -11591,9 +11591,9 @@ var init_esm = __esm({
             return task.parser(this);
           }
           handleTaskData(task, args, result, logger) {
-            const { exitCode, rejection, stdOut, stdErr } = result;
+            const { exitCode: exitCode2, rejection, stdOut, stdErr } = result;
             return new Promise((done, fail) => {
-              logger(`Preparing to handle process response exitCode=%d stdOut=`, exitCode);
+              logger(`Preparing to handle process response exitCode=%d stdOut=`, exitCode2);
               const { error } = this._plugins.exec(
                 "task.error",
                 { error: rejection },
@@ -11623,7 +11623,7 @@ var init_esm = __esm({
               if (error) {
                 logger.info(
                   `handling as error: exitCode=%s stdErr=%s rejection=%o`,
-                  exitCode,
+                  exitCode2,
                   stdErr.length,
                   rejection
                 );
@@ -11681,11 +11681,11 @@ var init_esm = __esm({
               this._plugins.exec("spawn.after", void 0, {
                 ...pluginContext(task, args),
                 spawned,
-                close(exitCode, reason) {
+                close(exitCode2, reason) {
                   done({
                     stdOut,
                     stdErr,
-                    exitCode,
+                    exitCode: exitCode2,
                     rejection: rejection || reason
                   });
                 },
@@ -15837,6 +15837,369 @@ var init_memory_primer = __esm({
   }
 });
 
+// src/commands/retro-evidence.ts
+function scanShell(source) {
+  let i2 = 0;
+  let before = "start";
+  let command = { words: [], redirects: [], before, after: "end" };
+  const commands = [];
+  const here = [];
+  const finish = (after) => {
+    if (command.words.length || command.redirects.length) {
+      command.after = after;
+      commands.push(command);
+    }
+    before = after;
+    command = { words: [], redirects: [], before, after: "end" };
+  };
+  function substitution() {
+    const start = i2;
+    if (source[i2] === "`") {
+      i2++;
+      while (i2 < source.length && source[i2] !== "`") {
+        if (source[i2] === "\\") i2++;
+        i2++;
+      }
+      if (i2 === source.length) return null;
+      return source.slice(start, ++i2);
+    }
+    i2 += 2;
+    let depth = 1;
+    let quote = "";
+    while (i2 < source.length) {
+      const c3 = source[i2++];
+      if (c3 === "\\") {
+        i2++;
+        continue;
+      }
+      if (quote) {
+        if (c3 === quote) quote = "";
+        continue;
+      }
+      if (c3 === "'" || c3 === '"') {
+        quote = c3;
+        continue;
+      }
+      if (c3 === "(") depth++;
+      if (c3 === ")" && --depth === 0) return source.slice(start, i2);
+    }
+    return null;
+  }
+  function word() {
+    let value = "", quote = "", quoted = false, dynamic = false, variable = false, started = false;
+    while (i2 < source.length) {
+      const c3 = source[i2];
+      if (!quote && /[\s;|&<>(){}]/.test(c3)) break;
+      if (c3 === "\\" && quote !== "'") {
+        started = true;
+        if (i2 + 1 >= source.length) return null;
+        const next = source[i2 + 1];
+        if (next !== "\n") value += quote === '"' && !/[$`"\\]/.test(next) ? "\\" + next : next;
+        i2 += 2;
+        continue;
+      }
+      if ((c3 === "'" || c3 === '"') && (!quote || quote === c3)) {
+        quote = quote ? "" : c3;
+        quoted = true;
+        started = true;
+        i2++;
+        continue;
+      }
+      if (quote !== "'" && (c3 === "`" || source.startsWith("$(", i2))) {
+        const part = substitution();
+        if (part === null) return null;
+        value += part;
+        dynamic = true;
+        started = true;
+        continue;
+      }
+      if (c3 === "$" && quote !== "'") variable = true;
+      value += c3;
+      started = true;
+      i2++;
+    }
+    return quote || !started ? null : { value, dynamic, quoted, variable };
+  }
+  while (i2 < source.length) {
+    const c3 = source[i2];
+    if (c3 === " " || c3 === "	" || c3 === "\r") {
+      i2++;
+      continue;
+    }
+    if (c3 === "\\" && source[i2 + 1] === "\n") {
+      i2 += 2;
+      continue;
+    }
+    if (c3 === "#") {
+      while (i2 < source.length && source[i2] !== "\n") i2++;
+      continue;
+    }
+    if (c3 === "\n") {
+      const continued = ["&&", "||", "|", "|&"].includes(before) && command.words.length === 0;
+      if (!continued) finish(";");
+      i2++;
+      for (const redirect of here.splice(0)) {
+        const lines = [];
+        let closed = false;
+        while (i2 < source.length) {
+          const end = source.indexOf("\n", i2);
+          const line3 = source.slice(i2, end < 0 ? source.length : end);
+          i2 = end < 0 ? source.length : end + 1;
+          const normalized = redirect.op === "<<-" ? line3.replace(/^\t+/, "") : line3;
+          if (normalized === redirect.target.value) {
+            closed = true;
+            break;
+          }
+          lines.push(normalized);
+        }
+        if (!closed) return null;
+        redirect.body = lines.join("\n");
+      }
+      continue;
+    }
+    if (/[(){}]/.test(c3)) return null;
+    if (c3 === ";" || c3 === "&" || c3 === "|") {
+      const op = ["&&", "||", "|&"].includes(source.slice(i2, i2 + 2)) ? source.slice(i2, i2 + 2) : c3;
+      if (op === ";" && source[i2 + 1] === ";") return null;
+      finish(op);
+      i2 += op.length;
+      continue;
+    }
+    const redir = source.slice(i2).match(/^(\d*)(<<-|<<|>>|>&|<&|>|<)/);
+    if (redir) {
+      i2 += redir[0].length;
+      while (source[i2] === " " || source[i2] === "	") i2++;
+      const target = word();
+      if (!target) return null;
+      const r2 = { op: redir[2], target, ...redir[1] ? { fd: Number(redir[1]) } : {} };
+      command.redirects.push(r2);
+      if (r2.op.startsWith("<<")) here.push(r2);
+      continue;
+    }
+    const w = word();
+    if (!w) return null;
+    command.words.push(w);
+  }
+  if (here.length) return null;
+  finish("end");
+  return commands;
+}
+function executable(command) {
+  const words = [...command.words];
+  while (words[0] && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0].value)) words.shift();
+  return words;
+}
+function gitCommit(args) {
+  let i2 = 0;
+  const valued = /* @__PURE__ */ new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"]);
+  const flags = /* @__PURE__ */ new Set(["--no-pager", "--paginate", "-p", "--literal-pathspecs", "--no-optional-locks"]);
+  while (args[i2]?.startsWith("-")) {
+    const a = args[i2++];
+    if (valued.has(a)) {
+      if (!args[i2]) return false;
+      i2++;
+    } else if (!flags.has(a) && !/^--(?:git-dir|work-tree|namespace|config-env)=/.test(a)) return false;
+  }
+  if (args[i2++] !== "commit") return false;
+  const values = /* @__PURE__ */ new Set(["-m", "--message", "-F", "--file", "-C", "-c", "--reuse-message", "--reedit-message", "--author", "--date", "--template", "-t", "--trailer", "--pathspec-from-file"]);
+  for (; i2 < args.length; i2++) {
+    const a = args[i2];
+    if (a === "--") break;
+    if (["--dry-run", "--help", "-h"].includes(a)) return false;
+    if (values.has(a) || /^-[a-z]*m$/.test(a)) i2++;
+  }
+  return true;
+}
+function sedEdit(args) {
+  let inPlace = false, expression = false, files = false;
+  for (let i2 = 0; i2 < args.length; i2++) {
+    const a = args[i2];
+    if (a === "--") {
+      files ||= i2 + 1 < args.length;
+      break;
+    }
+    if (a === "--help" || a === "--version") return false;
+    if (a === "-i" || a.startsWith("-i") || a === "--in-place" || a.startsWith("--in-place=")) {
+      inPlace = true;
+      if (a === "-i" && args[i2 + 1] === "") i2++;
+    } else if (["-e", "--expression", "-f", "--file"].includes(a)) {
+      expression = true;
+      i2++;
+    } else if (/^(?:-e.|-f.|--expression=|--file=)/.test(a)) expression = true;
+    else if (a.startsWith("-")) {
+      if (!["-n", "-E", "-r", "-s", "-u"].includes(a)) return false;
+    } else if (!expression) expression = true;
+    else files = true;
+  }
+  return inPlace && expression && files;
+}
+function pythonWrites(source) {
+  let code = "";
+  const literals = /* @__PURE__ */ new Map();
+  for (let i2 = 0; i2 < source.length; ) {
+    const c3 = source[i2];
+    if (c3 === "#") {
+      while (i2 < source.length && source[i2] !== "\n") i2++;
+      continue;
+    }
+    if (c3 !== "'" && c3 !== '"') {
+      code += c3;
+      i2++;
+      continue;
+    }
+    const delimiter = source.startsWith(c3.repeat(3), i2) ? c3.repeat(3) : c3;
+    i2 += delimiter.length;
+    let value = "", closed = false;
+    while (i2 < source.length) {
+      if (source.startsWith(delimiter, i2)) {
+        i2 += delimiter.length;
+        closed = true;
+        break;
+      }
+      if (source[i2] === "\\" && i2 + 1 < source.length) {
+        value += source.slice(i2, i2 + 2);
+        i2 += 2;
+      } else value += source[i2++];
+    }
+    if (!closed) return false;
+    const key = `${literals.size}`;
+    literals.set(key, value);
+    code += key + "\n".repeat(value.split("\n").length - 1);
+  }
+  let skippedIndent = null;
+  code = code.split("\n").map((line3) => {
+    if (!line3.trim()) return "";
+    const indent = line3.match(/^\s*/)?.[0].length ?? 0;
+    if (skippedIndent !== null && indent > skippedIndent) return "";
+    skippedIndent = null;
+    if (/^\s*(?:(?:async\s+)?def|class|if|elif|else|while|try|except|finally|match|case)\b/.test(line3)) {
+      skippedIndent = indent;
+      return "";
+    }
+    return /\blambda\b/.test(line3) ? "" : line3;
+  }).join("\n");
+  if (/\.\s*(?:write_text|write_bytes)\s*\(/.test(code)) return true;
+  for (const match of code.matchAll(/\bopen\s*\(/g)) {
+    const start = match.index + match[0].length;
+    let depth = 1, arg = "";
+    const args = [];
+    for (let i2 = start; i2 < code.length && i2 - start < 8192; i2++) {
+      const c3 = code[i2];
+      if (c3 === "(") depth++;
+      if (c3 === ")") depth--;
+      if (depth === 0) {
+        args.push(arg.trim());
+        break;
+      }
+      if (c3 === "," && depth === 1) {
+        args.push(arg.trim());
+        arg = "";
+      } else arg += c3;
+    }
+    const named = args.find((a) => /^mode\s*=/.test(a))?.replace(/^mode\s*=\s*/, "");
+    let previous = match.index - 1;
+    while (previous >= 0 && /\s/.test(code[previous])) previous--;
+    const method = code[previous] === ".";
+    const mode = literals.get(named ?? args[method ? 0 : 1] ?? "");
+    if (mode && /^[rwax](?:[bt]?\+?|\+[bt]?)$/.test(mode) && (mode[0] !== "r" || mode.includes("+"))) return true;
+  }
+  return false;
+}
+function commandEvidence(command) {
+  const words = executable(command);
+  if (!words.length || words[0].dynamic) return NONE();
+  const values = words.map((w) => w.value);
+  const name = base(values[0]);
+  const args = values.slice(1);
+  const noOutput = /^(?:\/dev\/(?:null|stdout|stderr|fd\/\d+)|\/proc\/self\/fd\/\d+)$/;
+  if (["git", "sed"].includes(name) && words.some((w) => w.dynamic)) return NONE();
+  if (name === "git") return { mutation: gitCommit(args), retro: [] };
+  if (name === "cat") return { mutation: command.redirects.some((r2) => [">", ">>"].includes(r2.op) && (r2.fd === void 0 || r2.fd === 1) && !r2.target.dynamic && !noOutput.test(r2.target.value)), retro: [] };
+  if (name === "sed") return { mutation: sedEdit(args), retro: [] };
+  if (/^python(?:3(?:\.\d+)?)?$/.test(name)) {
+    let program2;
+    let i2 = 1;
+    while (["-u", "-B", "-I", "-E", "-s", "-S"].includes(values[i2] ?? "")) i2++;
+    if (values[i2] === "-c" && !words[i2 + 1]?.dynamic) program2 = values[i2 + 1];
+    else if (i2 === values.length || values[i2] === "-") {
+      const input = command.redirects.filter((r2) => r2.op.startsWith("<<") && (r2.fd === void 0 || r2.fd === 0)).at(-1);
+      if (input?.target.quoted || !/[$`]/.test(input?.body ?? "")) program2 = input?.body;
+    }
+    return { mutation: program2 !== void 0 && pythonWrites(program2), retro: [] };
+  }
+  let executableIndex = name === "node" || name === "nodejs" ? 1 : 0;
+  while (executableIndex && ["--no-warnings", "--enable-source-maps", "--"].includes(values[executableIndex] ?? "")) executableIndex++;
+  const plugin = values[executableIndex] ?? "";
+  const pluginName = base(plugin);
+  if (["memarium-plugin.js", "memarium-plugin"].includes(pluginName) || ["$VBP", "${VBP}"].includes(plugin) && words[executableIndex]?.variable) {
+    const kind = values[executableIndex + 1];
+    if ((kind === "memory-write" || kind === "memory-propose") && !values.slice(executableIndex + 2).some((a) => a === "--help" || a === "-h")) {
+      return { mutation: false, retro: [kind] };
+    }
+  }
+  return NONE();
+}
+function setupOnly(values) {
+  if (values[0] !== "set" || values.length === 1) return false;
+  for (let i2 = 1; i2 < values.length; i2++) {
+    const option = values[i2];
+    if (/^[-+][eufx]+$/.test(option)) continue;
+    if (!/^[-+][eufx]*o$/.test(option) || !["pipefail", "errexit", "nounset", "xtrace", "noglob"].includes(values[++i2] ?? "")) return false;
+  }
+  return true;
+}
+function analyzeBash(source, successful2) {
+  if (source.length > 128 * 1024) return NONE();
+  const commands = scanShell(source);
+  if (!commands || commands.length > 512) return NONE();
+  if (commands.some((c3) => {
+    const values = executable(c3).map((w) => w.value);
+    return CONTROL.has(values[0] ?? "") || values[0] === "set" && !setupOnly(values);
+  })) return NONE();
+  const detached = /* @__PURE__ */ new Set();
+  for (let i2 = 0; i2 < commands.length; i2++) {
+    if (commands[i2].after !== "&") continue;
+    for (let j2 = i2; j2 >= 0; j2--) {
+      detached.add(j2);
+      if (!["&&", "||", "|", "|&"].includes(commands[j2].before)) break;
+    }
+  }
+  let finalAndStart = commands.length - 1;
+  while (finalAndStart > 0 && commands[finalAndStart].before === "&&") finalAndStart--;
+  const finalForeground = ["end", ";"].includes(commands.at(-1)?.after ?? "");
+  const result = NONE();
+  let firstOperation = true, exited = false;
+  for (let i2 = 0; i2 < commands.length; i2++) {
+    const command = commands[i2];
+    const values = executable(command).map((w) => w.value);
+    if (!values.length || setupOnly(values)) continue;
+    if (exited) break;
+    if (["exit", "return", "exec"].includes(values[0])) {
+      exited = true;
+      continue;
+    }
+    const piped = detached.has(i2) || ["|", "|&"].includes(command.before) || ["|", "|&"].includes(command.after);
+    const finalAnd = command.before === "&&" && successful2 && finalForeground && i2 > finalAndStart;
+    const reachable = !piped && command.before !== "||" && (command.before !== "&&" || finalAnd) && (successful2 || firstOperation);
+    if (reachable) {
+      const evidence = commandEvidence(command);
+      result.mutation ||= evidence.mutation;
+      for (const kind of evidence.retro) if (!result.retro.includes(kind)) result.retro.push(kind);
+    }
+    firstOperation = false;
+  }
+  return result;
+}
+var NONE, CONTROL, base;
+var init_retro_evidence = __esm({
+  "src/commands/retro-evidence.ts"() {
+    "use strict";
+    NONE = () => ({ mutation: false, retro: [] });
+    CONTROL = /* @__PURE__ */ new Set(["if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac", "function", "select", "eval", "source", ".", "trap"]);
+    base = (s) => s.replace(/\\/g, "/").split("/").pop() ?? s;
+  }
+});
+
 // src/commands/retro-gate.ts
 var retro_gate_exports = {};
 __export(retro_gate_exports, {
@@ -15845,41 +16208,102 @@ __export(retro_gate_exports, {
   retroGateCmd: () => retroGateCmd
 });
 import { readFileSync as readFileSync14, existsSync as existsSync15, openSync as openSync2, fstatSync, readSync, closeSync as closeSync2 } from "node:fs";
-function isRetroSignal(tu) {
-  if (tu.name === "Skill" && String(tu.input?.skill ?? "").includes("memarium-retro")) return true;
-  if (tu.name === "Bash") {
-    const c3 = String(tu.input?.command ?? "");
-    if (c3.includes("memory-write") || c3.includes("memory-propose")) return true;
+function contentText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map((b2) => record(b2).text).filter((s) => typeof s === "string").join("\n");
+  return "";
+}
+function outputText(result) {
+  return typeof result.meta.stdout === "string" ? result.meta.stdout : contentText(result.content);
+}
+function exitCode(result) {
+  for (const key of ["exitCode", "exit_code", "returnCode", "return_code"]) {
+    const value = result.meta[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
   }
-  return false;
+  return void 0;
+}
+function successful(result) {
+  return !result.error && !result.meta.interrupted && !result.meta.error && result.meta.success !== false && !["failed", "error", "cancelled", "canceled"].includes(typeof result.meta.status === "string" ? result.meta.status.toLowerCase() : "") && (exitCode(result) ?? 0) === 0;
+}
+function launchOnly(call, result) {
+  const terminalState = ["completed", "failed", "cancelled", "canceled"].includes(typeof result.meta.status === "string" ? result.meta.status.toLowerCase() : "");
+  if (result.meta.backgroundTaskId) return !terminalState;
+  return Boolean(call.input.run_in_background) && !terminalState && exitCode(result) === void 0;
+}
+function declined(result) {
+  if (result.meta.denied === true || result.meta.permissionDenied === true) return true;
+  if (!result.error && !result.meta.interrupted) return false;
+  const text = [outputText(result), contentText(result.content), result.meta.stderr, result.meta.message].filter((s) => typeof s === "string").join("\n");
+  return /user (?:denied|declined|rejected|cancelled|canceled)|user doesn't want to proceed|tool use was rejected|request interrupted by user/i.test(text);
+}
+function captureReceipt(result, kinds) {
+  let report;
+  try {
+    report = record(JSON.parse(outputText(result)));
+  } catch {
+    return false;
+  }
+  const strings = (v) => Array.isArray(v) && v.length > 0 && v.every((s) => typeof s === "string" && s.length > 0);
+  if (!strings(report.paths)) return false;
+  if (kinds.includes("memory-write") && Number.isSafeInteger(report.written) && Number(report.written) > 0 && Number.isSafeInteger(report.superseded) && Number(report.superseded) >= 0) return true;
+  return kinds.includes("memory-propose") && Number.isSafeInteger(report.proposed) && Number(report.proposed) > 0 && strings(report.targetKeys) && strings(report.proposedEntryIds);
+}
+function committed(result) {
+  const commit = record(record(result.meta.gitOperation).commit);
+  return commit.kind === "committed" && typeof commit.sha === "string" && /^[a-f0-9]{40,64}$/i.test(commit.sha);
 }
 function decideRetroGate(evt, rows) {
   if (evt.stop_hook_active) return { block: false };
   let lastUser = -1;
-  rows.forEach((m, i2) => {
-    if (m.isMeta === true) return;
-    const msg = m.message ?? m;
+  rows.forEach((row, i2) => {
+    if (row.isMeta) return;
+    const msg = row.message ?? row;
     if (msg.role !== "user") return;
     const c3 = msg.content;
-    const toolResultOnly = Array.isArray(c3) && c3.length > 0 && c3.every((b2) => b2?.type === "tool_result");
+    const toolResultOnly = Array.isArray(c3) && c3.length > 0 && c3.every((b2) => record(b2).type === "tool_result");
     if (!toolResultOnly) lastUser = i2;
   });
-  let mutated = false;
-  let didRetro = false;
-  for (const m of rows.slice(lastUser + 1)) {
-    if (m.isMeta === true) continue;
-    const msg = m.message ?? m;
-    if (msg.role !== "assistant") continue;
-    const c3 = msg.content;
-    if (!Array.isArray(c3)) continue;
-    for (const b2 of c3) {
-      const blk = b2;
-      if (blk.type !== "tool_use") continue;
-      if (blk.name && MUTATION_TOOLS.has(blk.name)) mutated = true;
-      if (isRetroSignal(blk)) didRetro = true;
+  const calls = /* @__PURE__ */ new Map();
+  const results = /* @__PURE__ */ new Map();
+  for (const row of rows.slice(lastUser + 1)) {
+    if (row.isMeta) continue;
+    const msg = row.message ?? row;
+    if (!Array.isArray(msg.content)) continue;
+    const blocks = msg.content.map(record);
+    const resultBlocks = blocks.filter((b2) => b2.type === "tool_result");
+    for (const b2 of blocks) {
+      if (msg.role === "assistant" && b2.type === "tool_use" && typeof b2.id === "string" && typeof b2.name === "string") {
+        calls.set(b2.id, { name: b2.name, input: record(b2.input) });
+      }
+      if (msg.role === "user" && b2.type === "tool_result" && typeof b2.tool_use_id === "string") {
+        results.set(b2.tool_use_id, { error: b2.is_error === true, content: b2.content, meta: resultBlocks.length === 1 ? record(row.toolUseResult) : {} });
+      }
     }
   }
-  return mutated && !didRetro ? { block: true, reason: RETRO_REASON } : { block: false };
+  let mutation = false, alreadyPrompted = false, captured = false, captureDeclined = false;
+  for (const [id, call] of calls) {
+    const result = results.get(id);
+    if (!result) continue;
+    const isRetro = call.name === "Skill" && call.input.skill === RETRO_SKILL;
+    const command = typeof call.input.command === "string" ? call.input.command : "";
+    const intent = call.name === "Bash" ? analyzeBash(command, true) : { mutation: false, retro: [] };
+    const captureIntent = isRetro || intent.retro.length > 0;
+    if (declined(result) || captureIntent && result.meta.interrupted) {
+      if (captureIntent) captureDeclined = true;
+      continue;
+    }
+    if (launchOnly(call, result)) continue;
+    const ok = successful(result);
+    const bash = call.name === "Bash" && !ok ? analyzeBash(command, false) : intent;
+    if (MUTATION_TOOLS.has(call.name) && ok) mutation = true;
+    if (isRetro && ok) alreadyPrompted = true;
+    if (call.name === "Bash") {
+      mutation ||= committed(result) || bash.mutation;
+      captured ||= captureReceipt(result, bash.retro);
+    }
+  }
+  return mutation && !alreadyPrompted && !captured && !captureDeclined ? { block: true, reason: RETRO_REASON } : { block: false };
 }
 function readTailLines(path, cap) {
   const fd = openSync2(path, "r");
@@ -15924,12 +16348,15 @@ async function retroGateCmd() {
   } catch {
   }
 }
-var RETRO_REASON, MUTATION_TOOLS;
+var record, RETRO_REASON, MUTATION_TOOLS, RETRO_SKILL;
 var init_retro_gate = __esm({
   "src/commands/retro-gate.ts"() {
     "use strict";
-    RETRO_REASON = 'This turn changed files. Before you stop, capture the ONE reusable insight from it into memarium typed memory: invoke the Skill tool with skill: "memarium:memarium-retro" now (the `memarium:` prefix is required \u2014 the bare name fails with Unknown skill) \u2014 distill the insight, run the fact-hygiene + memory-query dedup, and write it (memory-write for semantic/episodic, memory-propose for gated). If, on reflection, nothing here is durably reusable \u2014 or you already captured it \u2014 say so in one line and stop; do not force a low-value memory.';
+    init_retro_evidence();
+    record = (v) => v !== null && typeof v === "object" && !Array.isArray(v) ? v : {};
+    RETRO_REASON = 'This turn may have changed files. Before you stop, check whether it produced ONE reusable insight: invoke the Skill tool with skill: "memarium:memarium-retro" and follow its fact-hygiene and dedup steps. If nothing is durably reusable, or it is already captured, say so briefly and stop; never manufacture a memory for this hook. Respect any user refusal of recall/capture and do not retry a denied operation. Proposals still require human approval.';
     MUTATION_TOOLS = /* @__PURE__ */ new Set(["Edit", "Write", "NotebookEdit", "MultiEdit"]);
+    RETRO_SKILL = "memarium:memarium-retro";
   }
 });
 
@@ -18817,15 +19244,15 @@ function readHeaderFromContent(content) {
   return null;
 }
 function readHeader(records) {
-  for (const record of records) {
-    if (record.type !== "session_meta") continue;
-    const payload = record.payload;
+  for (const record2 of records) {
+    if (record2.type !== "session_meta") continue;
+    const payload = record2.payload;
     const id = stringValue(payload.id) || stringValue(payload.session_id);
     if (!id) continue;
     return {
       id,
       cwd: stringValue(payload.cwd),
-      timestamp: validTimestamp(payload.timestamp) ?? record.timestamp,
+      timestamp: validTimestamp(payload.timestamp) ?? record2.timestamp,
       originator: stringValue(payload.originator),
       source: payload.source,
       threadSource: payload.thread_source,
@@ -18863,7 +19290,7 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
   const shortId = shortCodexId(sessionId);
   const cwd = header?.cwd ?? "";
   const fallbackTime = validMtime(sourceMtimeMs);
-  const recordTimes = records.flatMap((record) => record.timestamp ? [record.timestamp] : []);
+  const recordTimes = records.flatMap((record2) => record2.timestamp ? [record2.timestamp] : []);
   const startedAt = header?.timestamp ?? recordTimes[0] ?? fallbackTime;
   const endedAt = latestTimestamp(recordTimes) ?? header?.timestamp ?? fallbackTime;
   if (!header || shouldExclude(header)) {
@@ -18878,24 +19305,24 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
   const responseOutputKeys = /* @__PURE__ */ new Set();
   const eventTools = [];
   const responseToolSpans = /* @__PURE__ */ new Map();
-  for (const record of records) {
-    const subtype = stringValue(record.payload.type);
-    if (record.type === "response_item") {
+  for (const record2 of records) {
+    const subtype = stringValue(record2.payload.type);
+    if (record2.type === "response_item") {
       if (subtype === "message") {
-        const role = stringValue(record.payload.role);
+        const role = stringValue(record2.payload.role);
         if (role !== "user" && role !== "assistant") continue;
-        const rawText = role === "user" ? extractVisibleUserText(record.payload) : extractText(record.payload.content);
+        const rawText = role === "user" ? extractVisibleUserText(record2.payload) : extractText(record2.payload.content);
         const text = sanitizeCodexText(rawText);
         if (!text) continue;
-        responseMessages.push(textMessage(record, role, text));
+        responseMessages.push(textMessage(record2, role, text));
       } else if (subtype === "agent_message") {
         continue;
       } else if (subtype === "reasoning") {
-        const reasoning = reasoningText(record.payload);
-        if (reasoning) responseReasoning.push(reasoningMessage(record, reasoning));
+        const reasoning = reasoningText(record2.payload);
+        if (reasoning) responseReasoning.push(reasoningMessage(record2, reasoning));
       } else if (subtype === "image_generation_call") {
-        const projected = responseImageGeneration(record);
-        const callKey = projected[0].id ?? `${subtype}:${record.index}`;
+        const projected = responseImageGeneration(record2);
+        const callKey = projected[0].id ?? `${subtype}:${record2.index}`;
         if (!responseToolKeys.has(callKey)) {
           responseToolKeys.add(callKey);
           responseTools.push(projected[0]);
@@ -18905,24 +19332,24 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
           responseTools.push(projected[1]);
         }
       } else if (RESPONSE_TOOL_CALLS.has(subtype)) {
-        const projected = responseToolCall(record, subtype);
-        const key = projected.id ?? `${subtype}:${record.index}`;
+        const projected = responseToolCall(record2, subtype);
+        const key = projected.id ?? `${subtype}:${record2.index}`;
         if (!responseToolKeys.has(key)) {
           responseToolKeys.add(key);
           responseTools.push(projected);
         }
-        extendToolSpan(responseToolSpans, key, record.index, {
+        extendToolSpan(responseToolSpans, key, record2.index, {
           signature: projected.toolSignature,
           toolUseId: projected.id
         });
       } else if (RESPONSE_TOOL_OUTPUTS.has(subtype)) {
-        const projected = responseToolOutput(record);
-        const key = projected.id ?? `${subtype}:${record.index}`;
+        const projected = responseToolOutput(record2);
+        const key = projected.id ?? `${subtype}:${record2.index}`;
         if (!responseOutputKeys.has(key)) {
           responseOutputKeys.add(key);
           responseTools.push(projected);
         }
-        extendToolSpan(responseToolSpans, key, record.index, {
+        extendToolSpan(responseToolSpans, key, record2.index, {
           hasOutput: projected.contentBlocks.some(
             (block) => block.type === "tool_result" && block.content.length > 0
           )
@@ -18930,33 +19357,33 @@ function parseCodexJsonl(sourcePath, content, titleMap = /* @__PURE__ */ new Map
       }
       continue;
     }
-    if (record.type !== "event_msg") continue;
+    if (record2.type !== "event_msg") continue;
     if (subtype === "user_message" || subtype === "agent_message") {
       const role = subtype === "user_message" ? "user" : "assistant";
-      const text = sanitizeCodexText(stringValue(record.payload.message));
-      if (text) displayMessages.push(textMessage(record, role, text));
+      const text = sanitizeCodexText(stringValue(record2.payload.message));
+      if (text) displayMessages.push(textMessage(record2, role, text));
       continue;
     }
     if (subtype !== "item_completed") continue;
-    const item = objectValue(record.payload.item);
+    const item = objectValue(record2.payload.item);
     const itemType = stringValue(item.type);
     if (itemType === "UserMessage" || itemType === "AgentMessage") {
       const role = itemType === "UserMessage" ? "user" : "assistant";
       const text = sanitizeCodexText(extractText(item.content));
       if (text) {
-        const projected = textMessage(record, role, text);
+        const projected = textMessage(record2, role, text);
         projected.id = stringValue(item.id) || void 0;
         displayMessages.push(projected);
       }
     } else if (itemType === "Reasoning") {
       const reasoning = reasoningText(item);
       if (reasoning) {
-        const projected = reasoningMessage(record, reasoning);
+        const projected = reasoningMessage(record2, reasoning);
         projected.id = stringValue(item.id) || void 0;
         displayReasoning.push(projected);
       }
     } else if (itemType === "CommandExecution" || itemType === "McpToolCall") {
-      eventTools.push(...eventToolMessages(record, item, itemType));
+      eventTools.push(...eventToolMessages(record2, item, itemType));
     }
   }
   const messages = [
@@ -19065,41 +19492,41 @@ function eventToolsOutsideResponseSpans(eventTools, spans) {
   }
   return out;
 }
-function textMessage(record, role, text) {
-  const id = stringValue(record.payload.id) || void 0;
+function textMessage(record2, role, text) {
+  const id = stringValue(record2.payload.id) || void 0;
   return {
-    index: record.index,
+    index: record2.index,
     order: 0,
     id,
     role,
     text,
-    timestamp: record.timestamp,
+    timestamp: record2.timestamp,
     contentBlocks: [{ type: "text", text }]
   };
 }
-function reasoningMessage(record, reasoning) {
+function reasoningMessage(record2, reasoning) {
   return {
-    index: record.index,
+    index: record2.index,
     order: 0,
-    id: stringValue(record.payload.id) || void 0,
+    id: stringValue(record2.payload.id) || void 0,
     role: "assistant",
     text: "",
     reasoning,
-    timestamp: record.timestamp,
+    timestamp: record2.timestamp,
     contentBlocks: [{ type: "thinking", thinking: reasoning }]
   };
 }
-function responseImageGeneration(record) {
-  const payload = record.payload;
-  const id = stringValue(payload.call_id) || stringValue(payload.id) || `codex-image-${record.index}`;
+function responseImageGeneration(record2) {
+  const payload = record2.payload;
+  const id = stringValue(payload.call_id) || stringValue(payload.id) || `codex-image-${record2.index}`;
   const prompt = stringValue(payload.revised_prompt);
   const messages = [{
-    index: record.index,
+    index: record2.index,
     order: 0,
     id,
     role: "assistant",
     text: "",
-    timestamp: record.timestamp,
+    timestamp: record2.timestamp,
     contentBlocks: [{
       type: "tool_use",
       name: "image_generation",
@@ -19109,12 +19536,12 @@ function responseImageGeneration(record) {
   }];
   if (payload.result !== void 0 && payload.result !== null) {
     messages.push({
-      index: record.index,
+      index: record2.index,
       order: 1,
       id,
       role: "tool",
       text: "",
-      timestamp: record.timestamp,
+      timestamp: record2.timestamp,
       contentBlocks: [{
         type: "tool_result",
         content: flattenToolOutput(payload.result),
@@ -19124,8 +19551,8 @@ function responseImageGeneration(record) {
   }
   return messages;
 }
-function responseToolCall(record, subtype) {
-  const payload = record.payload;
+function responseToolCall(record2, subtype) {
+  const payload = record2.payload;
   const id = stringValue(payload.call_id) || stringValue(payload.id) || void 0;
   let name = responseToolName(payload);
   let input;
@@ -19144,32 +19571,32 @@ function responseToolCall(record, subtype) {
     input = payload.action ?? {};
   }
   return {
-    index: record.index,
+    index: record2.index,
     order: 0,
     id,
     role: "assistant",
     text: "",
-    timestamp: record.timestamp,
+    timestamp: record2.timestamp,
     contentBlocks: [{ type: "tool_use", name: name || subtype, input: input ?? {}, ...id ? { id } : {} }],
     toolSignature: toolSignature(name || subtype, input ?? {})
   };
 }
-function responseToolOutput(record) {
-  const payload = record.payload;
+function responseToolOutput(record2) {
+  const payload = record2.payload;
   const id = stringValue(payload.call_id) || stringValue(payload.id) || void 0;
   const content = flattenToolOutput(payload.output ?? payload.tools ?? payload.result);
   return {
-    index: record.index,
+    index: record2.index,
     order: 1,
     id,
     role: "tool",
     text: "",
-    timestamp: record.timestamp,
+    timestamp: record2.timestamp,
     contentBlocks: [{ type: "tool_result", content, ...id ? { toolUseId: id } : {} }]
   };
 }
-function eventToolMessages(record, item, itemType) {
-  const id = stringValue(item.id) || `codex-event-${record.index}`;
+function eventToolMessages(record2, item, itemType) {
+  const id = stringValue(item.id) || `codex-event-${record2.index}`;
   let name;
   let input;
   let output;
@@ -19186,23 +19613,23 @@ function eventToolMessages(record, item, itemType) {
     output = item.result ?? item.error;
   }
   const messages = [{
-    index: record.index,
+    index: record2.index,
     order: 0,
     id,
     role: "assistant",
     text: "",
-    timestamp: record.timestamp,
+    timestamp: record2.timestamp,
     contentBlocks: [{ type: "tool_use", name, input, id }],
     toolSignature: toolSignature(name, input)
   }];
   if (output !== void 0) {
     messages.push({
-      index: record.index,
+      index: record2.index,
       order: 1,
       id,
       role: "tool",
       text: "",
-      timestamp: record.timestamp,
+      timestamp: record2.timestamp,
       contentBlocks: [{ type: "tool_result", content: flattenToolOutput(output), toolUseId: id }]
     });
   }
@@ -19272,8 +19699,8 @@ function commandTextForSignature(value) {
   if (!Array.isArray(value)) return null;
   const parts = value.filter((part) => typeof part === "string");
   if (parts.length === 0) return null;
-  const executable = parts[0].split(/[/\\]/).pop().toLowerCase();
-  if (["sh", "bash", "zsh", "fish", "pwsh", "powershell", "powershell.exe", "cmd", "cmd.exe"].includes(executable)) {
+  const executable2 = parts[0].split(/[/\\]/).pop().toLowerCase();
+  if (["sh", "bash", "zsh", "fish", "pwsh", "powershell", "powershell.exe", "cmd", "cmd.exe"].includes(executable2)) {
     const commandFlag = parts.findIndex(
       (part, index) => index > 0 && (/^-[a-z]*c[a-z]*$/i.test(part) || /^--?command$/i.test(part) || /^\/c$/i.test(part))
     );
@@ -19593,8 +20020,8 @@ function commandText(value) {
   if (!Array.isArray(value)) return null;
   const parts = value.filter((part) => typeof part === "string");
   if (parts.length === 0) return null;
-  const executable = parts[0].split(/[/\\]/).pop().toLowerCase();
-  if (["sh", "bash", "zsh", "fish", "pwsh", "powershell", "powershell.exe", "cmd", "cmd.exe"].includes(executable)) {
+  const executable2 = parts[0].split(/[/\\]/).pop().toLowerCase();
+  if (["sh", "bash", "zsh", "fish", "pwsh", "powershell", "powershell.exe", "cmd", "cmd.exe"].includes(executable2)) {
     const commandFlag = parts.findIndex(
       (part, index) => index > 0 && (/^-[a-z]*c[a-z]*$/i.test(part) || /^--?command$/i.test(part) || /^\/c$/i.test(part))
     );
@@ -19721,8 +20148,8 @@ function commandText2(value) {
   if (!Array.isArray(value)) return null;
   const parts = value.filter((part) => typeof part === "string");
   if (parts.length === 0) return null;
-  const executable = parts[0].split(/[/\\]/).pop().toLowerCase();
-  if (["sh", "bash", "zsh", "fish", "pwsh", "powershell", "powershell.exe", "cmd", "cmd.exe"].includes(executable)) {
+  const executable2 = parts[0].split(/[/\\]/).pop().toLowerCase();
+  if (["sh", "bash", "zsh", "fish", "pwsh", "powershell", "powershell.exe", "cmd", "cmd.exe"].includes(executable2)) {
     const commandFlag = parts.findIndex(
       (part, index) => index > 0 && (/^-[a-z]*c[a-z]*$/i.test(part) || /^--?command$/i.test(part) || /^\/c$/i.test(part))
     );
@@ -19784,8 +20211,8 @@ function writeSession(repoRoot, s, opts = {}) {
   const absDir = join33(repoRoot, "raw_sessions", s.tool, s.project, date);
   mkdirSync15(absDir, { recursive: true });
   const storageId = s.tool === "codex" ? safeStorageId(s.sessionId) : s.shortId;
-  const base = `${s.nameSlug}__${storageId}`;
-  const fileName = `${base}.md`;
+  const base2 = `${s.nameSlug}__${storageId}`;
+  const fileName = `${base2}.md`;
   const mdRel = `${dirRel}/${fileName}`;
   const includeReasoning = opts.includeReasoning ?? true;
   const fullToolResults = opts.fullToolResults ?? process.env.MEMARIUM_FULL_TOOL_RESULTS === "1";
@@ -20231,7 +20658,7 @@ async function run(argv) {
     const { memoryPrimerCmd: memoryPrimerCmd2 } = await Promise.resolve().then(() => (init_memory_primer(), memory_primer_exports));
     await memoryPrimerCmd2({ cwd: opts.cwd });
   });
-  program2.command("retro-gate").description("Read-only: reads the Stop-hook event JSON on stdin and, only when the just-finished turn changed files (and hasn't already retro'd), prints a {decision:block} JSON that makes the agent run /memarium-retro before stopping. Backs the Stop hook. Never writes, never throws.").action(async () => {
+  program2.command("retro-gate").description("Read-only advisory Stop gate: inspect current-turn tool results and bounded Bash mutation evidence; request one retro assessment unless already prompted, captured or declined. Never forces a memory write or calls an LLM; malformed input is nonblocking.").action(async () => {
     const { retroGateCmd: retroGateCmd2 } = await Promise.resolve().then(() => (init_retro_gate(), retro_gate_exports));
     await retroGateCmd2();
   });
