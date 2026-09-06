@@ -43,7 +43,9 @@ import Base from "../layouts/Base.astro";
   </section>
 
   <section class="container">
-    <h2>Two slash commands</h2>
+    <h2>Four skills, one memory loop</h2>
+    <p>Use the full <code>/memarium:skill-name</code> namespace if a short alias conflicts.
+      The startup primer is automatic; ranked recall is invoked by the agent or by you.</p>
     <div class="three-col" style="grid-template-columns: 1fr 1fr;">
       <div class="feature-card">
         <h3><code>/memarium</code></h3>
@@ -85,6 +87,18 @@ import Base from "../layouts/Base.astro";
           question without thinking about token cost.
         </p>
       </div>
+      <div class="feature-card">
+        <h3><code>/memarium-context</code></h3>
+        <p>Load broader project context: rules, procedures, facts, episodes,
+          entities, Q&amp;A, conflicts, and proposals awaiting human review.</p>
+      </div>
+      <div class="feature-card">
+        <h3><code>/memarium-retro</code></h3>
+        <p>Assess this task for one reusable insight. The Stop hook can request
+          one assessment after supported file-change evidence; it does not force
+          a memory write. Deduplicate first, respect user refusal, and keep gated
+          changes in the human-review queue.</p>
+      </div>
     </div>
   </section>
 
@@ -92,7 +106,8 @@ import Base from "../layouts/Base.astro";
     <div class="container">
       <h2>What recall actually does — a worked example</h2>
       <p>
-        Recall isn't something you remember to invoke. It's something
+        Skill descriptions and the startup primer prompt the agent to recall
+        related work; you can also invoke it explicitly. In this example, it is something
         Claude reaches for itself when it notices the task probably
         overlaps with past work. Imagine you say to Claude:
       </p>

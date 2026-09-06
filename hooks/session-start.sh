@@ -16,7 +16,7 @@ if [ -x "$VBP" ]; then
   if [ -n "$PRIMER" ]; then
     printf '## 📓 Project memory (memarium)\n\n%s\n' "$PRIMER"
     printf '\n### Recall before you dig in\n'
-    printf 'When the task touches a topic above — or asks how something was solved/decided before — invoke `/memarium-recall` FIRST (it surfaces the chronicle/decision/dead-end context that `git log` strips), before re-reading code or grepping history. For deeper context (episodes / conflicts / entities): `/memarium-context`.\n'
+    printf 'This primer is automatic context, not a ranked recall query. Before exploring a relevant new task or prior decision, invoke the Skill tool with skill: "memarium:memarium-recall" to surface matching episodes, decisions and dead ends. For broader project context, use skill: "memarium:memarium-context". Reuse recall already done for the same task.\n'
   fi
 fi
 exit 0

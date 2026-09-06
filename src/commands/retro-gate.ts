@@ -1,4 +1,5 @@
 import { readFileSync, existsSync, openSync, fstatSync, readSync, closeSync } from "node:fs";
+import { analyzeBash, type RetroCommand } from "./retro-evidence.js";
 
 /** The Stop-hook event JSON Claude Code pipes to the hook on stdin. */
 export interface StopEvent {
@@ -6,98 +7,144 @@ export interface StopEvent {
   transcript_path?: string;
 }
 
-/** A minimal shape of a transcript JSONL row (Claude Code session log). */
 interface Row {
   isMeta?: boolean;
   message?: { role?: string; content?: unknown };
   role?: string;
   content?: unknown;
+  toolUseResult?: unknown;
 }
+interface Call { name: string; input: Record<string, unknown> }
+interface Result { error: boolean; content: unknown; meta: Record<string, unknown> }
+const record = (v: unknown): Record<string, unknown> =>
+  v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};
 
-/** Instruction fed back to the agent when we block the stop to force a retro.
- *  Written as a direct instruction — Claude Code surfaces `reason` to the model
- *  as the thing to do before it may stop. Gives an explicit out so the agent is
- *  never forced to write a junk memory. */
+/** One advisory continuation, not a requirement to persist a memory. */
 export const RETRO_REASON =
-  "This turn changed files. Before you stop, capture the ONE reusable insight " +
-  "from it into memarium typed memory: invoke the Skill tool with " +
-  'skill: "memarium:memarium-retro" now (the `memarium:` prefix is required — ' +
-  "the bare name fails with Unknown skill) — " +
-  "distill the insight, run the fact-hygiene + memory-query dedup, and write it " +
-  "(memory-write for semantic/episodic, memory-propose for gated). If, on " +
-  "reflection, nothing here is durably reusable — or you already captured it — " +
-  "say so in one line and stop; do not force a low-value memory.";
+  "This turn may have changed files. Before you stop, check whether it produced " +
+  "ONE reusable insight: invoke the Skill tool with " +
+  'skill: "memarium:memarium-retro" and follow its fact-hygiene and dedup steps. ' +
+  "If nothing is durably reusable, or it is already captured, say so briefly " +
+  "and stop; never manufacture a memory for this hook. Respect any user refusal " +
+  "of recall/capture and do not retry a denied operation. Proposals still require human approval.";
 
-/** Tool calls that mean "this turn did real work worth a retro". */
 const MUTATION_TOOLS = new Set(["Edit", "Write", "NotebookEdit", "MultiEdit"]);
+const RETRO_SKILL = "memarium:memarium-retro";
 
-/** True when a tool_use block shows a retro already happened this turn — so we
- *  don't double-nudge (belt-and-suspenders next to the stop_hook_active guard). */
-function isRetroSignal(tu: { name?: string; input?: Record<string, unknown> }): boolean {
-  if (tu.name === "Skill" && String(tu.input?.skill ?? "").includes("memarium-retro")) return true;
-  if (tu.name === "Bash") {
-    const c = String(tu.input?.command ?? "");
-    if (c.includes("memory-write") || c.includes("memory-propose")) return true;
+function contentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map((b) => record(b).text).filter((s) => typeof s === "string").join("\n");
+  return "";
+}
+function outputText(result: Result): string {
+  return typeof result.meta.stdout === "string" ? result.meta.stdout : contentText(result.content);
+}
+function exitCode(result: Result): number | undefined {
+  for (const key of ["exitCode", "exit_code", "returnCode", "return_code"]) {
+    const value = result.meta[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
   }
-  return false;
+  return undefined;
+}
+function successful(result: Result): boolean {
+  return !result.error && !result.meta.interrupted && !result.meta.error && result.meta.success !== false &&
+    !["failed", "error", "cancelled", "canceled"].includes((typeof result.meta.status === "string" ? result.meta.status.toLowerCase() : "")) && (exitCode(result) ?? 0) === 0;
+}
+function launchOnly(call: Call, result: Result): boolean {
+  const terminalState = ["completed", "failed", "cancelled", "canceled"].includes((typeof result.meta.status === "string" ? result.meta.status.toLowerCase() : ""));
+  // A launcher's exitCode=0 does not mean its background job has finished.
+  if (result.meta.backgroundTaskId) return !terminalState;
+  return Boolean(call.input.run_in_background) && !terminalState && exitCode(result) === undefined;
+}
+function declined(result: Result): boolean {
+  if (result.meta.denied === true || result.meta.permissionDenied === true) return true;
+  if (!result.error && !result.meta.interrupted) return false;
+  const text = [outputText(result), contentText(result.content), result.meta.stderr, result.meta.message].filter((s) => typeof s === "string").join("\n");
+  return /user (?:denied|declined|rejected|cancelled|canceled)|user doesn't want to proceed|tool use was rejected|request interrupted by user/i.test(text);
+}
+function captureReceipt(result: Result, kinds: RetroCommand[]): boolean {
+  let report: Record<string, unknown>;
+  try { report = record(JSON.parse(outputText(result))); } catch { return false; }
+  const strings = (v: unknown) => Array.isArray(v) && v.length > 0 && v.every((s) => typeof s === "string" && s.length > 0);
+  if (!strings(report.paths)) return false;
+  if (kinds.includes("memory-write") && Number.isSafeInteger(report.written) && Number(report.written) > 0 &&
+      Number.isSafeInteger(report.superseded) && Number(report.superseded) >= 0) return true;
+  return kinds.includes("memory-propose") && Number.isSafeInteger(report.proposed) && Number(report.proposed) > 0 &&
+    strings(report.targetKeys) && strings(report.proposedEntryIds);
+}
+function committed(result: Result): boolean {
+  const commit = record(record(result.meta.gitOperation).commit);
+  return commit.kind === "committed" && typeof commit.sha === "string" && /^[a-f0-9]{40,64}$/i.test(commit.sha);
 }
 
-/**
- * Pure gate: decide whether the Stop hook should block-and-force a `/memarium-retro`.
- *
- * Smart-gated so we only nudge after substantive work, never on Q&A/chat turns:
- *   - Loop guard: if the stop is itself a continuation from a prior stop-hook
- *     block (`stop_hook_active`), let it stop — never loop.
- *   - Scope to the just-completed turn (assistant activity since the last real
- *     human user message; tool_result-only user records don't count).
- *   - Block iff that turn used a file-mutation tool AND has not already run a
- *     retro.
- */
+/** Pure, bounded, current-turn assessment. Missing result pairs are unknown;
+ * successful Skill loading means "already prompted", not "memory saved". */
 export function decideRetroGate(evt: StopEvent, rows: Row[]): { block: boolean; reason?: string } {
   if (evt.stop_hook_active) return { block: false };
-
   let lastUser = -1;
-  rows.forEach((m, i) => {
-    // isMeta rows are system-injected pseudo-messages (slash-command / skill
-    // bodies, command-output replays) that carry role:"user" + text content but
-    // are NOT real human turns. The canonical source parser drops them
-    // (src/_shared/sources/claude-code.ts) — mirror that, or an injected row
-    // would move lastUser past an earlier mutation and misfire the gate.
-    if (m.isMeta === true) return;
-    const msg = m.message ?? m;
+  rows.forEach((row, i) => {
+    if (row.isMeta) return;
+    const msg = row.message ?? row;
     if (msg.role !== "user") return;
-    const c = (msg as { content?: unknown }).content;
-    const toolResultOnly =
-      Array.isArray(c) && c.length > 0 &&
-      c.every((b) => (b as { type?: string })?.type === "tool_result");
+    const c = msg.content;
+    const toolResultOnly = Array.isArray(c) && c.length > 0 && c.every((b) => record(b).type === "tool_result");
     if (!toolResultOnly) lastUser = i;
   });
 
-  let mutated = false;
-  let didRetro = false;
-  for (const m of rows.slice(lastUser + 1)) {
-    if (m.isMeta === true) continue;
-    const msg = m.message ?? m;
-    if (msg.role !== "assistant") continue;
-    const c = (msg as { content?: unknown }).content;
-    if (!Array.isArray(c)) continue;
-    for (const b of c) {
-      const blk = b as { type?: string; name?: string; input?: Record<string, unknown> };
-      if (blk.type !== "tool_use") continue;
-      if (blk.name && MUTATION_TOOLS.has(blk.name)) mutated = true;
-      if (isRetroSignal(blk)) didRetro = true;
+  const calls = new Map<string, Call>();
+  const results = new Map<string, Result>();
+  for (const row of rows.slice(lastUser + 1)) {
+    if (row.isMeta) continue;
+    const msg = row.message ?? row;
+    if (!Array.isArray(msg.content)) continue;
+    const blocks = msg.content.map(record);
+    const resultBlocks = blocks.filter((b) => b.type === "tool_result");
+    for (const b of blocks) {
+      if (msg.role === "assistant" && b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
+        calls.set(b.id, { name: b.name, input: record(b.input) });
+      }
+      if (msg.role === "user" && b.type === "tool_result" && typeof b.tool_use_id === "string") {
+        // Row metadata has no ID of its own. Don't attach it to parallel results.
+        results.set(b.tool_use_id, { error: b.is_error === true, content: b.content, meta: resultBlocks.length === 1 ? record(row.toolUseResult) : {} });
+      }
     }
   }
 
-  return mutated && !didRetro ? { block: true, reason: RETRO_REASON } : { block: false };
+  let mutation = false, alreadyPrompted = false, captured = false, captureDeclined = false;
+  for (const [id, call] of calls) {
+    const result = results.get(id);
+    if (!result) continue;
+    const isRetro = call.name === "Skill" && call.input.skill === RETRO_SKILL;
+    const command = typeof call.input.command === "string" ? call.input.command : "";
+    const intent = call.name === "Bash" ? analyzeBash(command, true) : { mutation: false, retro: [] };
+    const captureIntent = isRetro || intent.retro.length > 0;
+    // Refusal is not a launch/completion state: honor it before that filter.
+    if (declined(result) || (captureIntent && result.meta.interrupted)) {
+      if (captureIntent) captureDeclined = true;
+      continue;
+    }
+    if (launchOnly(call, result)) continue;
+    const ok = successful(result);
+    const bash = call.name === "Bash" && !ok ? analyzeBash(command, false) : intent;
+    if (MUTATION_TOOLS.has(call.name) && ok) mutation = true;
+    if (isRetro && ok) alreadyPrompted = true;
+    if (call.name === "Bash") {
+      // A commit/write can precede failing tests or a failing push. Overall
+      // failure does not erase affirmative receipts or bounded write evidence.
+      mutation ||= committed(result) || bash.mutation;
+      captured ||= captureReceipt(result, bash.retro);
+    }
+  }
+  return mutation && !alreadyPrompted && !captured && !captureDeclined
+    ? { block: true, reason: RETRO_REASON } : { block: false };
 }
 
 /** Read at most the last `cap` bytes of a file as complete lines. Bounds the
  *  per-Stop cost to the current turn's tail instead of re-reading the whole
  *  transcript every turn (which is O(total size) per turn, O(n²) over a long
  *  session). Drops the first, possibly-partial, line when the read didn't start
- *  at byte 0. The cap is far larger than any single turn, so the last real user
- *  message is effectively always inside the window. */
+ *  at byte 0. A long turn can exceed the cap; missing call/result pairs remain
+ *  unknown rather than making the per-Stop cost grow with the whole session. */
 function readTailLines(path: string, cap: number): string[] {
   const fd = openSync(path, "r");
   try {

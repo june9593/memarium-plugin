@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # memarium plugin Stop hook — smart-gated proactive in-session memory capture.
 #
-# Fires when Claude finishes a turn. Instead of echoing a nudge that the model
-# never sees (plain Stop-hook stdout is NOT fed back to the agent), it pipes the
-# Stop event JSON to `retro-gate`, which decides — read-only — whether the turn
-# did substantive work (a file mutation, not yet retro'd) and, if so, emits a
-#   {"decision":"block","reason":"…run /memarium-retro…"}
-# that Claude Code feeds back so the agent captures the insight before stopping.
-# The gate honours `stop_hook_active`, so it forces at most one continuation and
-# never loops. Silent (exit 0, no output) on chat/Q&A turns, when the plugin
-# isn't found, or on any error — a Stop hook must never wedge the turn.
+# Reads completed tool activity from the current turn, including bounded Bash
+# mutation evidence. When a useful assessment has not already been prompted,
+# it emits {"decision":"block","reason":"..."} for one in-session continuation.
+# This is an advisory retro check, not a claim that a memory has been saved:
+# no new insight means no write, and a user's refusal must not be retried.
+# stop_hook_active prevents a loop. Missing/unsupported evidence and errors
+# remain nonblocking; the hook never writes memory or calls an LLM.
 VBP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/memarium-plugin.js}"
 # Fallback: pick the HIGHEST installed version by semver (sort -V), not the most
 # recently-touched dir (ls -td by mtime) — with several cached version dirs

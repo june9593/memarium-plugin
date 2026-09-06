@@ -12,11 +12,21 @@ as a familiar engineer instead of a stranger.
 ## Step -1 — Locate the plugin binary
 
 ```bash
-VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2-) && echo "VBP=$VBP"
+VBP="${CLAUDE_PLUGIN_ROOT}/bin/memarium-plugin.js"
+[ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -x "$VBP" ] || VBP=$(ls -d ~/.claude/plugins/cache/*/memarium/*/bin/memarium-plugin.js 2>/dev/null | awk -F/ '{print $(NF-2)"\t"$(0)}' | sort -V | tail -1 | cut -f2-)
 [ -x "$VBP" ] && "$VBP" --version
 ```
 
-If `$VBP` is empty, tell the user to `/plugin install memarium` and stop.
+The skill loader substitutes `${CLAUDE_PLUGIN_ROOT}` with this plugin's
+installation directory. If that root is unavailable, the fallback selects the
+highest cached **semver**, regardless of marketplace name or directory mtime.
+
+**Bash calls do not share shell variables.** Run discovery and the first CLI
+command in the same Bash call. For later calls, use the resolved absolute binary
+path (quoted), or repeat discovery; do not assume `$VBP` is still set.
+
+
+If `$VBP` is empty or not executable, tell the user to `/plugin install memarium` and stop.
 
 ## Step 1 — Query memory for the cwd's project
 
@@ -90,7 +100,7 @@ This returns:
 After Entities, surface distilled Q&A relevant to the task. Run:
 
 ```bash
-memarium-plugin qa-query --cwd "$(pwd)" --q "<keywords from the user's ask>"
+"$VBP" qa-query --cwd "$(pwd)" --q "<keywords from the user's ask>"
 ```
 
 This is **index-only** — it returns ranked `{ question, answerSummary, kind, path }` (NOT the full answer). Present the top matches as a short "Past Q&A" list (question + answerSummary). If the user wants the full answer, Read the `.md` at `path`. Keep this separate from the memory recall list — it is its own light scorer, not part of the lexical (term-overlap) memory ranking.
