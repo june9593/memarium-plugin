@@ -107,6 +107,9 @@ that fallback. On upgrade, the next scan reimports unchanged local Copilot
 session IDs stay unchanged. No rename script is required. Update both the CLI
 and plugin if you use both. Sessions without a local source keep their old names
 until rescanned on the source device.
+On case-insensitive filesystems, case-only title changes retain the on-disk
+filename spelling while updating the displayed title; this keeps the index
+path usable in a case-sensitive Git tree.
 
 ### Cross-device sync (optional)
 
@@ -215,6 +218,8 @@ memarium 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 本地 Copilot `chatSessions`(即使源文件未修改),按同一 session ID 更新索引并
 替换旧渲染文件名;不修改源文件,不需要手动改名脚本。同时使用 CLI 和 plugin
 时请一起更新。没有本地源文件的会话暂时保留旧名字,需在持有源文件的设备重扫。
+在不区分大小写的文件系统上,仅改变标题大小写时会更新显示标题,但保留磁盘上
+实际的文件名拼写,确保 index 路径在区分大小写的 Git tree 中也能读取。
 
 ### 跨设备同步(可选)
 

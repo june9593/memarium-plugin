@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.22.4 — 2026-09-06
+
+### Preserve symlink entry spelling and deterministic regression order
+
+- Mirror directory-entry identity lookup for symlink names. A requested
+  `raw_sessions` alias of a stored `RAW_SESSIONS` link now records the actual
+  link entry, never the target or another link to that target.
+- Assign A/B/A projects to fixed workspace names and explicitly replay sorted
+  real adapter discoveries in the duplicate regression. Assert the controlled
+  adapter is used and all three imports occur on each pass; do not change
+  production enumeration order.
+- Validate symlink-name aliases and case-sensitive targets on both filesystem
+  case policies, rerun the ordered regression against the original cleanup,
+  and rebuild the committed plugin bundle.
+
+## 0.22.3 — 2026-09-06
+
+### Preserve symlinks while recovering filename spelling
+
+- Mirror component-wise writer path recovery: keep each symlink component's
+  logical name instead of substituting its target, including case-only targets.
+  Ordinary files and directories beneath symlinks retain their actual spelling.
+- Exercise root/project symlinks and case-only renames on both case-insensitive
+  and case-sensitive temporary filesystems. Correct conditional test skips to
+  use the actual Vitest context and rebuild the committed plugin bundle.
+- The paired npm patch also repairs Git case aliases before staging missing
+  renders whose sources cannot currently be parsed.
+
+## 0.22.2 — 2026-09-06
+
+### Preserve case-insensitive render aliases
+
+- Compare canonical final-index references before deleting superseded renders,
+  protecting case-only aliases as well as A → B → A discovery cycles.
+- Mirror the writer fix that records the actual on-disk filename spelling
+  after case-only title changes, while retaining logical symlink paths.
+- Make the duplicate-workspace regression deterministic: identical mtimes,
+  distinct source fingerprints, and all three copies imported on each scan.
+  The strengthened test fails against the original cleanup implementation.
+- Mirror bounded, literal, NUL-delimited staging in the shared Git helper and
+  add staging/case-alias regressions. Rebuild the committed plugin bundle.
+
+## 0.22.1 — 2026-09-05
+
+### Preserve final renders across duplicate workspace discoveries
+
+Deduplicate queued old-path removals and check all final index references before
+deleting a render, including references from the same session. This prevents an
+A → B → A discovery order from deleting the file still indexed at A. The
+regression exercises repeated autonomous scans with three workspace copies of
+one session; the production bundle is rebuilt.
+
+The corresponding npm patch separately repairs staging/retry of migrated
+filenames. No source session data or index schema changes are required.
+
 ## 0.22.0 — 2026-09-05
 
 ### Prefer Copilot's persisted session title
