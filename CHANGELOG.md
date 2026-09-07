@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.22.6 — 2026-09-07
+
+### Documentation closeout
+
+- Correct the claim that the standalone plugin never touches Git: finalize can
+  initialize, commit allowlisted files, and push when configured.
+- Document local usage counters, clarify legacy index remnants, and link the
+  new contributor/agent guide covering package boundaries and human review gates.
+- Preserve the repository's policy that a local AGENTS.md mirror is generated
+  and untracked; no user settings or runtime behavior changed.
+
+Documentation and release metadata only; the committed bundle is rebuilt to
+carry the aligned package version.
+
 ## 0.22.5 — 2026-09-07
 
 ### Restore proactive skill routing and Bash retro evidence

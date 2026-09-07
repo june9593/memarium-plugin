@@ -31,7 +31,7 @@ flowchart LR
   IDX -->|/memarium-context| R[layered recall<br/>term-overlap scorer]
 ```
 
-**The memory-PR gate** (v4 self-evolution — long-term memory cannot change without review):
+**The memory-PR gate** (v4 self-evolution — protected long-term memory cannot change without review):
 
 ```mermaid
 flowchart TD
@@ -137,16 +137,22 @@ memarium list-sessions --since 1d   # find the sessionId
 memarium resume <sessionId>         # starts fresh Claude Code with the rendered session as context
 ```
 
-> **Note:** the memory layer (`memory/` + its indexes) syncs only with CLI **≥ 0.8.6**. The plugin and CLI share the same spool path; install one, both, or neither. npm CLI: https://github.com/june9593/memarium
+> **Note:** the memory layer (`memory/` + its indexes) syncs only with CLI **≥ 0.8.6**. The plugin and CLI share the same spool path; use the plugin alone for local memory, or add the CLI for cross-device sync. npm CLI: https://github.com/june9593/memarium
 
 ### Files written
 
 - `~/.memarium/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` — rendered session (single `.md`: YAML frontmatter w/ `manifest_version: 1` + `tools_used` / `commits` / `files_touched`, a Table-of-Contents block, then the body).
-- `~/.memarium/session-repo/memory/<type>/<project>/*.md` — the typed Memory OS (episodic / semantic / procedural / core + entities + Q&A).
-- `~/.memarium/session-repo/.memarium/index.{json,memory,entity,qa}.json` — the synced indexes. `index.skips.json` is a **local-only** digest-skip ledger (never committed/synced). The digest no longer reads or writes `index.book` (a legacy one may linger from a pre-0.18 install until Phase C2 removes it).
+- `~/.memarium/session-repo/memory/{core,semantic,episodic,procedural}/<project|_global>/*.md` — the four typed-memory collections.
+- `~/.memarium/session-repo/memory/entities/<project|_global>/*.md` and `memory/qa/<project|_global>/*.md` — derived entity wiki and Q&A.
+- `~/.memarium/session-repo/.memarium/index.json` and `index.{memory,entity,qa}.json` in that directory — the synced indexes. `index.skips.json` is a **local-only** digest-skip ledger (never committed/synced). The digest no longer reads or writes `index.book.json` (a legacy file may remain on disk, but it is not an active index).
 - `~/.memarium/local-proposals/<repoHash>/*.json` — **local-only** memory-PR queue (never synced).
+- `~/.memarium/usage/<repoHash>/access.json` — device-local recall usage counters (never synced).
 
-The plugin **does not** create or modify `.git/` or the npm CLI's config files — those are owned by the optional CLI.
+The standalone plugin's `finalize` command can initialize the spool Git repo,
+commit only allowlisted session/memory files, and push when a remote is configured.
+The npm CLI is optional transport and setup tooling, not a prerequisite for that
+Git lifecycle. Normal memory commands read the configured spool location;
+configuration changes belong to the user's setup/configuration workflow.
 
 ### Limitations & roadmap
 
@@ -164,7 +170,7 @@ The plugin **does not** create or modify `.git/` or the npm CLI's config files �
 
 ### Contributing
 
-PRs welcome. Open an issue first for anything beyond a typo — design changes are spec-driven and benefit from discussion. **License: MIT.**
+Start with the [contributor / agent guide](./CLAUDE.md). PRs welcome. Open an issue first for anything beyond a typo — design changes are spec-driven and benefit from discussion. **License: MIT.**
 
 ---
 
@@ -255,16 +261,20 @@ memarium list-sessions --since 1d
 memarium resume <sessionId>
 ```
 
-> **注意:** 记忆层(`memory/` 及其索引)只在 CLI **≥ 0.8.6** 时同步。插件与 CLI 共享同一 spool 路径;装一个、两个、或都不装都行。npm CLI:https://github.com/june9593/memarium
+> **注意:** 记忆层(`memory/` 及其索引)只在 CLI **≥ 0.8.6** 时同步。插件与 CLI 共享同一 spool 路径;可只用插件处理本地记忆,需要跨设备同步时再加 CLI。npm CLI:https://github.com/june9593/memarium
 
 ### 写到哪里
 
 - `~/.memarium/session-repo/raw_sessions/<tool>/<project>/<date>/*.md` —— 渲染过的会话(单 `.md`:YAML frontmatter + 目录块 + 正文)。
-- `~/.memarium/session-repo/memory/<type>/<project>/*.md` —— 有类型的 Memory OS(episodic / semantic / procedural / core + 实体 + Q&A)。
-- `~/.memarium/session-repo/.memarium/index.{json,memory,entity,qa}.json` —— 同步的索引。`index.skips.json` 是**仅本地**的 digest-skip 账本(从不 commit/同步)。digest 不再读写 `index.book`(pre-0.18 安装可能残留一个,直到 Phase C2 删除)。
+- `~/.memarium/session-repo/memory/{core,semantic,episodic,procedural}/<project|_global>/*.md` —— 四种 typed memory。
+- `~/.memarium/session-repo/memory/entities/<project|_global>/*.md` 和 `memory/qa/<project|_global>/*.md` —— 派生的实体 wiki 与问答。
+- `~/.memarium/session-repo/.memarium/index.json` 及同目录的 `index.{memory,entity,qa}.json` —— 同步的索引。`index.skips.json` 是**仅本地**的 digest-skip 账本(从不 commit/同步)。digest 不再读写 `index.book.json`(旧安装可能在磁盘留下文件,但它不再是有效索引)。
 - `~/.memarium/local-proposals/<repoHash>/*.json` —— **仅本地**的 memory-PR 队列(从不同步)。
+- `~/.memarium/usage/<repoHash>/access.json` —— 设备本地的召回使用计数(从不同步)。
 
-插件**不会**创建或修改 `.git/` 或 npm CLI 的配置文件 —— 那些归可选 CLI 管。
+独立插件的 `finalize` 可以初始化 spool 的 Git 仓库,只提交允许列表内的会话/记忆文件,
+并在配置远端时推送。npm CLI 提供可选的同步和配置工具,不是这套 Git 生命周期的前提。
+正常记忆命令读取已配置的存储位置;配置变更由用户的初始化/配置流程管理。
 
 ### 局限与路线图
 
@@ -282,4 +292,4 @@ memarium resume <sessionId>
 
 ### 贡献
 
-欢迎 PR。typo 之外的改动先开 issue 讨论 —— 设计层改动是 spec 驱动的。**许可证:MIT。**
+先阅读[贡献者 / agent 指南](./CLAUDE.md)。欢迎 PR。typo 之外的改动先开 issue 讨论 —— 设计层改动是 spec 驱动的。**许可证:MIT。**
