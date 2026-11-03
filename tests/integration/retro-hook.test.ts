@@ -20,12 +20,13 @@ describe("packaged Stop hook", () => {
     writeFileSync(join(home, "sample.ts"), "original");
   });
   afterEach(() => { rmSync(home, { recursive: true, force: true }); });
-  function run(rows: unknown[], extra: object = {}, raw?: string) {
+  function run(rows: unknown[], extra: object = {}, raw?: string, env: NodeJS.ProcessEnv = {}) {
     const transcript = join(home, "transcript.jsonl");
     writeFileSync(transcript, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
     const r = spawnSync("bash", [join(repo, "hooks/session-end.sh")], {
       cwd: home, encoding: "utf8", timeout: 10000,
-      env: { ...process.env, HOME: home, MEMARIUM_DIR: memoryHome, CLAUDE_PLUGIN_ROOT: repo },
+      // Drop a developer's own off switch; tests opt in through `env`.
+      env: { ...process.env, MEMARIUM_RETRO_HOOK: undefined, HOME: home, MEMARIUM_DIR: memoryHome, CLAUDE_PLUGIN_ROOT: repo, ...env },
       input: raw ?? JSON.stringify({ session_id: "fixture", transcript_path: transcript, stop_hook_active: false, ...extra }),
     });
     expect(r.error).toBeUndefined();
@@ -48,6 +49,9 @@ describe("packaged Stop hook", () => {
     expect(run([user, use("Edit"), done()], { stop_hook_active: true })).toBeNull();
     expect(run([], {}, "{not json")).toBeNull();
     expect(run([], { transcript_path: join(home, "absent.jsonl") })).toBeNull();
+  });
+  it("stays quiet when the hook environment sets MEMARIUM_RETRO_HOOK=0", () => {
+    expect(run([user, use("Edit"), done()], {}, undefined, { MEMARIUM_RETRO_HOOK: "0" })).toBeNull();
   });
   it("retains recent work after a large prior transcript", () => {
     const large = { message: { role: "assistant", content: "x".repeat(1024 * 1024 + 128) } };

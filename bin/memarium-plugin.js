@@ -16253,7 +16253,7 @@ function committed(result) {
   const commit = record(record(result.meta.gitOperation).commit);
   return commit.kind === "committed" && typeof commit.sha === "string" && /^[a-f0-9]{40,64}$/i.test(commit.sha);
 }
-function decideRetroGate(evt, rows, env2 = process.env) {
+function decideRetroGate(evt, rows, env2 = {}) {
   if (evt.stop_hook_active || env2.MEMARIUM_RETRO_HOOK === "0") return { block: false };
   let lastUser = -1;
   rows.forEach((row, i2) => {
@@ -16341,7 +16341,7 @@ async function retroGateCmd() {
         return null;
       }
     }).filter((x2) => x2 !== null);
-    const decision = decideRetroGate(evt, rows);
+    const decision = decideRetroGate(evt, rows, process.env);
     if (decision.block) {
       process.stdout.write(JSON.stringify({ decision: "block", reason: decision.reason }) + "\n");
     }

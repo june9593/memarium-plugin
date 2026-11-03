@@ -81,9 +81,10 @@ function committed(result: Result): boolean {
 
 /** Pure, bounded, current-turn assessment. Missing result pairs are unknown;
  * successful Skill loading means "already prompted", not "memory saved".
- * MEMARIUM_RETRO_HOOK=0 turns the assessment off without disabling other hooks. */
+ * MEMARIUM_RETRO_HOOK=0 in `env` (the CLI passes process.env) turns the
+ * assessment off without disabling other hooks. */
 export function decideRetroGate(evt: StopEvent, rows: Row[],
-                                env: NodeJS.ProcessEnv = process.env): { block: boolean; reason?: string } {
+                                env: NodeJS.ProcessEnv = {}): { block: boolean; reason?: string } {
   if (evt.stop_hook_active || env.MEMARIUM_RETRO_HOOK === "0") return { block: false };
   let lastUser = -1;
   rows.forEach((row, i) => {
@@ -186,7 +187,7 @@ export async function retroGateCmd(): Promise<void> {
     const rows: Row[] = readTailLines(tp, 1024 * 1024)
       .map((l) => { try { return JSON.parse(l) as Row; } catch { return null; } })
       .filter((x): x is Row => x !== null);
-    const decision = decideRetroGate(evt, rows);
+    const decision = decideRetroGate(evt, rows, process.env);
     if (decision.block) {
       process.stdout.write(JSON.stringify({ decision: "block", reason: decision.reason }) + "\n");
     }

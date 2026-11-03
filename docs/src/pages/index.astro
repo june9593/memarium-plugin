@@ -98,8 +98,9 @@ import Base from "../layouts/Base.astro";
           one assessment after supported file-change evidence; it does not force
           a memory write. Deduplicate first, respect user refusal, and keep gated
           changes in the human-review queue. With nothing new to keep, the turn
-          ends without an extra message; <code>MEMARIUM_RETRO_HOOK=0</code> turns
-          the Stop assessment off.</p>
+          ends without an extra message; <code>MEMARIUM_RETRO_HOOK=0</code> (for
+          Claude Code, under <code>env</code> in <code>~/.claude/settings.json</code>)
+          turns the Stop assessment off.</p>
       </div>
     </div>
   </section>

@@ -10,8 +10,10 @@
   sentence in the user's language.
 - `MEMARIUM_RETRO_HOOK=0` turns the Stop assessment off without disabling the
   SessionStart primer or other hooks. Any other value, or no value, keeps it on.
-- Add gate regressions for both; align README and bilingual docs, and rebuild
-  the committed plugin CLI.
+- Add gate and packaged-hook regressions for both. The gate reads the switch
+  only from the environment the CLI passes in, and the suite no longer inherits
+  a developer's own `MEMARIUM_RETRO_HOOK`.
+- Align README and bilingual docs, and rebuild the committed plugin CLI.
 
 No memory format, writer, or digest behavior changed.
 

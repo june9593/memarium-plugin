@@ -22,11 +22,13 @@ describe("decideRetroGate", () => {
     expect(RETRO_REASON).not.toContain('skill: "memarium-retro"');
   });
   it("can be turned off with MEMARIUM_RETRO_HOOK=0 only", () => {
-    expect(decideRetroGate({}, [user(), ...edit()], { MEMARIUM_RETRO_HOOK: "0" }).block).toBe(false);
-    expect(decideRetroGate({}, [user(), ...edit()], { MEMARIUM_RETRO_HOOK: "1" }).block).toBe(true);
+    const gate = (value?: string) => decideRetroGate({}, [user(), ...edit()], { MEMARIUM_RETRO_HOOK: value }).block;
+    expect(gate("0")).toBe(false);
+    for (const value of [undefined, "", "false", "1", " 0"]) expect(gate(value)).toBe(true);
   });
-  it("asks for a silent close when nothing new is worth keeping", () => {
+  it("closes silently with nothing new and reports a capture in one sentence", () => {
     expect(RETRO_REASON).toContain("end the turn without another message");
+    expect(RETRO_REASON).toContain("say so in one short sentence in the user's language");
     expect(RETRO_REASON).not.toContain("say so briefly");
   });
   it.each(["Edit", "Write", "NotebookEdit", "MultiEdit"])("counts completed %s", (name) => {
