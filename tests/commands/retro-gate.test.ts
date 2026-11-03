@@ -21,6 +21,14 @@ describe("decideRetroGate", () => {
     expect(RETRO_REASON).toContain('skill: "memarium:memarium-retro"');
     expect(RETRO_REASON).not.toContain('skill: "memarium-retro"');
   });
+  it("can be turned off with MEMARIUM_RETRO_HOOK=0 only", () => {
+    expect(decideRetroGate({}, [user(), ...edit()], { MEMARIUM_RETRO_HOOK: "0" }).block).toBe(false);
+    expect(decideRetroGate({}, [user(), ...edit()], { MEMARIUM_RETRO_HOOK: "1" }).block).toBe(true);
+  });
+  it("asks for a silent close when nothing new is worth keeping", () => {
+    expect(RETRO_REASON).toContain("end the turn without another message");
+    expect(RETRO_REASON).not.toContain("say so briefly");
+  });
   it.each(["Edit", "Write", "NotebookEdit", "MultiEdit"])("counts completed %s", (name) => {
     expect(block([user(), call("e", name), result("e")])).toBe(true);
   });

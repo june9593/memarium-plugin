@@ -16253,8 +16253,8 @@ function committed(result) {
   const commit = record(record(result.meta.gitOperation).commit);
   return commit.kind === "committed" && typeof commit.sha === "string" && /^[a-f0-9]{40,64}$/i.test(commit.sha);
 }
-function decideRetroGate(evt, rows) {
-  if (evt.stop_hook_active) return { block: false };
+function decideRetroGate(evt, rows, env2 = process.env) {
+  if (evt.stop_hook_active || env2.MEMARIUM_RETRO_HOOK === "0") return { block: false };
   let lastUser = -1;
   rows.forEach((row, i2) => {
     if (row.isMeta) return;
@@ -16354,7 +16354,7 @@ var init_retro_gate = __esm({
     "use strict";
     init_retro_evidence();
     record = (v) => v !== null && typeof v === "object" && !Array.isArray(v) ? v : {};
-    RETRO_REASON = 'This turn may have changed files. Before you stop, check whether it produced ONE reusable insight: invoke the Skill tool with skill: "memarium:memarium-retro" and follow its fact-hygiene and dedup steps. If nothing is durably reusable, or it is already captured, say so briefly and stop; never manufacture a memory for this hook. Respect any user refusal of recall/capture and do not retry a denied operation. Proposals still require human approval.';
+    RETRO_REASON = `This turn may have changed files. Before you stop, check whether it produced ONE reusable insight: invoke the Skill tool with skill: "memarium:memarium-retro" and follow its fact-hygiene and dedup steps. If nothing is durably reusable, or it is already captured, end the turn without another message to the user; never manufacture a memory for this hook. If you save or propose one, say so in one short sentence in the user's language. Respect any user refusal of recall/capture and do not retry a denied operation. Proposals still require human approval.`;
     MUTATION_TOOLS = /* @__PURE__ */ new Set(["Edit", "Write", "NotebookEdit", "MultiEdit"]);
     RETRO_SKILL = "memarium:memarium-retro";
   }
