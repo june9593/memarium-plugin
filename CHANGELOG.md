@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.22.7 — 2026-11-03
+
+### Quiet Stop assessment and an off switch
+
+- When the retro finds nothing durably reusable, or it is already captured, the
+  Stop reason now asks the agent to end the turn without another message instead
+  of "say so briefly". A saved or proposed memory is reported in one short
+  sentence in the user's language.
+- `MEMARIUM_RETRO_HOOK=0` turns the Stop assessment off without disabling the
+  SessionStart primer or other hooks. Any other value, or no value, keeps it on.
+- Add gate and packaged-hook regressions for both. The gate reads the switch
+  only from the environment the CLI passes in, and the suite no longer inherits
+  a developer's own `MEMARIUM_RETRO_HOOK`.
+- Align README and bilingual docs, and rebuild the committed plugin CLI.
+
+No memory format, writer, or digest behavior changed.
+
 ## 0.22.6 — 2026-09-07
 
 ### Documentation closeout

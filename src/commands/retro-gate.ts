@@ -24,9 +24,11 @@ export const RETRO_REASON =
   "This turn may have changed files. Before you stop, check whether it produced " +
   "ONE reusable insight: invoke the Skill tool with " +
   'skill: "memarium:memarium-retro" and follow its fact-hygiene and dedup steps. ' +
-  "If nothing is durably reusable, or it is already captured, say so briefly " +
-  "and stop; never manufacture a memory for this hook. Respect any user refusal " +
-  "of recall/capture and do not retry a denied operation. Proposals still require human approval.";
+  "If nothing is durably reusable, or it is already captured, end the turn " +
+  "without another message to the user; never manufacture a memory for this hook. " +
+  "If you save or propose one, say so in one short sentence in the user's language. " +
+  "Respect any user refusal of recall/capture and do not retry a denied operation. " +
+  "Proposals still require human approval.";
 
 const MUTATION_TOOLS = new Set(["Edit", "Write", "NotebookEdit", "MultiEdit"]);
 const RETRO_SKILL = "memarium:memarium-retro";
@@ -78,9 +80,12 @@ function committed(result: Result): boolean {
 }
 
 /** Pure, bounded, current-turn assessment. Missing result pairs are unknown;
- * successful Skill loading means "already prompted", not "memory saved". */
-export function decideRetroGate(evt: StopEvent, rows: Row[]): { block: boolean; reason?: string } {
-  if (evt.stop_hook_active) return { block: false };
+ * successful Skill loading means "already prompted", not "memory saved".
+ * MEMARIUM_RETRO_HOOK=0 in `env` (the CLI passes process.env) turns the
+ * assessment off without disabling other hooks. */
+export function decideRetroGate(evt: StopEvent, rows: Row[],
+                                env: NodeJS.ProcessEnv = {}): { block: boolean; reason?: string } {
+  if (evt.stop_hook_active || env.MEMARIUM_RETRO_HOOK === "0") return { block: false };
   let lastUser = -1;
   rows.forEach((row, i) => {
     if (row.isMeta) return;
@@ -182,7 +187,7 @@ export async function retroGateCmd(): Promise<void> {
     const rows: Row[] = readTailLines(tp, 1024 * 1024)
       .map((l) => { try { return JSON.parse(l) as Row; } catch { return null; } })
       .filter((x): x is Row => x !== null);
-    const decision = decideRetroGate(evt, rows);
+    const decision = decideRetroGate(evt, rows, process.env);
     if (decision.block) {
       process.stdout.write(JSON.stringify({ decision: "block", reason: decision.reason }) + "\n");
     }

@@ -95,7 +95,10 @@ The Stop hook can request one retro assessment after completed file-edit tools
 or supported Bash write evidence (Git commits, cat redirects, in-place sed,
 inline/heredoc Python writes). It is not a general shell side-effect detector:
 unknown scripts may need an explicit retro. Read-only commands stay quiet,
-user refusal is respected, and no new insight means no memory write.
+user refusal is respected, and no new insight means no memory write and no
+extra closing message. Set `MEMARIUM_RETRO_HOOK=0` in the agent's environment
+(for Claude Code, under `env` in `~/.claude/settings.json`) to turn the Stop
+assessment off; the SessionStart primer keeps working.
 
 **Underlying `bin/memarium-plugin.js` subcommands** (the skills call these; pure I/O, no LLM):
 `memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `skip-write` · `list-projects` · `status` · `prepare`.
@@ -222,7 +225,10 @@ memarium 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 自动注入的是 primer;排序召回仍需 agent 调用 skill。Stop hook 在已完成的
 文件编辑或支持的 Bash 修改迹象后,可要求一次 retro 检查(Git 提交、cat 重定向、
 sed 原地修改、Python inline/heredoc 写入)。它不是通用 shell 副作用分析器,
-未知脚本可能需要显式回顾。只读操作不打扰,尊重用户拒绝,不强迫每轮生成记忆。
+未知脚本可能需要显式回顾。只读操作不打扰,尊重用户拒绝,不强迫每轮生成记忆;
+没有新经验时直接结束本轮,不追加说明。在 agent 的环境里设置 `MEMARIUM_RETRO_HOOK=0`
+(Claude Code 写在 `~/.claude/settings.json` 的 `env` 里)可关闭这个 Stop 检查,
+SessionStart primer 不受影响。
 
 **底层 `bin/memarium-plugin.js` 子命令**(skills 调用;纯 I/O,不调 LLM):
 `memory-write` · `memory-query` · `memory-index` · `memory-primer` · `entity-write` · `entity-query` · `entity-index` · `qa-write` · `qa-query` · `qa-index` · `memory-lint` · `memory-propose` · `memory-diff` · `memory-approve` · `memory-reject` · `recall` · `skip-write` · `list-projects` · `status` · `prepare`。

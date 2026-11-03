@@ -94,7 +94,9 @@ import Base from "../../layouts/Base.astro";
         <h3><code>/memarium-retro</code></h3>
         <p>检查当前任务是否产生可复用经验。Stop hook 在识别到支持的修改迹象后
           可提示一次回顾,不强制写记忆。先去重,尊重用户拒绝,受保护的更改
-          仍需进入人工审批队列。</p>
+          仍需进入人工审批队列。没有新经验时直接结束本轮,不追加说明;
+          <code>MEMARIUM_RETRO_HOOK=0</code>(Claude Code 写在
+          <code>~/.claude/settings.json</code> 的 <code>env</code> 里)可关闭这个 Stop 检查。</p>
       </div>
     </div>
   </section>
