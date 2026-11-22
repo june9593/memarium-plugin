@@ -149,8 +149,39 @@ describe("memoryPrimerCmd", () => {
     const { memoryPrimerCmd } = await import("../../src/commands/memory-primer.js");
     await memoryPrimerCmd({ cwd: "/work/code-demo" });
     const out = stdout.join("");
-    expect(out).toContain("- **never npm publish**\n  LOCAL-BODY-MARKER");
-    expect(out).toContain("- **sibling-device rule**\n  OVERLAY-BODY-MARKER");
+    expect(out).toContain("- **never npm publish**\n\n  LOCAL-BODY-MARKER");
+    expect(out).toContain("- **sibling-device rule**\n\n  OVERLAY-BODY-MARKER");
+  });
+
+  it("keeps the author's own heading and indentation in bodies written by the writer", async () => {
+    const { renderMemoryMarkdown } = await import("../../src/memory/render.js");
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    const headed = { ...idx.entries["core/g"], id: "core/_global/g", path: "memory/core/_global/g.md" };
+    const coded = { ...headed, id: "core/_global/k", title: "code rule", summary: "code summary", path: "memory/core/_global/k.md" };
+    idx.entries = { [headed.id]: headed, [coded.id]: coded };
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify(idx));
+    mkdirSync(join(repo, "memory/core/_global"), { recursive: true });
+    writeFileSync(join(repo, headed.path), renderMemoryMarkdown(headed, "# Only in rehearsal\n\nUse draft mode."));
+    writeFileSync(join(repo, coded.path), renderMemoryMarkdown(coded, "    first --indented\n    second --indented"));
+
+    const { memoryPrimerCmd } = await import("../../src/commands/memory-primer.js");
+    await memoryPrimerCmd({ cwd: "/work/code-demo" });
+    const out = stdout.join("");
+    expect(out).toContain("- **never npm publish**\n\n  # Only in rehearsal\n\n  Use draft mode.");
+    expect(out).toContain("- **code rule**\n\n      first --indented\n      second --indented");
+  });
+
+  it("falls back to the summary when an index key disagrees with its entry's id", async () => {
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    idx.entries["core/g"] = { ...idx.entries["core/g"], id: "core/_global/g" };
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify(idx));
+    writeMd(repo, "core/_global/g", "never npm publish", "MISMATCHED-KEY-MARKER");
+
+    const { memoryPrimerCmd } = await import("../../src/commands/memory-primer.js");
+    await memoryPrimerCmd({ cwd: "/work/code-demo" });
+    const out = stdout.join("");
+    expect(out).not.toContain("MISMATCHED-KEY-MARKER");
+    expect(out).toContain("**never npm publish** — the maintainer OTP");
   });
 
   it("reads no core body through the indexed path, a foreign file or a symlinked directory", async () => {

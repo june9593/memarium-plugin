@@ -15549,6 +15549,7 @@ function bullet(e, shape, body) {
   const tentative = typeof e.confidence === "number" && e.confidence < TENTATIVE_BELOW ? " _(tentative)_" : "";
   const head = `- **${e.title}**${tentative}`;
   if (shape === "body" && body !== void 0) return `${head}
+
 ${body.split("\n").map((l) => l ? `  ${l}` : "").join("\n")}`;
   if (shape === "summary" || shape === "body") return `${head} \u2014 ${e.summary}`;
   if (shape === "title-note") return `${head} \u2014 _(too long for the startup primer; use memarium-recall with this title to read it)_`;
@@ -15605,7 +15606,8 @@ function renderPrimer(project, entries, opts = {}) {
   }
   for (const s of [core, procedures, facts]) {
     for (let i2 = 0; i2 < Math.min(max, s.all.length); i2++) {
-      const shapes = s === core ? s.bodies.has(i2) ? ["body", "summary", "title-note"] : ["summary", "title-note"] : s.shape === "summary" ? ["summary", "title"] : ["title"];
+      const hasSummary = typeof s.all[i2].summary === "string" && s.all[i2].summary.trim() !== "";
+      const shapes = s === core ? [...s.bodies.has(i2) ? ["body"] : [], ...hasSummary ? ["summary"] : [], "title-note"] : s.shape === "summary" ? ["summary", "title"] : ["title"];
       for (const shape of shapes) {
         s.picks.set(i2, shape);
         if (render().length <= limit) break;
@@ -15855,15 +15857,8 @@ var init_memory_query = __esm({
 // src/memory/body.ts
 import { lstatSync as lstatSync2, readFileSync as readFileSync14 } from "node:fs";
 import { join as join18, resolve as resolve4, sep as sep4 } from "node:path";
-function stripLeadingHeadings(body) {
-  const lines = body.split("\n");
-  let i2 = 0;
-  while (i2 < lines.length && (lines[i2].trim() === "" || /^# /.test(lines[i2].trim()))) i2++;
-  return lines.slice(i2).join("\n").trim();
-}
-function readEntryBody(view, entry) {
+function readEntryBody(root, entry) {
   try {
-    const root = view.sources[entry.id] === "overlay" && view.roots.overlay ? view.roots.overlay : view.roots.local;
     const memRoot = resolve4(join18(root, "memory"));
     const abs = resolve4(join18(root, canonicalMemoryPath(entry)));
     if (!abs.startsWith(memRoot + sep4)) return null;
@@ -15875,11 +15870,27 @@ function readEntryBody(view, entry) {
     if (!fm) return null;
     const id = (fm[1].match(/^id:[ \t]*(.*)$/m)?.[1] ?? "").trim();
     if (id !== entry.id) return null;
-    const body = stripLeadingHeadings(md.slice(fm[0].length));
-    return body === "" ? null : body;
+    const afterFm = md.slice(fm[0].length);
+    if (!/^\n*# [^\n]*/.test(afterFm)) return null;
+    const body = afterFm.replace(/^\n*# [^\n]*\n*/, "").replace(/\n+$/, "");
+    return body.trim() === "" ? null : body;
   } catch {
     return null;
   }
+}
+function bodyLoader(view) {
+  const keyOf = /* @__PURE__ */ new Map();
+  for (const [key, e] of Object.entries(view.entries)) {
+    if (!e || typeof e !== "object") continue;
+    keyOf.set(e, keyOf.has(e) ? null : key);
+  }
+  return (entry) => {
+    const key = keyOf.get(entry);
+    if (key == null || key !== entry.id) return null;
+    const source = view.sources[key];
+    const root = source === "local" ? view.roots.local : source === "overlay" ? view.roots.overlay : null;
+    return root ? readEntryBody(root, entry) : null;
+  };
 }
 var MAX_BODY_FILE_BYTES;
 var init_body = __esm({
@@ -15906,7 +15917,7 @@ async function memoryPrimerCmd(opts) {
     const primer = renderPrimer(project, Object.values(view.entries), {
       compact: true,
       maxChars: HOOK_PRIMER_MAX_CHARS,
-      coreBody: (e) => readEntryBody(view, e)
+      coreBody: bodyLoader(view)
     });
     if (primer.trim()) process.stdout.write(primer);
   } catch {

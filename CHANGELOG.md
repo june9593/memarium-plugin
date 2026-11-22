@@ -9,18 +9,21 @@
   14–16k characters on real stores, so the startup context lost everything after
   its first section unless the agent read the saved file.
 - The hook now renders a compact primer with a hard 8,000-character ceiling.
-  Core rules load their full Markdown body, read from the store each entry came
-  from (local repo or aggregated overlay) through its canonical path, with the
-  `memory/` containment, symlink and identity checks; project facts and
+  Core rules load their full Markdown body from the tree each entry came from
+  (local repo or aggregated overlay, resolved by index key and refused when the
+  key and the entry disagree), through its canonical path with the `memory/`
+  containment, symlink and identity checks. Only the writer's structural title
+  line is removed, so the author's own headings and indentation are kept, and
+  the body is a separate Markdown block under the rule. Project facts and
   procedures are listed by title, and recall returns their summaries and the
   paths to their bodies. On the store that prompted this fix, the hook output
-  went from 16,338 to 6,746 characters, with all six core rules in full and all
+  went from 16,338 to 6,798 characters, with all six core rules in full and all
   three sections present.
 - Under the ceiling, entries are admitted in priority order — core rules, then
   procedures, then facts — and an entry that does not fit is skipped without
-  blocking later entries that do. A core rule falls back from its body to its
-  summary, then to its title with a pointer to recall; no rule is cut mid-text.
-  Each section still reports how many entries were left out.
+  blocking later entries that do. A core rule falls back from its body to a
+  non-blank summary, then to its title with a pointer to recall; no rule is cut
+  mid-text. Each section still reports how many entries were left out.
 - `/memarium-context`, recall overviews, and evaluation keep the full-summary
   primer.
 - Add renderer, command, and hook-wrapper regressions, align the README, and

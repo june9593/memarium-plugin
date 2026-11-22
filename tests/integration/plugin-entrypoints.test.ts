@@ -110,9 +110,9 @@ describe("plugin skill entrypoints", () => {
   it("packaged SessionStart hook loads a core rule's full body", () => {
     const rule = memoryEntry("core", "body-rule", "Body rule", "short summary", 9);
     const run = runPrimerHook([rule, memoryEntry("procedural", "p0", "procedure 0", "PROC-SUMMARY", 5)],
-      { [rule.id]: "CORE-BODY-ONLY-MARKER: the exception lives in the body." });
+      { [rule.id]: "# Only in rehearsal\n\nCORE-BODY-ONLY-MARKER: use draft mode." });
     expect(run.status).toBe(0);
-    expect(run.stdout).toContain("- **Body rule**\n  CORE-BODY-ONLY-MARKER: the exception lives in the body.");
+    expect(run.stdout).toContain("- **Body rule**\n\n  # Only in rehearsal\n\n  CORE-BODY-ONLY-MARKER: use draft mode.");
     expect(run.stdout).not.toContain("short summary");
     expect(run.stdout).toContain("- **procedure 0**");
   });

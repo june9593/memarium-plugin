@@ -217,13 +217,23 @@ describe("renderPrimer", () => {
       e({ id: "procedural/p/x", type: "procedural", title: "a procedure", summary: "PROC-SUMMARY" }),
     ], { compact: true, maxChars: 8000, coreBody: (x) => bodies[x.id] ?? null });
     expect(md.length).toBeLessThanOrEqual(8000);
-    expect(md).toContain("- **rule a**\n  BODY-ONLY-A\n\n  **Why:** exceptions live here.");
+    expect(md).toContain("- **rule a**\n\n  BODY-ONLY-A\n\n  **Why:** exceptions live here.");
     expect(md).not.toContain("A-SUMMARY");
     expect(md).toContain("**rule b** — B-SUMMARY");
     expect(md).not.toContain("y".repeat(100));
     expect(md).toContain("**rule c** — _(too long for the startup primer; use memarium-recall with this title to read it)_");
     expect(md).not.toContain("w".repeat(100));
     expect(md).toContain("- **a procedure**");
+  });
+
+  it("keeps an opening indented code block intact and skips a blank summary", () => {
+    const md = renderPrimer("p", [
+      e({ id: "core/code", type: "core", scope: "global", project: null, title: "code rule", summary: "s", importance: 9 }),
+      e({ id: "core/wf", type: "core", scope: "global", project: null, title: "Workflow", summary: "  ", importance: 8 }),
+    ], { compact: true, maxChars: 8000, coreBody: (x) => (x.id === "core/code" ? "    run --flag\n    run --other" : "v".repeat(9000)) });
+    expect(md).toContain("- **code rule**\n\n      run --flag\n      run --other");
+    expect(md).toContain("**Workflow** — _(too long for the startup primer; use memarium-recall with this title to read it)_");
+    expect(md).not.toMatch(/\*\*Workflow\*\* — \s*\n/);
   });
 
   it("never exceeds maxChars, even when the ceiling is below the headings", () => {

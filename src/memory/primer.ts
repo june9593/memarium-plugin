@@ -63,7 +63,9 @@ interface Section { title: string; all: MemoryEntry[]; shape: Shape; picks: Map<
 function bullet(e: MemoryEntry, shape: Shape, body: string | undefined): string {
   const tentative = typeof e.confidence === "number" && e.confidence < TENTATIVE_BELOW ? " _(tentative)_" : "";
   const head = `- **${e.title}**${tentative}`;
-  if (shape === "body" && body !== undefined) return `${head}\n${body.split("\n").map((l) => (l ? `  ${l}` : "")).join("\n")}`;
+  // A blank line keeps the body a separate Markdown block under the list item,
+  // so an opening indented code block or heading keeps its meaning.
+  if (shape === "body" && body !== undefined) return `${head}\n\n${body.split("\n").map((l) => (l ? `  ${l}` : "")).join("\n")}`;
   if (shape === "summary" || shape === "body") return `${head} — ${e.summary}`;
   if (shape === "title-note") return `${head} — _(too long for the startup primer; use memarium-recall with this title to read it)_`;
   return head;
@@ -138,8 +140,10 @@ export function renderPrimer(
   // with a pointer; a rule is never cut mid-text. Footers count what was left out.
   for (const s of [core, procedures, facts]) {
     for (let i = 0; i < Math.min(max, s.all.length); i++) {
+      // A blank summary is not a fallback: skip straight to the title + pointer.
+      const hasSummary = typeof s.all[i]!.summary === "string" && s.all[i]!.summary.trim() !== "";
       const shapes: Shape[] = s === core
-        ? (s.bodies.has(i) ? ["body", "summary", "title-note"] : ["summary", "title-note"])
+        ? [...(s.bodies.has(i) ? ["body" as const] : []), ...(hasSummary ? ["summary" as const] : []), "title-note"]
         : s.shape === "summary" ? ["summary", "title"] : ["title"];
       for (const shape of shapes) {
         s.picks.set(i, shape);

@@ -2,7 +2,7 @@ import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
 import { renderPrimer, HOOK_PRIMER_MAX_CHARS } from "../memory/primer.js";
-import { readEntryBody } from "../memory/body.js";
+import { bodyLoader } from "../memory/body.js";
 
 export interface MemoryPrimerOptions { cwd?: string; }
 
@@ -23,7 +23,7 @@ export async function memoryPrimerCmd(opts: MemoryPrimerOptions): Promise<void> 
     if (!project) return;
     const view = resolveMemoryView(cfg.repoPath);
     const primer = renderPrimer(project, Object.values(view.entries), {
-      compact: true, maxChars: HOOK_PRIMER_MAX_CHARS, coreBody: (e) => readEntryBody(view, e),
+      compact: true, maxChars: HOOK_PRIMER_MAX_CHARS, coreBody: bodyLoader(view),
     });
     if (primer.trim()) process.stdout.write(primer);
   } catch {
