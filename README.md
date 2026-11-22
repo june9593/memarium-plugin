@@ -88,7 +88,7 @@ The short aliases below work when no other command uses the same name.
 - **`/memarium-context`** — load this project's memory at the start of work: *Core rules / Procedures & gotchas / Project facts / Episodes / Conflicts / Entities / Past Q&A / Pending memory proposals.*
 - **`/memarium-recall`** — 2-stage ranked recall over typed memory (score the index → Read the top entries).
 - **`/memarium-retro`** — assess the current task for reusable insights; deduplicate and capture only useful memory, respecting the proposal gate.
-- **SessionStart hook** — auto-injects the project primer so a new session starts informed.
+- **SessionStart hook** — auto-injects the project primer so a new session starts informed. It stays under Claude Code's 10,000-character hook limit: core rules in full, facts and procedures by title.
 
 The primer is injected automatically; ranked recall is an agent-invoked skill.
 The Stop hook can request one retro assessment after completed file-edit tools
@@ -220,7 +220,7 @@ memarium 刻意建立在公开研究和清晰的取舍之上,而不是凭空发�
 - **`/memarium-context`** —— 工作开始时加载本项目记忆:核心规则 / 操作与坑 / 项目事实 / 片段 / 冲突 / 实体 / 历史 Q&A / 待审记忆提案。
 - **`/memarium-recall`** —— 两阶段召回 typed memory(给 index 打分 → Read 命中的条目)。
 - **`/memarium-retro`** —— 检查当前任务是否产生可复用经验,去重后按审批规则记录;没有新知识就不写。
-- **SessionStart hook** —— 自动注入项目 primer,新会话一开始就有底。
+- **SessionStart hook** —— 自动注入项目 primer,新会话一开始就有底。输出控制在 Claude Code 的 hook 上限(10,000 字符)以内:core 规则带完整正文,事实和流程只列标题。
 
 自动注入的是 primer;排序召回仍需 agent 调用 skill。Stop hook 在已完成的
 文件编辑或支持的 Bash 修改迹象后,可要求一次 retro 检查(Git 提交、cat 重定向、

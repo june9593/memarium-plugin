@@ -157,5 +157,91 @@ describe("renderPrimer", () => {
     expect(out).toContain("live global fact");
     expect(out).not.toContain("cold global fact");
   });
+
+  it("compact mode lists facts and procedures by title only; core rules keep their summary", () => {
+    const md = renderPrimer("p", [
+      e({ id: "core/g", type: "core", scope: "global", project: null, title: "core rule", summary: "CORE-SUMMARY" }),
+      e({ id: "semantic/p/f", type: "semantic", title: "a fact", summary: "FACT-SUMMARY" }),
+      e({ id: "procedural/p/x", type: "procedural", title: "a procedure", summary: "PROC-SUMMARY" }),
+    ], { compact: true });
+    expect(md).toContain("**core rule** — CORE-SUMMARY");
+    expect(md).toContain("- **a fact**\n");
+    expect(md).toContain("- **a procedure**\n");
+    expect(md).not.toContain("FACT-SUMMARY");
+    expect(md).not.toContain("PROC-SUMMARY");
+  });
+
+  it("maxChars is a hard ceiling: facts are trimmed before procedures and the cut is counted", () => {
+    const pad = "很长的标题".repeat(16);
+    const many = [
+      ...Array.from({ length: 3 }, (_, i) => e({ id: `core/${i}`, type: "core", title: `core ${i}`, summary: "keep" })),
+      ...Array.from({ length: 12 }, (_, i) => e({ id: `semantic/p/${i}`, type: "semantic", title: `fact ${i} ${pad}` })),
+      ...Array.from({ length: 12 }, (_, i) => e({ id: `procedural/p/${i}`, type: "procedural", title: `proc ${i} ${pad}` })),
+    ];
+    expect(renderPrimer("p", many, { compact: true }).length).toBeGreaterThan(1600);
+    const md = renderPrimer("p", many, { compact: true, maxChars: 1600 });
+    expect(md.length).toBeLessThanOrEqual(1600);
+    for (let i = 0; i < 3; i++) expect(md).toContain(`**core ${i}** — keep`);
+    expect((md.match(/^- \*\*proc /gm) ?? []).length).toBe(12);
+    const keptFacts = (md.match(/^- \*\*fact /gm) ?? []).length;
+    expect(keptFacts).toBeLessThan(12);
+    expect(md).toContain(`${12 - keptFacts} more (run`);
+  });
+
+  it("an oversized top core rule does not crowd out entries that still fit", () => {
+    const md = renderPrimer("p", [
+      e({ id: "core/big", type: "core", scope: "global", project: null, title: "Important rule", summary: "x".repeat(8100), importance: 9 }),
+      e({ id: "core/small", type: "core", scope: "global", project: null, title: "Short core", summary: "other", importance: 1 }),
+      e({ id: "semantic/p/f", type: "semantic", title: "Visible fact", summary: "FACT-SUMMARY", importance: 5 }),
+      e({ id: "procedural/p/x", type: "procedural", title: "Visible procedure", summary: "PROC-SUMMARY", importance: 5 }),
+    ], { compact: true, maxChars: 8000 });
+    expect(md.length).toBeLessThanOrEqual(8000);
+    expect(md).not.toContain("x".repeat(100));
+    expect(md).toContain("**Important rule** — _(too long for the startup primer; use memarium-recall with this title to read it)_");
+    expect(md).toContain("**Short core** — other");
+    expect(md).toContain("- **Visible fact**");
+    expect(md).toContain("- **Visible procedure**");
+    expect(md).not.toContain("more (run");
+  });
+
+  it("core rules show their full body when it fits, then fall back to the summary, then to the title", () => {
+    const bodies: Record<string, string> = {
+      "core/a": "BODY-ONLY-A\n\n**Why:** exceptions live here.",
+      "core/b": "y".repeat(9000),
+      "core/c": "z".repeat(9000),
+    };
+    const md = renderPrimer("p", [
+      e({ id: "core/a", type: "core", scope: "global", project: null, title: "rule a", summary: "A-SUMMARY", importance: 9 }),
+      e({ id: "core/b", type: "core", scope: "global", project: null, title: "rule b", summary: "B-SUMMARY", importance: 8 }),
+      e({ id: "core/c", type: "core", scope: "global", project: null, title: "rule c", summary: "w".repeat(9000), importance: 7 }),
+      e({ id: "procedural/p/x", type: "procedural", title: "a procedure", summary: "PROC-SUMMARY" }),
+    ], { compact: true, maxChars: 8000, coreBody: (x) => bodies[x.id] ?? null });
+    expect(md.length).toBeLessThanOrEqual(8000);
+    expect(md).toContain("- **rule a**\n\n  BODY-ONLY-A\n\n  **Why:** exceptions live here.");
+    expect(md).not.toContain("A-SUMMARY");
+    expect(md).toContain("**rule b** — B-SUMMARY");
+    expect(md).not.toContain("y".repeat(100));
+    expect(md).toContain("**rule c** — _(too long for the startup primer; use memarium-recall with this title to read it)_");
+    expect(md).not.toContain("w".repeat(100));
+    expect(md).toContain("- **a procedure**");
+  });
+
+  it("keeps an opening indented code block intact and skips a blank summary", () => {
+    const md = renderPrimer("p", [
+      e({ id: "core/code", type: "core", scope: "global", project: null, title: "code rule", summary: "s", importance: 9 }),
+      e({ id: "core/wf", type: "core", scope: "global", project: null, title: "Workflow", summary: "  ", importance: 8 }),
+    ], { compact: true, maxChars: 8000, coreBody: (x) => (x.id === "core/code" ? "    run --flag\n    run --other" : "v".repeat(9000)) });
+    expect(md).toContain("- **code rule**\n\n      run --flag\n      run --other");
+    expect(md).toContain("**Workflow** — _(too long for the startup primer; use memarium-recall with this title to read it)_");
+    expect(md).not.toMatch(/\*\*Workflow\*\* — \s*\n/);
+  });
+
+  it("never exceeds maxChars, even when the ceiling is below the headings", () => {
+    const md = renderPrimer("p", [
+      e({ id: "core/g", type: "core", scope: "global", project: null, title: "rule", summary: "x".repeat(500) }),
+    ], { maxChars: 120 });
+    expect(md.length).toBeGreaterThan(0);
+    expect(md.length).toBeLessThanOrEqual(120);
+  });
 });
 

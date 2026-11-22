@@ -16,7 +16,7 @@ if [ -x "$VBP" ]; then
   if [ -n "$PRIMER" ]; then
     printf '## 📓 Project memory (memarium)\n\n%s\n' "$PRIMER"
     printf '\n### Recall before you dig in\n'
-    printf 'This primer is automatic context, not a ranked recall query. Before exploring a relevant new task or prior decision, invoke the Skill tool with skill: "memarium:memarium-recall" to surface matching episodes, decisions and dead ends. For broader project context, use skill: "memarium:memarium-context". Reuse recall already done for the same task.\n'
+    printf 'This primer is automatic context, not a ranked recall query. Before exploring a relevant new task or prior decision, invoke the Skill tool with skill: "memarium:memarium-recall" to surface matching episodes, decisions and dead ends. For broader project context, use skill: "memarium:memarium-context". Reuse recall already done for the same task. Project facts and procedures are listed by title only; recall returns their summaries and the paths to their full bodies.\n'
   fi
 fi
 exit 0

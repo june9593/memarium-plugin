@@ -1,9 +1,11 @@
 import { beforeEach, afterEach, describe, it, expect } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { HOOK_PRIMER_MAX_CHARS, renderPrimer } from "../../src/memory/primer.js";
+import type { MemoryEntry, MemoryType } from "../../src/memory/types.js";
 
 const repo = fileURLToPath(new URL("../../", import.meta.url));
 const skills = ["memarium", "memarium-context", "memarium-recall", "memarium-retro"];
@@ -67,6 +69,83 @@ describe("plugin skill entrypoints", () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toContain('skill: "memarium:memarium-recall"');
     expect(run.stdout).toContain('skill: "memarium:memarium-context"');
+  });
+
+  function memoryEntry(type: MemoryType, slug: string, title: string, summary: string, importance: number): MemoryEntry {
+    const project = type === "core" ? null : "demo";
+    const id = `${type}/${project ?? "_global"}/${slug}`;
+    return { id, type, scope: project ? "project:demo" : "global", project, title, summary,
+      path: `memory/${id}.md`, status: "active", confidence: 1, importance, createdAt: "2026-06-01",
+      updatedAt: "2026-06-01", validFrom: null, validTo: null, sourceSessions: [], sourceCommits: [],
+      sourceFiles: [], supersedes: null, entities: [], trust: "trusted", originDevice: null,
+      accessCount: 0, lastAccess: null, archivedAt: null, archivedReason: null };
+  }
+  /** Run the packaged SessionStart hook against a sandboxed store holding `entries`
+   *  (and a Markdown body for each id in `bodies`), from a cwd mapped to "demo". */
+  function runPrimerHook(entries: MemoryEntry[], bodies: Record<string, string> = {}) {
+    const root = realpathSync(home);
+    const project = join(root, "work");
+    const memHome = join(root, ".memarium");
+    const store = join(memHome, "session-repo");
+    mkdirSync(project, { recursive: true });
+    mkdirSync(join(store, ".memarium"), { recursive: true });
+    writeFileSync(join(store, ".memarium/index.json"), JSON.stringify({ version: 1, entries: { "claude:t": {
+      sessionId: "t", shortId: "t", tool: "claude", project: "demo", projectRaw: project,
+      startedAt: "2026-06-01T00:00:00Z", endedAt: "2026-06-01T00:00:00Z", nameSlug: "x", displayName: "x",
+      relativePath: "raw_sessions/claude/demo/2026-06-01/x__t.md", sourcePath: "/t", sourceMtimeMs: 1, sourceSha256: "x" } } }));
+    writeFileSync(join(store, ".memarium/index.memory.json"),
+      JSON.stringify({ version: 1, entries: Object.fromEntries(entries.map((e) => [e.id, e])) }));
+    for (const e of entries) {
+      if (bodies[e.id] === undefined) continue;
+      const dir = join(store, "memory", e.type, e.project ?? "_global");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, `${e.id.split("/").pop()}.md`), `---\nid: ${e.id}\ntype: ${e.type}\n---\n\n# ${e.title}\n\n${bodies[e.id]}\n`);
+    }
+    return spawnSync("bash", [join(repo, "hooks/session-start.sh")], {
+      cwd: project, encoding: "utf8", timeout: 10000,
+      env: { ...process.env, HOME: root, MEMARIUM_DIR: memHome, CLAUDE_PLUGIN_ROOT: repo },
+    });
+  }
+
+  it("packaged SessionStart hook loads a core rule's full body", () => {
+    const rule = memoryEntry("core", "body-rule", "Body rule", "short summary", 9);
+    const run = runPrimerHook([rule, memoryEntry("procedural", "p0", "procedure 0", "PROC-SUMMARY", 5)],
+      { [rule.id]: "# Only in rehearsal\n\nCORE-BODY-ONLY-MARKER: use draft mode." });
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("- **Body rule**\n\n  # Only in rehearsal\n\n  CORE-BODY-ONLY-MARKER: use draft mode.");
+    expect(run.stdout).not.toContain("short summary");
+    expect(run.stdout).toContain("- **procedure 0**");
+  });
+
+  it("packaged SessionStart hook packs an over-limit store under the host limit and keeps entries that fit", () => {
+    const entries = [
+      ...Array.from({ length: 3 }, (_, i) => memoryEntry("core", `c${i}`, `core rule ${i}`, "rule detail ".repeat(292), 9 - i)),
+      ...Array.from({ length: 12 }, (_, i) => memoryEntry("procedural", `p${i}`, `procedure ${i}`, "PROC-SUMMARY", 5)),
+      ...Array.from({ length: 12 }, (_, i) => memoryEntry("semantic", `f${i}`, `fact ${i}`, "FACT-SUMMARY", 5)),
+    ];
+    // Without the ceiling, even the compact primer is over Claude Code's limit.
+    expect(renderPrimer("demo", entries, { compact: true }).length).toBeGreaterThan(10_000);
+
+    const run = runPrimerHook(entries);
+    expect(run.status).toBe(0);
+    expect(run.stdout.length).toBeLessThanOrEqual(10_000);
+    for (let i = 0; i < 3; i++) expect(run.stdout).toContain(`**core rule ${i}**`);
+    expect(run.stdout).toContain("- **procedure 0**");
+    expect(run.stdout).toContain("- **fact 0**");
+  });
+
+  it("keeps the whole SessionStart hook output under Claude Code's 10,000-character limit at the primer ceiling", () => {
+    const root = join(home, "budget plugin");
+    mkdirSync(join(root, "bin"), { recursive: true });
+    writeFileSync(join(root, "bin", "memarium-plugin.js"),
+      `#!/bin/sh\nhead -c ${HOOK_PRIMER_MAX_CHARS} /dev/zero | tr '\\0' x\n`, { mode: 0o755 });
+    const run = spawnSync("bash", [join(repo, "hooks/session-start.sh")], {
+      cwd: home, encoding: "utf8", timeout: 5000,
+      env: { ...process.env, HOME: home, MEMARIUM_DIR: join(home, "memory-home"), CLAUDE_PLUGIN_ROOT: root },
+    });
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("x".repeat(HOOK_PRIMER_MAX_CHARS));
+    expect(run.stdout.length).toBeLessThanOrEqual(10_000);
   });
 
 });
