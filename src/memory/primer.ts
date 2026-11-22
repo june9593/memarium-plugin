@@ -50,19 +50,29 @@ function eligible(entries: MemoryEntry[], type: MemoryType, project: string, now
       a.title.localeCompare(b.title));
 }
 
-interface Section { title: string; all: MemoryEntry[]; shown: number; withSummary: boolean }
+/** How an admitted entry is rendered: with its summary, by title, or by title
+ *  with a pointer when its summary alone would break the size ceiling. */
+type Shape = "summary" | "title" | "title-note";
 
-function bullet(e: MemoryEntry, withSummary: boolean): string {
+/** `picks` maps an index into the ranked `all` list to the shape it is shown in;
+ *  anything not picked is counted in the section's "…and N more" footer. */
+interface Section { title: string; all: MemoryEntry[]; shape: Shape; picks: Map<number, Shape> }
+
+function bullet(e: MemoryEntry, shape: Shape): string {
   const tentative = typeof e.confidence === "number" && e.confidence < TENTATIVE_BELOW ? " _(tentative)_" : "";
-  return withSummary ? `- **${e.title}**${tentative} — ${e.summary}` : `- **${e.title}**${tentative}`;
+  const head = `- **${e.title}**${tentative}`;
+  if (shape === "summary") return `${head} — ${e.summary}`;
+  if (shape === "title-note") return `${head} — _(too long for the startup primer; run \`/memarium-context\`)_`;
+  return head;
 }
 
 function renderSection(s: Section): string {
   if (s.all.length === 0) return "";
-  const lines = s.all.slice(0, s.shown).map((e) => bullet(e, s.withSummary));
+  const lines: string[] = [];
+  s.all.forEach((e, i) => { const shape = s.picks.get(i); if (shape) lines.push(bullet(e, shape)); });
   // Surface the truncated tail so the agent KNOWS it's seeing a partial view —
   // the silent `.slice()` was the failure mode the product exists to prevent (#19).
-  const hidden = s.all.length - s.shown;
+  const hidden = s.all.length - lines.length;
   if (hidden > 0) lines.push(`- _…and ${hidden} more (run \`/memarium-context\`)_`);
   return `## ${s.title}\n\n${lines.join("\n")}\n`;
 }
@@ -93,24 +103,37 @@ export function renderPrimer(
   const now = opts.now ?? new Date().toISOString().slice(0, 10);
   const compact = opts.compact === true;
   const head = `# Project memory: ${project}\n\n> Auto-generated primer. The agent should treat this as already-known project context.\n`;
-  const make = (title: string, type: MemoryType, withSummary: boolean): Section => {
-    const all = eligible(entries, type, project, now);
-    return { title, all, shown: Math.min(max, all.length), withSummary };
-  };
-  const core = make("Core rules", "core", true);
-  const facts = make("Project facts", "semantic", !compact);
-  const procedures = make("Procedures & gotchas", "procedural", !compact);
+  const make = (title: string, type: MemoryType, shape: Shape): Section =>
+    ({ title, all: eligible(entries, type, project, now), shape, picks: new Map() });
+  const core = make("Core rules", "core", "summary");
+  const facts = make("Project facts", "semantic", compact ? "title" : "summary");
+  const procedures = make("Procedures & gotchas", "procedural", compact ? "title" : "summary");
   // Silent when there's no eligible memory for this project — so memory-primer
   // (and the SessionStart hook) emit nothing rather than a bare header block.
   if (core.all.length + facts.all.length + procedures.all.length === 0) return "";
   const render = () => [head, ...[core, facts, procedures].map(renderSection).filter(Boolean)].join("\n");
-  let out = render();
   const limit = opts.maxChars;
-  if (limit === undefined || !Number.isFinite(limit) || limit < 0) return out;
-  // Over the ceiling: drop facts first, then procedures, then core rules. Footers
-  // keep counting what was left out, so the cut is visible rather than silent.
-  for (const s of [facts, procedures, core]) {
-    while (out.length > limit && s.shown > 0) { s.shown--; out = render(); }
+  if (limit === undefined || !Number.isFinite(limit) || limit < 0) {
+    for (const s of [core, facts, procedures]) {
+      for (let i = 0; i < Math.min(max, s.all.length); i++) s.picks.set(i, s.shape);
+    }
+    return render();
   }
+  // Under a ceiling, admit entries in priority order — core rules, then
+  // procedures, then facts — keeping each one that still fits and moving on when
+  // one does not, so a single oversized entry can't crowd out entries that fit.
+  // A core rule whose summary doesn't fit is still listed by title with a pointer
+  // to /memarium-context. Footers count whatever was finally left out.
+  for (const s of [core, procedures, facts]) {
+    const shapes: Shape[] = s === core ? ["summary", "title-note"] : s.shape === "summary" ? ["summary", "title"] : ["title"];
+    for (let i = 0; i < Math.min(max, s.all.length); i++) {
+      for (const shape of shapes) {
+        s.picks.set(i, shape);
+        if (render().length <= limit) break;
+        s.picks.delete(i);
+      }
+    }
+  }
+  const out = render();
   return out.length > limit ? clip(out, Math.floor(limit)) : out;
 }

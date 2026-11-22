@@ -10,11 +10,14 @@
   its first section unless the agent read the saved file.
 - The hook now renders a compact primer with a hard 8,000-character ceiling:
   core rules keep their summaries; project facts and procedures are listed by
-  title, and recall returns their summaries and bodies. On the store that
-  prompted this fix, the hook output dropped from 16,338 to 4,366 characters
-  with all three sections present.
-- When the ceiling binds, facts are trimmed before procedures and core rules,
-  and each section still reports how many entries were left out.
+  title, and recall returns their summaries and the paths to their bodies. On
+  the store that prompted this fix, the hook output dropped from 16,338 to 4,366
+  characters with all three sections present.
+- Under the ceiling, entries are admitted in priority order — core rules, then
+  procedures, then facts — and an entry that does not fit is skipped without
+  blocking later entries that do. A core rule whose summary alone would break
+  the ceiling is listed by title with a pointer to `/memarium-context`. Each
+  section still reports how many entries were left out.
 - `/memarium-context`, recall overviews, and evaluation keep the full-summary
   primer.
 - Add renderer, command, and hook-wrapper regressions, align the README, and

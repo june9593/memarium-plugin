@@ -15545,14 +15545,21 @@ function eligible(entries, type, project, now) {
     return v === null || v > nowDate;
   }).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted").sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
 }
-function bullet(e, withSummary) {
+function bullet(e, shape) {
   const tentative = typeof e.confidence === "number" && e.confidence < TENTATIVE_BELOW ? " _(tentative)_" : "";
-  return withSummary ? `- **${e.title}**${tentative} \u2014 ${e.summary}` : `- **${e.title}**${tentative}`;
+  const head = `- **${e.title}**${tentative}`;
+  if (shape === "summary") return `${head} \u2014 ${e.summary}`;
+  if (shape === "title-note") return `${head} \u2014 _(too long for the startup primer; run \`/memarium-context\`)_`;
+  return head;
 }
 function renderSection(s) {
   if (s.all.length === 0) return "";
-  const lines = s.all.slice(0, s.shown).map((e) => bullet(e, s.withSummary));
-  const hidden = s.all.length - s.shown;
+  const lines = [];
+  s.all.forEach((e, i2) => {
+    const shape = s.picks.get(i2);
+    if (shape) lines.push(bullet(e, shape));
+  });
+  const hidden = s.all.length - lines.length;
   if (hidden > 0) lines.push(`- _\u2026and ${hidden} more (run \`/memarium-context\`)_`);
   return `## ${s.title}
 
@@ -15575,24 +15582,30 @@ function renderPrimer(project, entries, opts = {}) {
 
 > Auto-generated primer. The agent should treat this as already-known project context.
 `;
-  const make = (title, type, withSummary) => {
-    const all = eligible(entries, type, project, now);
-    return { title, all, shown: Math.min(max, all.length), withSummary };
-  };
-  const core = make("Core rules", "core", true);
-  const facts = make("Project facts", "semantic", !compact);
-  const procedures = make("Procedures & gotchas", "procedural", !compact);
+  const make = (title, type, shape) => ({ title, all: eligible(entries, type, project, now), shape, picks: /* @__PURE__ */ new Map() });
+  const core = make("Core rules", "core", "summary");
+  const facts = make("Project facts", "semantic", compact ? "title" : "summary");
+  const procedures = make("Procedures & gotchas", "procedural", compact ? "title" : "summary");
   if (core.all.length + facts.all.length + procedures.all.length === 0) return "";
   const render = () => [head, ...[core, facts, procedures].map(renderSection).filter(Boolean)].join("\n");
-  let out = render();
   const limit = opts.maxChars;
-  if (limit === void 0 || !Number.isFinite(limit) || limit < 0) return out;
-  for (const s of [facts, procedures, core]) {
-    while (out.length > limit && s.shown > 0) {
-      s.shown--;
-      out = render();
+  if (limit === void 0 || !Number.isFinite(limit) || limit < 0) {
+    for (const s of [core, facts, procedures]) {
+      for (let i2 = 0; i2 < Math.min(max, s.all.length); i2++) s.picks.set(i2, s.shape);
+    }
+    return render();
+  }
+  for (const s of [core, procedures, facts]) {
+    const shapes = s === core ? ["summary", "title-note"] : s.shape === "summary" ? ["summary", "title"] : ["title"];
+    for (let i2 = 0; i2 < Math.min(max, s.all.length); i2++) {
+      for (const shape of shapes) {
+        s.picks.set(i2, shape);
+        if (render().length <= limit) break;
+        s.picks.delete(i2);
+      }
     }
   }
+  const out = render();
   return out.length > limit ? clip(out, Math.floor(limit)) : out;
 }
 var MAX_PER_SECTION, HOOK_PRIMER_MAX_CHARS, TENTATIVE_BELOW, CLIPPED;

@@ -188,6 +188,22 @@ describe("renderPrimer", () => {
     expect(md).toContain(`${12 - keptFacts} more (run`);
   });
 
+  it("an oversized top core rule does not crowd out entries that still fit", () => {
+    const md = renderPrimer("p", [
+      e({ id: "core/big", type: "core", scope: "global", project: null, title: "Important rule", summary: "x".repeat(8100), importance: 9 }),
+      e({ id: "core/small", type: "core", scope: "global", project: null, title: "Short core", summary: "other", importance: 1 }),
+      e({ id: "semantic/p/f", type: "semantic", title: "Visible fact", summary: "FACT-SUMMARY", importance: 5 }),
+      e({ id: "procedural/p/x", type: "procedural", title: "Visible procedure", summary: "PROC-SUMMARY", importance: 5 }),
+    ], { compact: true, maxChars: 8000 });
+    expect(md.length).toBeLessThanOrEqual(8000);
+    expect(md).not.toContain("x".repeat(100));
+    expect(md).toContain("**Important rule** — _(too long for the startup primer; run `/memarium-context`)_");
+    expect(md).toContain("**Short core** — other");
+    expect(md).toContain("- **Visible fact**");
+    expect(md).toContain("- **Visible procedure**");
+    expect(md).not.toContain("more (run");
+  });
+
   it("never exceeds maxChars, even when the ceiling is below the headings", () => {
     const md = renderPrimer("p", [
       e({ id: "core/g", type: "core", scope: "global", project: null, title: "rule", summary: "x".repeat(500) }),
