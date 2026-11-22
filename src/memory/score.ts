@@ -16,6 +16,10 @@ export interface ScoredMemory {
   whyRecalled: string;
 }
 
+function asciiWords(s: string): string[] {
+  return s.toLowerCase().split(/[^a-z0-9_]+/).filter((t) => t.length > 1);
+}
+
 /** ASCII words (length > 1) plus every pair of adjacent Han characters.
  *  Chinese has no spaces, so the ASCII split alone dropped every Chinese word
  *  and a pure-Chinese query scored keyword 0 against everything. Bigrams make
@@ -23,9 +27,8 @@ export interface ScoredMemory {
  *  no token. ASCII tokens are unchanged, so English and identifier queries rank
  *  exactly as before. */
 function tokenize(s: string): string[] {
-  const lower = s.toLowerCase();
-  const tokens = lower.split(/[^a-z0-9_]+/).filter((t) => t.length > 1);
-  for (const run of lower.match(/\p{Script=Han}+/gu) ?? []) {
+  const tokens = asciiWords(s);
+  for (const run of s.match(/\p{Script=Han}+/gu) ?? []) {
     const chars = Array.from(run);
     for (let i = 0; i + 1 < chars.length; i++) tokens.push(chars[i] + chars[i + 1]);
   }
@@ -52,6 +55,23 @@ function num(v: unknown, dflt = 0): number {
  *  ordering of healthy rows are unchanged. */
 function asArray(v: unknown): string[] {
   return Array.isArray(v) ? v : [];
+}
+
+/** The text the keyword term scores: title, summary and entities. */
+function keywordText(e: MemoryEntry): string {
+  return `${e.title} ${e.summary} ${asArray(e.entities).join(" ")}`;
+}
+
+/** The query's ASCII words (identifiers, English words), lower-cased. */
+export function asciiQueryWords(text: string): Set<string> {
+  return new Set(asciiWords(text));
+}
+
+/** Whether the entry's keyword text contains one of `words`. The cold-storage
+ *  gate uses this to tell a live hit on the query's identifier from one made
+ *  only of Chinese character pairs. */
+export function matchesAnyAsciiWord(e: MemoryEntry, words: Set<string>): boolean {
+  return asciiWords(keywordText(e)).some((t) => words.has(t));
 }
 
 /** Max score contribution from `importance`. Keeps it a secondary boost (file/
@@ -127,7 +147,7 @@ function rankMemories(list: MemoryEntry[], q: MemoryQuery): ScoredMemory[] {
     // keyword (lexical term-overlap — NOT BM25: no IDF/TF/length-norm, so rare
     // and common tokens weigh equally): presence overlap over title+summary+entities
     if (qTokens.size > 0) {
-      const haystack = new Set(tokenize(`${e.title} ${e.summary} ${asArray(e.entities).join(" ")}`));
+      const haystack = new Set(tokenize(keywordText(e)));
       let hits = 0;
       for (const t of qTokens) if (haystack.has(t)) hits++;
       if (hits > 0) { score += hits * 5; why.push(`keyword×${hits}`); }

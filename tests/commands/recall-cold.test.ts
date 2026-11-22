@@ -138,6 +138,43 @@ describe("recall — R2 cold-storage valve (shared with memory-query)", () => {
     expect(errs.join("\n")).not.toMatch(/❄️/);
   });
 
+  // Mixed Chinese + identifier queries. Since Chinese is matched by character
+  // pairs, a common pair such as 怎么 makes unrelated live memories content hits;
+  // three of them used to close the valve over an archive that matches the
+  // identifier.
+  const SQLITE = "semantic/code-demo/sqlite-recovery";
+  const archivedSqlite = () => mk({ id: SQLITE, title: "SQLite 快照恢复步骤", summary: "从快照恢复 SQLite 数据库。",
+    status: "archived", archivedAt: "2026-05-01", archivedReason: "unused-low-value",
+    path: "memory/semantic/code-demo/sqlite-recovery.md" });
+  const live = (titles: string[]) => Object.fromEntries(titles.map((title, i) => [`semantic/code-demo/live-${i}`,
+    mk({ id: `semantic/code-demo/live-${i}`, title, summary: "界面操作说明。", path: `memory/semantic/code-demo/live-${i}.md` })]));
+  const WEAK = ["怎么调整字体", "怎么修改配色", "怎么切换语言"];
+  const coldIds = (p: { coldStorage: { id: string }[] }) => p.coldStorage.map((h) => h.id);
+  const runFresh = (q: string) => { stdout.length = 0; return run({ cwd: "/work/code-demo", q }); };
+
+  it("mixed query: three live hits made only of a common Chinese pair do not hide an archive that matches the identifier", async () => {
+    writeLocalIndex({ ...live(WEAK), [SQLITE]: archivedSqlite() });
+    const p = await runFresh("SQLite 怎么恢复");
+    // The weak hits are real content hits on the active side…
+    expect(p.entries.filter((h: { whyRecalled: string }) => h.whyRecalled.includes("keyword×1"))).toHaveLength(3);
+    // …but none of them matches SQLite, so the archived match still surfaces.
+    expect(coldIds(p)).toEqual([SQLITE]);
+  });
+
+  it("boundaries: two such live hits, or the identifier alone, leave the archive visible", async () => {
+    writeLocalIndex({ ...live(WEAK.slice(0, 2)), [SQLITE]: archivedSqlite() });
+    expect(coldIds(await runFresh("SQLite 怎么恢复"))).toEqual([SQLITE]);
+    writeLocalIndex({ ...live(WEAK), [SQLITE]: archivedSqlite() });
+    expect(coldIds(await runFresh("SQLite"))).toEqual([SQLITE]);
+  });
+
+  it("mixed query: three live hits on the identifier itself still close the valve", async () => {
+    writeLocalIndex({ ...live(["SQLite 备份脚本", "SQLite 锁等待处理", "SQLite 迁移注意事项"]), [SQLITE]: archivedSqlite() });
+    const p = await runFresh("SQLite 怎么恢复");
+    expect(p.entries.filter((h: { whyRecalled: string }) => h.whyRecalled.includes("keyword"))).toHaveLength(3);
+    expect(p.coldStorage).toEqual([]);
+  });
+
   it("empty query → coldStorage empty (the valve never fires on a primer-style overview)", async () => {
     writeLocalIndex({
       "semantic/code-demo/coldvim": mk({ id: "semantic/code-demo/coldvim", title: "Vim keybindings",

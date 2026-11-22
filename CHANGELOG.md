@@ -15,13 +15,26 @@
   queries rank exactly as before. A lone Han character still makes no token.
 - On a synthetic 60-entry store with 43 queries frozen before the change,
   pure-Chinese recall@5 went from 1/18 (a tie-order hit) to 17/18. Mixed
-  queries stayed at 12/13 with a higher MRR. All 12 English and identifier
-  queries kept an identical full ranking. The remaining Chinese miss is a
-  paraphrase that shares no character pair with its memory.
-- `memory-query` and the archived-memory fallback share this scorer and get the
-  same change. Q&A, entity lookup and duplicate detection keep their own
-  tokenizers and are unchanged.
-- Add scorer regressions and rebuild the committed plugin CLI.
+  queries stayed at 12/13. Their MRR in the CLI's actual order went from
+  0.8956 to 0.8942; the expected MRR with equal scores in random order went
+  from 0.8521 to 0.9193. All 12 English and identifier queries kept an
+  identical full ranking. The remaining Chinese miss is a paraphrase that
+  shares no character pair with its memory.
+- The archived-memory fallback opens only when fewer than three live memories
+  match the query. Character pairs let a common pair such as 怎么 make
+  unrelated live memories match, so three of them could hide an archive that
+  matched the query's identifier: `SQLite 怎么恢复` stopped returning an
+  archived "SQLite 快照恢复步骤". When a query contains an English word or
+  identifier, a live memory now counts toward that limit only if it matched one
+  of those words, a file or a commit, as before this release. Pure-Chinese
+  queries count every match. With each query's gold entry archived in turn,
+  mixed queries recover it 10/13 times as in 0.22.8 (6/13 without this rule),
+  pure-Chinese queries 4/18 (0/18 in 0.22.8), and English queries 9/12 in every
+  version.
+- `memory-query` shares this scorer and fallback and gets the same changes.
+  Q&A, entity lookup and duplicate detection keep their own tokenizers and are
+  unchanged.
+- Add scorer and fallback regressions and rebuild the committed plugin CLI.
 
 No memory format, writer, or digest behavior changed.
 

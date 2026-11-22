@@ -15358,10 +15358,12 @@ var init_skip_write = __esm({
 });
 
 // src/memory/score.ts
+function asciiWords(s) {
+  return s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1);
+}
 function tokenize(s) {
-  const lower = s.toLowerCase();
-  const tokens = lower.split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1);
-  for (const run2 of lower.match(/\p{Script=Han}+/gu) ?? []) {
+  const tokens = asciiWords(s);
+  for (const run2 of s.match(/\p{Script=Han}+/gu) ?? []) {
     const chars = Array.from(run2);
     for (let i2 = 0; i2 + 1 < chars.length; i2++) tokens.push(chars[i2] + chars[i2 + 1]);
   }
@@ -15372,6 +15374,15 @@ function num(v, dflt = 0) {
 }
 function asArray2(v) {
   return Array.isArray(v) ? v : [];
+}
+function keywordText(e) {
+  return `${e.title} ${e.summary} ${asArray2(e.entities).join(" ")}`;
+}
+function asciiQueryWords(text) {
+  return new Set(asciiWords(text));
+}
+function matchesAnyAsciiWord(e, words) {
+  return asciiWords(keywordText(e)).some((t2) => words.has(t2));
 }
 function isArchived(e) {
   return e.status === "archived";
@@ -15399,7 +15410,7 @@ function rankMemories(list, q2) {
     let score = 0;
     const why = [];
     if (qTokens.size > 0) {
-      const haystack = new Set(tokenize(`${e.title} ${e.summary} ${asArray2(e.entities).join(" ")}`));
+      const haystack = new Set(tokenize(keywordText(e)));
       let hits = 0;
       for (const t2 of qTokens) if (haystack.has(t2)) hits++;
       if (hits > 0) {
@@ -15679,7 +15690,9 @@ function resolveColdOrigin(entries, sources) {
 }
 function runColdPass({ entries, scored, query, sources }) {
   if (query.text.trim() === "") return [];
-  const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
+  const words = asciiQueryWords(query.text);
+  const answersQuery = (s) => words.size === 0 || s.whyRecalled.includes("file\xD7") || s.whyRecalled.includes("commit\xD7") || matchesAnyAsciiWord(s.entry, words);
+  const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR && answersQuery(s)).length;
   if (strongPrimary >= COLD_FLOOR) return [];
   const originOf = resolveColdOrigin(entries, sources);
   return scoreArchived(Object.values(entries), query).filter((s) => isResurrectable(s.entry)).filter((s) => inScope(s.entry, query.project)).filter((s) => !query.type || s.entry.type === query.type).filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).slice(0, COLD_TOP_K).map((s) => {
