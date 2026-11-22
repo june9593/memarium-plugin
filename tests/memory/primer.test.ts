@@ -157,5 +157,43 @@ describe("renderPrimer", () => {
     expect(out).toContain("live global fact");
     expect(out).not.toContain("cold global fact");
   });
+
+  it("compact mode lists facts and procedures by title only; core rules keep their summary", () => {
+    const md = renderPrimer("p", [
+      e({ id: "core/g", type: "core", scope: "global", project: null, title: "core rule", summary: "CORE-SUMMARY" }),
+      e({ id: "semantic/p/f", type: "semantic", title: "a fact", summary: "FACT-SUMMARY" }),
+      e({ id: "procedural/p/x", type: "procedural", title: "a procedure", summary: "PROC-SUMMARY" }),
+    ], { compact: true });
+    expect(md).toContain("**core rule** — CORE-SUMMARY");
+    expect(md).toContain("- **a fact**\n");
+    expect(md).toContain("- **a procedure**\n");
+    expect(md).not.toContain("FACT-SUMMARY");
+    expect(md).not.toContain("PROC-SUMMARY");
+  });
+
+  it("maxChars is a hard ceiling: facts are trimmed before procedures and the cut is counted", () => {
+    const pad = "很长的标题".repeat(16);
+    const many = [
+      ...Array.from({ length: 3 }, (_, i) => e({ id: `core/${i}`, type: "core", title: `core ${i}`, summary: "keep" })),
+      ...Array.from({ length: 12 }, (_, i) => e({ id: `semantic/p/${i}`, type: "semantic", title: `fact ${i} ${pad}` })),
+      ...Array.from({ length: 12 }, (_, i) => e({ id: `procedural/p/${i}`, type: "procedural", title: `proc ${i} ${pad}` })),
+    ];
+    expect(renderPrimer("p", many, { compact: true }).length).toBeGreaterThan(1600);
+    const md = renderPrimer("p", many, { compact: true, maxChars: 1600 });
+    expect(md.length).toBeLessThanOrEqual(1600);
+    for (let i = 0; i < 3; i++) expect(md).toContain(`**core ${i}** — keep`);
+    expect((md.match(/^- \*\*proc /gm) ?? []).length).toBe(12);
+    const keptFacts = (md.match(/^- \*\*fact /gm) ?? []).length;
+    expect(keptFacts).toBeLessThan(12);
+    expect(md).toContain(`${12 - keptFacts} more (run`);
+  });
+
+  it("never exceeds maxChars, even when the ceiling is below the headings", () => {
+    const md = renderPrimer("p", [
+      e({ id: "core/g", type: "core", scope: "global", project: null, title: "rule", summary: "x".repeat(500) }),
+    ], { maxChars: 120 });
+    expect(md.length).toBeGreaterThan(0);
+    expect(md.length).toBeLessThanOrEqual(120);
+  });
 });
 

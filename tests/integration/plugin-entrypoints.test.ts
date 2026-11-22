@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { HOOK_PRIMER_MAX_CHARS } from "../../src/memory/primer.js";
 
 const repo = fileURLToPath(new URL("../../", import.meta.url));
 const skills = ["memarium", "memarium-context", "memarium-recall", "memarium-retro"];
@@ -67,6 +68,20 @@ describe("plugin skill entrypoints", () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toContain('skill: "memarium:memarium-recall"');
     expect(run.stdout).toContain('skill: "memarium:memarium-context"');
+  });
+
+  it("keeps the whole SessionStart hook output under Claude Code's 10,000-character limit at the primer ceiling", () => {
+    const root = join(home, "budget plugin");
+    mkdirSync(join(root, "bin"), { recursive: true });
+    writeFileSync(join(root, "bin", "memarium-plugin.js"),
+      `#!/bin/sh\nhead -c ${HOOK_PRIMER_MAX_CHARS} /dev/zero | tr '\\0' x\n`, { mode: 0o755 });
+    const run = spawnSync("bash", [join(repo, "hooks/session-start.sh")], {
+      cwd: home, encoding: "utf8", timeout: 5000,
+      env: { ...process.env, HOME: home, MEMARIUM_DIR: join(home, "memory-home"), CLAUDE_PLUGIN_ROOT: root },
+    });
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("x".repeat(HOOK_PRIMER_MAX_CHARS));
+    expect(run.stdout.length).toBeLessThanOrEqual(10_000);
   });
 
 });

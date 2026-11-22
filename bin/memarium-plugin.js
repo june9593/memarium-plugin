@@ -15545,45 +15545,66 @@ function eligible(entries, type, project, now) {
     return v === null || v > nowDate;
   }).filter((e) => e.scope === "global" || e.scope === "user" || e.project === project).filter((e) => type !== "semantic" || (e.trust ?? "unknown") === "trusted").sort((a, b2) => num2(b2.importance, 0) - num2(a.importance, 0) || num2(b2.confidence, 0.5) - num2(a.confidence, 0.5) || (b2.updatedAt > a.updatedAt ? 1 : b2.updatedAt < a.updatedAt ? -1 : 0) || a.title.localeCompare(b2.title));
 }
-function section(title, all, max) {
-  if (all.length === 0) return "";
-  const shown = all.slice(0, max);
-  const lines = shown.map((e) => {
-    const tentative = typeof e.confidence === "number" && e.confidence < TENTATIVE_BELOW ? " _(tentative)_" : "";
-    return `- **${e.title}**${tentative} \u2014 ${e.summary}`;
-  });
-  const hidden = all.length - shown.length;
-  const footer = hidden > 0 ? `
-- _\u2026and ${hidden} more (run \`/memarium-context\`)_` : "";
-  return `## ${title}
+function bullet(e, withSummary) {
+  const tentative = typeof e.confidence === "number" && e.confidence < TENTATIVE_BELOW ? " _(tentative)_" : "";
+  return withSummary ? `- **${e.title}**${tentative} \u2014 ${e.summary}` : `- **${e.title}**${tentative}`;
+}
+function renderSection(s) {
+  if (s.all.length === 0) return "";
+  const lines = s.all.slice(0, s.shown).map((e) => bullet(e, s.withSummary));
+  const hidden = s.all.length - s.shown;
+  if (hidden > 0) lines.push(`- _\u2026and ${hidden} more (run \`/memarium-context\`)_`);
+  return `## ${s.title}
 
-${lines.join("\n")}${footer}
+${lines.join("\n")}
 `;
+}
+function clip(text, limit) {
+  if (limit <= CLIPPED.length) return "";
+  let cut = limit - CLIPPED.length;
+  const code = text.charCodeAt(cut - 1);
+  if (code >= 55296 && code <= 56319) cut--;
+  return text.slice(0, cut) + CLIPPED;
 }
 function renderPrimer(project, entries, opts = {}) {
   const raw = opts.maxPerSection ?? MAX_PER_SECTION;
   const max = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : MAX_PER_SECTION;
   const now = opts.now ?? (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const compact = opts.compact === true;
   const head = `# Project memory: ${project}
 
 > Auto-generated primer. The agent should treat this as already-known project context.
 `;
-  const sections = [
-    section("Core rules", eligible(entries, "core", project, now), max),
-    section("Project facts", eligible(entries, "semantic", project, now), max),
-    section("Procedures & gotchas", eligible(entries, "procedural", project, now), max)
-  ].filter(Boolean);
-  if (sections.length === 0) return "";
-  return [head, ...sections].join("\n");
+  const make = (title, type, withSummary) => {
+    const all = eligible(entries, type, project, now);
+    return { title, all, shown: Math.min(max, all.length), withSummary };
+  };
+  const core = make("Core rules", "core", true);
+  const facts = make("Project facts", "semantic", !compact);
+  const procedures = make("Procedures & gotchas", "procedural", !compact);
+  if (core.all.length + facts.all.length + procedures.all.length === 0) return "";
+  const render = () => [head, ...[core, facts, procedures].map(renderSection).filter(Boolean)].join("\n");
+  let out = render();
+  const limit = opts.maxChars;
+  if (limit === void 0 || !Number.isFinite(limit) || limit < 0) return out;
+  for (const s of [facts, procedures, core]) {
+    while (out.length > limit && s.shown > 0) {
+      s.shown--;
+      out = render();
+    }
+  }
+  return out.length > limit ? clip(out, Math.floor(limit)) : out;
 }
-var MAX_PER_SECTION, TENTATIVE_BELOW;
+var MAX_PER_SECTION, HOOK_PRIMER_MAX_CHARS, TENTATIVE_BELOW, CLIPPED;
 var init_primer = __esm({
   "src/memory/primer.ts"() {
     "use strict";
     init_score();
     init_dates();
     MAX_PER_SECTION = 12;
+    HOOK_PRIMER_MAX_CHARS = 8e3;
     TENTATIVE_BELOW = 0.5;
+    CLIPPED = "\n\u2026(primer truncated)\n";
   }
 });
 
@@ -15822,7 +15843,7 @@ async function memoryPrimerCmd(opts) {
     const project = resolveProjectFromCwd(cwd, cfg.repoPath);
     if (!project) return;
     const view = resolveMemoryView(cfg.repoPath);
-    const primer = renderPrimer(project, Object.values(view.entries));
+    const primer = renderPrimer(project, Object.values(view.entries), { compact: true, maxChars: HOOK_PRIMER_MAX_CHARS });
     if (primer.trim()) process.stdout.write(primer);
   } catch {
   }

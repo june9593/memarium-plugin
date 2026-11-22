@@ -118,4 +118,32 @@ describe("memoryPrimerCmd", () => {
     expect(out).toContain("never npm publish");      // local memory
     expect(out).toContain("sibling-device rule");    // overlay (sibling device) memory
   });
+
+  it("keeps the SessionStart primer compact and under the hook ceiling on a large store", async () => {
+    const { HOOK_PRIMER_MAX_CHARS, renderPrimer } = await import("../../src/memory/primer.js");
+    const long = "这是一条很长的记忆摘要，".repeat(30);
+    const entries: Record<string, Record<string, unknown>> = {};
+    const add = (id: string, type: string, scope: string, project: string | null, title: string) => {
+      entries[id] = { id, type, scope, project, title, summary: `${title} SUMMARY ${long}`, path: `memory/${id}.md`,
+        status: "active", confidence: 0.9, importance: 3, createdAt: "2026-06-01", updatedAt: "2026-06-01",
+        validFrom: null, validTo: null, sourceSessions: [], sourceCommits: [], sourceFiles: [], supersedes: null,
+        entities: [], trust: "trusted", originDevice: null, accessCount: 0, lastAccess: null };
+    };
+    for (let i = 0; i < 8; i++) add(`core/_global/c${i}`, "core", "global", null, `core rule ${i}`);
+    for (let i = 0; i < 30; i++) add(`semantic/code-demo/f${i}`, "semantic", "project:code-demo", "code-demo", `fact ${i}`);
+    for (let i = 0; i < 30; i++) add(`procedural/code-demo/p${i}`, "procedural", "project:code-demo", "code-demo", `procedure ${i}`);
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries }));
+    // The full-summary primer for this store is far over Claude Code's 10,000-character hook limit.
+    expect(renderPrimer("code-demo", Object.values(entries) as never).length).toBeGreaterThan(10_000);
+
+    const { memoryPrimerCmd } = await import("../../src/commands/memory-primer.js");
+    await memoryPrimerCmd({ cwd: "/work/code-demo" });
+    const out = stdout.join("");
+    expect(out.length).toBeLessThanOrEqual(HOOK_PRIMER_MAX_CHARS);
+    expect(out).toContain("core rule 0 SUMMARY");
+    expect(out).toContain("- **fact 0**");
+    expect(out).not.toContain("fact 0 SUMMARY");
+    expect(out).toContain("## Procedures & gotchas");
+    expect(out).toContain("- **procedure 0**");
+  });
 });
