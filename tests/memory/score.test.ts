@@ -64,6 +64,29 @@ describe("scoreMemories", () => {
     expect(r[0].whyRecalled).toContain("keyword");
   });
 
+  it("a pure-Chinese query matches Chinese title/summary by adjacent-character pairs", () => {
+    // The id tiebreak favours the distractor, so a zero keyword score can't pass.
+    const entries = [
+      e({ id: "a-export", title: "导出报表时合并重复行" }),
+      e({ id: "b-import", title: "导入银行流水时按来源去重", summary: "去重键必须带上来源" }),
+    ];
+    const r = scoreMemories(entries, Q({ text: "导入去重" }));
+    expect(r.map((x) => x.entry.id)).toEqual(["b-import", "a-export"]);
+    expect(r[0].whyRecalled).toContain("keyword×2"); // 导入 + 去重; the spanning pair 入去 matches nothing
+    expect(r[1].whyRecalled).not.toContain("keyword");
+  });
+
+  it("English words and identifiers tokenize as before, including next to Chinese", () => {
+    const entries = [
+      e({ id: "a-zh", title: "每批最多写五百行" }),
+      e({ id: "b-ident", title: "MAX_BATCH_SIZE限制每批写入", summary: "parseAmount 和 SQLite 的变量上限" }),
+    ];
+    const r = scoreMemories(entries, Q({ text: "max_batch_size sqlite parseAmount" }));
+    expect(r[0].entry.id).toBe("b-ident");
+    expect(r[0].whyRecalled).toContain("keyword×3");
+    expect(r[1].whyRecalled).not.toContain("keyword");
+  });
+
   it("same-project entries outrank other-project on equal text", () => {
     const entries = [
       e({ id: "mine", project: "p", scope: "project:p", title: "auth flow" }),

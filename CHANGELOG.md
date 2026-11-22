@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.22.9 — 2026-11-23
+
+### Match Chinese queries in recall
+
+- Recall's keyword score split text on every character outside `[a-z0-9_]`,
+  so Chinese words never became tokens. A pure-Chinese query scored keyword 0
+  against every memory, and the ranking fell back to scope, importance and the
+  id tiebreak. Mixed Chinese-English queries matched only through their English
+  words.
+- The tokenizer now also emits each pair of adjacent Han characters, on both
+  the query and the memory side, so "导入去重" matches a memory about "导入…去重"
+  without a dictionary. ASCII tokens are unchanged, so English and identifier
+  queries rank exactly as before. A lone Han character still makes no token.
+- On a synthetic 60-entry store with 43 queries frozen before the change,
+  pure-Chinese recall@5 went from 1/18 (a tie-order hit) to 17/18. Mixed
+  queries stayed at 12/13 with a higher MRR. All 12 English and identifier
+  queries kept an identical full ranking. The remaining Chinese miss is a
+  paraphrase that shares no character pair with its memory.
+- `memory-query` and the archived-memory fallback share this scorer and get the
+  same change. Q&A, entity lookup and duplicate detection keep their own
+  tokenizers and are unchanged.
+- Add scorer regressions and rebuild the committed plugin CLI.
+
+No memory format, writer, or digest behavior changed.
+
 ## 0.22.8 — 2026-11-22
 
 ### Keep the SessionStart primer under Claude Code's hook limit

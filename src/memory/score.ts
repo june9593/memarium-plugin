@@ -16,8 +16,20 @@ export interface ScoredMemory {
   whyRecalled: string;
 }
 
+/** ASCII words (length > 1) plus every pair of adjacent Han characters.
+ *  Chinese has no spaces, so the ASCII split alone dropped every Chinese word
+ *  and a pure-Chinese query scored keyword 0 against everything. Bigrams make
+ *  "导入去重" match "导入…去重" without a dictionary. A lone Han character makes
+ *  no token. ASCII tokens are unchanged, so English and identifier queries rank
+ *  exactly as before. */
 function tokenize(s: string): string[] {
-  return s.toLowerCase().split(/[^a-z0-9_]+/).filter((t) => t.length > 1);
+  const lower = s.toLowerCase();
+  const tokens = lower.split(/[^a-z0-9_]+/).filter((t) => t.length > 1);
+  for (const run of lower.match(/\p{Script=Han}+/gu) ?? []) {
+    const chars = Array.from(run);
+    for (let i = 0; i + 1 < chars.length; i++) tokens.push(chars[i] + chars[i + 1]);
+  }
+  return tokens;
 }
 
 /** Coerce a possibly-missing/NaN numeric field to a finite number (default 0).

@@ -159,7 +159,7 @@ configuration changes belong to the user's setup/configuration workflow.
 
 ### Limitations & roadmap
 
-- **Lexical-only retrieval (the known gap).** Recall ranks by keyword overlap + scope + recency + importance, so a *semantically* related but *lexically* different query can under-recall. The scorer is **presence-based term-overlap, not IDF-weighted** — rare and common tokens weigh equally (IDF was evaluated and deferred as net-neutral on the current corpus). Planned: an **optional local embedding index** used only for recall ranking (markdown stays the source of truth — never "vector-only"), validated against the v5 eval harness before adoption.
+- **Lexical-only retrieval (the known gap).** Recall ranks by keyword overlap + scope + recency + importance, so a *semantically* related but *lexically* different query can under-recall. The scorer is **presence-based term-overlap, not IDF-weighted** — rare and common tokens weigh equally (IDF was evaluated and deferred as net-neutral on the current corpus). Chinese has no spaces, so Han text is matched by adjacent-character pairs (bigrams); a paraphrase that shares no character pair with the memory still misses. Planned: an **optional local embedding index** used only for recall ranking (markdown stays the source of truth — never "vector-only"), validated against the v5 eval harness before adoption.
 - **Codex scope.** Desktop and interactive CLI JSONL are imported; `codex exec` batch runs and internal subagent/guardian child threads are excluded by default.
 - **End-to-end answer-quality eval** (no-context vs recalled-context) — a documented follow-up to the v5 retrieval eval.
 
@@ -284,7 +284,7 @@ memarium resume <sessionId>
 
 ### 局限与路线图
 
-- **纯词法召回(已知缺口)。** 召回靠关键词重叠 + scope + recency + importance 排序,所以语义相关但词面不同的查询可能漏召回。打分是**基于出现的 term-overlap,不是 IDF 加权** —— 稀有词和泛词同权(IDF 评估过,在当前语料上净收益为零,已搁置)。计划:加一个**可选的本地 embedding 索引**,只用于召回排序(markdown 仍是唯一真相源,绝不"纯向量"),上线前用 v5 eval harness 实测验证。
+- **纯词法召回(已知缺口)。** 召回靠关键词重叠 + scope + recency + importance 排序,所以语义相关但词面不同的查询可能漏召回。打分是**基于出现的 term-overlap,不是 IDF 加权** —— 稀有词和泛词同权(IDF 评估过,在当前语料上净收益为零,已搁置)。中文没有空格,所以汉字按相邻两字一组(bigram)匹配;和记忆没有任何相同两字组合的换说法查询仍会漏掉。计划:加一个**可选的本地 embedding 索引**,只用于召回排序(markdown 仍是唯一真相源,绝不"纯向量"),上线前用 v5 eval harness 实测验证。
 - **Codex 范围。** 支持 Desktop 与交互式 CLI JSONL;默认排除 `codex exec` 批处理和内部 subagent/guardian 子线程。
 - **端到端答案质量评估**(无上下文 vs 召回上下文)—— v5 召回评估之后的后续项。
 

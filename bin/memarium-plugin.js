@@ -15359,7 +15359,13 @@ var init_skip_write = __esm({
 
 // src/memory/score.ts
 function tokenize(s) {
-  return s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1);
+  const lower = s.toLowerCase();
+  const tokens = lower.split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1);
+  for (const run2 of lower.match(/\p{Script=Han}+/gu) ?? []) {
+    const chars = Array.from(run2);
+    for (let i2 = 0; i2 + 1 < chars.length; i2++) tokens.push(chars[i2] + chars[i2 + 1]);
+  }
+  return tokens;
 }
 function num(v, dflt = 0) {
   return typeof v === "number" && isFinite(v) ? v : dflt;
