@@ -8,16 +8,19 @@
   model only a short preview. The primer had no total size limit and measured
   14–16k characters on real stores, so the startup context lost everything after
   its first section unless the agent read the saved file.
-- The hook now renders a compact primer with a hard 8,000-character ceiling:
-  core rules keep their summaries; project facts and procedures are listed by
-  title, and recall returns their summaries and the paths to their bodies. On
-  the store that prompted this fix, the hook output dropped from 16,338 to 4,366
-  characters with all three sections present.
+- The hook now renders a compact primer with a hard 8,000-character ceiling.
+  Core rules load their full Markdown body, read from the store each entry came
+  from (local repo or aggregated overlay) through its canonical path, with the
+  `memory/` containment, symlink and identity checks; project facts and
+  procedures are listed by title, and recall returns their summaries and the
+  paths to their bodies. On the store that prompted this fix, the hook output
+  went from 16,338 to 6,746 characters, with all six core rules in full and all
+  three sections present.
 - Under the ceiling, entries are admitted in priority order — core rules, then
   procedures, then facts — and an entry that does not fit is skipped without
-  blocking later entries that do. A core rule whose summary alone would break
-  the ceiling is listed by title with a pointer to `/memarium-context`. Each
-  section still reports how many entries were left out.
+  blocking later entries that do. A core rule falls back from its body to its
+  summary, then to its title with a pointer to recall; no rule is cut mid-text.
+  Each section still reports how many entries were left out.
 - `/memarium-context`, recall overviews, and evaluation keep the full-summary
   primer.
 - Add renderer, command, and hook-wrapper regressions, align the README, and

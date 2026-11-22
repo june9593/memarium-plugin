@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -117,6 +117,70 @@ describe("memoryPrimerCmd", () => {
     const out = stdout.join("");
     expect(out).toContain("never npm publish");      // local memory
     expect(out).toContain("sibling-device rule");    // overlay (sibling device) memory
+  });
+
+  const writeMd = (root: string, id: string, title: string, body: string, persistedId = id) => {
+    const [type, scope, slug] = id.split("/");
+    const dir = join(root, "memory", type!, scope!);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${slug}.md`), `---\nid: ${persistedId}\ntype: ${type}\n---\n\n# ${title}\n\n${body}\n`);
+  };
+
+  it("loads core rule bodies from the local store and from the aggregated overlay", async () => {
+    writeMd(repo, "core/_global/g", "never npm publish", "LOCAL-BODY-MARKER");
+    const overlay = join(fakeHome, ".memarium", "aggregated");
+    mkdirSync(join(overlay, ".memarium"), { recursive: true });
+    writeFileSync(join(overlay, ".memarium", "index.memory.json"), JSON.stringify({
+      version: 1, entries: {
+        "core/_global/sibling": { id: "core/_global/sibling", type: "core", scope: "global", project: null,
+          title: "sibling-device rule", summary: "from another machine", path: "memory/core/_global/sibling.md",
+          status: "active", confidence: 1, importance: 5, createdAt: "2026-06-20",
+          updatedAt: "2026-06-20", validFrom: null, validTo: null, sourceSessions: [],
+          sourceCommits: [], sourceFiles: [], supersedes: null, entities: [],
+          originDevice: "mac-mini-2", accessCount: 0, lastAccess: null },
+      },
+    }));
+    writeMd(overlay, "core/_global/sibling", "sibling-device rule", "OVERLAY-BODY-MARKER");
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    idx.entries["core/_global/g"] = { ...idx.entries["core/g"], id: "core/_global/g" };
+    delete idx.entries["core/g"];
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify(idx));
+
+    const { memoryPrimerCmd } = await import("../../src/commands/memory-primer.js");
+    await memoryPrimerCmd({ cwd: "/work/code-demo" });
+    const out = stdout.join("");
+    expect(out).toContain("- **never npm publish**\n  LOCAL-BODY-MARKER");
+    expect(out).toContain("- **sibling-device rule**\n  OVERLAY-BODY-MARKER");
+  });
+
+  it("reads no core body through the indexed path, a foreign file or a symlinked directory", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "vbp-outside-"));
+    const idx = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8"));
+    const base = idx.entries["core/g"];
+    const rule = (id: string, title: string, path: string) =>
+      ({ ...base, id, scope: "project:code-demo", project: "code-demo", title, summary: `${title} summary`, path });
+    // 1. The canonical file is missing; the indexed path points at a file outside memory/.
+    writeFileSync(join(repo, "outside.md"), "---\nid: core/code-demo/indexed\ntype: core\n---\n\nINDEXED-PATH-MARKER\n");
+    idx.entries["core/code-demo/indexed"] = rule("core/code-demo/indexed", "indexed rule", "outside.md");
+    // 2. The canonical file belongs to another entry.
+    writeMd(repo, "core/code-demo/foreign", "foreign rule", "FOREIGN-MARKER", "core/code-demo/someone-else");
+    idx.entries["core/code-demo/foreign"] = rule("core/code-demo/foreign", "foreign rule", "memory/core/code-demo/foreign.md");
+    // 3. A path component is a symlink out of the store.
+    writeMd(outside, "core/linked/via-link", "linked rule", "SYMLINK-MARKER");
+    mkdirSync(join(repo, "memory", "core"), { recursive: true });
+    symlinkSync(join(outside, "memory", "core", "linked"), join(repo, "memory", "core", "linked"));
+    idx.entries["core/linked/via-link"] = { ...rule("core/linked/via-link", "linked rule", "memory/core/linked/via-link.md"),
+      scope: "global", project: "linked" };
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify(idx));
+
+    const { memoryPrimerCmd } = await import("../../src/commands/memory-primer.js");
+    await memoryPrimerCmd({ cwd: "/work/code-demo" });
+    const out = stdout.join("");
+    for (const marker of ["INDEXED-PATH-MARKER", "FOREIGN-MARKER", "SYMLINK-MARKER"]) expect(out).not.toContain(marker);
+    expect(out).toContain("**indexed rule** — indexed rule summary");
+    expect(out).toContain("**foreign rule** — foreign rule summary");
+    expect(out).toContain("**linked rule** — linked rule summary");
+    rmSync(outside, { recursive: true, force: true });
   });
 
   it("keeps the SessionStart primer compact and under the hook ceiling on a large store", async () => {

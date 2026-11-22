@@ -197,11 +197,33 @@ describe("renderPrimer", () => {
     ], { compact: true, maxChars: 8000 });
     expect(md.length).toBeLessThanOrEqual(8000);
     expect(md).not.toContain("x".repeat(100));
-    expect(md).toContain("**Important rule** — _(too long for the startup primer; run `/memarium-context`)_");
+    expect(md).toContain("**Important rule** — _(too long for the startup primer; use memarium-recall with this title to read it)_");
     expect(md).toContain("**Short core** — other");
     expect(md).toContain("- **Visible fact**");
     expect(md).toContain("- **Visible procedure**");
     expect(md).not.toContain("more (run");
+  });
+
+  it("core rules show their full body when it fits, then fall back to the summary, then to the title", () => {
+    const bodies: Record<string, string> = {
+      "core/a": "BODY-ONLY-A\n\n**Why:** exceptions live here.",
+      "core/b": "y".repeat(9000),
+      "core/c": "z".repeat(9000),
+    };
+    const md = renderPrimer("p", [
+      e({ id: "core/a", type: "core", scope: "global", project: null, title: "rule a", summary: "A-SUMMARY", importance: 9 }),
+      e({ id: "core/b", type: "core", scope: "global", project: null, title: "rule b", summary: "B-SUMMARY", importance: 8 }),
+      e({ id: "core/c", type: "core", scope: "global", project: null, title: "rule c", summary: "w".repeat(9000), importance: 7 }),
+      e({ id: "procedural/p/x", type: "procedural", title: "a procedure", summary: "PROC-SUMMARY" }),
+    ], { compact: true, maxChars: 8000, coreBody: (x) => bodies[x.id] ?? null });
+    expect(md.length).toBeLessThanOrEqual(8000);
+    expect(md).toContain("- **rule a**\n  BODY-ONLY-A\n\n  **Why:** exceptions live here.");
+    expect(md).not.toContain("A-SUMMARY");
+    expect(md).toContain("**rule b** — B-SUMMARY");
+    expect(md).not.toContain("y".repeat(100));
+    expect(md).toContain("**rule c** — _(too long for the startup primer; use memarium-recall with this title to read it)_");
+    expect(md).not.toContain("w".repeat(100));
+    expect(md).toContain("- **a procedure**");
   });
 
   it("never exceeds maxChars, even when the ceiling is below the headings", () => {

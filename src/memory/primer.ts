@@ -50,26 +50,29 @@ function eligible(entries: MemoryEntry[], type: MemoryType, project: string, now
       a.title.localeCompare(b.title));
 }
 
-/** How an admitted entry is rendered: with its summary, by title, or by title
- *  with a pointer when its summary alone would break the size ceiling. */
-type Shape = "summary" | "title" | "title-note";
+/** How an admitted entry is rendered: with its full body, with its summary, by
+ *  title, or by title with a pointer when even its summary would break the
+ *  size ceiling. */
+type Shape = "body" | "summary" | "title" | "title-note";
 
 /** `picks` maps an index into the ranked `all` list to the shape it is shown in;
- *  anything not picked is counted in the section's "…and N more" footer. */
-interface Section { title: string; all: MemoryEntry[]; shape: Shape; picks: Map<number, Shape> }
+ *  anything not picked is counted in the section's "…and N more" footer.
+ *  `bodies` holds the loaded Markdown bodies, by the same index. */
+interface Section { title: string; all: MemoryEntry[]; shape: Shape; picks: Map<number, Shape>; bodies: Map<number, string> }
 
-function bullet(e: MemoryEntry, shape: Shape): string {
+function bullet(e: MemoryEntry, shape: Shape, body: string | undefined): string {
   const tentative = typeof e.confidence === "number" && e.confidence < TENTATIVE_BELOW ? " _(tentative)_" : "";
   const head = `- **${e.title}**${tentative}`;
-  if (shape === "summary") return `${head} — ${e.summary}`;
-  if (shape === "title-note") return `${head} — _(too long for the startup primer; run \`/memarium-context\`)_`;
+  if (shape === "body" && body !== undefined) return `${head}\n${body.split("\n").map((l) => (l ? `  ${l}` : "")).join("\n")}`;
+  if (shape === "summary" || shape === "body") return `${head} — ${e.summary}`;
+  if (shape === "title-note") return `${head} — _(too long for the startup primer; use memarium-recall with this title to read it)_`;
   return head;
 }
 
 function renderSection(s: Section): string {
   if (s.all.length === 0) return "";
   const lines: string[] = [];
-  s.all.forEach((e, i) => { const shape = s.picks.get(i); if (shape) lines.push(bullet(e, shape)); });
+  s.all.forEach((e, i) => { const shape = s.picks.get(i); if (shape) lines.push(bullet(e, shape, s.bodies.get(i))); });
   // Surface the truncated tail so the agent KNOWS it's seeing a partial view —
   // the silent `.slice()` was the failure mode the product exists to prevent (#19).
   const hidden = s.all.length - lines.length;
@@ -91,12 +94,15 @@ function clip(text: string, limit: number): string {
 /** Compact per-project rollup loaded at session start. Each section caps at
  *  `maxPerSection` (default 12) top entries (blended rank) for token control,
  *  with a "+N more" footer when truncated. `compact` lists facts and procedures
- *  by title only (core rules keep their summary); `maxChars` is a hard ceiling
- *  on the returned text. */
+ *  by title only; `coreBody` supplies a core rule's full Markdown body, shown in
+ *  place of its summary; `maxChars` is a hard ceiling on the returned text. */
 export function renderPrimer(
   project: string,
   entries: MemoryEntry[],
-  opts: { maxPerSection?: number; now?: string; compact?: boolean; maxChars?: number } = {},
+  opts: {
+    maxPerSection?: number; now?: string; compact?: boolean; maxChars?: number;
+    coreBody?: (entry: MemoryEntry) => string | null;
+  } = {},
 ): string {
   const raw = opts.maxPerSection ?? MAX_PER_SECTION;
   const max = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : MAX_PER_SECTION;
@@ -104,29 +110,37 @@ export function renderPrimer(
   const compact = opts.compact === true;
   const head = `# Project memory: ${project}\n\n> Auto-generated primer. The agent should treat this as already-known project context.\n`;
   const make = (title: string, type: MemoryType, shape: Shape): Section =>
-    ({ title, all: eligible(entries, type, project, now), shape, picks: new Map() });
+    ({ title, all: eligible(entries, type, project, now), shape, picks: new Map(), bodies: new Map() });
   const core = make("Core rules", "core", "summary");
   const facts = make("Project facts", "semantic", compact ? "title" : "summary");
   const procedures = make("Procedures & gotchas", "procedural", compact ? "title" : "summary");
   // Silent when there's no eligible memory for this project — so memory-primer
   // (and the SessionStart hook) emit nothing rather than a bare header block.
   if (core.all.length + facts.all.length + procedures.all.length === 0) return "";
+  if (opts.coreBody) {
+    for (let i = 0; i < Math.min(max, core.all.length); i++) {
+      const body = opts.coreBody(core.all[i]!);
+      if (body) core.bodies.set(i, body);
+    }
+  }
   const render = () => [head, ...[core, facts, procedures].map(renderSection).filter(Boolean)].join("\n");
   const limit = opts.maxChars;
   if (limit === undefined || !Number.isFinite(limit) || limit < 0) {
     for (const s of [core, facts, procedures]) {
-      for (let i = 0; i < Math.min(max, s.all.length); i++) s.picks.set(i, s.shape);
+      for (let i = 0; i < Math.min(max, s.all.length); i++) s.picks.set(i, s.bodies.has(i) ? "body" : s.shape);
     }
     return render();
   }
   // Under a ceiling, admit entries in priority order — core rules, then
   // procedures, then facts — keeping each one that still fits and moving on when
   // one does not, so a single oversized entry can't crowd out entries that fit.
-  // A core rule whose summary doesn't fit is still listed by title with a pointer
-  // to /memarium-context. Footers count whatever was finally left out.
+  // A core rule falls back from its full body to its summary, then to its title
+  // with a pointer; a rule is never cut mid-text. Footers count what was left out.
   for (const s of [core, procedures, facts]) {
-    const shapes: Shape[] = s === core ? ["summary", "title-note"] : s.shape === "summary" ? ["summary", "title"] : ["title"];
     for (let i = 0; i < Math.min(max, s.all.length); i++) {
+      const shapes: Shape[] = s === core
+        ? (s.bodies.has(i) ? ["body", "summary", "title-note"] : ["summary", "title-note"])
+        : s.shape === "summary" ? ["summary", "title"] : ["title"];
       for (const shape of shapes) {
         s.picks.set(i, shape);
         if (render().length <= limit) break;
