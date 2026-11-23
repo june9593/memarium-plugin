@@ -118,23 +118,33 @@ function contentHanPairs(queryText: string): string[] {
   return hanPairs(text);
 }
 
-const QUOTES: [string, string][] = [["「", "」"], ["『", "』"], ["“", "”"], ["‘", "’"], ["《", "》"], ['"', '"'], ["'", "'"], ["`", "`"]];
+const QUOTE_MARKS: [string, string][] = [["「", "」"], ["『", "』"], ["“", "”"], ["‘", "’"], ["《", "》"], ['"', '"'], ["'", "'"], ["`", "`"]];
+/** One pattern per kind of quote; matching left to right pairs each opening
+ *  mark with the next closing one, so `"主库"测试"备库"` quotes 主库 and 备库,
+ *  never the 测试 between them. */
+const QUOTE_PATTERNS = QUOTE_MARKS.map(([l, r]) => new RegExp(`${l}([^${l}${r}]*)${r}`, "gu"));
+/** Task markers that introduce a topic: "TODO：去重". Other prefixes such as
+ *  "SQLite：" scope the query rather than label it. */
+const TASK_LABEL = /^\s*(?:todo|fixme)\s*[:：]/iu;
 
 /** Lower-cased, with whitespace and punctuation trimmed from both ends only. */
 const trimEdges = (s: string) => s.toLowerCase().replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, "");
 
 /** Whether the query names the memory: its title or a Chinese entity name is
- *  the whole query, the whole topic after a label such as "TODO：", or quoted
- *  in the query (「测试」). A name that merely occurs inside a longer query
- *  (数据 in 数据库, 测试 in 怎样测试重连逻辑, 现在 in 现在怎样排查) does not count. */
+ *  the whole query, the whole topic after TODO： or FIXME：, or the whole of a
+ *  quotation in the query. A quotation is compared with the name as written,
+ *  ignoring only whitespace at either end (「 回滚？ 」 names 回滚？; 「回滚」 and
+ *  「测试仪」 do not). A name that merely occurs inside a longer query (数据 in
+ *  数据库, 测试 in 怎样测试重连逻辑, 现在 in 现在怎样排查) does not count. */
 function namedByQuery(e: KeywordFields, queryText: string): boolean {
   const query = trimEdges(queryText);
-  const topic = trimEdges(queryText.replace(/^\s*[A-Za-z][\w.-]*\s*[:：]/u, ""));
-  const lowered = queryText.toLowerCase();
+  const label = TASK_LABEL.exec(queryText);
+  const topic = label ? trimEdges(queryText.slice(label[0].length)) : null;
+  const quotes = QUOTE_PATTERNS.flatMap((re) => Array.from(queryText.matchAll(re), (m) => m[1]!.trim().toLowerCase()));
   return [e.title, ...asArray(e.entities)].some((raw) => {
     if (typeof raw !== "string" || hanPairs(raw).length === 0) return false;
     const name = trimEdges(raw);
-    return name === query || name === topic || QUOTES.some(([l, r]) => lowered.includes(l + name + r));
+    return name === query || name === topic || quotes.includes(raw.trim().toLowerCase());
   });
 }
 

@@ -15410,12 +15410,13 @@ function contentHanPairs(queryText) {
 }
 function namedByQuery(e, queryText) {
   const query = trimEdges(queryText);
-  const topic = trimEdges(queryText.replace(/^\s*[A-Za-z][\w.-]*\s*[:：]/u, ""));
-  const lowered = queryText.toLowerCase();
+  const label = TASK_LABEL.exec(queryText);
+  const topic = label ? trimEdges(queryText.slice(label[0].length)) : null;
+  const quotes = QUOTE_PATTERNS.flatMap((re) => Array.from(queryText.matchAll(re), (m) => m[1].trim().toLowerCase()));
   return [e.title, ...asArray2(e.entities)].some((raw) => {
     if (typeof raw !== "string" || hanPairs(raw).length === 0) return false;
     const name = trimEdges(raw);
-    return name === query || name === topic || QUOTES.some(([l, r2]) => lowered.includes(l + name + r2));
+    return name === query || name === topic || quotes.includes(raw.trim().toLowerCase());
   });
 }
 function usedIds(hits, queryText, limit) {
@@ -15506,7 +15507,7 @@ function recencyBoost(updatedAt, now) {
   if (days <= 30) return 1;
   return 0;
 }
-var CJK_FUNCTION_WORDS, FUNCTION_WORD_MAX, Segmenter, WORD_SEGMENTER, QUOTES, trimEdges, IMPORTANCE_CAP;
+var CJK_FUNCTION_WORDS, FUNCTION_WORD_MAX, Segmenter, WORD_SEGMENTER, QUOTE_MARKS, QUOTE_PATTERNS, TASK_LABEL, trimEdges, IMPORTANCE_CAP;
 var init_score = __esm({
   "src/memory/score.ts"() {
     "use strict";
@@ -15568,7 +15569,9 @@ var init_score = __esm({
     FUNCTION_WORD_MAX = Math.max(...[...CJK_FUNCTION_WORDS].map((w) => w.length));
     Segmenter = globalThis.Intl?.Segmenter;
     WORD_SEGMENTER = Segmenter ? new Segmenter("zh", { granularity: "word" }) : null;
-    QUOTES = [["\u300C", "\u300D"], ["\u300E", "\u300F"], ["\u201C", "\u201D"], ["\u2018", "\u2019"], ["\u300A", "\u300B"], ['"', '"'], ["'", "'"], ["`", "`"]];
+    QUOTE_MARKS = [["\u300C", "\u300D"], ["\u300E", "\u300F"], ["\u201C", "\u201D"], ["\u2018", "\u2019"], ["\u300A", "\u300B"], ['"', '"'], ["'", "'"], ["`", "`"]];
+    QUOTE_PATTERNS = QUOTE_MARKS.map(([l, r2]) => new RegExp(`${l}([^${l}${r2}]*)${r2}`, "gu"));
+    TASK_LABEL = /^\s*(?:todo|fixme)\s*[:：]/iu;
     trimEdges = (s) => s.toLowerCase().replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, "");
     IMPORTANCE_CAP = 3;
   }

@@ -13,9 +13,13 @@
 - Each content hit is judged on its own evidence. A keyword hit on one of the
   query's English words or identifiers still counts, as in 0.22.8, and so
   does a memory the query names: its title or a Chinese entity name is the
-  whole query (`现在时`), the whole topic after a label (`TODO：去重`), or
-  quoted in the query (`「测试」`). A name that merely occurs inside a longer
-  query (数据 in 数据库) does not count. Otherwise Chinese is compared on
+  whole query (`现在时`), the whole topic after `TODO：` or `FIXME：`
+  (`TODO：去重`), or the whole of a quotation in the query (`「测试」`, also
+  with spaces inside the marks). Quotations are paired as written, so in
+  `"主库"测试"备库"` only 主库 and 备库 are quoted, and they are compared with
+  the name including its own punctuation (`「回滚？」` names 回滚？). A name
+  that merely occurs inside a longer query (数据 in 数据库) does not count, and
+  other prefixes such as `SQLite：` are not labels. Otherwise Chinese is compared on
   character pairs after function words are dropped. Usage counting splits the
   query into words (`Intl.Segmenter`) and drops question words, modals,
   pronouns and connectives that start and end on word boundaries, also when
@@ -35,13 +39,15 @@
   it is a top-five hit; the one it misses shares a single pair with the query.
 - The usage tests for both commands now pin `MEMARIUM_DIR` to their temporary
   home, so a caller's `MEMARIUM_DIR` no longer receives their writes.
-- Add regressions for both commands on twenty-six review cases, checking the
+- Add regressions for both commands on thirty-two review cases, checking the
   recorded entries and the never-used archive candidates, a test that the
   recorded entries do not change with the number of results shown, and unit
-  tests for the rule. Each of eight deliberate loosenings (one pair is enough,
-  substring removal of function words, no naming rule, naming by substring,
-  no word list, single-segment removal, a shared English-match flag,
-  English-only for mixed queries) fails these tests.
+  tests for the rule. Each of twelve deliberate loosenings (one pair is
+  enough, substring removal of function words, no naming rule, naming by
+  substring, quotations found by substring, any prefix as a label, no trimming
+  inside quotations, punctuation dropped from quoted names, no word list,
+  single-segment removal, a shared English-match flag, English-only for mixed
+  queries) fails these tests.
 
 No ranking, memory format, writer, or digest behavior changed.
 

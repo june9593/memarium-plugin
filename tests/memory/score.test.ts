@@ -322,6 +322,25 @@ describe("usedIds — which content hits are recorded as used", () => {
     expect(usedIds([ui("显示器色温校准", ["测试"])], "请查实体名为『测试』的那条记忆", 5)).toEqual(["ui"]);
   });
 
+  it("compares whole, properly paired quotations with the name as written", () => {
+    const marks = [["「", "」"], ["『", "』"], ["“", "”"], ["‘", "’"], ["《", "》"], ['"', '"'], ["'", "'"], ["`", "`"]];
+    for (const [l, r] of marks) {
+      expect(usedIds([h("ui", "测试")], `请查标题为${l}测试${r}的那条记忆`, 5)).toEqual(["ui"]);
+      expect(usedIds([h("ui", "测试")], `请查标题为${l} 测试 ${r}的那条记忆`, 5)).toEqual(["ui"]);
+      expect(usedIds([h("ui", "测试")], `请用${l}主库${r}测试${l}备库${r}的故障切换`, 5)).toEqual([]);
+    }
+    expect(usedIds([h("ui", "测试")], "请查标题为「测试仪」的那条记忆", 5)).toEqual([]);
+    expect(usedIds([h("ui", "测试")], "请查标题为「测 试」的那条记忆", 5)).toEqual([]);
+    expect(usedIds([h("faq", "回滚？")], "请查标题为「回滚？」的那条记忆", 5)).toEqual(["faq"]);
+    expect(usedIds([h("faq", "回滚？")], "请查标题为「回滚」的那条记忆", 5)).toEqual([]);
+  });
+
+  it("only TODO and FIXME label a topic", () => {
+    expect(usedIds([h("dedup", "去重")], "fixme: 去重", 5)).toEqual(["dedup"]);
+    expect(usedIds([h("font", "恢复")], "SQLite：恢复", 5)).toEqual([]);
+    expect(usedIds([h("dedup", "去重")], "ticket-123: 去重", 5)).toEqual([]);
+  });
+
   it("an ASCII word, file or commit hit counts, within the first `limit` hits", () => {
     expect(usedIds([h("font", "怎么调整字体", "keyword×1 file×1")], "SQLite 怎么恢复", 5)).toEqual(["font"]);
     expect(usedIds([h("todo", "TODO：修改字体"), h("ledger", "修复重复入账")], "TODO：修复重复入账", 5)).toEqual(["todo", "ledger"]);
