@@ -12,8 +12,10 @@
   preview's never-used candidates went from 2 to 0.
 - Each content hit is judged on its own evidence. A keyword hit on one of the
   query's English words or identifiers still counts, as in 0.22.8, and so
-  does a memory the query names by its title or a Chinese entity ("去重" for
-  `TODO：去重`, "现在时" for `现在时`). Otherwise Chinese is compared on
+  does a memory the query names: its title or a Chinese entity name is the
+  whole query (`现在时`), the whole topic after a label (`TODO：去重`), or
+  quoted in the query (`「测试」`). A name that merely occurs inside a longer
+  query (数据 in 数据库) does not count. Otherwise Chinese is compared on
   character pairs after function words are dropped. Usage counting splits the
   query into words (`Intl.Segmenter`) and drops question words, modals,
   pronouns and connectives that start and end on word boundaries, also when
@@ -33,13 +35,13 @@
   it is a top-five hit; the one it misses shares a single pair with the query.
 - The usage tests for both commands now pin `MEMARIUM_DIR` to their temporary
   home, so a caller's `MEMARIUM_DIR` no longer receives their writes.
-- Add regressions for both commands on eighteen review cases, checking the
+- Add regressions for both commands on twenty-six review cases, checking the
   recorded entries and the never-used archive candidates, a test that the
   recorded entries do not change with the number of results shown, and unit
-  tests for the rule. Each of seven deliberate loosenings (one pair is enough,
-  substring removal, no naming rule, no word list, single-segment removal, a
-  shared English-match flag, English-only for mixed queries) fails these
-  tests.
+  tests for the rule. Each of eight deliberate loosenings (one pair is enough,
+  substring removal of function words, no naming rule, naming by substring,
+  no word list, single-segment removal, a shared English-match flag,
+  English-only for mixed queries) fails these tests.
 
 No ranking, memory format, writer, or digest behavior changed.
 

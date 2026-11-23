@@ -15408,19 +15408,24 @@ function contentHanPairs(queryText) {
   }
   return hanPairs(text);
 }
-function namedByQuery(e, compactQuery) {
-  const names = [e.title, ...asArray2(e.entities)].filter((n) => typeof n === "string" && hanPairs(n).length > 0);
-  return names.some((n) => compactQuery.includes(compact(n)));
+function namedByQuery(e, queryText) {
+  const query = trimEdges(queryText);
+  const topic = trimEdges(queryText.replace(/^\s*[A-Za-z][\w.-]*\s*[:：]/u, ""));
+  const lowered = queryText.toLowerCase();
+  return [e.title, ...asArray2(e.entities)].some((raw) => {
+    if (typeof raw !== "string" || hanPairs(raw).length === 0) return false;
+    const name = trimEdges(raw);
+    return name === query || name === topic || QUOTES.some(([l, r2]) => lowered.includes(l + name + r2));
+  });
 }
 function usedIds(hits, queryText, limit) {
   const words = asciiWords(queryText);
   const pairs = new Set(contentHanPairs(queryText));
-  const compactQuery = compact(queryText);
   return hits.slice(0, limit).filter((h2) => {
     if (h2.whyRecalled.includes("file\xD7") || h2.whyRecalled.includes("commit\xD7")) return true;
     const hay = new Set(tokenize(keywordText(h2)));
     if (words.some((w) => hay.has(w))) return true;
-    if (namedByQuery(h2, compactQuery)) return true;
+    if (namedByQuery(h2, queryText)) return true;
     let matched = 0;
     for (const pair of pairs) if (hay.has(pair)) matched++;
     return matched >= 2 || matched === 1 && pairs.size === 1 && words.length === 0;
@@ -15501,7 +15506,7 @@ function recencyBoost(updatedAt, now) {
   if (days <= 30) return 1;
   return 0;
 }
-var CJK_FUNCTION_WORDS, FUNCTION_WORD_MAX, Segmenter, WORD_SEGMENTER, compact, IMPORTANCE_CAP;
+var CJK_FUNCTION_WORDS, FUNCTION_WORD_MAX, Segmenter, WORD_SEGMENTER, QUOTES, trimEdges, IMPORTANCE_CAP;
 var init_score = __esm({
   "src/memory/score.ts"() {
     "use strict";
@@ -15563,7 +15568,8 @@ var init_score = __esm({
     FUNCTION_WORD_MAX = Math.max(...[...CJK_FUNCTION_WORDS].map((w) => w.length));
     Segmenter = globalThis.Intl?.Segmenter;
     WORD_SEGMENTER = Segmenter ? new Segmenter("zh", { granularity: "word" }) : null;
-    compact = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+    QUOTES = [["\u300C", "\u300D"], ["\u300E", "\u300F"], ["\u201C", "\u201D"], ["\u2018", "\u2019"], ["\u300A", "\u300B"], ['"', '"'], ["'", "'"], ["`", "`"]];
+    trimEdges = (s) => s.toLowerCase().replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, "");
     IMPORTANCE_CAP = 3;
   }
 });
@@ -15697,15 +15703,15 @@ function renderPrimer(project, entries, opts = {}) {
   const raw = opts.maxPerSection ?? MAX_PER_SECTION;
   const max = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : MAX_PER_SECTION;
   const now = opts.now ?? (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  const compact2 = opts.compact === true;
+  const compact = opts.compact === true;
   const head = `# Project memory: ${project}
 
 > Auto-generated primer. The agent should treat this as already-known project context.
 `;
   const make = (title, type, shape) => ({ title, all: eligible(entries, type, project, now), shape, picks: /* @__PURE__ */ new Map(), bodies: /* @__PURE__ */ new Map() });
   const core = make("Core rules", "core", "summary");
-  const facts = make("Project facts", "semantic", compact2 ? "title" : "summary");
-  const procedures = make("Procedures & gotchas", "procedural", compact2 ? "title" : "summary");
+  const facts = make("Project facts", "semantic", compact ? "title" : "summary");
+  const procedures = make("Procedures & gotchas", "procedural", compact ? "title" : "summary");
   if (core.all.length + facts.all.length + procedures.all.length === 0) return "";
   if (opts.coreBody) {
     for (let i2 = 0; i2 < Math.min(max, core.all.length); i2++) {
@@ -17390,7 +17396,7 @@ async function qaQueryCmd(opts) {
     kind: isKind2(opts.kind),
     now
   });
-  const compact2 = scored.map((s) => ({
+  const compact = scored.map((s) => ({
     entry: {
       id: s.entry.id,
       scope: s.entry.scope,
@@ -17403,7 +17409,7 @@ async function qaQueryCmd(opts) {
     score: s.score,
     whyMatched: s.whyMatched
   }));
-  process.stdout.write(JSON.stringify({ project, qa: compact2 }, null, 2) + "\n");
+  process.stdout.write(JSON.stringify({ project, qa: compact }, null, 2) + "\n");
 }
 var init_qa_query = __esm({
   "src/commands/qa-query.ts"() {
@@ -20023,8 +20029,8 @@ function usableTitle(title) {
   return value;
 }
 function shortCodexId(id) {
-  const compact2 = id.replace(/-/g, "");
-  return compact2.slice(-8) || "untitled";
+  const compact = id.replace(/-/g, "");
+  return compact.slice(-8) || "untitled";
 }
 function rolloutIdFromPath(path) {
   const file = basename4(path, ".jsonl");

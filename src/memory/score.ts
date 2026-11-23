@@ -118,14 +118,24 @@ function contentHanPairs(queryText: string): string[] {
   return hanPairs(text);
 }
 
-/** Letters, digits and Han characters only, lower-cased. */
-const compact = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const QUOTES: [string, string][] = [["「", "」"], ["『", "』"], ["“", "”"], ["‘", "’"], ["《", "》"], ['"', '"'], ["'", "'"], ["`", "`"]];
 
-/** Whether the query contains the memory's title or one of its Chinese entity
- *  names, so the query names that memory. */
-function namedByQuery(e: KeywordFields, compactQuery: string): boolean {
-  const names = [e.title, ...asArray(e.entities)].filter((n) => typeof n === "string" && hanPairs(n).length > 0);
-  return names.some((n) => compactQuery.includes(compact(n)));
+/** Lower-cased, with whitespace and punctuation trimmed from both ends only. */
+const trimEdges = (s: string) => s.toLowerCase().replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, "");
+
+/** Whether the query names the memory: its title or a Chinese entity name is
+ *  the whole query, the whole topic after a label such as "TODO：", or quoted
+ *  in the query (「测试」). A name that merely occurs inside a longer query
+ *  (数据 in 数据库, 测试 in 怎样测试重连逻辑, 现在 in 现在怎样排查) does not count. */
+function namedByQuery(e: KeywordFields, queryText: string): boolean {
+  const query = trimEdges(queryText);
+  const topic = trimEdges(queryText.replace(/^\s*[A-Za-z][\w.-]*\s*[:：]/u, ""));
+  const lowered = queryText.toLowerCase();
+  return [e.title, ...asArray(e.entities)].some((raw) => {
+    if (typeof raw !== "string" || hanPairs(raw).length === 0) return false;
+    const name = trimEdges(raw);
+    return name === query || name === topic || QUOTES.some(([l, r]) => lowered.includes(l + name + r));
+  });
 }
 
 export interface UsageCandidate extends KeywordFields { id: string; whyRecalled: string }
@@ -135,19 +145,18 @@ export interface UsageCandidate extends KeywordFields { id: string; whyRecalled:
  *  `hits`, the ranked content hits. Each hit is judged on its own evidence. A
  *  file or commit hit counts, and so does a keyword hit on one of the query's
  *  ASCII words, or a memory the query names by its title or a Chinese entity
- *  (TODO：去重 → 去重, 现在时 → 现在时). Otherwise Chinese is compared on
+ *  (现在时 → 现在时, TODO：去重 → 去重, 「测试」 → 测试; see namedByQuery). Otherwise Chinese is compared on
  *  character pairs after function words are dropped: a hit needs two of them,
  *  or, for a query with no ASCII words, its only one. Beside an English word a
  *  lone pair is a side word: 恢复字体设置 is not recorded for SQLite 怎么恢复. */
 export function usedIds(hits: UsageCandidate[], queryText: string, limit: number): string[] {
   const words = asciiWords(queryText);
   const pairs = new Set(contentHanPairs(queryText));
-  const compactQuery = compact(queryText);
   return hits.slice(0, limit).filter((h) => {
     if (h.whyRecalled.includes("file×") || h.whyRecalled.includes("commit×")) return true;
     const hay = new Set(tokenize(keywordText(h)));
     if (words.some((w) => hay.has(w))) return true;
-    if (namedByQuery(h, compactQuery)) return true;
+    if (namedByQuery(h, queryText)) return true;
     let matched = 0;
     for (const pair of pairs) if (hay.has(pair)) matched++;
     return matched >= 2 || (matched === 1 && pairs.size === 1 && words.length === 0);

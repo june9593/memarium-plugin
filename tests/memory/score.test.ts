@@ -312,6 +312,16 @@ describe("usedIds — which content hits are recorded as used", () => {
     expect(usedIds([h("grammar", "现在时")], "现在时", 5)).toEqual(["grammar"]); // 现在 is a function word
   });
 
+  it("names a memory only by the whole query, a labelled topic or a quote", () => {
+    const ui = (title: string, entities: string[] = []) => ({ ...h("ui", title), entities });
+    expect(usedIds([h("gold", "PostgreSQL 连接池重连"), ui("测试")], "为什么 PostgreSQL 连接池偶尔超时，应该怎样测试重连逻辑？", 5)).toEqual(["gold"]);
+    expect(usedIds([ui("测试")], "CPU 使用量需要先预测，试运行后怎么导出结果？", 5)).toEqual([]);
+    expect(usedIds([ui("广告点击报表", ["数据"])], "SQLite 数据库的快照损坏后，怎样恢复订单记录？", 5)).toEqual([]);
+    expect(usedIds([ui("日历组件", ["现在"])], "现在怎样排查支付失败？", 5)).toEqual([]);
+    expect(usedIds([ui("测试")], "请查标题为「测试」的那条记忆", 5)).toEqual(["ui"]);
+    expect(usedIds([ui("显示器色温校准", ["测试"])], "请查实体名为『测试』的那条记忆", 5)).toEqual(["ui"]);
+  });
+
   it("an ASCII word, file or commit hit counts, within the first `limit` hits", () => {
     expect(usedIds([h("font", "怎么调整字体", "keyword×1 file×1")], "SQLite 怎么恢复", 5)).toEqual(["font"]);
     expect(usedIds([h("todo", "TODO：修改字体"), h("ledger", "修复重复入账")], "TODO：修复重复入账", 5)).toEqual(["todo", "ledger"]);

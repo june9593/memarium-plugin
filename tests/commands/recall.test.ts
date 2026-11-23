@@ -145,7 +145,8 @@ describe("recall (2-stage over typed memory)", () => {
   // entries are old and low-importance, so an unrecorded one stays a never-used
   // archival candidate. `hits` are the entries that must be content hits, so the
   // usage rule, not the ranking, is what keeps the others out.
-  const USAGE_CASES = [
+  const USAGE_CASES: { name: string; q: string; used: string[]; unused: string[]; hits: string[];
+    rows: string[][]; entities?: Record<string, string[]> }[] = [
     { name: "SQLite 怎么恢复 / 怎么修改字体", q: "SQLite 怎么恢复", used: ["db"], unused: ["font"], hits: ["db", "font"],
       rows: [["db", "SQLite 快照恢复步骤", "还原持久化数据。"], ["font", "怎么修改字体", "使用显示设置。"]] },
     { name: "SQLite 怎么恢复 / 恢复字体设置", q: "SQLite 怎么恢复", used: ["db"], unused: ["font"], hits: ["db", "font"],
@@ -169,6 +170,24 @@ describe("recall (2-stage over typed memory)", () => {
       rows: [["pay", "统一下单接口签名", "商户用此接口创建支付订单。"], ["bg", "界面样式", "调整显示大小。"]] },
     { name: "如何统一下单", q: "如何统一下单", used: ["pay"], unused: [], hits: ["pay"],
       rows: [["pay", "统一下单", "商户用此接口创建支付订单。"], ["font", "怎么修改字体", "界面样式。"]] },
+    // A name that merely occurs inside a longer query is not naming the memory.
+    { name: "测试 inside a long mixed question", q: "为什么 PostgreSQL 连接池偶尔超时，应该怎样测试重连逻辑？", used: ["gold"], unused: ["ui"], hits: ["gold", "ui"],
+      rows: [["gold", "PostgreSQL 连接池重连", "按错误码重试。"], ["ui", "测试", "仅用于测试屏幕色温。"]] },
+    { name: "entity 数据 inside 数据库", q: "SQLite 数据库的快照损坏后，怎样恢复订单记录？", used: ["gold"], unused: ["ui"], hits: ["gold", "ui"],
+      rows: [["gold", "SQLite 快照恢复", "从检查点还原订单。"], ["ui", "广告点击报表", "仅统计广告数据。"]], entities: { ui: ["数据"] } },
+    { name: "测试 joined across punctuation", q: "CPU 使用量需要先预测，试运行后怎么导出结果？", used: ["gold"], unused: ["ui"], hits: ["gold", "ui"],
+      rows: [["gold", "CPU 使用量预测", "写入监控。"], ["ui", "测试", "导出色卡。"]] },
+    { name: "function-word entity 现在", q: "现在怎样排查支付失败？", used: ["gold"], unused: ["ui"], hits: ["gold", "ui"],
+      rows: [["gold", "支付失败排查", "检查渠道回执。"], ["ui", "日历组件", "现在显示为选中日期。"]], entities: { ui: ["现在"] } },
+    { name: "测试 inside a long Chinese question", q: "退款上线前应该怎样测试重复扣款的回滚路径？", used: ["gold"], unused: ["ui"], hits: ["gold", "ui"],
+      rows: [["gold", "重复扣款回滚", "按业务单号处理。"], ["ui", "测试", "仅用于测试屏幕色温。"]] },
+    // Quoting a name, or giving it as the whole topic after a label, is naming.
+    { name: "quoted entity 「测试」", q: "请查实体名为「测试」的那条记忆", used: ["ui"], unused: [], hits: ["ui"],
+      rows: [["ui", "显示器色温校准", "保存测量结果。"], ["bg", "界面样式", "调整显示大小。"]], entities: { ui: ["测试"] } },
+    { name: "quoted title 「测试」", q: "请查标题为「测试」的那条记忆", used: ["ui"], unused: [], hits: ["ui"],
+      rows: [["ui", "测试", "仅用于校准色温。"], ["bg", "界面样式", "调整显示大小。"]] },
+    { name: "TODO：去重 naming an entity", q: "TODO：去重", used: ["dedup"], unused: [], hits: ["dedup"],
+      rows: [["dedup", "流水号核对", "按交易号归并。"], ["bg", "界面样式", "调整显示大小。"]], entities: { dedup: ["去重"] } },
     { name: "去重", q: "去重", used: ["ledger"], unused: ["font"], hits: ["ledger"],
       rows: [["ledger", "重复导入时去重", "比对流水号。"], ["font", "怎么修改字体", "使用显示设置。"]] },
     { name: "有没有备份", q: "有没有备份", used: ["backup"], unused: ["promo"], hits: ["backup", "promo"],
@@ -188,9 +207,9 @@ describe("recall (2-stage over typed memory)", () => {
       rows: [["ui", "按钮动画是怎么做的", "界面动效说明。"], ["bg", "界面样式", "调整显示大小。"]] },
   ];
 
-  it.each(USAGE_CASES)("records topical matches as used, not shared question patterns: $name", async ({ q, rows, used, unused, hits }) => {
+  it.each(USAGE_CASES)("records topical matches as used, not shared question patterns: $name", async ({ q, rows, used, unused, hits, entities }) => {
     writeLocalIndex(Object.fromEntries(rows.map(([slug, title, summary]) => [`semantic/code-demo/${slug}`,
-      mk({ id: `semantic/code-demo/${slug}`, title, summary, importance: 1, createdAt: "2024-01-01",
+      mk({ id: `semantic/code-demo/${slug}`, title, summary, entities: entities?.[slug!] ?? [], importance: 1, createdAt: "2024-01-01",
         updatedAt: "2024-01-01", path: `memory/semantic/code-demo/${slug}.md` })])));
     const { loadUsage } = await import("../../src/memory/usage-store.js");
     const { planArchival, ARCHIVE_DEFAULTS } = await import("../../src/memory/archive.js");
