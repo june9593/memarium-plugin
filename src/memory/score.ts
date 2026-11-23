@@ -83,38 +83,54 @@ export function matchesAnyAsciiWord(e: KeywordFields, words: Set<string>): boole
 /** Chinese question words, modals, pronouns and connectives. A memory that
  *  shares only these with the query (怎么, 才能, 之前…) was not used, so usage
  *  counting drops them from the query before comparing character pairs. Ranking
- *  does not use this list. Longest first, so 为什么 goes before 什么. */
-const CJK_FUNCTION_WORDS = [
+ *  does not use this list. */
+const CJK_FUNCTION_WORDS = new Set([
   "为什么", "怎么样", "有没有", "是不是", "会不会", "要不要", "能不能",
   "怎么", "怎样", "如何", "什么", "为何", "哪些", "哪个", "哪里", "是否", "能否",
   "可以", "能够", "才能", "需要", "应该",
   "之前", "以前", "上次", "之后", "以后", "时候", "现在", "已经", "一下", "一直", "然后",
   "我们", "你们", "他们", "这个", "那个", "这些", "那些", "这样", "那样", "这里", "那里",
   "如果", "但是", "因为", "所以", "或者", "还是", "而且", "并且",
-].sort((a, b) => b.length - a.length);
+]);
 
-/** The query's Chinese character pairs with function words removed first. */
+const WORD_SEGMENTER = typeof Intl.Segmenter === "function" ? new Intl.Segmenter("zh", { granularity: "word" }) : null;
+
+/** The query's Chinese character pairs after dropping function words that
+ *  stand as words of their own. Matching word segments, not substrings, keeps
+ *  统一下单 whole even though it contains 一下. Without a segmenter nothing is
+ *  dropped. */
 function contentHanPairs(queryText: string): string[] {
-  let text = queryText;
-  for (const w of CJK_FUNCTION_WORDS) text = text.split(w).join(" ");
+  if (!WORD_SEGMENTER) return hanPairs(queryText);
+  let text = "";
+  for (const { segment } of WORD_SEGMENTER.segment(queryText)) text += CJK_FUNCTION_WORDS.has(segment) ? " " : segment;
   return hanPairs(text);
 }
 
-/** Whether a content hit should be recorded as used (accessCount, and so the
- *  never-used archival rule). A file or commit hit counts, and so does a keyword
- *  hit on one of the query's ASCII words. Chinese is compared after removing
- *  function words: the hit must match two of the query's remaining character
- *  pairs, or its only one. One pair is weaker evidence than one English word
- *  (pairs also straddle word boundaries), and a memory that shares only 怎么 or
- *  怎么才能 with the query was not used. */
-export function countsAsUse(whyRecalled: string, e: KeywordFields, queryText: string): boolean {
-  if (whyRecalled.includes("file×") || whyRecalled.includes("commit×")) return true;
-  const hay = new Set(tokenize(keywordText(e)));
-  if (asciiWords(queryText).some((w) => hay.has(w))) return true;
+export interface UsageCandidate extends KeywordFields { id: string; whyRecalled: string }
+
+/** Which content hits a query records as used (accessCount, and so the
+ *  never-used archival rule): the real matches among the first `limit` of
+ *  `hits`, which are the ranked content hits. A file or commit hit counts, and
+ *  so does a keyword hit on one of the query's ASCII words. Chinese is compared
+ *  on character pairs after function words are dropped: a hit needs two of
+ *  them, or the query's only one. That single pair counts only when no hit
+ *  matched the query's ASCII words; beside a matched identifier it is a side
+ *  word (SQLite 怎么恢复 vs 恢复字体设置), while alone it is the topic
+ *  (TODO：去重 vs 去重). */
+export function usedIds(hits: UsageCandidate[], queryText: string, limit: number): string[] {
+  const words = new Set(asciiWords(queryText));
   const pairs = new Set(contentHanPairs(queryText));
-  let matched = 0;
-  for (const pair of pairs) if (hay.has(pair)) matched++;
-  return matched >= 2 || (matched === 1 && pairs.size === 1);
+  const tokens = hits.map((h) => new Set(tokenize(keywordText(h))));
+  const asciiMatch = (hay: Set<string>) => [...words].some((w) => hay.has(w));
+  const anchored = tokens.some(asciiMatch);
+  return hits.slice(0, limit).filter((h, i) => {
+    if (h.whyRecalled.includes("file×") || h.whyRecalled.includes("commit×")) return true;
+    const hay = tokens[i]!;
+    if (asciiMatch(hay)) return true;
+    let matched = 0;
+    for (const pair of pairs) if (hay.has(pair)) matched++;
+    return matched >= 2 || (matched === 1 && pairs.size === 1 && !anchored);
+  }).map((h) => h.id);
 }
 
 /** Max score contribution from `importance`. Keeps it a secondary boost (file/

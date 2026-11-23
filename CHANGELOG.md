@@ -11,24 +11,29 @@
   on `SQLite 怎么恢复`, unrelated "怎么…" memories were counted and the archive
   preview's never-used candidates went from 2 to 0.
 - A keyword hit on one of the query's English words or identifiers still
-  counts, as in 0.22.8. For Chinese, usage counting first removes a short list
-  of question words, modals, pronouns and connectives (怎么, 才能, 之前…) from
-  the query; the hit must then match two of the remaining character pairs, or
-  the only one. "数据库恢复步骤" counts for `怎么才能恢复数据库` and
-  "修复重复入账" for `TODO：修复重复入账`; "怎么才能修改字体" does not. The
-  list is used only for this count, and ranking is unchanged. File and commit
-  hits still count; the scorer accepts them from callers that pass files or
-  commits, while the `recall` and `memory-query` CLIs take only `--q`.
+  counts, as in 0.22.8. For Chinese, usage counting splits the query into
+  words (`Intl.Segmenter`) and drops question words, modals, pronouns and
+  connectives that stand as words (怎么, 才能, 之前…), so "统一下单" stays whole
+  although it contains 一下. A hit must then match two of the remaining
+  character pairs, or the query's only one. That single pair counts only when
+  no hit matched the query's English words: beside a matched identifier it is
+  a side word ("恢复字体设置" for `SQLite 怎么恢复`), alone it is the topic
+  ("去重" for `TODO：去重`). The word list is used only for this count, and
+  ranking is unchanged. File and commit hits still count; the scorer accepts
+  them from callers that pass files or commits, while the `recall` and
+  `memory-query` CLIs take only `--q`.
 - On the synthetic 43-query probe, entries recorded besides each query's gold
-  answer went from 57 to 6 for pure-Chinese queries and from 36 to 14 for
+  answer went from 57 to 6 for pure-Chinese queries and from 36 to 12 for
   mixed ones (0.22.8: 16). English queries record exactly what 0.22.8 did.
   The gold entry is still recorded in 16 of the 17 pure-Chinese queries where
   it is a top-five hit; the one it misses shares a single pair with the query.
 - The usage tests for both commands now pin `MEMARIUM_DIR` to their temporary
   home, so a caller's `MEMARIUM_DIR` no longer receives their writes.
-- Add regressions for both commands on four review cases, checking the
+- Add regressions for both commands on eleven review cases, checking the
   recorded entries and the never-used archive candidates, and unit tests for
-  the rule.
+  the rule. Loosening any part of it (one pair is enough, substring removal,
+  no identifier check, no word list, English-only for mixed queries) fails
+  these tests.
 
 No ranking, memory format, writer, or digest behavior changed.
 

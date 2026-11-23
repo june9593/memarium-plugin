@@ -1,7 +1,7 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { resolveMemoryView, resolveEntryAbsPath } from "../memory/source-resolver.js";
-import { countsAsUse, scoreMemories } from "../memory/score.js";
+import { scoreMemories, usedIds } from "../memory/score.js";
 import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
 import { renderPrimer } from "../memory/primer.js";
 // R2 cold-storage valve — SHARED with `memory-query` (src/memory/cold-pass.ts).
@@ -208,11 +208,9 @@ export async function recallCmd(opts: RecallOptions): Promise<void> {
   // bumped — surfacing an archived entry must not touch its usage record.
   if (payload.query !== "") {
     try {
-      const bumpIds = payload.entries
-        .filter((h) => Number.isFinite(h.score) && isContentHitReason(h.whyRecalled))
-        .slice(0, BUMP_TOP_N)
-        .filter((h) => countsAsUse(h.whyRecalled, h, payload.query))
-        .map((h) => h.id);
+      const bumpIds = usedIds(
+        payload.entries.filter((h) => Number.isFinite(h.score) && isContentHitReason(h.whyRecalled)),
+        payload.query, BUMP_TOP_N);
       const now = new Date().toISOString().slice(0, 10);
       bumpUsage(payload.repoPath, bumpIds, now);
     } catch { /* usage is non-essential telemetry; never fail a recall over it */ }

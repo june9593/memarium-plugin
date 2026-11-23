@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { countsAsUse, scoreMemories, scoreArchived, type MemoryQuery } from "../../src/memory/score.js";
+import { scoreMemories, scoreArchived, usedIds, type MemoryQuery } from "../../src/memory/score.js";
 import type { MemoryEntry } from "../../src/memory/types.js";
 
 function e(over: Partial<MemoryEntry>): MemoryEntry {
@@ -289,25 +289,28 @@ describe("ranking drops rows with no usable id (round-20)", () => {
   });
 });
 
-describe("countsAsUse — which content hits are recorded as used", () => {
-  const f = (title: string) => ({ title, summary: "", entities: [] as string[] });
+describe("usedIds — which content hits are recorded as used", () => {
+  const h = (id: string, title: string, whyRecalled = "keyword×1") => ({ id, whyRecalled, title, summary: "", entities: [] as string[] });
 
-  it("Chinese needs two of the query's character pairs, or its only one, after function words are removed", () => {
-    const q = "之前导入去重是怎么做的";
-    expect(countsAsUse("keyword×2", f("导入流水时按来源去重"), q)).toBe(true); // 导入 + 去重
-    expect(countsAsUse("keyword×1", f("怎么调整字体"), q)).toBe(false);        // only 怎么
-    expect(countsAsUse("keyword×1", f("导入流水时按来源去重"), "去重")).toBe(true);
-    // 怎么才能 gives three pairs (怎么, 么才, 才能), none of them about the topic.
-    expect(countsAsUse("keyword×3", f("怎么才能修改字体"), "怎么才能恢复数据库")).toBe(false);
-    expect(countsAsUse("keyword×3", f("数据库恢复步骤"), "怎么才能恢复数据库")).toBe(true);
+  it("drops function words only where they stand as words", () => {
+    expect(usedIds([h("pay", "统一下单")], "统一下单", 5)).toEqual(["pay"]); // 一下 inside 统一下单 stays
+    expect(usedIds([h("pay", "统一下单"), h("font", "怎么修改字体")], "如何统一下单", 5)).toEqual(["pay"]);
+    expect(usedIds([h("db", "数据库恢复步骤"), h("font", "怎么才能修改字体")], "怎么才能恢复数据库", 5)).toEqual(["db"]);
   });
 
-  it("an ASCII word, a file or a commit counts; in a mixed query Chinese pairs count too", () => {
-    const q = "SQLite 怎么恢复";
-    expect(countsAsUse("keyword×2", f("SQLite 快照恢复步骤"), q)).toBe(true);
-    expect(countsAsUse("keyword×1", f("怎么调整字体"), q)).toBe(false);
-    expect(countsAsUse("keyword×1 file×1", f("怎么调整字体"), q)).toBe(true);
-    expect(countsAsUse("keyword×1", f("widget thing"), "widget")).toBe(true);
-    expect(countsAsUse("keyword×5", f("修复重复入账"), "TODO：修复重复入账")).toBe(true);
+  it("needs two of the query's Chinese pairs, or its only one", () => {
+    expect(usedIds([h("db", "数据库恢复步骤"), h("font", "恢复字体设置")], "怎么才能恢复数据库", 5)).toEqual(["db"]);
+    expect(usedIds([h("dedup", "重复导入时去重")], "去重", 5)).toEqual(["dedup"]);
+  });
+
+  it("a lone pair counts only when no hit matched the query's ASCII words", () => {
+    expect(usedIds([h("db", "SQLite 快照恢复步骤"), h("font", "恢复字体设置")], "SQLite 怎么恢复", 5)).toEqual(["db"]);
+    expect(usedIds([h("dedup", "去重")], "TODO：去重", 5)).toEqual(["dedup"]);
+  });
+
+  it("an ASCII word, file or commit hit counts, within the first `limit` hits", () => {
+    expect(usedIds([h("font", "怎么调整字体", "keyword×1 file×1")], "SQLite 怎么恢复", 5)).toEqual(["font"]);
+    expect(usedIds([h("todo", "TODO：修改字体"), h("ledger", "修复重复入账")], "TODO：修复重复入账", 5)).toEqual(["todo", "ledger"]);
+    expect(usedIds([h("a", "widget a"), h("b", "widget b")], "widget", 1)).toEqual(["a"]);
   });
 });

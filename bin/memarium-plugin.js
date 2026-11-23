@@ -15388,18 +15388,25 @@ function matchesAnyAsciiWord(e, words) {
   return asciiWords(keywordText(e)).some((t2) => words.has(t2));
 }
 function contentHanPairs(queryText) {
-  let text = queryText;
-  for (const w of CJK_FUNCTION_WORDS) text = text.split(w).join(" ");
+  if (!WORD_SEGMENTER) return hanPairs(queryText);
+  let text = "";
+  for (const { segment } of WORD_SEGMENTER.segment(queryText)) text += CJK_FUNCTION_WORDS.has(segment) ? " " : segment;
   return hanPairs(text);
 }
-function countsAsUse(whyRecalled, e, queryText) {
-  if (whyRecalled.includes("file\xD7") || whyRecalled.includes("commit\xD7")) return true;
-  const hay = new Set(tokenize(keywordText(e)));
-  if (asciiWords(queryText).some((w) => hay.has(w))) return true;
+function usedIds(hits, queryText, limit) {
+  const words = new Set(asciiWords(queryText));
   const pairs = new Set(contentHanPairs(queryText));
-  let matched = 0;
-  for (const pair of pairs) if (hay.has(pair)) matched++;
-  return matched >= 2 || matched === 1 && pairs.size === 1;
+  const tokens = hits.map((h2) => new Set(tokenize(keywordText(h2))));
+  const asciiMatch = (hay) => [...words].some((w) => hay.has(w));
+  const anchored = tokens.some(asciiMatch);
+  return hits.slice(0, limit).filter((h2, i2) => {
+    if (h2.whyRecalled.includes("file\xD7") || h2.whyRecalled.includes("commit\xD7")) return true;
+    const hay = tokens[i2];
+    if (asciiMatch(hay)) return true;
+    let matched = 0;
+    for (const pair of pairs) if (hay.has(pair)) matched++;
+    return matched >= 2 || matched === 1 && pairs.size === 1 && !anchored;
+  }).map((h2) => h2.id);
 }
 function isArchived(e) {
   return e.status === "archived";
@@ -15476,12 +15483,12 @@ function recencyBoost(updatedAt, now) {
   if (days <= 30) return 1;
   return 0;
 }
-var CJK_FUNCTION_WORDS, IMPORTANCE_CAP;
+var CJK_FUNCTION_WORDS, WORD_SEGMENTER, IMPORTANCE_CAP;
 var init_score = __esm({
   "src/memory/score.ts"() {
     "use strict";
     init_dates();
-    CJK_FUNCTION_WORDS = [
+    CJK_FUNCTION_WORDS = /* @__PURE__ */ new Set([
       "\u4E3A\u4EC0\u4E48",
       "\u600E\u4E48\u6837",
       "\u6709\u6CA1\u6709",
@@ -15534,7 +15541,8 @@ var init_score = __esm({
       "\u8FD8\u662F",
       "\u800C\u4E14",
       "\u5E76\u4E14"
-    ].sort((a, b2) => b2.length - a.length);
+    ]);
+    WORD_SEGMENTER = typeof Intl.Segmenter === "function" ? new Intl.Segmenter("zh", { granularity: "word" }) : null;
     IMPORTANCE_CAP = 3;
   }
 });
@@ -15922,7 +15930,17 @@ async function memoryQueryCmd(opts) {
   for (const line3 of renderColdHints(coldStorage)) console.error(line3);
   if ((opts.q ?? "").trim() !== "") {
     try {
-      const bumpIds = scored.filter((s) => Number.isFinite(s.score) && isContentHit(s)).slice(0, BUMP_TOP_N).filter((s) => countsAsUse(s.whyRecalled, s.entry, opts.q ?? "")).map((s) => s.entry.id);
+      const bumpIds = usedIds(
+        scored.filter((s) => Number.isFinite(s.score) && isContentHit(s)).map((s) => ({
+          id: s.entry.id,
+          whyRecalled: s.whyRecalled,
+          title: s.entry.title,
+          summary: s.entry.summary,
+          entities: s.entry.entities
+        })),
+        opts.q ?? "",
+        BUMP_TOP_N
+      );
       bumpUsage(cfg.repoPath, bumpIds, now);
     } catch {
     }
@@ -18628,7 +18646,11 @@ async function recallCmd(opts) {
   for (const line3 of renderColdHints(payload.coldStorage)) console.error(line3);
   if (payload.query !== "") {
     try {
-      const bumpIds = payload.entries.filter((h2) => Number.isFinite(h2.score) && isContentHitReason(h2.whyRecalled)).slice(0, BUMP_TOP_N2).filter((h2) => countsAsUse(h2.whyRecalled, h2, payload.query)).map((h2) => h2.id);
+      const bumpIds = usedIds(
+        payload.entries.filter((h2) => Number.isFinite(h2.score) && isContentHitReason(h2.whyRecalled)),
+        payload.query,
+        BUMP_TOP_N2
+      );
       const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
       bumpUsage(payload.repoPath, bumpIds, now);
     } catch {

@@ -1,7 +1,7 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
-import { countsAsUse, scoreMemories, isArchived, type ScoredMemory } from "../memory/score.js";
+import { scoreMemories, isArchived, usedIds, type ScoredMemory } from "../memory/score.js";
 import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
 import { renderPrimer } from "../memory/primer.js";
 // R2 cold-storage valve — SHARED with `recall` (src/memory/cold-pass.ts) so both
@@ -142,11 +142,11 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQu
   // recall, so any sidecar write failure is swallowed.
   if ((opts.q ?? "").trim() !== "") {
     try {
-      const bumpIds = scored
-        .filter((s) => Number.isFinite(s.score) && isContentHit(s))
-        .slice(0, BUMP_TOP_N)
-        .filter((s) => countsAsUse(s.whyRecalled, s.entry, opts.q ?? ""))
-        .map((s) => s.entry.id);
+      const bumpIds = usedIds(
+        scored.filter((s) => Number.isFinite(s.score) && isContentHit(s)).map((s) => ({
+          id: s.entry.id, whyRecalled: s.whyRecalled, title: s.entry.title, summary: s.entry.summary, entities: s.entry.entities,
+        })),
+        opts.q ?? "", BUMP_TOP_N);
       bumpUsage(cfg.repoPath, bumpIds, now);
     } catch { /* usage is non-essential telemetry; never fail a recall over it */ }
   }
