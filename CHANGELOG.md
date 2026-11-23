@@ -7,21 +7,28 @@
 - Recall and `memory-query` record their top five content hits as used. The
   count adds up to 2.5 to later rankings and keeps a memory out of the
   never-used archival rule. Since 0.22.9 matches Chinese by character pairs, a
-  memory that shared only a common pair such as 怎么 with the query was
-  recorded too: on `SQLite 怎么恢复`, two unrelated "怎么…" memories were
-  counted, and the archive preview's never-used candidates went from 2 to 0.
-- A hit now counts as use when it matched a file or commit; or, if the query
-  has ASCII words, one of them (the archive gate's rule); or, for a
-  pure-Chinese query, two of its character pairs or its only pair. Ranking is
-  unchanged.
+  memory that shared only a question pattern with the query was recorded too:
+  on `SQLite 怎么恢复`, unrelated "怎么…" memories were counted and the archive
+  preview's never-used candidates went from 2 to 0.
+- A keyword hit on one of the query's English words or identifiers still
+  counts, as in 0.22.8. For Chinese, usage counting first removes a short list
+  of question words, modals, pronouns and connectives (怎么, 才能, 之前…) from
+  the query; the hit must then match two of the remaining character pairs, or
+  the only one. "数据库恢复步骤" counts for `怎么才能恢复数据库` and
+  "修复重复入账" for `TODO：修复重复入账`; "怎么才能修改字体" does not. The
+  list is used only for this count, and ranking is unchanged. File and commit
+  hits still count; the scorer accepts them from callers that pass files or
+  commits, while the `recall` and `memory-query` CLIs take only `--q`.
 - On the synthetic 43-query probe, entries recorded besides each query's gold
-  answer went from 57 to 8 for pure-Chinese queries and from 36 to 12 for
+  answer went from 57 to 6 for pure-Chinese queries and from 36 to 14 for
   mixed ones (0.22.8: 16). English queries record exactly what 0.22.8 did.
   The gold entry is still recorded in 16 of the 17 pure-Chinese queries where
   it is a top-five hit; the one it misses shares a single pair with the query.
-  A long question can still pass the rule through a function pair plus one
-  content pair.
-- Add usage regressions for both commands and unit tests for the rule.
+- The usage tests for both commands now pin `MEMARIUM_DIR` to their temporary
+  home, so a caller's `MEMARIUM_DIR` no longer receives their writes.
+- Add regressions for both commands on four review cases, checking the
+  recorded entries and the never-used archive candidates, and unit tests for
+  the rule.
 
 No ranking, memory format, writer, or digest behavior changed.
 

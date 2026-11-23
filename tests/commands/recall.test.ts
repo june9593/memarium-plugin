@@ -29,6 +29,9 @@ describe("recall (2-stage over typed memory)", () => {
   beforeEach(() => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-recall-"));
     vi.stubEnv("HOME", fakeHome);
+    // MEMARIUM_DIR wins over HOME, so pin it too: an outer value would send
+    // usage writes from these tests into the caller's store.
+    vi.stubEnv("MEMARIUM_DIR", join(fakeHome, ".memarium"));
     vi.resetModules();
     repo = join(fakeHome, ".memarium/session-repo");
     overlay = join(fakeHome, ".memarium/aggregated"); // = aggregatedOverlayPath() under stubbed HOME
@@ -135,23 +138,40 @@ describe("recall (2-stage over typed memory)", () => {
     expect(readFileSync(idxPath, "utf8")).toBe(before); // synced index untouched
   });
 
-  // Chinese is matched by character pairs, so a common pair such as 怎么 makes
-  // unrelated memories content hits. Those must not be recorded as used: the
-  // count feeds later ranking and the never-used archival rule.
-  const sqliteAndHowTos = () => ({
-    "semantic/code-demo/sqlite": mk({ id: "semantic/code-demo/sqlite", title: "SQLite 快照恢复步骤",
-      summary: "从快照恢复 SQLite 数据库。", path: "memory/semantic/code-demo/sqlite.md" }),
-    "semantic/code-demo/font": mk({ id: "semantic/code-demo/font", title: "怎么调整字体",
-      summary: "界面操作说明。", path: "memory/semantic/code-demo/font.md" }),
-    "semantic/code-demo/color": mk({ id: "semantic/code-demo/color", title: "怎么修改配色",
-      summary: "界面操作说明。", path: "memory/semantic/code-demo/color.md" }),
-  });
+  // Cases from an independent review: a memory that shares only a question
+  // pattern (怎么, 怎么才能) with the query must not be recorded as used, and a
+  // real topical match must be. The entries are old and low-importance, so an
+  // unrecorded one stays a never-used archival candidate.
+  const USAGE_CASES = [
+    { q: "SQLite 怎么恢复", used: ["db"], unused: ["font"], hits: ["db", "font"],
+      rows: [["db", "SQLite 快照恢复步骤", "还原持久化数据。"], ["font", "怎么修改字体", "使用显示设置。"]] },
+    { q: "TODO：修复重复入账", used: ["ledger"], unused: [], hits: ["ledger", "font"],
+      rows: [["ledger", "修复重复入账", "同一笔账单按流水号去重。"], ["font", "TODO：修改字体", "界面配色指引。"]] },
+    { q: "怎么才能恢复数据库", used: ["db"], unused: ["font"], hits: ["db", "font"],
+      rows: [["db", "数据库恢复步骤", "从备份还原业务数据。"], ["font", "怎么才能修改字体", "界面配色指引。"]] },
+    { q: "去重", used: ["ledger"], unused: ["font"], hits: ["ledger"],
+      rows: [["ledger", "重复导入时去重", "比对流水号。"], ["font", "怎么修改字体", "使用显示设置。"]] },
+  ];
 
-  it("a mixed query does not record live hits made only of a common Chinese pair as used", async () => {
-    writeLocalIndex(sqliteAndHowTos());
+  it.each(USAGE_CASES)("records topical matches as used, not shared question patterns: $q", async ({ q, rows, used, unused, hits }) => {
+    writeLocalIndex(Object.fromEntries(rows.map(([slug, title, summary]) => [`semantic/code-demo/${slug}`,
+      mk({ id: `semantic/code-demo/${slug}`, title, summary, importance: 1, createdAt: "2024-01-01",
+        updatedAt: "2024-01-01", path: `memory/semantic/code-demo/${slug}.md` })])));
     const { loadUsage } = await import("../../src/memory/usage-store.js");
-    const p = await run({ cwd: "/work/code-demo", q: "SQLite 怎么恢复" });
-    expect(p.entries.filter((h: { whyRecalled: string }) => h.whyRecalled.includes("keyword"))).toHaveLength(3);
-    expect(Object.keys(loadUsage(repo))).toEqual(["semantic/code-demo/sqlite"]);
+    const { planArchival, ARCHIVE_DEFAULTS } = await import("../../src/memory/archive.js");
+    const p = await run({ cwd: "/work/code-demo", q });
+    // The weak entries are real content hits of this query, so the rule is what keeps them out.
+    for (const slug of hits) {
+      expect(p.entries.find((h: { id: string }) => h.id.endsWith(`/${slug}`))?.whyRecalled).toContain("keyword");
+    }
+    const usage = loadUsage(repo);
+    const recorded = Object.keys(usage).map((id) => id.split("/").pop());
+    for (const slug of used) expect(recorded).toContain(slug);
+    for (const slug of unused) expect(recorded).not.toContain(slug);
+    const index = JSON.parse(readFileSync(join(repo, ".memarium/index.memory.json"), "utf8")).entries;
+    const candidates = planArchival(Object.values(index) as never, usage, { now: "2026-11-23", ...ARCHIVE_DEFAULTS })
+      .archive.map((a) => a.id.split("/").pop());
+    for (const slug of unused) expect(candidates).toContain(slug);
+    for (const slug of used) expect(candidates).not.toContain(slug);
   });
 });

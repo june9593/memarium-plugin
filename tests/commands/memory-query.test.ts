@@ -8,6 +8,9 @@ describe("memoryQueryCmd", () => {
   beforeEach(() => {
     fakeHome = mkdtempSync(join(tmpdir(), "vbp-memq-"));
     vi.stubEnv("HOME", fakeHome);
+    // MEMARIUM_DIR wins over HOME, so pin it too: an outer value would send
+    // usage writes from these tests into the caller's store.
+    vi.stubEnv("MEMARIUM_DIR", join(fakeHome, ".memarium"));
     vi.resetModules();
     repo = join(fakeHome, ".memarium/session-repo");
     mkdirSync(join(repo, ".memarium"), { recursive: true });
@@ -143,25 +146,45 @@ describe("memoryQueryCmd", () => {
     expect(readFileSync(idxPath, "utf8")).toBe(before); // byte-identical: usage lives in the local sidecar
   });
 
-  it("a mixed query does not record hits made only of a common Chinese pair as used", async () => {
+  // Cases from an independent review: a memory that shares only a question
+  // pattern (怎么, 怎么才能) with the query must not be recorded as used, and a
+  // real topical match must be. The entries are old and low-importance, so an
+  // unrecorded one stays a never-used archival candidate.
+  const USAGE_CASES = [
+    { q: "SQLite 怎么恢复", used: ["db"], unused: ["font"], hits: ["db", "font"],
+      rows: [["db", "SQLite 快照恢复步骤", "还原持久化数据。"], ["font", "怎么修改字体", "使用显示设置。"]] },
+    { q: "TODO：修复重复入账", used: ["ledger"], unused: [], hits: ["ledger", "font"],
+      rows: [["ledger", "修复重复入账", "同一笔账单按流水号去重。"], ["font", "TODO：修改字体", "界面配色指引。"]] },
+    { q: "怎么才能恢复数据库", used: ["db"], unused: ["font"], hits: ["db", "font"],
+      rows: [["db", "数据库恢复步骤", "从备份还原业务数据。"], ["font", "怎么才能修改字体", "界面配色指引。"]] },
+    { q: "去重", used: ["ledger"], unused: ["font"], hits: ["ledger"],
+      rows: [["ledger", "重复导入时去重", "比对流水号。"], ["font", "怎么修改字体", "使用显示设置。"]] },
+  ];
+
+  it.each(USAGE_CASES)("records topical matches as used, not shared question patterns: $q", async ({ q, rows, used, unused }) => {
     const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
     const { loadUsage } = await import("../../src/memory/usage-store.js");
-    const row = (slug: string, title: string, summary: string) => {
+    const { planArchival, ARCHIVE_DEFAULTS } = await import("../../src/memory/archive.js");
+    const entries = Object.fromEntries(rows.map(([slug, title, summary]) => {
       const id = `semantic/code-demo/${slug}`;
       return [id, { id, type: "semantic", scope: "project:code-demo", project: "code-demo", title, summary,
-        path: `memory/semantic/code-demo/${slug}.md`, status: "active", confidence: 0.9, importance: 3,
-        createdAt: "2026-06-01", updatedAt: "2026-06-01", validFrom: null, validTo: null, sourceSessions: [],
+        path: `memory/semantic/code-demo/${slug}.md`, status: "active", confidence: 0.9, importance: 1,
+        createdAt: "2024-01-01", updatedAt: "2024-01-01", validFrom: null, validTo: null, sourceSessions: [],
         sourceCommits: [], sourceFiles: [], supersedes: null, entities: [], originDevice: null,
         accessCount: 0, lastAccess: null }];
-    };
-    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: Object.fromEntries([
-      row("sqlite", "SQLite 快照恢复步骤", "从快照恢复 SQLite 数据库。"),
-      row("font", "怎么调整字体", "界面操作说明。"),
-      row("color", "怎么修改配色", "界面操作说明。"),
-    ]) }));
-    await memoryQueryCmd({ cwd: "/work/code-demo", q: "SQLite 怎么恢复" });
-    expect(Object.keys(loadUsage(repo))).toEqual(["semantic/code-demo/sqlite"]);
+    }));
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries }));
+    await memoryQueryCmd({ cwd: "/work/code-demo", q });
+    const usage = loadUsage(repo);
+    const recorded = Object.keys(usage).map((id) => id.split("/").pop());
+    for (const slug of used) expect(recorded).toContain(slug);
+    for (const slug of unused) expect(recorded).not.toContain(slug);
+    const candidates = planArchival(Object.values(entries) as never, usage, { now: "2026-11-23", ...ARCHIVE_DEFAULTS })
+      .archive.map((a) => a.id.split("/").pop());
+    for (const slug of unused) expect(candidates).toContain(slug);
+    for (const slug of used) expect(candidates).not.toContain(slug);
   });
+
 
   it("bumps at most the top 5 content-hit results, even with 6 hits", async () => {
     const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");

@@ -15387,14 +15387,18 @@ function asciiQueryWords(text) {
 function matchesAnyAsciiWord(e, words) {
   return asciiWords(keywordText(e)).some((t2) => words.has(t2));
 }
+function contentHanPairs(queryText) {
+  let text = queryText;
+  for (const w of CJK_FUNCTION_WORDS) text = text.split(w).join(" ");
+  return hanPairs(text);
+}
 function countsAsUse(whyRecalled, e, queryText) {
   if (whyRecalled.includes("file\xD7") || whyRecalled.includes("commit\xD7")) return true;
-  const words = asciiQueryWords(queryText);
-  if (words.size > 0) return matchesAnyAsciiWord(e, words);
-  const hay = new Set(hanPairs(keywordText(e)));
-  const pairs = new Set(hanPairs(queryText));
+  const hay = new Set(tokenize(keywordText(e)));
+  if (asciiWords(queryText).some((w) => hay.has(w))) return true;
+  const pairs = new Set(contentHanPairs(queryText));
   let matched = 0;
-  for (const p2 of pairs) if (hay.has(p2)) matched++;
+  for (const pair of pairs) if (hay.has(pair)) matched++;
   return matched >= 2 || matched === 1 && pairs.size === 1;
 }
 function isArchived(e) {
@@ -15472,11 +15476,65 @@ function recencyBoost(updatedAt, now) {
   if (days <= 30) return 1;
   return 0;
 }
-var IMPORTANCE_CAP;
+var CJK_FUNCTION_WORDS, IMPORTANCE_CAP;
 var init_score = __esm({
   "src/memory/score.ts"() {
     "use strict";
     init_dates();
+    CJK_FUNCTION_WORDS = [
+      "\u4E3A\u4EC0\u4E48",
+      "\u600E\u4E48\u6837",
+      "\u6709\u6CA1\u6709",
+      "\u662F\u4E0D\u662F",
+      "\u4F1A\u4E0D\u4F1A",
+      "\u8981\u4E0D\u8981",
+      "\u80FD\u4E0D\u80FD",
+      "\u600E\u4E48",
+      "\u600E\u6837",
+      "\u5982\u4F55",
+      "\u4EC0\u4E48",
+      "\u4E3A\u4F55",
+      "\u54EA\u4E9B",
+      "\u54EA\u4E2A",
+      "\u54EA\u91CC",
+      "\u662F\u5426",
+      "\u80FD\u5426",
+      "\u53EF\u4EE5",
+      "\u80FD\u591F",
+      "\u624D\u80FD",
+      "\u9700\u8981",
+      "\u5E94\u8BE5",
+      "\u4E4B\u524D",
+      "\u4EE5\u524D",
+      "\u4E0A\u6B21",
+      "\u4E4B\u540E",
+      "\u4EE5\u540E",
+      "\u65F6\u5019",
+      "\u73B0\u5728",
+      "\u5DF2\u7ECF",
+      "\u4E00\u4E0B",
+      "\u4E00\u76F4",
+      "\u7136\u540E",
+      "\u6211\u4EEC",
+      "\u4F60\u4EEC",
+      "\u4ED6\u4EEC",
+      "\u8FD9\u4E2A",
+      "\u90A3\u4E2A",
+      "\u8FD9\u4E9B",
+      "\u90A3\u4E9B",
+      "\u8FD9\u6837",
+      "\u90A3\u6837",
+      "\u8FD9\u91CC",
+      "\u90A3\u91CC",
+      "\u5982\u679C",
+      "\u4F46\u662F",
+      "\u56E0\u4E3A",
+      "\u6240\u4EE5",
+      "\u6216\u8005",
+      "\u8FD8\u662F",
+      "\u800C\u4E14",
+      "\u5E76\u4E14"
+    ].sort((a, b2) => b2.length - a.length);
     IMPORTANCE_CAP = 3;
   }
 });

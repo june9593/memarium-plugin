@@ -80,20 +80,40 @@ export function matchesAnyAsciiWord(e: KeywordFields, words: Set<string>): boole
   return asciiWords(keywordText(e)).some((t) => words.has(t));
 }
 
+/** Chinese question words, modals, pronouns and connectives. A memory that
+ *  shares only these with the query (怎么, 才能, 之前…) was not used, so usage
+ *  counting drops them from the query before comparing character pairs. Ranking
+ *  does not use this list. Longest first, so 为什么 goes before 什么. */
+const CJK_FUNCTION_WORDS = [
+  "为什么", "怎么样", "有没有", "是不是", "会不会", "要不要", "能不能",
+  "怎么", "怎样", "如何", "什么", "为何", "哪些", "哪个", "哪里", "是否", "能否",
+  "可以", "能够", "才能", "需要", "应该",
+  "之前", "以前", "上次", "之后", "以后", "时候", "现在", "已经", "一下", "一直", "然后",
+  "我们", "你们", "他们", "这个", "那个", "这些", "那些", "这样", "那样", "这里", "那里",
+  "如果", "但是", "因为", "所以", "或者", "还是", "而且", "并且",
+].sort((a, b) => b.length - a.length);
+
+/** The query's Chinese character pairs with function words removed first. */
+function contentHanPairs(queryText: string): string[] {
+  let text = queryText;
+  for (const w of CJK_FUNCTION_WORDS) text = text.split(w).join(" ");
+  return hanPairs(text);
+}
+
 /** Whether a content hit should be recorded as used (accessCount, and so the
- *  never-used archival rule). A file or commit hit counts. When the query has
- *  ASCII words, a keyword hit must match one of them, as for the archive gate.
- *  For a pure-Chinese query it must match two of the query's character pairs,
- *  or its only pair: one shared common pair such as 怎么 says nothing about
- *  whether the memory was relevant. */
+ *  never-used archival rule). A file or commit hit counts, and so does a keyword
+ *  hit on one of the query's ASCII words. Chinese is compared after removing
+ *  function words: the hit must match two of the query's remaining character
+ *  pairs, or its only one. One pair is weaker evidence than one English word
+ *  (pairs also straddle word boundaries), and a memory that shares only 怎么 or
+ *  怎么才能 with the query was not used. */
 export function countsAsUse(whyRecalled: string, e: KeywordFields, queryText: string): boolean {
   if (whyRecalled.includes("file×") || whyRecalled.includes("commit×")) return true;
-  const words = asciiQueryWords(queryText);
-  if (words.size > 0) return matchesAnyAsciiWord(e, words);
-  const hay = new Set(hanPairs(keywordText(e)));
-  const pairs = new Set(hanPairs(queryText));
+  const hay = new Set(tokenize(keywordText(e)));
+  if (asciiWords(queryText).some((w) => hay.has(w))) return true;
+  const pairs = new Set(contentHanPairs(queryText));
   let matched = 0;
-  for (const p of pairs) if (hay.has(p)) matched++;
+  for (const pair of pairs) if (hay.has(pair)) matched++;
   return matched >= 2 || (matched === 1 && pairs.size === 1);
 }
 
