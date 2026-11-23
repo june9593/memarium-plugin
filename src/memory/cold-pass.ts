@@ -12,7 +12,7 @@
 // INVARIANT: this is a READ path. Nothing here writes or mutates status, the
 // index, or the entries it is handed.
 
-import { scoreArchived, type MemoryQuery, type ScoredMemory } from "./score.js";
+import { asciiQueryWords, matchesAnyAsciiWord, scoreArchived, type MemoryQuery, type ScoredMemory } from "./score.js";
 import { isSafeMemoryId } from "./gate.js";
 import type { MemorySource } from "./source-resolver.js";
 import type { MemoryEntry, MemoryTrust } from "./types.js";
@@ -262,7 +262,16 @@ function resolveColdOrigin(
  */
 export function runColdPass({ entries, scored, query, sources }: ColdPassInput): ColdStorageHit[] {
   if (query.text.trim() === "") return [];
-  const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR).length;
+  // When the query names an identifier or English word, a live hit counts only
+  // if it matched one of those words, a file or a commit — the gate before
+  // Chinese was tokenized. Otherwise three memories sharing a common Chinese
+  // pair such as 怎么 close the valve over an archive that matches the
+  // identifier. Pure-Chinese queries count every content hit.
+  const words = asciiQueryWords(query.text);
+  const answersQuery = (s: ScoredMemory) => words.size === 0
+    || s.whyRecalled.includes("file×") || s.whyRecalled.includes("commit×")
+    || matchesAnyAsciiWord(s.entry, words);
+  const strongPrimary = scored.filter((s) => isContentHit(s) && s.score >= COLD_SCORE_FLOOR && answersQuery(s)).length;
   if (strongPrimary >= COLD_FLOOR) return [];
 
   const originOf = resolveColdOrigin(entries, sources);
