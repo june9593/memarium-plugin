@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scoreMemories, scoreArchived, type MemoryQuery } from "../../src/memory/score.js";
+import { scoreMemories, scoreArchived, usedIds, type MemoryQuery } from "../../src/memory/score.js";
 import type { MemoryEntry } from "../../src/memory/types.js";
 
 function e(over: Partial<MemoryEntry>): MemoryEntry {
@@ -286,5 +286,64 @@ describe("ranking drops rows with no usable id (round-20)", () => {
     let mixed: ReturnType<typeof scoreMemories> = [];
     expect(() => { mixed = scoreMemories([a, b, idless], q); }).not.toThrow();
     expect(mixed.map((x) => [x.entry.id, x.score, x.whyRecalled])).toEqual(baseline);
+  });
+});
+
+describe("usedIds — which content hits are recorded as used", () => {
+  const h = (id: string, title: string, whyRecalled = "keyword×1") => ({ id, whyRecalled, title, summary: "", entities: [] as string[] });
+
+  it("drops function words only on word boundaries, including ones split across segments", () => {
+    expect(usedIds([h("pay", "统一下单接口签名")], "统一下单", 5)).toEqual(["pay"]); // 一下 inside 统一下单 stays
+    expect(usedIds([h("pay", "统一下单"), h("font", "怎么修改字体")], "如何统一下单", 5)).toEqual(["pay"]);
+    expect(usedIds([h("db", "数据库恢复步骤"), h("font", "怎么才能修改字体")], "怎么才能恢复数据库", 5)).toEqual(["db"]);
+    expect(usedIds([h("backup", "备份"), h("promo", "有没有优惠")], "有没有备份", 5)).toEqual(["backup"]); // 有|没有
+  });
+
+  it("needs two of the query's Chinese pairs, or its only one", () => {
+    expect(usedIds([h("db", "数据库恢复步骤"), h("font", "恢复字体设置")], "怎么才能恢复数据库", 5)).toEqual(["db"]);
+    expect(usedIds([h("dedup", "重复导入时去重")], "去重", 5)).toEqual(["dedup"]);
+  });
+
+  it("beside an English word a lone pair counts only for a memory the query names", () => {
+    expect(usedIds([h("db", "SQLite 快照恢复步骤"), h("font", "恢复字体设置")], "SQLite 怎么恢复", 5)).toEqual(["db"]);
+    expect(usedIds([h("ui", "按钮动画是怎么做的")], "SQLite 是怎么做的", 5)).toEqual([]);
+    expect(usedIds([h("dedup", "去重"), h("font", "TODO：修改字体")], "TODO：去重", 5)).toEqual(["dedup", "font"]);
+    expect(usedIds([{ ...h("rules", "流水归并规则"), entities: ["去重"] }], "TODO：去重", 5)).toEqual(["rules"]);
+    expect(usedIds([h("grammar", "现在时")], "现在时", 5)).toEqual(["grammar"]); // 现在 is a function word
+  });
+
+  it("names a memory only by the whole query, a labelled topic or a quote", () => {
+    const ui = (title: string, entities: string[] = []) => ({ ...h("ui", title), entities });
+    expect(usedIds([h("gold", "PostgreSQL 连接池重连"), ui("测试")], "为什么 PostgreSQL 连接池偶尔超时，应该怎样测试重连逻辑？", 5)).toEqual(["gold"]);
+    expect(usedIds([ui("测试")], "CPU 使用量需要先预测，试运行后怎么导出结果？", 5)).toEqual([]);
+    expect(usedIds([ui("广告点击报表", ["数据"])], "SQLite 数据库的快照损坏后，怎样恢复订单记录？", 5)).toEqual([]);
+    expect(usedIds([ui("日历组件", ["现在"])], "现在怎样排查支付失败？", 5)).toEqual([]);
+    expect(usedIds([ui("测试")], "请查标题为「测试」的那条记忆", 5)).toEqual(["ui"]);
+    expect(usedIds([ui("显示器色温校准", ["测试"])], "请查实体名为『测试』的那条记忆", 5)).toEqual(["ui"]);
+  });
+
+  it("compares whole, properly paired quotations with the name as written", () => {
+    const marks = [["「", "」"], ["『", "』"], ["“", "”"], ["‘", "’"], ["《", "》"], ['"', '"'], ["'", "'"], ["`", "`"]];
+    for (const [l, r] of marks) {
+      expect(usedIds([h("ui", "测试")], `请查标题为${l}测试${r}的那条记忆`, 5)).toEqual(["ui"]);
+      expect(usedIds([h("ui", "测试")], `请查标题为${l} 测试 ${r}的那条记忆`, 5)).toEqual(["ui"]);
+      expect(usedIds([h("ui", "测试")], `请用${l}主库${r}测试${l}备库${r}的故障切换`, 5)).toEqual([]);
+    }
+    expect(usedIds([h("ui", "测试")], "请查标题为「测试仪」的那条记忆", 5)).toEqual([]);
+    expect(usedIds([h("ui", "测试")], "请查标题为「测 试」的那条记忆", 5)).toEqual([]);
+    expect(usedIds([h("faq", "回滚？")], "请查标题为「回滚？」的那条记忆", 5)).toEqual(["faq"]);
+    expect(usedIds([h("faq", "回滚？")], "请查标题为「回滚」的那条记忆", 5)).toEqual([]);
+  });
+
+  it("only TODO and FIXME label a topic", () => {
+    expect(usedIds([h("dedup", "去重")], "fixme: 去重", 5)).toEqual(["dedup"]);
+    expect(usedIds([h("font", "恢复")], "SQLite：恢复", 5)).toEqual([]);
+    expect(usedIds([h("dedup", "去重")], "ticket-123: 去重", 5)).toEqual([]);
+  });
+
+  it("an ASCII word, file or commit hit counts, within the first `limit` hits", () => {
+    expect(usedIds([h("font", "怎么调整字体", "keyword×1 file×1")], "SQLite 怎么恢复", 5)).toEqual(["font"]);
+    expect(usedIds([h("todo", "TODO：修改字体"), h("ledger", "修复重复入账")], "TODO：修复重复入账", 5)).toEqual(["todo", "ledger"]);
+    expect(usedIds([h("a", "widget a"), h("b", "widget b")], "widget", 1)).toEqual(["a"]);
   });
 });

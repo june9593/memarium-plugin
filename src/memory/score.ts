@@ -27,12 +27,16 @@ function asciiWords(s: string): string[] {
  *  no token. ASCII tokens are unchanged, so English and identifier queries rank
  *  exactly as before. */
 function tokenize(s: string): string[] {
-  const tokens = asciiWords(s);
+  return [...asciiWords(s), ...hanPairs(s)];
+}
+
+function hanPairs(s: string): string[] {
+  const pairs: string[] = [];
   for (const run of s.match(/\p{Script=Han}+/gu) ?? []) {
     const chars = Array.from(run);
-    for (let i = 0; i + 1 < chars.length; i++) tokens.push(chars[i] + chars[i + 1]);
+    for (let i = 0; i + 1 < chars.length; i++) pairs.push(chars[i] + chars[i + 1]);
   }
-  return tokens;
+  return pairs;
 }
 
 /** Coerce a possibly-missing/NaN numeric field to a finite number (default 0).
@@ -57,8 +61,10 @@ function asArray(v: unknown): string[] {
   return Array.isArray(v) ? v : [];
 }
 
+type KeywordFields = Pick<MemoryEntry, "title" | "summary" | "entities">;
+
 /** The text the keyword term scores: title, summary and entities. */
-function keywordText(e: MemoryEntry): string {
+function keywordText(e: KeywordFields): string {
   return `${e.title} ${e.summary} ${asArray(e.entities).join(" ")}`;
 }
 
@@ -70,8 +76,101 @@ export function asciiQueryWords(text: string): Set<string> {
 /** Whether the entry's keyword text contains one of `words`. The cold-storage
  *  gate uses this to tell a live hit on the query's identifier from one made
  *  only of Chinese character pairs. */
-export function matchesAnyAsciiWord(e: MemoryEntry, words: Set<string>): boolean {
+export function matchesAnyAsciiWord(e: KeywordFields, words: Set<string>): boolean {
   return asciiWords(keywordText(e)).some((t) => words.has(t));
+}
+
+/** Chinese question words, modals, pronouns and connectives. A memory that
+ *  shares only these with the query (怎么, 才能, 之前…) was not used, so usage
+ *  counting drops them from the query before comparing character pairs. Ranking
+ *  does not use this list. */
+const CJK_FUNCTION_WORDS = new Set([
+  "为什么", "怎么样", "有没有", "是不是", "会不会", "要不要", "能不能",
+  "怎么", "怎样", "如何", "什么", "为何", "哪些", "哪个", "哪里", "是否", "能否",
+  "可以", "能够", "才能", "需要", "应该",
+  "之前", "以前", "上次", "之后", "以后", "时候", "现在", "已经", "一下", "一直", "然后",
+  "我们", "你们", "他们", "这个", "那个", "这些", "那些", "这样", "那样", "这里", "那里",
+  "如果", "但是", "因为", "所以", "或者", "还是", "而且", "并且",
+]);
+
+const FUNCTION_WORD_MAX = Math.max(...[...CJK_FUNCTION_WORDS].map((w) => w.length));
+const Segmenter = (globalThis as { Intl?: { Segmenter?: typeof Intl.Segmenter } }).Intl?.Segmenter;
+const WORD_SEGMENTER = Segmenter ? new Segmenter("zh", { granularity: "word" }) : null;
+
+/** The query's Chinese character pairs after dropping function words. A
+ *  function word must start and end on word boundaries, and may span several
+ *  segments (ICU splits 有没有 as 有|没有). Matching whole segments, not
+ *  substrings, keeps 统一下单 intact even though it contains 一下. Without a
+ *  segmenter nothing is dropped. */
+function contentHanPairs(queryText: string): string[] {
+  if (!WORD_SEGMENTER) return hanPairs(queryText);
+  const segs = Array.from(WORD_SEGMENTER.segment(queryText), (s) => s.segment);
+  let text = "";
+  for (let i = 0; i < segs.length;) {
+    let end = -1;
+    let joined = "";
+    for (let j = i; j < segs.length && joined.length < FUNCTION_WORD_MAX; j++) {
+      joined += segs[j];
+      if (CJK_FUNCTION_WORDS.has(joined)) end = j;
+    }
+    if (end >= 0) { text += " "; i = end + 1; } else { text += segs[i]; i += 1; }
+  }
+  return hanPairs(text);
+}
+
+const QUOTE_MARKS: [string, string][] = [["「", "」"], ["『", "』"], ["“", "”"], ["‘", "’"], ["《", "》"], ['"', '"'], ["'", "'"], ["`", "`"]];
+/** One pattern per kind of quote; matching left to right pairs each opening
+ *  mark with the next closing one, so `"主库"测试"备库"` quotes 主库 and 备库,
+ *  never the 测试 between them. */
+const QUOTE_PATTERNS = QUOTE_MARKS.map(([l, r]) => new RegExp(`${l}([^${l}${r}]*)${r}`, "gu"));
+/** Task markers that introduce a topic: "TODO：去重". Other prefixes such as
+ *  "SQLite：" scope the query rather than label it. */
+const TASK_LABEL = /^\s*(?:todo|fixme)\s*[:：]/iu;
+
+/** Lower-cased, with whitespace and punctuation trimmed from both ends only. */
+const trimEdges = (s: string) => s.toLowerCase().replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, "");
+
+/** Whether the query names the memory: its title or a Chinese entity name is
+ *  the whole query, the whole topic after TODO： or FIXME：, or the whole of a
+ *  quotation in the query. A quotation is compared with the name as written,
+ *  ignoring only whitespace at either end (「 回滚？ 」 names 回滚？; 「回滚」 and
+ *  「测试仪」 do not). A name that merely occurs inside a longer query (数据 in
+ *  数据库, 测试 in 怎样测试重连逻辑, 现在 in 现在怎样排查) does not count. */
+function namedByQuery(e: KeywordFields, queryText: string): boolean {
+  const query = trimEdges(queryText);
+  const label = TASK_LABEL.exec(queryText);
+  const topic = label ? trimEdges(queryText.slice(label[0].length)) : null;
+  const quotes = QUOTE_PATTERNS.flatMap((re) => Array.from(queryText.matchAll(re), (m) => m[1]!.trim().toLowerCase()));
+  return [e.title, ...asArray(e.entities)].some((raw) => {
+    if (typeof raw !== "string" || hanPairs(raw).length === 0) return false;
+    const name = trimEdges(raw);
+    return name === query || name === topic || quotes.includes(raw.trim().toLowerCase());
+  });
+}
+
+export interface UsageCandidate extends KeywordFields { id: string; whyRecalled: string }
+
+/** Which content hits a query records as used (accessCount, and so the
+ *  never-used archival rule): the real matches among the first `limit` of
+ *  `hits`, the ranked content hits. Each hit is judged on its own evidence. A
+ *  file or commit hit counts, and so does a keyword hit on one of the query's
+ *  ASCII words, or a memory the query names by its title or a Chinese entity
+ *  (现在时 → 现在时, TODO：去重 → 去重, 「测试」 → 测试; see namedByQuery). Otherwise Chinese is compared on
+ *  character pairs after function words are dropped: a hit needs two of them,
+ *  or, for a query with no ASCII words, its only one. Beside an English word a
+ *  lone pair is a side word: 恢复字体设置 is not recorded for SQLite 怎么恢复. */
+export function usedIds(hits: UsageCandidate[], queryText: string, limit: number): string[] {
+  const words = asciiWords(queryText);
+  const pairs = new Set(contentHanPairs(queryText));
+  return hits.slice(0, limit).filter((h) => {
+    if (h.whyRecalled.includes("file×") || h.whyRecalled.includes("commit×")) return true;
+    const hay = new Set(tokenize(keywordText(h)));
+    if (words.some((w) => hay.has(w))) return true;
+    if (namedByQuery(h, queryText)) return true;
+    let matched = 0;
+    for (const pair of pairs) if (hay.has(pair)) matched++;
+    return matched >= 2 || (matched === 1 && pairs.size === 1 && words.length === 0);
+  }).map((h) => h.id);
 }
 
 /** Max score contribution from `importance`. Keeps it a secondary boost (file/

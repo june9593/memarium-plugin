@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.22.10 — 2026-11-23
+
+### Stop recording weak Chinese matches as used
+
+- Recall and `memory-query` record their top five content hits as used. The
+  count adds up to 2.5 to later rankings and keeps a memory out of the
+  never-used archival rule. Since 0.22.9 matches Chinese by character pairs, a
+  memory that shared only a question pattern with the query was recorded too:
+  on `SQLite 怎么恢复`, unrelated "怎么…" memories were counted and the archive
+  preview's never-used candidates went from 2 to 0.
+- Each content hit is judged on its own evidence. A keyword hit on one of the
+  query's English words or identifiers still counts, as in 0.22.8, and so
+  does a memory the query names: its title or a Chinese entity name is the
+  whole query (`现在时`), the whole topic after `TODO：` or `FIXME：`
+  (`TODO：去重`), or the whole of a quotation in the query (`「测试」`, also
+  with spaces inside the marks). Quotations are paired as written, so in
+  `"主库"测试"备库"` only 主库 and 备库 are quoted, and they are compared with
+  the name including its own punctuation (`「回滚？」` names 回滚？). A name
+  that merely occurs inside a longer query (数据 in 数据库) does not count, and
+  other prefixes such as `SQLite：` are not labels. Otherwise Chinese is compared on
+  character pairs after function words are dropped. Usage counting splits the
+  query into words (`Intl.Segmenter`) and drops question words, modals,
+  pronouns and connectives that start and end on word boundaries, also when
+  they are split across segments (有没有 as 有|没有), so "统一下单" stays whole
+  although it contains 一下. A hit then needs two of the remaining pairs, or,
+  for a query with no English words, the only one: "恢复字体设置" is not
+  recorded for `SQLite 怎么恢复`. What is recorded does not depend on other
+  results or on how many are shown. The word list is used only for this
+  count, and ranking is unchanged. File and commit hits still count; the
+  scorer accepts them from callers that pass files or commits, while the
+  `recall` and `memory-query` CLIs take only `--q`. Without a segmenter (or
+  without `Intl`) nothing is dropped.
+- On the synthetic 43-query probe, entries recorded besides each query's gold
+  answer went from 57 to 6 for pure-Chinese queries and from 36 to 12 for
+  mixed ones (0.22.8: 16). English queries record exactly what 0.22.8 did.
+  The gold entry is still recorded in 16 of the 17 pure-Chinese queries where
+  it is a top-five hit; the one it misses shares a single pair with the query.
+- The usage tests for both commands now pin `MEMARIUM_DIR` to their temporary
+  home, so a caller's `MEMARIUM_DIR` no longer receives their writes.
+- Add regressions for both commands on thirty-two review cases, checking the
+  recorded entries and the never-used archive candidates, a test that the
+  recorded entries do not change with the number of results shown, and unit
+  tests for the rule. Each of twelve deliberate loosenings (one pair is
+  enough, substring removal of function words, no naming rule, naming by
+  substring, quotations found by substring, any prefix as a label, no trimming
+  inside quotations, punctuation dropped from quoted names, no word list,
+  single-segment removal, a shared English-match flag, English-only for mixed
+  queries) fails these tests.
+
+No ranking, memory format, writer, or digest behavior changed.
+
 ## 0.22.9 — 2026-11-23
 
 ### Match Chinese queries in recall

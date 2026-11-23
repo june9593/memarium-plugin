@@ -15362,12 +15362,15 @@ function asciiWords(s) {
   return s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1);
 }
 function tokenize(s) {
-  const tokens = asciiWords(s);
+  return [...asciiWords(s), ...hanPairs(s)];
+}
+function hanPairs(s) {
+  const pairs = [];
   for (const run2 of s.match(/\p{Script=Han}+/gu) ?? []) {
     const chars = Array.from(run2);
-    for (let i2 = 0; i2 + 1 < chars.length; i2++) tokens.push(chars[i2] + chars[i2 + 1]);
+    for (let i2 = 0; i2 + 1 < chars.length; i2++) pairs.push(chars[i2] + chars[i2 + 1]);
   }
-  return tokens;
+  return pairs;
 }
 function num(v, dflt = 0) {
   return typeof v === "number" && isFinite(v) ? v : dflt;
@@ -15383,6 +15386,51 @@ function asciiQueryWords(text) {
 }
 function matchesAnyAsciiWord(e, words) {
   return asciiWords(keywordText(e)).some((t2) => words.has(t2));
+}
+function contentHanPairs(queryText) {
+  if (!WORD_SEGMENTER) return hanPairs(queryText);
+  const segs = Array.from(WORD_SEGMENTER.segment(queryText), (s) => s.segment);
+  let text = "";
+  for (let i2 = 0; i2 < segs.length; ) {
+    let end = -1;
+    let joined = "";
+    for (let j2 = i2; j2 < segs.length && joined.length < FUNCTION_WORD_MAX; j2++) {
+      joined += segs[j2];
+      if (CJK_FUNCTION_WORDS.has(joined)) end = j2;
+    }
+    if (end >= 0) {
+      text += " ";
+      i2 = end + 1;
+    } else {
+      text += segs[i2];
+      i2 += 1;
+    }
+  }
+  return hanPairs(text);
+}
+function namedByQuery(e, queryText) {
+  const query = trimEdges(queryText);
+  const label = TASK_LABEL.exec(queryText);
+  const topic = label ? trimEdges(queryText.slice(label[0].length)) : null;
+  const quotes = QUOTE_PATTERNS.flatMap((re) => Array.from(queryText.matchAll(re), (m) => m[1].trim().toLowerCase()));
+  return [e.title, ...asArray2(e.entities)].some((raw) => {
+    if (typeof raw !== "string" || hanPairs(raw).length === 0) return false;
+    const name = trimEdges(raw);
+    return name === query || name === topic || quotes.includes(raw.trim().toLowerCase());
+  });
+}
+function usedIds(hits, queryText, limit) {
+  const words = asciiWords(queryText);
+  const pairs = new Set(contentHanPairs(queryText));
+  return hits.slice(0, limit).filter((h2) => {
+    if (h2.whyRecalled.includes("file\xD7") || h2.whyRecalled.includes("commit\xD7")) return true;
+    const hay = new Set(tokenize(keywordText(h2)));
+    if (words.some((w) => hay.has(w))) return true;
+    if (namedByQuery(h2, queryText)) return true;
+    let matched = 0;
+    for (const pair of pairs) if (hay.has(pair)) matched++;
+    return matched >= 2 || matched === 1 && pairs.size === 1 && words.length === 0;
+  }).map((h2) => h2.id);
 }
 function isArchived(e) {
   return e.status === "archived";
@@ -15459,11 +15507,72 @@ function recencyBoost(updatedAt, now) {
   if (days <= 30) return 1;
   return 0;
 }
-var IMPORTANCE_CAP;
+var CJK_FUNCTION_WORDS, FUNCTION_WORD_MAX, Segmenter, WORD_SEGMENTER, QUOTE_MARKS, QUOTE_PATTERNS, TASK_LABEL, trimEdges, IMPORTANCE_CAP;
 var init_score = __esm({
   "src/memory/score.ts"() {
     "use strict";
     init_dates();
+    CJK_FUNCTION_WORDS = /* @__PURE__ */ new Set([
+      "\u4E3A\u4EC0\u4E48",
+      "\u600E\u4E48\u6837",
+      "\u6709\u6CA1\u6709",
+      "\u662F\u4E0D\u662F",
+      "\u4F1A\u4E0D\u4F1A",
+      "\u8981\u4E0D\u8981",
+      "\u80FD\u4E0D\u80FD",
+      "\u600E\u4E48",
+      "\u600E\u6837",
+      "\u5982\u4F55",
+      "\u4EC0\u4E48",
+      "\u4E3A\u4F55",
+      "\u54EA\u4E9B",
+      "\u54EA\u4E2A",
+      "\u54EA\u91CC",
+      "\u662F\u5426",
+      "\u80FD\u5426",
+      "\u53EF\u4EE5",
+      "\u80FD\u591F",
+      "\u624D\u80FD",
+      "\u9700\u8981",
+      "\u5E94\u8BE5",
+      "\u4E4B\u524D",
+      "\u4EE5\u524D",
+      "\u4E0A\u6B21",
+      "\u4E4B\u540E",
+      "\u4EE5\u540E",
+      "\u65F6\u5019",
+      "\u73B0\u5728",
+      "\u5DF2\u7ECF",
+      "\u4E00\u4E0B",
+      "\u4E00\u76F4",
+      "\u7136\u540E",
+      "\u6211\u4EEC",
+      "\u4F60\u4EEC",
+      "\u4ED6\u4EEC",
+      "\u8FD9\u4E2A",
+      "\u90A3\u4E2A",
+      "\u8FD9\u4E9B",
+      "\u90A3\u4E9B",
+      "\u8FD9\u6837",
+      "\u90A3\u6837",
+      "\u8FD9\u91CC",
+      "\u90A3\u91CC",
+      "\u5982\u679C",
+      "\u4F46\u662F",
+      "\u56E0\u4E3A",
+      "\u6240\u4EE5",
+      "\u6216\u8005",
+      "\u8FD8\u662F",
+      "\u800C\u4E14",
+      "\u5E76\u4E14"
+    ]);
+    FUNCTION_WORD_MAX = Math.max(...[...CJK_FUNCTION_WORDS].map((w) => w.length));
+    Segmenter = globalThis.Intl?.Segmenter;
+    WORD_SEGMENTER = Segmenter ? new Segmenter("zh", { granularity: "word" }) : null;
+    QUOTE_MARKS = [["\u300C", "\u300D"], ["\u300E", "\u300F"], ["\u201C", "\u201D"], ["\u2018", "\u2019"], ["\u300A", "\u300B"], ['"', '"'], ["'", "'"], ["`", "`"]];
+    QUOTE_PATTERNS = QUOTE_MARKS.map(([l, r2]) => new RegExp(`${l}([^${l}${r2}]*)${r2}`, "gu"));
+    TASK_LABEL = /^\s*(?:todo|fixme)\s*[:：]/iu;
+    trimEdges = (s) => s.toLowerCase().replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, "");
     IMPORTANCE_CAP = 3;
   }
 });
@@ -15851,7 +15960,17 @@ async function memoryQueryCmd(opts) {
   for (const line3 of renderColdHints(coldStorage)) console.error(line3);
   if ((opts.q ?? "").trim() !== "") {
     try {
-      const bumpIds = scored.filter((s) => Number.isFinite(s.score) && isContentHit(s)).slice(0, BUMP_TOP_N).map((s) => s.entry.id);
+      const bumpIds = usedIds(
+        scored.filter((s) => Number.isFinite(s.score) && isContentHit(s)).map((s) => ({
+          id: s.entry.id,
+          whyRecalled: s.whyRecalled,
+          title: s.entry.title,
+          summary: s.entry.summary,
+          entities: s.entry.entities
+        })),
+        opts.q ?? "",
+        BUMP_TOP_N
+      );
       bumpUsage(cfg.repoPath, bumpIds, now);
     } catch {
     }
@@ -18557,7 +18676,11 @@ async function recallCmd(opts) {
   for (const line3 of renderColdHints(payload.coldStorage)) console.error(line3);
   if (payload.query !== "") {
     try {
-      const bumpIds = payload.entries.filter((h2) => Number.isFinite(h2.score) && isContentHitReason(h2.whyRecalled)).slice(0, BUMP_TOP_N2).map((h2) => h2.id);
+      const bumpIds = usedIds(
+        payload.entries.filter((h2) => Number.isFinite(h2.score) && isContentHitReason(h2.whyRecalled)),
+        payload.query,
+        BUMP_TOP_N2
+      );
       const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
       bumpUsage(payload.repoPath, bumpIds, now);
     } catch {
