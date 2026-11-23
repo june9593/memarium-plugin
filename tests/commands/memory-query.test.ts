@@ -173,10 +173,27 @@ describe("memoryQueryCmd", () => {
       rows: [["db", "数据库恢复步骤", "备份还原。"], ["font", "恢复字体设置", "重置显示样式。"]] },
     { name: "统一下单", q: "统一下单", used: ["pay"], unused: [], hits: ["pay"],
       rows: [["pay", "统一下单", "商户用此接口创建支付订单。"], ["font", "界面样式", "调整显示大小。"]] },
+    { name: "统一下单 inside a longer title", q: "统一下单", used: ["pay"], unused: [], hits: ["pay"],
+      rows: [["pay", "统一下单接口签名", "商户用此接口创建支付订单。"], ["bg", "界面样式", "调整显示大小。"]] },
     { name: "如何统一下单", q: "如何统一下单", used: ["pay"], unused: [], hits: ["pay"],
       rows: [["pay", "统一下单", "商户用此接口创建支付订单。"], ["font", "怎么修改字体", "界面样式。"]] },
     { name: "去重", q: "去重", used: ["ledger"], unused: ["font"], hits: ["ledger"],
       rows: [["ledger", "重复导入时去重", "比对流水号。"], ["font", "怎么修改字体", "使用显示设置。"]] },
+    { name: "有没有备份", q: "有没有备份", used: ["backup"], unused: ["promo"], hits: ["backup", "promo"],
+      rows: [["backup", "备份", "保留数据副本。"], ["promo", "有没有优惠", "查看折扣。"]] },
+    { name: "要不要回滚部署", q: "要不要回滚部署", used: ["ops"], unused: ["font"], hits: ["ops", "font"],
+      rows: [["ops", "回滚部署", "恢复旧版本。"], ["font", "要不要修改字体", "调整界面。"]] },
+    { name: "有没有 alone", q: "有没有", used: [], unused: ["ui"], hits: ["ui"],
+      rows: [["ui", "有没有替代字体", "调整显示。"], ["bg", "界面样式", "调整显示大小。"]] },
+    { name: "现在时", q: "现在时", used: ["grammar"], unused: [], hits: ["grammar"],
+      rows: [["grammar", "现在时", "英语动词时态。"], ["bg", "界面样式", "调整显示大小。"]] },
+    // Each hit is judged on its own: an unrelated TODO memory does not stop 去重
+    // from counting, and the absence of a SQLite memory does not make a shared
+    // question tail count.
+    { name: "TODO：去重 beside a TODO memory", q: "TODO：去重", used: ["dedup", "font"], unused: [], hits: ["dedup", "font"],
+      rows: [["dedup", "去重", "按流水号归并。"], ["font", "TODO：修改字体", "界面配色指引。"]] },
+    { name: "SQLite 是怎么做的 with no SQLite memory", q: "SQLite 是怎么做的", used: [], unused: ["ui"], hits: ["ui"],
+      rows: [["ui", "按钮动画是怎么做的", "界面动效说明。"], ["bg", "界面样式", "调整显示大小。"]] },
   ];
 
   it.each(USAGE_CASES)("records topical matches as used, not shared question patterns: $name", async ({ q, rows, used, unused, hits }) => {

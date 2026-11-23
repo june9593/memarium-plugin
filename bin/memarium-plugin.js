@@ -15389,23 +15389,41 @@ function matchesAnyAsciiWord(e, words) {
 }
 function contentHanPairs(queryText) {
   if (!WORD_SEGMENTER) return hanPairs(queryText);
+  const segs = Array.from(WORD_SEGMENTER.segment(queryText), (s) => s.segment);
   let text = "";
-  for (const { segment } of WORD_SEGMENTER.segment(queryText)) text += CJK_FUNCTION_WORDS.has(segment) ? " " : segment;
+  for (let i2 = 0; i2 < segs.length; ) {
+    let end = -1;
+    let joined = "";
+    for (let j2 = i2; j2 < segs.length && joined.length < FUNCTION_WORD_MAX; j2++) {
+      joined += segs[j2];
+      if (CJK_FUNCTION_WORDS.has(joined)) end = j2;
+    }
+    if (end >= 0) {
+      text += " ";
+      i2 = end + 1;
+    } else {
+      text += segs[i2];
+      i2 += 1;
+    }
+  }
   return hanPairs(text);
 }
+function namedByQuery(e, compactQuery) {
+  const names = [e.title, ...asArray2(e.entities)].filter((n) => typeof n === "string" && hanPairs(n).length > 0);
+  return names.some((n) => compactQuery.includes(compact(n)));
+}
 function usedIds(hits, queryText, limit) {
-  const words = new Set(asciiWords(queryText));
+  const words = asciiWords(queryText);
   const pairs = new Set(contentHanPairs(queryText));
-  const tokens = hits.map((h2) => new Set(tokenize(keywordText(h2))));
-  const asciiMatch = (hay) => [...words].some((w) => hay.has(w));
-  const anchored = tokens.some(asciiMatch);
-  return hits.slice(0, limit).filter((h2, i2) => {
+  const compactQuery = compact(queryText);
+  return hits.slice(0, limit).filter((h2) => {
     if (h2.whyRecalled.includes("file\xD7") || h2.whyRecalled.includes("commit\xD7")) return true;
-    const hay = tokens[i2];
-    if (asciiMatch(hay)) return true;
+    const hay = new Set(tokenize(keywordText(h2)));
+    if (words.some((w) => hay.has(w))) return true;
+    if (namedByQuery(h2, compactQuery)) return true;
     let matched = 0;
     for (const pair of pairs) if (hay.has(pair)) matched++;
-    return matched >= 2 || matched === 1 && pairs.size === 1 && !anchored;
+    return matched >= 2 || matched === 1 && pairs.size === 1 && words.length === 0;
   }).map((h2) => h2.id);
 }
 function isArchived(e) {
@@ -15483,7 +15501,7 @@ function recencyBoost(updatedAt, now) {
   if (days <= 30) return 1;
   return 0;
 }
-var CJK_FUNCTION_WORDS, WORD_SEGMENTER, IMPORTANCE_CAP;
+var CJK_FUNCTION_WORDS, FUNCTION_WORD_MAX, Segmenter, WORD_SEGMENTER, compact, IMPORTANCE_CAP;
 var init_score = __esm({
   "src/memory/score.ts"() {
     "use strict";
@@ -15542,7 +15560,10 @@ var init_score = __esm({
       "\u800C\u4E14",
       "\u5E76\u4E14"
     ]);
-    WORD_SEGMENTER = typeof Intl.Segmenter === "function" ? new Intl.Segmenter("zh", { granularity: "word" }) : null;
+    FUNCTION_WORD_MAX = Math.max(...[...CJK_FUNCTION_WORDS].map((w) => w.length));
+    Segmenter = globalThis.Intl?.Segmenter;
+    WORD_SEGMENTER = Segmenter ? new Segmenter("zh", { granularity: "word" }) : null;
+    compact = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
     IMPORTANCE_CAP = 3;
   }
 });
@@ -15676,15 +15697,15 @@ function renderPrimer(project, entries, opts = {}) {
   const raw = opts.maxPerSection ?? MAX_PER_SECTION;
   const max = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : MAX_PER_SECTION;
   const now = opts.now ?? (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  const compact = opts.compact === true;
+  const compact2 = opts.compact === true;
   const head = `# Project memory: ${project}
 
 > Auto-generated primer. The agent should treat this as already-known project context.
 `;
   const make = (title, type, shape) => ({ title, all: eligible(entries, type, project, now), shape, picks: /* @__PURE__ */ new Map(), bodies: /* @__PURE__ */ new Map() });
   const core = make("Core rules", "core", "summary");
-  const facts = make("Project facts", "semantic", compact ? "title" : "summary");
-  const procedures = make("Procedures & gotchas", "procedural", compact ? "title" : "summary");
+  const facts = make("Project facts", "semantic", compact2 ? "title" : "summary");
+  const procedures = make("Procedures & gotchas", "procedural", compact2 ? "title" : "summary");
   if (core.all.length + facts.all.length + procedures.all.length === 0) return "";
   if (opts.coreBody) {
     for (let i2 = 0; i2 < Math.min(max, core.all.length); i2++) {
@@ -17369,7 +17390,7 @@ async function qaQueryCmd(opts) {
     kind: isKind2(opts.kind),
     now
   });
-  const compact = scored.map((s) => ({
+  const compact2 = scored.map((s) => ({
     entry: {
       id: s.entry.id,
       scope: s.entry.scope,
@@ -17382,7 +17403,7 @@ async function qaQueryCmd(opts) {
     score: s.score,
     whyMatched: s.whyMatched
   }));
-  process.stdout.write(JSON.stringify({ project, qa: compact }, null, 2) + "\n");
+  process.stdout.write(JSON.stringify({ project, qa: compact2 }, null, 2) + "\n");
 }
 var init_qa_query = __esm({
   "src/commands/qa-query.ts"() {
@@ -20002,8 +20023,8 @@ function usableTitle(title) {
   return value;
 }
 function shortCodexId(id) {
-  const compact = id.replace(/-/g, "");
-  return compact.slice(-8) || "untitled";
+  const compact2 = id.replace(/-/g, "");
+  return compact2.slice(-8) || "untitled";
 }
 function rolloutIdFromPath(path) {
   const file = basename4(path, ".jsonl");

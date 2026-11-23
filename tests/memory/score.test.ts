@@ -292,10 +292,11 @@ describe("ranking drops rows with no usable id (round-20)", () => {
 describe("usedIds — which content hits are recorded as used", () => {
   const h = (id: string, title: string, whyRecalled = "keyword×1") => ({ id, whyRecalled, title, summary: "", entities: [] as string[] });
 
-  it("drops function words only where they stand as words", () => {
-    expect(usedIds([h("pay", "统一下单")], "统一下单", 5)).toEqual(["pay"]); // 一下 inside 统一下单 stays
+  it("drops function words only on word boundaries, including ones split across segments", () => {
+    expect(usedIds([h("pay", "统一下单接口签名")], "统一下单", 5)).toEqual(["pay"]); // 一下 inside 统一下单 stays
     expect(usedIds([h("pay", "统一下单"), h("font", "怎么修改字体")], "如何统一下单", 5)).toEqual(["pay"]);
     expect(usedIds([h("db", "数据库恢复步骤"), h("font", "怎么才能修改字体")], "怎么才能恢复数据库", 5)).toEqual(["db"]);
+    expect(usedIds([h("backup", "备份"), h("promo", "有没有优惠")], "有没有备份", 5)).toEqual(["backup"]); // 有|没有
   });
 
   it("needs two of the query's Chinese pairs, or its only one", () => {
@@ -303,9 +304,12 @@ describe("usedIds — which content hits are recorded as used", () => {
     expect(usedIds([h("dedup", "重复导入时去重")], "去重", 5)).toEqual(["dedup"]);
   });
 
-  it("a lone pair counts only when no hit matched the query's ASCII words", () => {
+  it("beside an English word a lone pair counts only for a memory the query names", () => {
     expect(usedIds([h("db", "SQLite 快照恢复步骤"), h("font", "恢复字体设置")], "SQLite 怎么恢复", 5)).toEqual(["db"]);
-    expect(usedIds([h("dedup", "去重")], "TODO：去重", 5)).toEqual(["dedup"]);
+    expect(usedIds([h("ui", "按钮动画是怎么做的")], "SQLite 是怎么做的", 5)).toEqual([]);
+    expect(usedIds([h("dedup", "去重"), h("font", "TODO：修改字体")], "TODO：去重", 5)).toEqual(["dedup", "font"]);
+    expect(usedIds([{ ...h("rules", "流水归并规则"), entities: ["去重"] }], "TODO：去重", 5)).toEqual(["rules"]);
+    expect(usedIds([h("grammar", "现在时")], "现在时", 5)).toEqual(["grammar"]); // 现在 is a function word
   });
 
   it("an ASCII word, file or commit hit counts, within the first `limit` hits", () => {

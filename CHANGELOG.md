@@ -10,18 +10,22 @@
   memory that shared only a question pattern with the query was recorded too:
   on `SQLite 怎么恢复`, unrelated "怎么…" memories were counted and the archive
   preview's never-used candidates went from 2 to 0.
-- A keyword hit on one of the query's English words or identifiers still
-  counts, as in 0.22.8. For Chinese, usage counting splits the query into
-  words (`Intl.Segmenter`) and drops question words, modals, pronouns and
-  connectives that stand as words (怎么, 才能, 之前…), so "统一下单" stays whole
-  although it contains 一下. A hit must then match two of the remaining
-  character pairs, or the query's only one. That single pair counts only when
-  no hit matched the query's English words: beside a matched identifier it is
-  a side word ("恢复字体设置" for `SQLite 怎么恢复`), alone it is the topic
-  ("去重" for `TODO：去重`). The word list is used only for this count, and
-  ranking is unchanged. File and commit hits still count; the scorer accepts
-  them from callers that pass files or commits, while the `recall` and
-  `memory-query` CLIs take only `--q`.
+- Each content hit is judged on its own evidence. A keyword hit on one of the
+  query's English words or identifiers still counts, as in 0.22.8, and so
+  does a memory the query names by its title or a Chinese entity ("去重" for
+  `TODO：去重`, "现在时" for `现在时`). Otherwise Chinese is compared on
+  character pairs after function words are dropped. Usage counting splits the
+  query into words (`Intl.Segmenter`) and drops question words, modals,
+  pronouns and connectives that start and end on word boundaries, also when
+  they are split across segments (有没有 as 有|没有), so "统一下单" stays whole
+  although it contains 一下. A hit then needs two of the remaining pairs, or,
+  for a query with no English words, the only one: "恢复字体设置" is not
+  recorded for `SQLite 怎么恢复`. What is recorded does not depend on other
+  results or on how many are shown. The word list is used only for this
+  count, and ranking is unchanged. File and commit hits still count; the
+  scorer accepts them from callers that pass files or commits, while the
+  `recall` and `memory-query` CLIs take only `--q`. Without a segmenter (or
+  without `Intl`) nothing is dropped.
 - On the synthetic 43-query probe, entries recorded besides each query's gold
   answer went from 57 to 6 for pure-Chinese queries and from 36 to 12 for
   mixed ones (0.22.8: 16). English queries record exactly what 0.22.8 did.
@@ -29,11 +33,13 @@
   it is a top-five hit; the one it misses shares a single pair with the query.
 - The usage tests for both commands now pin `MEMARIUM_DIR` to their temporary
   home, so a caller's `MEMARIUM_DIR` no longer receives their writes.
-- Add regressions for both commands on eleven review cases, checking the
-  recorded entries and the never-used archive candidates, and unit tests for
-  the rule. Loosening any part of it (one pair is enough, substring removal,
-  no identifier check, no word list, English-only for mixed queries) fails
-  these tests.
+- Add regressions for both commands on eighteen review cases, checking the
+  recorded entries and the never-used archive candidates, a test that the
+  recorded entries do not change with the number of results shown, and unit
+  tests for the rule. Each of seven deliberate loosenings (one pair is enough,
+  substring removal, no naming rule, no word list, single-segment removal, a
+  shared English-match flag, English-only for mixed queries) fails these
+  tests.
 
 No ranking, memory format, writer, or digest behavior changed.
 

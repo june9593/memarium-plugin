@@ -93,43 +93,64 @@ const CJK_FUNCTION_WORDS = new Set([
   "如果", "但是", "因为", "所以", "或者", "还是", "而且", "并且",
 ]);
 
-const WORD_SEGMENTER = typeof Intl.Segmenter === "function" ? new Intl.Segmenter("zh", { granularity: "word" }) : null;
+const FUNCTION_WORD_MAX = Math.max(...[...CJK_FUNCTION_WORDS].map((w) => w.length));
+const Segmenter = (globalThis as { Intl?: { Segmenter?: typeof Intl.Segmenter } }).Intl?.Segmenter;
+const WORD_SEGMENTER = Segmenter ? new Segmenter("zh", { granularity: "word" }) : null;
 
-/** The query's Chinese character pairs after dropping function words that
- *  stand as words of their own. Matching word segments, not substrings, keeps
- *  统一下单 whole even though it contains 一下. Without a segmenter nothing is
- *  dropped. */
+/** The query's Chinese character pairs after dropping function words. A
+ *  function word must start and end on word boundaries, and may span several
+ *  segments (ICU splits 有没有 as 有|没有). Matching whole segments, not
+ *  substrings, keeps 统一下单 intact even though it contains 一下. Without a
+ *  segmenter nothing is dropped. */
 function contentHanPairs(queryText: string): string[] {
   if (!WORD_SEGMENTER) return hanPairs(queryText);
+  const segs = Array.from(WORD_SEGMENTER.segment(queryText), (s) => s.segment);
   let text = "";
-  for (const { segment } of WORD_SEGMENTER.segment(queryText)) text += CJK_FUNCTION_WORDS.has(segment) ? " " : segment;
+  for (let i = 0; i < segs.length;) {
+    let end = -1;
+    let joined = "";
+    for (let j = i; j < segs.length && joined.length < FUNCTION_WORD_MAX; j++) {
+      joined += segs[j];
+      if (CJK_FUNCTION_WORDS.has(joined)) end = j;
+    }
+    if (end >= 0) { text += " "; i = end + 1; } else { text += segs[i]; i += 1; }
+  }
   return hanPairs(text);
+}
+
+/** Letters, digits and Han characters only, lower-cased. */
+const compact = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+/** Whether the query contains the memory's title or one of its Chinese entity
+ *  names, so the query names that memory. */
+function namedByQuery(e: KeywordFields, compactQuery: string): boolean {
+  const names = [e.title, ...asArray(e.entities)].filter((n) => typeof n === "string" && hanPairs(n).length > 0);
+  return names.some((n) => compactQuery.includes(compact(n)));
 }
 
 export interface UsageCandidate extends KeywordFields { id: string; whyRecalled: string }
 
 /** Which content hits a query records as used (accessCount, and so the
  *  never-used archival rule): the real matches among the first `limit` of
- *  `hits`, which are the ranked content hits. A file or commit hit counts, and
- *  so does a keyword hit on one of the query's ASCII words. Chinese is compared
- *  on character pairs after function words are dropped: a hit needs two of
- *  them, or the query's only one. That single pair counts only when no hit
- *  matched the query's ASCII words; beside a matched identifier it is a side
- *  word (SQLite 怎么恢复 vs 恢复字体设置), while alone it is the topic
- *  (TODO：去重 vs 去重). */
+ *  `hits`, the ranked content hits. Each hit is judged on its own evidence. A
+ *  file or commit hit counts, and so does a keyword hit on one of the query's
+ *  ASCII words, or a memory the query names by its title or a Chinese entity
+ *  (TODO：去重 → 去重, 现在时 → 现在时). Otherwise Chinese is compared on
+ *  character pairs after function words are dropped: a hit needs two of them,
+ *  or, for a query with no ASCII words, its only one. Beside an English word a
+ *  lone pair is a side word: 恢复字体设置 is not recorded for SQLite 怎么恢复. */
 export function usedIds(hits: UsageCandidate[], queryText: string, limit: number): string[] {
-  const words = new Set(asciiWords(queryText));
+  const words = asciiWords(queryText);
   const pairs = new Set(contentHanPairs(queryText));
-  const tokens = hits.map((h) => new Set(tokenize(keywordText(h))));
-  const asciiMatch = (hay: Set<string>) => [...words].some((w) => hay.has(w));
-  const anchored = tokens.some(asciiMatch);
-  return hits.slice(0, limit).filter((h, i) => {
+  const compactQuery = compact(queryText);
+  return hits.slice(0, limit).filter((h) => {
     if (h.whyRecalled.includes("file×") || h.whyRecalled.includes("commit×")) return true;
-    const hay = tokens[i]!;
-    if (asciiMatch(hay)) return true;
+    const hay = new Set(tokenize(keywordText(h)));
+    if (words.some((w) => hay.has(w))) return true;
+    if (namedByQuery(h, compactQuery)) return true;
     let matched = 0;
     for (const pair of pairs) if (hay.has(pair)) matched++;
-    return matched >= 2 || (matched === 1 && pairs.size === 1 && !anchored);
+    return matched >= 2 || (matched === 1 && pairs.size === 1 && words.length === 0);
   }).map((h) => h.id);
 }
 
