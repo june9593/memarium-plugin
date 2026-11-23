@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scoreMemories, scoreArchived, type MemoryQuery } from "../../src/memory/score.js";
+import { countsAsUse, scoreMemories, scoreArchived, type MemoryQuery } from "../../src/memory/score.js";
 import type { MemoryEntry } from "../../src/memory/types.js";
 
 function e(over: Partial<MemoryEntry>): MemoryEntry {
@@ -286,5 +286,24 @@ describe("ranking drops rows with no usable id (round-20)", () => {
     let mixed: ReturnType<typeof scoreMemories> = [];
     expect(() => { mixed = scoreMemories([a, b, idless], q); }).not.toThrow();
     expect(mixed.map((x) => [x.entry.id, x.score, x.whyRecalled])).toEqual(baseline);
+  });
+});
+
+describe("countsAsUse — which content hits are recorded as used", () => {
+  const f = (title: string) => ({ title, summary: "", entities: [] as string[] });
+
+  it("a pure-Chinese query needs two of its character pairs, or its only pair", () => {
+    const q = "之前导入去重是怎么做的";
+    expect(countsAsUse("keyword×2", f("导入流水时按来源去重"), q)).toBe(true); // 导入 + 去重
+    expect(countsAsUse("keyword×1", f("怎么调整字体"), q)).toBe(false);        // only 怎么
+    expect(countsAsUse("keyword×1", f("导入流水时按来源去重"), "去重")).toBe(true);
+  });
+
+  it("a query with ASCII words needs one of them; a file or commit hit always counts", () => {
+    const q = "SQLite 怎么恢复";
+    expect(countsAsUse("keyword×2", f("SQLite 快照恢复步骤"), q)).toBe(true);
+    expect(countsAsUse("keyword×1", f("怎么调整字体"), q)).toBe(false);
+    expect(countsAsUse("keyword×1 file×1", f("怎么调整字体"), q)).toBe(true);
+    expect(countsAsUse("keyword×1", f("widget thing"), "widget")).toBe(true);
   });
 });

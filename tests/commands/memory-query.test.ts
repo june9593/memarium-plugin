@@ -143,6 +143,26 @@ describe("memoryQueryCmd", () => {
     expect(readFileSync(idxPath, "utf8")).toBe(before); // byte-identical: usage lives in the local sidecar
   });
 
+  it("a mixed query does not record hits made only of a common Chinese pair as used", async () => {
+    const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
+    const { loadUsage } = await import("../../src/memory/usage-store.js");
+    const row = (slug: string, title: string, summary: string) => {
+      const id = `semantic/code-demo/${slug}`;
+      return [id, { id, type: "semantic", scope: "project:code-demo", project: "code-demo", title, summary,
+        path: `memory/semantic/code-demo/${slug}.md`, status: "active", confidence: 0.9, importance: 3,
+        createdAt: "2026-06-01", updatedAt: "2026-06-01", validFrom: null, validTo: null, sourceSessions: [],
+        sourceCommits: [], sourceFiles: [], supersedes: null, entities: [], originDevice: null,
+        accessCount: 0, lastAccess: null }];
+    };
+    writeFileSync(join(repo, ".memarium/index.memory.json"), JSON.stringify({ version: 1, entries: Object.fromEntries([
+      row("sqlite", "SQLite 快照恢复步骤", "从快照恢复 SQLite 数据库。"),
+      row("font", "怎么调整字体", "界面操作说明。"),
+      row("color", "怎么修改配色", "界面操作说明。"),
+    ]) }));
+    await memoryQueryCmd({ cwd: "/work/code-demo", q: "SQLite 怎么恢复" });
+    expect(Object.keys(loadUsage(repo))).toEqual(["semantic/code-demo/sqlite"]);
+  });
+
   it("bumps at most the top 5 content-hit results, even with 6 hits", async () => {
     const { memoryQueryCmd } = await import("../../src/commands/memory-query.js");
     const { loadUsage } = await import("../../src/memory/usage-store.js");

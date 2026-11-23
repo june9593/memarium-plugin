@@ -15362,12 +15362,15 @@ function asciiWords(s) {
   return s.toLowerCase().split(/[^a-z0-9_]+/).filter((t2) => t2.length > 1);
 }
 function tokenize(s) {
-  const tokens = asciiWords(s);
+  return [...asciiWords(s), ...hanPairs(s)];
+}
+function hanPairs(s) {
+  const pairs = [];
   for (const run2 of s.match(/\p{Script=Han}+/gu) ?? []) {
     const chars = Array.from(run2);
-    for (let i2 = 0; i2 + 1 < chars.length; i2++) tokens.push(chars[i2] + chars[i2 + 1]);
+    for (let i2 = 0; i2 + 1 < chars.length; i2++) pairs.push(chars[i2] + chars[i2 + 1]);
   }
-  return tokens;
+  return pairs;
 }
 function num(v, dflt = 0) {
   return typeof v === "number" && isFinite(v) ? v : dflt;
@@ -15383,6 +15386,16 @@ function asciiQueryWords(text) {
 }
 function matchesAnyAsciiWord(e, words) {
   return asciiWords(keywordText(e)).some((t2) => words.has(t2));
+}
+function countsAsUse(whyRecalled, e, queryText) {
+  if (whyRecalled.includes("file\xD7") || whyRecalled.includes("commit\xD7")) return true;
+  const words = asciiQueryWords(queryText);
+  if (words.size > 0) return matchesAnyAsciiWord(e, words);
+  const hay = new Set(hanPairs(keywordText(e)));
+  const pairs = new Set(hanPairs(queryText));
+  let matched = 0;
+  for (const p2 of pairs) if (hay.has(p2)) matched++;
+  return matched >= 2 || matched === 1 && pairs.size === 1;
 }
 function isArchived(e) {
   return e.status === "archived";
@@ -15851,7 +15864,7 @@ async function memoryQueryCmd(opts) {
   for (const line3 of renderColdHints(coldStorage)) console.error(line3);
   if ((opts.q ?? "").trim() !== "") {
     try {
-      const bumpIds = scored.filter((s) => Number.isFinite(s.score) && isContentHit(s)).slice(0, BUMP_TOP_N).map((s) => s.entry.id);
+      const bumpIds = scored.filter((s) => Number.isFinite(s.score) && isContentHit(s)).slice(0, BUMP_TOP_N).filter((s) => countsAsUse(s.whyRecalled, s.entry, opts.q ?? "")).map((s) => s.entry.id);
       bumpUsage(cfg.repoPath, bumpIds, now);
     } catch {
     }
@@ -18557,7 +18570,7 @@ async function recallCmd(opts) {
   for (const line3 of renderColdHints(payload.coldStorage)) console.error(line3);
   if (payload.query !== "") {
     try {
-      const bumpIds = payload.entries.filter((h2) => Number.isFinite(h2.score) && isContentHitReason(h2.whyRecalled)).slice(0, BUMP_TOP_N2).map((h2) => h2.id);
+      const bumpIds = payload.entries.filter((h2) => Number.isFinite(h2.score) && isContentHitReason(h2.whyRecalled)).slice(0, BUMP_TOP_N2).filter((h2) => countsAsUse(h2.whyRecalled, h2, payload.query)).map((h2) => h2.id);
       const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
       bumpUsage(payload.repoPath, bumpIds, now);
     } catch {

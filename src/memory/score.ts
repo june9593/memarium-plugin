@@ -27,12 +27,16 @@ function asciiWords(s: string): string[] {
  *  no token. ASCII tokens are unchanged, so English and identifier queries rank
  *  exactly as before. */
 function tokenize(s: string): string[] {
-  const tokens = asciiWords(s);
+  return [...asciiWords(s), ...hanPairs(s)];
+}
+
+function hanPairs(s: string): string[] {
+  const pairs: string[] = [];
   for (const run of s.match(/\p{Script=Han}+/gu) ?? []) {
     const chars = Array.from(run);
-    for (let i = 0; i + 1 < chars.length; i++) tokens.push(chars[i] + chars[i + 1]);
+    for (let i = 0; i + 1 < chars.length; i++) pairs.push(chars[i] + chars[i + 1]);
   }
-  return tokens;
+  return pairs;
 }
 
 /** Coerce a possibly-missing/NaN numeric field to a finite number (default 0).
@@ -57,8 +61,10 @@ function asArray(v: unknown): string[] {
   return Array.isArray(v) ? v : [];
 }
 
+type KeywordFields = Pick<MemoryEntry, "title" | "summary" | "entities">;
+
 /** The text the keyword term scores: title, summary and entities. */
-function keywordText(e: MemoryEntry): string {
+function keywordText(e: KeywordFields): string {
   return `${e.title} ${e.summary} ${asArray(e.entities).join(" ")}`;
 }
 
@@ -70,8 +76,25 @@ export function asciiQueryWords(text: string): Set<string> {
 /** Whether the entry's keyword text contains one of `words`. The cold-storage
  *  gate uses this to tell a live hit on the query's identifier from one made
  *  only of Chinese character pairs. */
-export function matchesAnyAsciiWord(e: MemoryEntry, words: Set<string>): boolean {
+export function matchesAnyAsciiWord(e: KeywordFields, words: Set<string>): boolean {
   return asciiWords(keywordText(e)).some((t) => words.has(t));
+}
+
+/** Whether a content hit should be recorded as used (accessCount, and so the
+ *  never-used archival rule). A file or commit hit counts. When the query has
+ *  ASCII words, a keyword hit must match one of them, as for the archive gate.
+ *  For a pure-Chinese query it must match two of the query's character pairs,
+ *  or its only pair: one shared common pair such as 怎么 says nothing about
+ *  whether the memory was relevant. */
+export function countsAsUse(whyRecalled: string, e: KeywordFields, queryText: string): boolean {
+  if (whyRecalled.includes("file×") || whyRecalled.includes("commit×")) return true;
+  const words = asciiQueryWords(queryText);
+  if (words.size > 0) return matchesAnyAsciiWord(e, words);
+  const hay = new Set(hanPairs(keywordText(e)));
+  const pairs = new Set(hanPairs(queryText));
+  let matched = 0;
+  for (const p of pairs) if (hay.has(p)) matched++;
+  return matched >= 2 || (matched === 1 && pairs.size === 1);
 }
 
 /** Max score contribution from `importance`. Keeps it a secondary boost (file/

@@ -134,4 +134,24 @@ describe("recall (2-stage over typed memory)", () => {
     expect(loadUsage(repo)["semantic/code-demo/widget"]?.count).toBe(1);
     expect(readFileSync(idxPath, "utf8")).toBe(before); // synced index untouched
   });
+
+  // Chinese is matched by character pairs, so a common pair such as 怎么 makes
+  // unrelated memories content hits. Those must not be recorded as used: the
+  // count feeds later ranking and the never-used archival rule.
+  const sqliteAndHowTos = () => ({
+    "semantic/code-demo/sqlite": mk({ id: "semantic/code-demo/sqlite", title: "SQLite 快照恢复步骤",
+      summary: "从快照恢复 SQLite 数据库。", path: "memory/semantic/code-demo/sqlite.md" }),
+    "semantic/code-demo/font": mk({ id: "semantic/code-demo/font", title: "怎么调整字体",
+      summary: "界面操作说明。", path: "memory/semantic/code-demo/font.md" }),
+    "semantic/code-demo/color": mk({ id: "semantic/code-demo/color", title: "怎么修改配色",
+      summary: "界面操作说明。", path: "memory/semantic/code-demo/color.md" }),
+  });
+
+  it("a mixed query does not record live hits made only of a common Chinese pair as used", async () => {
+    writeLocalIndex(sqliteAndHowTos());
+    const { loadUsage } = await import("../../src/memory/usage-store.js");
+    const p = await run({ cwd: "/work/code-demo", q: "SQLite 怎么恢复" });
+    expect(p.entries.filter((h: { whyRecalled: string }) => h.whyRecalled.includes("keyword"))).toHaveLength(3);
+    expect(Object.keys(loadUsage(repo))).toEqual(["semantic/code-demo/sqlite"]);
+  });
 });

@@ -1,7 +1,7 @@
 import { readPluginConfig } from "../spool/plugin-config.js";
 import { resolveProjectFromCwd } from "../_shared/project-resolve.js";
 import { resolveMemoryView } from "../memory/source-resolver.js";
-import { scoreMemories, isArchived, type ScoredMemory } from "../memory/score.js";
+import { countsAsUse, scoreMemories, isArchived, type ScoredMemory } from "../memory/score.js";
 import { loadUsage, bumpUsage, overlayUsage } from "../memory/usage-store.js";
 import { renderPrimer } from "../memory/primer.js";
 // R2 cold-storage valve — SHARED with `recall` (src/memory/cold-pass.ts) so both
@@ -145,6 +145,7 @@ export async function memoryQueryCmd(opts: MemoryQueryOptions): Promise<MemoryQu
       const bumpIds = scored
         .filter((s) => Number.isFinite(s.score) && isContentHit(s))
         .slice(0, BUMP_TOP_N)
+        .filter((s) => countsAsUse(s.whyRecalled, s.entry, opts.q ?? ""))
         .map((s) => s.entry.id);
       bumpUsage(cfg.repoPath, bumpIds, now);
     } catch { /* usage is non-essential telemetry; never fail a recall over it */ }
